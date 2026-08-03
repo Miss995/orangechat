@@ -20,10 +20,13 @@ jobs:
         with:
           node-version: 20
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      - name: Install pnpm (corepack + npm global)
+        run: |
+          corepack enable || true
+          npm install -g pnpm@9 || sudo npm install -g pnpm@9
+          echo "--- pnpm check ---"
+          which pnpm
+          pnpm --version
 
       - name: Gradle cache
         uses: actions/cache@v4
