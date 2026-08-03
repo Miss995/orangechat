@@ -8,9 +8,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Version marker
-        run: echo "== ORANGE-SURGERY-v3 =="
+        run: echo "== ORANGE-SURGERY-v4 =="
 
       - uses: actions/checkout@v4
+
+      - name: Init material-color-utilities submodule
+        run: |
+          git submodule update --init --depth 1 material3/material-color-utilities
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
