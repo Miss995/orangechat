@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -36,6 +36,11 @@ import java.time.Duration
 
 /**
  * 显示消息的技术统计信息（如 token 使用量）
+ *
+ * 说明：
+ * - 「上下文输入」= 本次请求发给模型的全部输入 token（含历史上下文，DeepSeek 每次全量重发，
+ *   所以长对话时这个数字会很大，这是计费事实，不是累积）
+ * - 「本次生成」= 本次回复真正生成的输出 token
  */
 @Composable
 fun ChatMessageNerdLine(
@@ -54,7 +59,20 @@ fun ChatMessageNerdLine(
             ) {
                 val usage = message.usage
                 if (settings.showTokenUsage && usage != null) {
-                    // Input tokens
+                    // 本次生成（输出 token）
+                    StatsItem(
+                        icon = {
+                            Icon(
+                                imageVector = HugeIcons.Download04,
+                                contentDescription = "Output",
+                                modifier = Modifier.size(12.dp)
+                            )
+                        },
+                        content = {
+                            Text(text = "${usage.completionTokens.formatNumber()} tok 本次生成")
+                        }
+                    )
+                    // 上下文输入（输入 token，含历史上下文）
                     StatsItem(
                         icon = {
                             Icon(
@@ -65,26 +83,13 @@ fun ChatMessageNerdLine(
                             )
                         },
                         content = {
-                            Text(text = "${usage.promptTokens.formatNumber()} tokens")
+                            Text(text = "${usage.promptTokens.formatNumber()} tok 上下文")
                             // Cached tokens
                             if (usage.cachedTokens > 0) {
                                 Text(
-                                    text = "(${message.usage?.cachedTokens?.formatNumber() ?: "0"} cached)"
+                                    text = "(${usage.cachedTokens.formatNumber()} cached)"
                                 )
                             }
-                        }
-                    )
-                    // Output tokens
-                    StatsItem(
-                        icon = {
-                            Icon(
-                                imageVector = HugeIcons.Download04,
-                                contentDescription = "Output",
-                                modifier = Modifier.size(12.dp)
-                            )
-                        },
-                        content = {
-                            Text(text = "${usage.completionTokens.formatNumber()} tokens")
                         }
                     )
                     // TPS
