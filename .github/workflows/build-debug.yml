@@ -7,6 +7,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Version marker
+        run: echo "== ORANGE-SURGERY-v3 =="
+
       - uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -20,11 +23,12 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install pnpm (corepack + npm global)
+      - name: Install pnpm & add to PATH
         run: |
-          corepack enable || true
           npm install -g pnpm@9 || sudo npm install -g pnpm@9
-          echo "--- pnpm check ---"
+          PNPM_DIR="$(npm config get prefix)/bin"
+          echo "$PNPM_DIR" >> $GITHUB_PATH
+          echo "pnpm dir: $PNPM_DIR"
           which pnpm
           pnpm --version
 
