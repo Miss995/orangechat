@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Version marker
-        run: echo "== ORANGE-SURGERY-v4 =="
+        run: echo "== ORANGE-SURGERY-v5 =="
 
       - uses: actions/checkout@v4
 
@@ -77,6 +77,19 @@ jobs:
             ]
           }
           EOF
+
+      - name: Generate debug keystore
+        run: |
+          keytool -genkeypair -v \
+            -keystore app/debug.keystore \
+            -storepass android \
+            -storetype PKCS12 \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -alias androiddebugkey \
+            -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US"
 
       - name: Build Debug APK
         run: |
