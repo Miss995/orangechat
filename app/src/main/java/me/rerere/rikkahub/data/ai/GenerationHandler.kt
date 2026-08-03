@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -72,6 +72,11 @@ private const val TAG = "GenerationHandler"
 // animateContentSize 的尺寸补间动画被不断打断重启），表现为打字机效果的"抖动/掉帧"。
 // 这里把推送频率限制在这个间隔以内，肉眼完全感知不到延迟，但能大幅降低重组频率。
 private const val STREAM_UI_THROTTLE_MS = 50L
+
+// 工具执行结果的最大保留字符数。
+// 超长输出（如读取大文件、查询大表）会全文塞进上下文，配合 agent 循环每轮重发历史，
+// 会导致 token 指数级爆炸。截断后只保留头部 + 提示，既保语义又省钱。
+private const val MAX_TOOL_OUTPUT_CHARS = 5000
  
 @Serializable
 sealed interface GenerationChunk {
@@ -309,7 +314,19 @@ class GenerationHandler(
                             }
                             Log.i(TAG, "generateText: executing tool ${toolDef.name} with args: $args")
                             val result = toolDef.execute(args)
-                            executedTools += tool.copy(output = result)
+                            // 截断超长工具输出：仅保留每个 Text 部分的前 MAX_TOOL_OUTPUT_CHARS 字符，
+                            // 防止巨量结果全文进入上下文导致 token 爆炸（省钱关键）。
+                            val truncatedResult = result.map { part ->
+                                if (part is UIMessagePart.Text && part.text.length > MAX_TOOL_OUTPUT_CHARS) {
+                                    UIMessagePart.Text(
+                                        part.text.take(MAX_TOOL_OUTPUT_CHARS) +
+                                            "\n\n[结果过长已截断：原始 ${part.text.length} 字符，仅保留前 $MAX_TOOL_OUTPUT_CHARS 字符]"
+                                    )
+                                } else {
+                                    part
+                                }
+                            }
+                            executedTools += tool.copy(output = truncatedResult)
                         }.onFailure {
                             it.printStackTrace()
                             executedTools += tool.copy(
@@ -753,4 +770,3 @@ private fun buildCodeBlockPrompt(): String = buildString {
     appendLine("   - The `edits` mode applies search/replace to the files from your previous `write_files` call. Files not mentioned in `edits` keep their content unchanged.")
     appendLine("   - Always use actual filenames (e.g. `MainActivity.kt`) as code block language tags, not just language names (e.g. `kotlin`).")
 }
- 
