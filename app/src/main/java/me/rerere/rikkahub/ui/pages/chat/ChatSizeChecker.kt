@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -23,6 +23,8 @@ import me.rerere.rikkahub.data.model.Conversation
 // 消息节点数量警告阈值
 const val MESSAGE_NODE_WARNING_THRESHOLD = 768
 const val LAST_ASSISTANT_INPUT_TOKEN_WARNING_THRESHOLD = 300_000
+// 转轴窗口：聊天窗口最多显示的消息节点数（只裁剪显示层，数据完整保留）
+const val WINDOW_DISPLAY_SIZE = 200
 
 data class ConversationSizeInfo(
     val nodeCount: Int,

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -245,7 +245,6 @@ private fun ChatListNormal(
         val inputBarHeight = with(density) { innerPadding.calculateBottomPadding().toPx() }
         val lastPos = lastItem.offset + lastItem.size
         val inputPos = (state.layoutInfo.viewportEndOffset - inputBarHeight.roundToInt())
-        // println("lastPos = $lastPos, inputPos = $inputPos  | ${lastPos <= inputPos - 8}")
         return lastPos <= inputPos - 8
     }
 
@@ -275,11 +274,9 @@ private fun ChatListNormal(
         if (settings.displaySetting.enableAutoScroll) {
             LaunchedEffect(state) {
                 snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect { visibleItemsInfo ->
-                    // println("is bottom = ${visibleItemsInfo.isAtBottom()}, scroll = ${state.isScrollInProgress}, can_scroll = ${state.canScrollForward}, loading = $loading")
                     if (!state.isScrollInProgress && loadingState) {
                         if (visibleItemsInfo.isAtBottom()) {
-                            state.requestScrollToItem(conversationUpdated.messageNodes.lastIndex + 10)
-                            // Log.i(TAG, "ChatList: scroll to ${conversationUpdated.messageNodes.lastIndex}")
+                            state.requestScrollToItem(conversationUpdated.messageNodes.size.coerceAtMost(WINDOW_DISPLAY_SIZE) + 10)
                         }
                     }
                 }
@@ -300,12 +297,14 @@ private fun ChatListNormal(
 
         // Filter out [SKIP] messages and proactive message context markers
         val displayNodes = remember(conversation.messageNodes) {
-            conversation.messageNodes.filter { node ->
+            val filtered = conversation.messageNodes.filter { node ->
                 val msg = node.currentMessage
                 val text = msg.toText().trim()
                 !(msg.role == MessageRole.ASSISTANT && text == "[SKIP]") &&
                 !(msg.role == MessageRole.USER && text.contains("[主动消息上下文]"))
             }
+            // 【转轴窗口】只显示最近 N 条，旧消息从窗口消失（数据仍完整保留）
+            if (filtered.size > WINDOW_DISPLAY_SIZE) filtered.takeLast(WINDOW_DISPLAY_SIZE) else filtered
         }
 
         LazyColumn(
@@ -353,7 +352,7 @@ private fun ChatListNormal(
                                 onDelete(node.currentMessage)
                             },
                             onShare = {
-                                selecting = true  // 使用 CoroutineScope 延迟状态更新
+                                selecting = true
                                 selectedItems.clear()
                                 selectedItems.addAll(conversation.messageNodes.map { it.id }
                                     .subList(0, conversation.messageNodes.indexOf(node) + 1))

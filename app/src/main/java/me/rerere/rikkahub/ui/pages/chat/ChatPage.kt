@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -159,10 +159,12 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
             if (nodeId != null) {
                 val index = conversation.messageNodes.indexOfFirst { it.id == nodeId }
                 if (index >= 0) {
-                    chatListState.scrollToItem(index)
+                    // 窗口剪切后，历史消息 index 需映射到窗口内；超出窗口则停在窗口开头
+                    val start = (conversation.messageNodes.size - WINDOW_DISPLAY_SIZE).coerceAtLeast(0)
+                    chatListState.scrollToItem(if (index >= start) index - start else 0)
                 }
             } else {
-                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
+                chatListState.requestScrollToItem(conversation.messageNodes.size.coerceAtMost(WINDOW_DISPLAY_SIZE) + 5)
             }
             vm.chatListInitialized = true
         }
@@ -332,7 +334,7 @@ private fun ChatPageContent(
                         } else {
                             vm.handleMessageSend(inputState.getContents())
                             scope.launch {
-                                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
+                                chatListState.requestScrollToItem(conversation.messageNodes.size.coerceAtMost(WINDOW_DISPLAY_SIZE) + 5)
                             }
                         }
                         inputState.clearInput()
@@ -352,7 +354,7 @@ private fun ChatPageContent(
                             )
                         )
                         scope.launch {
-                            chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
+                            chatListState.requestScrollToItem(conversation.messageNodes.size.coerceAtMost(WINDOW_DISPLAY_SIZE) + 5)
                         }
                     },
                     onLongSendClick = {
@@ -364,7 +366,7 @@ private fun ChatPageContent(
                         } else {
                             vm.handleMessageSend(content = inputState.getContents(), answer = false)
                             scope.launch {
-                                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
+                                chatListState.requestScrollToItem(conversation.messageNodes.size.coerceAtMost(WINDOW_DISPLAY_SIZE) + 5)
                             }
                         }
                         inputState.clearInput()
@@ -457,7 +459,10 @@ private fun ChatPageContent(
                 onJumpToMessage = { index ->
                     previewMode = false
                     scope.launch {
-                        chatListState.animateScrollToItem(index)
+                        // 窗口剪切后，历史消息 index 需要映射到窗口内的位置；超出窗口则滚到窗口底部
+                        val start = (conversation.messageNodes.size - WINDOW_DISPLAY_SIZE).coerceAtLeast(0)
+                        val target = if (index >= start) index - start else 0
+                        chatListState.animateScrollToItem(target)
                     }
                 },
                 onToolApproval = { toolCallId, approved, reason ->
