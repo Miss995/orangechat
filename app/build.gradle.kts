@@ -12,6 +12,8 @@ plugins {
 }
 
 android {
+    // 分钟级时间戳：versionCode / versionName 共用，保证每次构建都是可区分的新版本
+    val buildStamp = (System.currentTimeMillis() / 60000).toInt()
     namespace = "me.rerere.rikkahub"
     compileSdk = 37
 
@@ -19,10 +21,10 @@ android {
         applicationId = "me.rerere.orangechat"
         minSdk = 26
         targetSdk = 37
-        // versionCode 使用分钟级时间戳自动递增：每次构建生成的 APK 版本号必然比上一次大，
-        // 保证覆盖安装畅通（固定 versionCode 会被系统以“相同/更低版本”拒绝安装）。
-        versionCode = (System.currentTimeMillis() / 60000).toInt()
-        versionName = "2.2.3"
+        // versionCode/versionName 使用分钟级时间戳自动递增：每次构建的 APK 版本号必然比上一次大，
+        // 覆盖安装畅通，且手机上能看到每次构建的不同版本名（固定 versionCode 会被系统拒绝安装）。
+        versionCode = buildStamp
+        versionName = "2.2.3-${buildStamp % 100000}"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
