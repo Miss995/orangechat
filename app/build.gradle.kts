@@ -1,4 +1,4 @@
-﻿import com.android.build.api.dsl.Packaging
+import com.android.build.api.dsl.Packaging
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.io.FileInputStream
@@ -19,7 +19,9 @@ android {
         applicationId = "me.rerere.orangechat"
         minSdk = 26
         targetSdk = 37
-        versionCode = 159
+        // versionCode 使用分钟级时间戳自动递增：每次构建生成的 APK 版本号必然比上一次大，
+        // 保证覆盖安装畅通（固定 versionCode 会被系统以“相同/更低版本”拒绝安装）。
+        versionCode = (System.currentTimeMillis() / 60000).toInt()
         versionName = "2.2.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
