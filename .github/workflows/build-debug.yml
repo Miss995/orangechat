@@ -11,6 +11,9 @@ jobs:
         run: echo "== ORANGE-SURGERY-v5 =="
 
       - uses: actions/checkout@v4
+        with:
+          # 强制从 main 分支构建（否则 Run workflow 时选到旧分支会构建旧代码）
+          ref: main
 
       - name: Init material-color-utilities submodule
         run: |
