@@ -72,11 +72,6 @@ private const val TAG = "GenerationHandler"
 // animateContentSize 的尺寸补间动画被不断打断重启），表现为打字机效果的"抖动/掉帧"。
 // 这里把推送频率限制在这个间隔以内，肉眼完全感知不到延迟，但能大幅降低重组频率。
 private const val STREAM_UI_THROTTLE_MS = 50L
-
-// 工具执行结果的最大保留字符数。
-// 超长输出（如读取大文件、查询大表）会全文塞进上下文，配合 agent 循环每轮重发历史，
-// 会导致 token 指数级爆炸。截断后只保留头部 + 提示，既保语义又省钱。
-private const val MAX_TOOL_OUTPUT_CHARS = 5000
  
 @Serializable
 sealed interface GenerationChunk {
@@ -287,7 +282,7 @@ class GenerationHandler(
                             )
                         )
                     }
- 
+
                     is ToolApprovalState.Answered -> {
                         // Tool was answered by user (e.g., ask_user tool)
                         val answer = (tool.approvalState as ToolApprovalState.Answered).answer
@@ -297,11 +292,11 @@ class GenerationHandler(
                             )
                         )
                     }
- 
+
                     is ToolApprovalState.Pending -> {
                         // Should not reach here, but just in case
                     }
- 
+
                     else -> {
                         // Auto or Approved - execute the tool
                         runCatching {
@@ -314,19 +309,7 @@ class GenerationHandler(
                             }
                             Log.i(TAG, "generateText: executing tool ${toolDef.name} with args: $args")
                             val result = toolDef.execute(args)
-                            // 截断超长工具输出：仅保留每个 Text 部分的前 MAX_TOOL_OUTPUT_CHARS 字符，
-                            // 防止巨量结果全文进入上下文导致 token 爆炸（省钱关键）。
-                            val truncatedResult = result.map { part ->
-                                if (part is UIMessagePart.Text && part.text.length > MAX_TOOL_OUTPUT_CHARS) {
-                                    UIMessagePart.Text(
-                                        part.text.take(MAX_TOOL_OUTPUT_CHARS) +
-                                            "\n\n[结果过长已截断：原始 ${part.text.length} 字符，仅保留前 $MAX_TOOL_OUTPUT_CHARS 字符]"
-                                    )
-                                } else {
-                                    part
-                                }
-                            }
-                            executedTools += tool.copy(output = truncatedResult)
+                            executedTools += tool.copy(output = result)
                         }.onFailure {
                             it.printStackTrace()
                             executedTools += tool.copy(
@@ -408,65 +391,14 @@ class GenerationHandler(
                 if (effectiveSystemPrompt.isNotBlank()) {
                     append(effectiveSystemPrompt)
                 }
-
-                // ============================================================
-                // 【缓存友好排序】稳定内容放前面，动态内容放末尾。
-                // DeepSeek 等提供商按请求前缀做 KV 缓存：只要前缀和上次一致就命中，
-                // 命中价格约为未命中的 1/10。因此把每次可能变化的记忆/召回/聊天引用
-                // 全部放到 system 末尾，保护 systemPrompt + 代码规则 + 工具定义
-                // 这个大前缀稳定命中，大幅降低输入成本。
-                // ============================================================
-
-                // ① 稳定区：代码文件命名和ZIP打包功能说明
-                appendLine()
-                append(buildCodeBlockPrompt())
-
-                // ② 稳定区：工具prompt
-                tools.forEach { tool ->
-                    appendLine()
-                    append(tool.systemPrompt(model, messages))
-                }
-
-                // ③ 稳定区：允许跳过回复
-                if (assistant.allowSkipReply) {
-                    appendLine()
-                    appendLine()
-                    appendLine("## Skip Reply")
-                    appendLine("If you determine that no reply is needed (e.g., the user's message doesn't require a response, or you have nothing meaningful to add), you may reply with exactly `[SKIP]` (without any other text). This message will be hidden from the user. Use this sparingly and only when truly appropriate.")
-                }
-
-                // ④ 稳定区：屏幕跳转能力（AI总是可以跳转，不需要开关）
-                if (true) {
-                    appendLine()
-                    appendLine()
-                    appendLine("## 屏幕跳转能力")
-                    appendLine("你可以在回复末尾追加 [JUMP] 标记（单独一行）来把聊天界面拉到用户屏幕最前面。")
-                    appendLine("适用场景：")
-                    appendLine("- 用户说要去别的应用，你觉得需要把用户拉回来时")
-                    appendLine("- 你觉得接下来的内容需要用户立即看到时")
-                    appendLine("不适用场景：")
-                    appendLine("- 一般闲聊不需要跳转")
-                    appendLine("- 用户正在跟你正常对话时不需要跳转")
-                    appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
-                }
-
-                // ⑤ 稳定区：分气泡
-                if (assistant.splitBubbleByLine) {
-                    appendLine()
-                    appendLine()
-                    appendLine("## Message Bubbles")
-                    appendLine("Your reply will be automatically split into separate chat bubbles at every line break (\\n) you write, similar to how a person sends several short texts in a row instead of one long message. You are fully in control of this: write a line break whenever you want the previous thought/sentence to appear as its own bubble, and keep things on the same line when they belong together. Do not insert blank lines purely for spacing — every line break becomes a new bubble, so use them intentionally. Exception: line breaks inside fenced code blocks (```) and Markdown tables are preserved as-is and will NOT create new bubbles, since those must stay intact as a single block.")
-                }
-
-                // ============ 动态区（每次请求可能变化，放末尾保护前缀） ============
-
-                // ⑥ 动态区：助手记忆
+ 
+                // 记忆
                 if (assistant.enableMemory) {
                     appendLine()
                     append(buildMemoryPrompt(memories = memories))
                 }
-
-                // ⑦ 动态区：外置记忆库召回
+ 
+                // 外置记忆库召回
                 try {
                     val externalMemoryConfigs = settings.externalMemories.filter {
                         it.enabled && it.id in assistant.externalMemoryIds
@@ -516,17 +448,25 @@ class GenerationHandler(
                                                 }
                                             } else {
                                                 // 回退：文本召回聊天记录
-                                                val recalledMessages = if (queryText.isNotBlank()) {
-                                                    service.searchMessages(
-                                                        assistantId = assistant.id.toString(),
-                                                        keyword = queryText,
-                                                        limit = config.recallCount,
-                                                    ).getOrDefault(emptyList())
-                                                } else {
-                                                    service.queryLatestMessages(
-                                                        assistantId = assistant.id.toString(),
-                                                        limit = config.recallCount,
-                                                    ).getOrDefault(emptyList())
+                                                // 多入口同步：始终拉最近消息（完整上下文），关键词搜索补充
+                                                val recalledMessages = buildList {
+                                                    addAll(
+                                                        service.queryLatestMessages(
+                                                            assistantId = assistant.id.toString(),
+                                                            limit = config.recallCount,
+                                                        ).getOrDefault(emptyList())
+                                                    )
+                                                    if (queryText.isNotBlank()) {
+                                                        val existingContents = map { it.content }
+                                                        addAll(
+                                                            service.searchMessages(
+                                                                assistantId = assistant.id.toString(),
+                                                                keyword = queryText,
+                                                                limit = config.recallCount,
+                                                            ).getOrDefault(emptyList())
+                                                                .filter { it.content !in existingContents }
+                                                        )
+                                                    }
                                                 }
                                                 recalledMessages.forEach { msg ->
                                                     val prefix = when (msg.role) {
@@ -561,14 +501,23 @@ class GenerationHandler(
                 } catch (e: Exception) {
                     Log.w(TAG, "External memory recall failed", e)
                 }
-
-                // ⑧ 动态区：最近聊天引用
+ 
                 if (assistant.enableRecentChatsReference) {
                     appendLine()
                     append(buildRecentChatsPrompt(assistant, conversationRepo))
                 }
-
-                // ⑨ 动态区：插件提示词注入（配置可能随对话动态变化）
+ 
+                // 代码文件命名和ZIP打包功能说明
+                appendLine()
+                append(buildCodeBlockPrompt())
+ 
+                // 工具prompt
+                tools.forEach { tool ->
+                    appendLine()
+                    append(tool.systemPrompt(model, messages))
+                }
+ 
+                // 插件提示词注入
                 if (pluginPromptInjections.isNotEmpty()) {
                     pluginPromptInjections.forEach { injection ->
                         appendLine()
@@ -576,7 +525,38 @@ class GenerationHandler(
                         append(injection)
                     }
                 }
+ 
+                // 允许跳过回复
+                if (assistant.allowSkipReply) {
+                    appendLine()
+                    appendLine()
+                    appendLine("## Skip Reply")
+                    appendLine("If you determine that no reply is needed (e.g., the user's message doesn't require a response, or you have nothing meaningful to add), you may reply with exactly `[SKIP]` (without any other text). This message will be hidden from the user. Use this sparingly and only when truly appropriate.")
+                }
 
+                // 屏幕跳转能力（AI总是可以跳转，不需要开关）
+                if (true) {
+                    appendLine()
+                    appendLine()
+                    appendLine("## 屏幕跳转能力")
+                    appendLine("你可以在回复末尾追加 [JUMP] 标记（单独一行）来把聊天界面拉到用户屏幕最前面。")
+                    appendLine("适用场景：")
+                    appendLine("- 用户说要去别的应用，你觉得需要把用户拉回来时")
+                    appendLine("- 你觉得接下来的内容需要用户立即看到时")
+                    appendLine("不适用场景：")
+                    appendLine("- 一般闲聊不需要跳转")
+                    appendLine("- 用户正在跟你正常对话时不需要跳转")
+                    appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
+                }
+ 
+                // 分气泡: 告知模型它自己能控制消息如何被拆成多个气泡
+                if (assistant.splitBubbleByLine) {
+                    appendLine()
+                    appendLine()
+                    appendLine("## Message Bubbles")
+                    appendLine("Your reply will be automatically split into separate chat bubbles at every line break (\\n) you write, similar to how a person sends several short texts in a row instead of one long message. You are fully in control of this: write a line break whenever you want the previous thought/sentence to appear as its own bubble, and keep things on the same line when they belong together. Do not insert blank lines purely for spacing — every line break becomes a new bubble, so use them intentionally. Exception: line breaks inside fenced code blocks (```) and Markdown tables are preserved as-is and will NOT create new bubbles, since those must stay intact as a single block.")
+                }
+ 
             }
             if (system.isNotBlank()) add(UIMessage.system(prompt = system))
             addAll(messages.limitContext(assistant.contextMessageSize))
@@ -769,7 +749,6 @@ private fun buildCodeBlockPrompt(): String = buildString {
     appendLine("   - ✅ Correct: ```index.html instead of ```html")
     appendLine("   - ✅ Correct: ```styles.css instead of ```css")
     appendLine("   - ✅ Correct: ```package.json instead of ```json")
-    appendLine("   - ✅ Correct: ```manifest.xml instead of ```xml")
     appendLine("   - ✅ Correct: ```main.py instead of ```python")
     appendLine("   - ✅ Correct: ```App.vue instead of ```vue")
     appendLine("   - ❌ Wrong: ```kotlin, ```python, ```javascript (these don't provide filenames)")
@@ -781,3 +760,4 @@ private fun buildCodeBlockPrompt(): String = buildString {
     appendLine("   - The `edits` mode applies search/replace to the files from your previous `write_files` call. Files not mentioned in `edits` keep their content unchanged.")
     appendLine("   - Always use actual filenames (e.g. `MainActivity.kt`) as code block language tags, not just language names (e.g. `kotlin`).")
 }
+ 
