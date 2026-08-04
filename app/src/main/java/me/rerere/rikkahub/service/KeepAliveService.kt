@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -28,6 +28,11 @@ import me.rerere.rikkahub.RouteActivity
  * - 低优先级常驻通知，低调不打扰用户
  * - 兼容 Android 8.0+ NotificationChannel 要求
  * - 国产 ROM 兼容：划掉任务后通过发送广播尝试自启动
+ *
+ * 类型说明：使用 FOREGROUND_SERVICE_TYPE_SPECIAL_USE（specialUse）。
+ * Android 14+ 对 dataSync 等类型前台服务有“每 24 小时累计 6 小时”的配额，
+ * 超时未停止会抛 ForegroundServiceDidNotStopInTimeException 导致整个进程崩溃；
+ * specialUse 类型无此时长限制，适合常驻保活场景（Manifest 中已声明 SPECIAL_USE 权限与 subtype）。
  */
 class KeepAliveService : Service() {
 
@@ -118,15 +123,14 @@ class KeepAliveService : Service() {
             .build()
 
         // 启动前台服务
-        // Android 14+ 对 dataSync 类型前台服务有每 24 小时 6 小时的累计配额限制，
-        // 配额耗尽时 startForeground 会抛 ForegroundServiceStartNotAllowedException。
-        // 这里捕获异常并优雅降级，避免崩溃整个 App。
+        // Android 14+ 使用 specialUse 类型（无 dataSync 的 6 小时配额限制），
+        // 避免 ForegroundServiceDidNotStopInTimeException 崩溃。
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 startForeground(
                     NOTIFICATION_ID,
                     notification,
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
                 )
             } else {
                 startForeground(NOTIFICATION_ID, notification)
@@ -134,7 +138,7 @@ class KeepAliveService : Service() {
         } catch (e: Exception) {
             Log.e(
                 TAG,
-                "startForeground 失败（可能是 dataSync 前台服务时长配额耗尽），停止保活服务避免崩溃",
+                "startForeground 失败，停止保活服务避免崩溃",
                 e
             )
             stopSelf()
