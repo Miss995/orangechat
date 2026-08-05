@@ -44,7 +44,7 @@ import kotlin.math.abs
  *   1. 公共目录 /sdcard/OrangePet/pet.gif（需要「所有文件访问」权限）
  *   2. App 私有外部目录 getExternalFilesDir(null)/OrangePet/pet.gif（无需权限）
  * - 服务启动时会自动创建两个 OrangePet 文件夹。
- * - 拖动桌宠移动位置，松手自动贴边。
+ * - 拖动桌宠移动位置，松手自动贴边；坐标有边界钳制，不会拖进状态栏/拖出屏幕卡住。
  * - 常驻前台服务（通知常驻），关闭开关后通过 ACTION_STOP 停止。
  */
 class FloatingPetService : Service() {
@@ -166,6 +166,7 @@ class FloatingPetService : Service() {
             contentDescription = "悬浮桌宠"
         }
 
+        // 不启用 FLAG_LAYOUT_NO_LIMITS：避免窗口越界钻到状态栏后面卡住
         val params = WindowManager.LayoutParams(
             sizePx,
             sizePx,
@@ -174,7 +175,6 @@ class FloatingPetService : Service() {
             else
                 @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -237,7 +237,7 @@ class FloatingPetService : Service() {
         }
     }
 
-    /** 拖动 + 贴边（复用悬浮球的交互套路） */
+    /** 拖动 + 贴边。坐标做边界钳制：够不到状态栏、不出屏幕，永远不会拖丢 */
     private fun setupTouchListener(
         view: View,
         params: WindowManager.LayoutParams,
@@ -264,8 +264,8 @@ class FloatingPetService : Service() {
                     if (abs(dx) > CLICK_THRESHOLD_PX || abs(dy) > CLICK_THRESHOLD_PX) {
                         isDragging = true
                     }
-                    params.x = initialX + dx.toInt()
-                    params.y = initialY + dy.toInt()
+                    params.x = (initialX + dx.toInt()).coerceIn(0, screenWidth() - view.width)
+                    params.y = (initialY + dy.toInt()).coerceIn(statusBarHeight() + dp(2), screenHeight() - view.height - dp(4))
                     runCatching { windowManager.updateViewLayout(view, params) }
                     true
                 }
@@ -296,6 +296,16 @@ class FloatingPetService : Service() {
             }
         }
         animator.start()
+    }
+
+    /** 状态栏高度（防止桌宠被拖进状态栏卡住） */
+    private fun statusBarHeight(): Int {
+        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+        return if (resourceId > 0) {
+            resources.getDimensionPixelSize(resourceId)
+        } else {
+            dp(24)
+        }
     }
 
     private fun removePetInternal() {
