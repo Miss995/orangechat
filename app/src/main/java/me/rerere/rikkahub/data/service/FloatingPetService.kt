@@ -201,8 +201,28 @@ class FloatingPetService : Service() {
         }
     }
 
-    /** 用 Coil 加载本地透明 GIF（coil.gif 已内置，自动循环播放）。execute 是挂起函数，必须在协程里调 */
+    /**
+     * 加载透明 GIF。
+     * 优先用 Android 原生 ImageDecoder（API 28+）：解码 GIF 为 AnimatedImageDrawable，自动无限循环播放。
+     * 失败或低版本再退回 Coil。
+     */
     private fun loadGif(imageView: ImageView, file: File) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            runCatching {
+                val source = android.graphics.ImageDecoder.createSource(file)
+                val drawable = android.graphics.ImageDecoder.decodeDrawable(source)
+                if (drawable is android.graphics.drawable.AnimatedImageDrawable) {
+                    drawable.repeatCount = android.graphics.drawable.AnimatedImageDrawable.INFINITE
+                    drawable.start()
+                }
+                imageView.setImageDrawable(drawable)
+                Log.i(TAG, "pet gif loaded via ImageDecoder")
+                return
+            }.onFailure {
+                Log.w(TAG, "ImageDecoder failed, fallback to Coil", it)
+            }
+        }
+        // Coil 兜底（挂起函数放协程）
         scope.launch {
             runCatching {
                 val loader = SingletonImageLoader.get(this@FloatingPetService)
@@ -212,7 +232,7 @@ class FloatingPetService : Service() {
                     .build()
                 loader.execute(request)
             }.onFailure {
-                Log.w(TAG, "Failed to load pet gif", it)
+                Log.w(TAG, "Failed to load pet gif via Coil", it)
             }
         }
     }
