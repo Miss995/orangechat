@@ -8,11 +8,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Version marker
-        run: echo "== ORANGE-SURGERY-v5 =="
+        run: echo "== ORANGE-SURGERY-v6 =="
 
       - uses: actions/checkout@v4
         with:
-          # 强制从 main 分支构建（否则 Run workflow 时选到 master 会构建旧代码）
+          # 强制从 main 分支构建（否则 Run workflow 时选到旧分支会构建旧代码）
           ref: main
 
       - name: Init material-color-utilities submodule
@@ -81,7 +81,16 @@ jobs:
           }
           EOF
 
-      - name: Generate debug keystore
+      # 固定签名：复用缓存的 debug.keystore（保证每次构建签名一致 → 可覆盖安装，不用卸载旧版）
+      - name: Restore debug keystore
+        id: keystore-cache
+        uses: actions/cache@v4
+        with:
+          path: app/debug.keystore
+          key: orange-debug-keystore-v1
+
+      - name: Generate debug keystore if missing
+        if: steps.keystore-cache.outputs.cache-hit != 'true'
         run: |
           keytool -genkeypair -v \
             -keystore app/debug.keystore \
