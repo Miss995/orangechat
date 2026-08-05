@@ -103,6 +103,13 @@ jobs:
             -keypass android \
             -dname "CN=Android Debug,O=Android,C=US"
 
+      # 版本号用秒级时间戳递增：保证每版 versionCode 都比上一版高 → 覆盖安装畅通
+      - name: Bump versionCode to timestamp
+        run: |
+          VER=$(date +%s)
+          sed -i "s/versionCode = [0-9]*/versionCode = $VER/" app/build.gradle.kts
+          echo "bumped versionCode to $VER"
+
       - name: Build Debug APK
         run: |
           chmod +x gradlew
