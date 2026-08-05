@@ -64,6 +64,7 @@ import kotlin.random.Random
  *   walk.gif   走路动画（可选，循环，窗口会真的左右走两步再回来）
  *   words.txt  自定义台词（可选，每行一句，点击时随机说，和内置台词混合）
  * - 睡觉状态机：躺着动画 → 睡觉循环 → 起来动画 → 回待机。
+ * - 特殊动画间隔较长（45~90s），且只有睡觉动画时会降低概率，避免整天打瞌睡。
  * - 深夜 23:00~7:00 桌宠会强制睡觉（戳不醒），早上自动起床。
  * - 10 秒内连点 5 次会"炸毛"（冒红色气泡生气）。
  * - 拖动移动位置（边界钳制，不会卡进状态栏），松手贴边。
@@ -92,8 +93,8 @@ class FloatingPetService : Service() {
         private const val BUBBLE_ALIVE_MS = 2600L
         private const val ACTION_MIN_DELAY_MS = 4000L
         private const val ACTION_MAX_DELAY_MS = 9000L
-        private const val SPECIAL_MIN_DELAY_MS = 15000L
-        private const val SPECIAL_MAX_DELAY_MS = 30000L
+        private const val SPECIAL_MIN_DELAY_MS = 45000L
+        private const val SPECIAL_MAX_DELAY_MS = 90000L
         private const val SLEEP_DURATION_MS = 6000L
         private const val CLICK_THRESHOLD_PX = 16f
 
@@ -196,7 +197,7 @@ class FloatingPetService : Service() {
         showPet()
         checkNightSleep()
         handler.postDelayed(randomActionRunnable, ACTION_MIN_DELAY_MS)
-        handler.postDelayed(specialActionRunnable, 20000L)
+        handler.postDelayed(specialActionRunnable, SPECIAL_MIN_DELAY_MS)
         handler.postDelayed(nightCheckRunnable, NIGHT_CHECK_INTERVAL_MS)
 
         // 桌宠常驻：进程被系统回收后尝试重建
@@ -553,19 +554,28 @@ class FloatingPetService : Service() {
         }
     }
 
-    /** 特殊动画：有对应 GIF 就随机触发 睡觉 / 走路（强制睡觉时不触发） */
+    /**
+     * 特殊动画：有对应 GIF 就随机触发 睡觉 / 走路（强制睡觉时不触发）。
+     * 只有睡觉动画时降低概率（60% 睡 / 40% 跳过），避免小猫整天打瞌睡。
+     */
     private fun playSpecialAction() {
         if (forcedSleep) return
         val sleepFile = findGif(SLEEP_FILE_NAME)
         val walkFile = findGif(WALK_FILE_NAME)
-        val actions = mutableListOf<Pair<String, File>>()
-        sleepFile?.let { actions.add(SLEEP_FILE_NAME to it) }
-        walkFile?.let { actions.add(WALK_FILE_NAME to it) }
-        if (actions.isEmpty()) return
-        val (type, file) = actions.random()
-        when (type) {
-            SLEEP_FILE_NAME -> playSleep(forced = false)
-            WALK_FILE_NAME -> playWalk(file)
+        when {
+            sleepFile != null && walkFile != null -> {
+                // 两个都有：50/50
+                if (Random.nextBoolean()) playSleep(forced = false) else playWalk(walkFile)
+            }
+            sleepFile != null -> {
+                // 只有睡觉：60% 睡，40% 跳过
+                if (Random.nextInt(10) < 6) {
+                    playSleep(forced = false)
+                }
+            }
+            walkFile != null -> {
+                playWalk(walkFile)
+            }
         }
     }
 
