@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -7,8 +7,14 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -35,7 +41,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,6 +85,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.isNotConfigured
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.service.FloatingPetService
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.Select
@@ -278,6 +287,42 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { Icon(HugeIcons.WavingHand01, null) },
                         supportingContent = { Text("AI 在设定间隔内主动发消息，有记忆有上下文") },
                         headlineContent = { Text("主动消息") },
+                    )
+                    // 🐱 悬浮桌宠开关（透明 GIF 桌面宠物）
+                    item(
+                        leadingContent = { Icon(HugeIcons.InLove, null) },
+                        supportingContent = { Text("用透明 GIF 做桌面悬浮宠物，素材放 OrangePet 文件夹（自动创建）") },
+                        headlineContent = { Text("🐱 悬浮桌宠") },
+                        trailingContent = {
+                            val context = LocalContext.current
+                            val prefs = remember { context.getSharedPreferences("floating_pet", Context.MODE_PRIVATE) }
+                            var petOn by remember { mutableStateOf(prefs.getBoolean("enabled", false)) }
+                            val overlayPermissionLauncher = rememberLauncherForActivityResult(
+                                contract = ActivityResultContracts.StartActivityForResult()
+                            ) { }
+                            Switch(
+                                checked = petOn,
+                                onCheckedChange = { enabled ->
+                                    if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                                        !Settings.canDrawOverlays(context)
+                                    ) {
+                                        val intent = Intent(
+                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            Uri.parse("package:${context.packageName}")
+                                        )
+                                        overlayPermissionLauncher.launch(intent)
+                                        return@Switch
+                                    }
+                                    prefs.edit().putBoolean("enabled", enabled).apply()
+                                    petOn = enabled
+                                    if (enabled) {
+                                        FloatingPetService.start(context)
+                                    } else {
+                                        FloatingPetService.stop(context)
+                                    }
+                                }
+                            )
+                        }
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingWeixinBot) },
