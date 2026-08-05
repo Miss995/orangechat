@@ -27,6 +27,11 @@ import androidx.core.content.ContextCompat
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import coil3.target.ImageViewTarget
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import java.io.File
@@ -71,6 +76,7 @@ class FloatingPetService : Service() {
     private lateinit var windowManager: WindowManager
     private var petView: View? = null
     private var layoutParams: WindowManager.LayoutParams? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onCreate() {
         super.onCreate()
@@ -104,6 +110,7 @@ class FloatingPetService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        scope.cancel()
         removePetInternal()
     }
 
@@ -194,17 +201,19 @@ class FloatingPetService : Service() {
         }
     }
 
-    /** 用 Coil 加载本地透明 GIF（coil.gif 已内置，自动循环播放） */
+    /** 用 Coil 加载本地透明 GIF（coil.gif 已内置，自动循环播放）。execute 是挂起函数，必须在协程里调 */
     private fun loadGif(imageView: ImageView, file: File) {
-        runCatching {
-            val loader = SingletonImageLoader.get(this)
-            val request = ImageRequest.Builder(this)
-                .data(file)
-                .target(ImageViewTarget(imageView))
-                .build()
-            loader.execute(request)
-        }.onFailure {
-            Log.w(TAG, "Failed to load pet gif", it)
+        scope.launch {
+            runCatching {
+                val loader = SingletonImageLoader.get(this@FloatingPetService)
+                val request = ImageRequest.Builder(this@FloatingPetService)
+                    .data(file)
+                    .target(ImageViewTarget(imageView))
+                    .build()
+                loader.execute(request)
+            }.onFailure {
+                Log.w(TAG, "Failed to load pet gif", it)
+            }
         }
     }
 
