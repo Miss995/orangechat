@@ -297,7 +297,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     ) { }
                     item(
                         leadingContent = { Icon(HugeIcons.InLove, null) },
-                        supportingContent = { Text("用透明 GIF 做桌面悬浮宠物，素材放 OrangePet 文件夹（自动创建）") },
+                        supportingContent = { Text("透明 GIF 悬浮宠物：pet.gif 待机、sleep.gif 睡觉、walk.gif 走路，放 OrangePet 文件夹（自动创建）") },
                         headlineContent = { Text("🐱 悬浮桌宠") },
                         trailingContent = {
                             Switch(
@@ -325,13 +325,19 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     if (petOn) {
+                        val savedSize = petPrefs.getInt("size", 160)
+                        val sizeOption = when {
+                            savedSize <= 120 -> 130
+                            savedSize <= 150 -> 160
+                            else -> 200
+                        }
                         item(
                             headlineContent = { Text("桌宠大小") },
                             supportingContent = { Text("小 / 标准 / 大，改完自动重启桌宠生效") },
                             trailingContent = {
                                 Select(
-                                    options = listOf(100, 140, 180),
-                                    selectedOption = petPrefs.getInt("size", 140),
+                                    options = listOf(130, 160, 200),
+                                    selectedOption = sizeOption,
                                     onOptionSelected = { size ->
                                         petPrefs.edit().putInt("size", size).apply()
                                         if (petOn) {
@@ -340,9 +346,9 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                                         }
                                     },
                                     optionToString = { when (it) {
-                                        100 -> "小"
-                                        140 -> "标准"
-                                        180 -> "大"
+                                        130 -> "小"
+                                        160 -> "标准"
+                                        200 -> "大"
                                         else -> "${it}dp"
                                     } }
                                 )
