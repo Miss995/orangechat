@@ -43,6 +43,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import java.io.File
+import java.util.Calendar
 import kotlin.math.abs
 import kotlin.random.Random
 
@@ -56,10 +57,10 @@ import kotlin.random.Random
  *   pet.gif   待机动画（必须）
  *   sleep.gif 睡觉动画（可选，随机触发，睡一会自己醒）
  *   walk.gif  走路动画（可选，随机触发，窗口会真的左右走两步再回来）
- * - 服务启动时会自动创建两个 OrangePet 文件夹。
+ *   words.txt 自定义台词（可选，每行一句，点击时随机说，和内置台词混合）
+ * - 深夜 23:00~7:00 桌宠会强制睡觉（切 sleep.gif，点它也不醒），早上自动起床。
+ * - 10 秒内连点 5 次会"炸毛"（冒红色气泡生气）。
  * - 拖动移动位置（边界钳制，不会卡进状态栏），松手贴边。
- * - 点击桌宠 → 头顶冒气泡说话。
- * - 没事会随机做小动作（跳一跳 / 晃一晃 / 呼吸缩放）和特殊动画（睡觉 / 走路）。
  * - 大小可从设置页调节（SharedPreferences key=size，档位 130/160/200dp，自动迁移旧值）。
  * - 常驻前台服务（通知常驻），关闭开关后通过 ACTION_STOP 停止。
  */
@@ -74,6 +75,7 @@ class FloatingPetService : Service() {
         const val PET_FILE_NAME = "pet.gif"
         const val SLEEP_FILE_NAME = "sleep.gif"
         const val WALK_FILE_NAME = "walk.gif"
+        const val WORDS_FILE_NAME = "words.txt"
         const val PREFS_NAME = "floating_pet"
         const val PREF_SIZE = "size"
         const val PREF_ENABLED = "enabled"
@@ -87,10 +89,23 @@ class FloatingPetService : Service() {
         private const val SLEEP_DURATION_MS = 6000L
         private const val CLICK_THRESHOLD_PX = 16f
 
+        // 连点炸毛
+        private const val ANGRY_THRESHOLD = 5
+        private const val ANGRY_RESET_MS = 10_000L
+
+        // 深夜强制睡觉
+        private const val NIGHT_START_HOUR = 23
+        private const val NIGHT_END_HOUR = 7
+        private const val NIGHT_CHECK_INTERVAL_MS = 60_000L
+
         private val catchphrases = listOf(
             "喵~", "宝！", "想你了", "嘿嘿", "嗨！", "干嘛鸭",
             "咕噜咕噜", "在看宝", "喵呜~", "好困……", "今天也要开心哦",
             "窗外天气好好", "宝理理我嘛", "呼噜呼噜", "咦？", "喵喵！"
+        )
+
+        private val angryPhrases = listOf(
+            "再点我挠你了！", "住手！", "呜——生气了！", "毛都炸了！", "哼！"
         )
 
         fun start(context: Context) {
@@ -112,6 +127,9 @@ class FloatingPetService : Service() {
     private var bubbleView: View? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
     private var walkAnimator: ValueAnimator? = null
+    private var forcedSleep = false
+    private var tapCount = 0
+    private var lastTapTime = 0L
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -134,6 +152,13 @@ class FloatingPetService : Service() {
                 playSpecialAction()
             }
             handler.postDelayed(this, Random.nextLong(SPECIAL_MIN_DELAY_MS, SPECIAL_MAX_DELAY_MS + 1))
+        }
+    }
+
+    private val nightCheckRunnable = object : Runnable {
+        override fun run() {
+            checkNightSleep()
+            handler.postDelayed(this, NIGHT_CHECK_INTERVAL_MS)
         }
     }
 
@@ -161,8 +186,10 @@ class FloatingPetService : Service() {
         removePetInternal()
         removeBubbleInternal()
         showPet()
+        checkNightSleep()
         handler.postDelayed(randomActionRunnable, ACTION_MIN_DELAY_MS)
         handler.postDelayed(specialActionRunnable, 20000L)
+        handler.postDelayed(nightCheckRunnable, NIGHT_CHECK_INTERVAL_MS)
 
         // 桌宠常驻：进程被系统回收后尝试重建
         return START_STICKY
@@ -174,6 +201,7 @@ class FloatingPetService : Service() {
         super.onDestroy()
         handler.removeCallbacks(randomActionRunnable)
         handler.removeCallbacks(specialActionRunnable)
+        handler.removeCallbacks(nightCheckRunnable)
         handler.removeCallbacks(removeBubbleRunnable)
         walkAnimator?.cancel()
         walkAnimator = null
@@ -222,7 +250,7 @@ class FloatingPetService : Service() {
         }
     }
 
-    /** 按优先级在 OrangePet 目录下查找指定名字的素材文件 */
+    /** 按优先级在 OrangePet 目录下查找指定名字的素材文件（gif 或 txt 都可以） */
     private fun findGif(name: String): File? {
         val publicFile = File(File(Environment.getExternalStorageDirectory(), PET_DIR_NAME), name)
         if (publicFile.exists()) return publicFile
@@ -232,6 +260,14 @@ class FloatingPetService : Service() {
     }
 
     private fun findPetFile(): File? = findGif(PET_FILE_NAME)
+
+    /** 读取 words.txt 自定义台词（每行一句） */
+    private fun customCatchphrases(): List<String>? {
+        val file = findGif(WORDS_FILE_NAME) ?: return null
+        return runCatching {
+            file.readLines().map { it.trim() }.filter { it.isNotEmpty() }
+        }.getOrNull()?.takeIf { it.isNotEmpty() }
+    }
 
     private fun showPet() {
         val petFile = findPetFile()
@@ -345,8 +381,8 @@ class FloatingPetService : Service() {
                     view.scaleX = 1f
                     view.scaleY = 1f
                     view.translationY = 0f
-                    // 如果在睡觉/走路中被打断，恢复待机动画
-                    if (view is ImageView) {
+                    // 如果在睡觉/走路中被打断，恢复待机动画（强制睡觉除外，戳不醒）
+                    if (view is ImageView && !forcedSleep) {
                         val petFile = findPetFile()
                         if (petFile != null) {
                             loadGif(view, petFile)
@@ -382,22 +418,29 @@ class FloatingPetService : Service() {
         }
     }
 
-    /** 桌宠头顶冒气泡说话（自动消失） */
+    /** 桌宠头顶冒气泡说话（自动消失）。支持自定义台词 + 连点炸毛 */
     private fun showBubble() {
         val petParams = layoutParams ?: return
         val petSize = petParams.width
 
         removeBubbleInternal()
 
+        // 连点炸毛判定：10 秒内连点 5 次冒红色气泡
+        val now = System.currentTimeMillis()
+        tapCount = if (now - lastTapTime > ANGRY_RESET_MS) 1 else tapCount + 1
+        lastTapTime = now
+        val angry = tapCount >= ANGRY_THRESHOLD
+        if (angry) tapCount = 0
+
         val bubble = FrameLayout(this)
         val text = TextView(this).apply {
-            text = catchphrases.random()
+            text = if (angry) angryPhrases.random() else bubbleText()
             textSize = 14f
             setTextColor(Color.WHITE)
             setPadding(dp(12), dp(8), dp(12), dp(8))
             background = GradientDrawable().apply {
                 cornerRadius = dp(12).toFloat()
-                setColor(Color.parseColor("#CC333333"))
+                setColor(if (angry) Color.parseColor("#CCB00020") else Color.parseColor("#CC333333"))
             }
         }
         bubble.addView(text, FrameLayout.LayoutParams(
@@ -443,6 +486,16 @@ class FloatingPetService : Service() {
         handler.postDelayed(removeBubbleRunnable, BUBBLE_ALIVE_MS)
     }
 
+    /** 台词：自定义 words.txt 有就混合着用，没有就用内置 */
+    private fun bubbleText(): String {
+        val custom = customCatchphrases()
+        return if (custom != null) {
+            (custom + catchphrases).random()
+        } else {
+            catchphrases.random()
+        }
+    }
+
     /** 随机小动作：跳一跳 / 左右晃 / 呼吸缩放 */
     private fun playRandomAction() {
         val v = petView ?: return
@@ -467,8 +520,9 @@ class FloatingPetService : Service() {
         }
     }
 
-    /** 特殊动画：有对应 GIF 就随机触发 睡觉 / 走路 */
+    /** 特殊动画：有对应 GIF 就随机触发 睡觉 / 走路（强制睡觉时不触发） */
     private fun playSpecialAction() {
+        if (forcedSleep) return
         val sleepFile = findGif(SLEEP_FILE_NAME)
         val walkFile = findGif(WALK_FILE_NAME)
         val actions = mutableListOf<Pair<String, File>>()
@@ -482,18 +536,20 @@ class FloatingPetService : Service() {
         }
     }
 
-    /** 睡觉：切 sleep.gif，睡 6 秒自动醒回待机 */
-    private fun playSleep(sleepFile: File) {
+    /** 睡觉：切 sleep.gif，睡一会自动醒回待机；forced=true 时不自动醒（等 checkNightSleep 叫醒） */
+    private fun playSleep(sleepFile: File, forced: Boolean = false) {
         val v = petView ?: return
         if (v !is ImageView) return
         walkAnimator?.cancel()
         walkAnimator = null
         loadGif(v, sleepFile)
-        handler.postDelayed({
-            val pv = petView as? ImageView ?: return@postDelayed
-            val petFile = findPetFile() ?: return@postDelayed
-            loadGif(pv, petFile)
-        }, SLEEP_DURATION_MS)
+        if (!forced) {
+            handler.postDelayed({
+                val pv = petView as? ImageView ?: return@postDelayed
+                val petFile = findPetFile() ?: return@postDelayed
+                loadGif(pv, petFile)
+            }, SLEEP_DURATION_MS)
+        }
     }
 
     /** 走路：切 walk.gif，窗口左右走两步再回原位，然后切回待机 */
@@ -526,6 +582,26 @@ class FloatingPetService : Service() {
                 }
             })
             start()
+        }
+    }
+
+    /** 深夜 23:00~7:00 强制睡觉，早上自动醒 */
+    private fun checkNightSleep() {
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val isNight = hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR
+        val sleepFile = findGif(SLEEP_FILE_NAME)
+        if (isNight && sleepFile != null) {
+            if (!forcedSleep) {
+                forcedSleep = true
+                playSleep(sleepFile, forced = true)
+            }
+        } else {
+            if (forcedSleep) {
+                forcedSleep = false
+                val pv = petView as? ImageView ?: return
+                val petFile = findPetFile() ?: return
+                loadGif(pv, petFile)
+            }
         }
     }
 
