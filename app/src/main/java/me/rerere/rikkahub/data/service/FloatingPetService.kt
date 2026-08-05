@@ -14,6 +14,9 @@ import android.content.Intent
 import android.content.res.Resources
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.Animatable2
+import android.graphics.drawable.AnimatedImageDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Environment
@@ -54,11 +57,14 @@ import kotlin.random.Random
  *   1. 公共目录 /sdcard/OrangePet/xxx.gif（需要「所有文件访问」权限）
  *   2. App 私有外部目录 getExternalFilesDir(null)/OrangePet/xxx.gif（无需权限）
  * - 素材文件：
- *   pet.gif   待机动画（必须）
- *   sleep.gif 睡觉动画（可选，随机触发，睡一会自己醒）
- *   walk.gif  走路动画（可选，随机触发，窗口会真的左右走两步再回来）
- *   words.txt 自定义台词（可选，每行一句，点击时随机说，和内置台词混合）
- * - 深夜 23:00~7:00 桌宠会强制睡觉（切 sleep.gif，点它也不醒），早上自动起床。
+ *   pet.gif    待机动画（必须）
+ *   laydown.gif 躺下动画（可选，一次性，播完进睡眠）
+ *   sleep.gif  睡觉动画（可选，循环；随机触发睡一会，或深夜强制睡到早上）
+ *   wakeup.gif 起来动画（可选，一次性，睡醒时播）
+ *   walk.gif   走路动画（可选，循环，窗口会真的左右走两步再回来）
+ *   words.txt  自定义台词（可选，每行一句，点击时随机说，和内置台词混合）
+ * - 睡觉状态机：躺着动画 → 睡觉循环 → 起来动画 → 回待机。
+ * - 深夜 23:00~7:00 桌宠会强制睡觉（戳不醒），早上自动起床。
  * - 10 秒内连点 5 次会"炸毛"（冒红色气泡生气）。
  * - 拖动移动位置（边界钳制，不会卡进状态栏），松手贴边。
  * - 大小可从设置页调节（SharedPreferences key=size，档位 130/160/200dp，自动迁移旧值）。
@@ -73,7 +79,9 @@ class FloatingPetService : Service() {
         const val ACTION_STOP = "me.rerere.rikkahub.STOP_PET"
         const val PET_DIR_NAME = "OrangePet"
         const val PET_FILE_NAME = "pet.gif"
+        const val LAYDOWN_FILE_NAME = "laydown.gif"
         const val SLEEP_FILE_NAME = "sleep.gif"
+        const val WAKEUP_FILE_NAME = "wakeup.gif"
         const val WALK_FILE_NAME = "walk.gif"
         const val WORDS_FILE_NAME = "words.txt"
         const val PREFS_NAME = "floating_pet"
@@ -318,18 +326,14 @@ class FloatingPetService : Service() {
         }
     }
 
-    /**
-     * 加载透明 GIF。
-     * 优先用 Android 原生 ImageDecoder（API 28+）：解码 GIF 为 AnimatedImageDrawable，自动无限循环播放。
-     * 失败或低版本再退回 Coil。
-     */
+    /** 加载 GIF（无限循环）。优先 Android 原生 ImageDecoder，失败或低版本退回 Coil */
     private fun loadGif(imageView: ImageView, file: File) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             runCatching {
                 val source = android.graphics.ImageDecoder.createSource(file)
                 val drawable = android.graphics.ImageDecoder.decodeDrawable(source)
-                if (drawable is android.graphics.drawable.AnimatedImageDrawable) {
-                    drawable.repeatCount = android.graphics.drawable.AnimatedImageDrawable.REPEAT_INFINITE
+                if (drawable is AnimatedImageDrawable) {
+                    drawable.repeatCount = AnimatedImageDrawable.REPEAT_INFINITE
                     drawable.start()
                 }
                 imageView.setImageDrawable(drawable)
@@ -351,6 +355,35 @@ class FloatingPetService : Service() {
             }.onFailure {
                 Log.w(TAG, "Failed to load pet gif via Coil", it)
             }
+        }
+    }
+
+    /** 播放一次性 GIF（播一遍自动停），播完回调 onEnd。静态图直接回调 */
+    private fun playOnce(imageView: ImageView, file: File, onEnd: () -> Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            runCatching {
+                val source = android.graphics.ImageDecoder.createSource(file)
+                val drawable = android.graphics.ImageDecoder.decodeDrawable(source)
+                if (drawable is AnimatedImageDrawable) {
+                    drawable.repeatCount = 0
+                    drawable.registerAnimationCallback(object : Animatable2.AnimationCallback() {
+                        override fun onAnimationEnd(drawable: Drawable?) {
+                            imageView.post { onEnd() }
+                        }
+                    })
+                    imageView.setImageDrawable(drawable)
+                    drawable.start()
+                    return
+                }
+                // 静态图（无动画）：直接回调
+                imageView.setImageDrawable(drawable)
+                onEnd()
+                return
+            }.onFailure {
+                onEnd()
+            }
+        } else {
+            onEnd()
         }
     }
 
@@ -531,25 +564,63 @@ class FloatingPetService : Service() {
         if (actions.isEmpty()) return
         val (type, file) = actions.random()
         when (type) {
-            SLEEP_FILE_NAME -> playSleep(file)
+            SLEEP_FILE_NAME -> playSleep(forced = false)
             WALK_FILE_NAME -> playWalk(file)
         }
     }
 
-    /** 睡觉：切 sleep.gif，睡一会自动醒回待机；forced=true 时不自动醒（等 checkNightSleep 叫醒） */
-    private fun playSleep(sleepFile: File, forced: Boolean = false) {
+    /**
+     * 睡觉状态机：躺下动画(laydown.gif) → 睡觉循环(sleep.gif) → 起来动画(wakeup.gif) → 回待机。
+     * forced=true 为深夜强制睡觉：只躺下+睡，不自己醒（等 checkNightSleep 早上叫醒）。
+     */
+    private fun playSleep(forced: Boolean = false) {
         val v = petView ?: return
         if (v !is ImageView) return
+        val sleepFile = findGif(SLEEP_FILE_NAME) ?: return
+        val laydownFile = findGif(LAYDOWN_FILE_NAME)
+        val wakeupFile = findGif(WAKEUP_FILE_NAME)
+
         walkAnimator?.cancel()
         walkAnimator = null
-        loadGif(v, sleepFile)
-        if (!forced) {
-            handler.postDelayed({
-                val pv = petView as? ImageView ?: return@postDelayed
-                val petFile = findPetFile() ?: return@postDelayed
-                loadGif(pv, petFile)
-            }, SLEEP_DURATION_MS)
+
+        // 进入睡眠循环
+        val goSleep = {
+            loadGif(v, sleepFile)
+            if (!forced) {
+                handler.postDelayed({
+                    wakeUp()
+                }, SLEEP_DURATION_MS)
+            }
         }
+
+        // 有躺下动画就播一遍再睡，没有就直接睡
+        if (laydownFile != null) {
+            playOnce(v, laydownFile) { goSleep() }
+        } else {
+            goSleep()
+        }
+    }
+
+    /** 睡醒：播起来动画（有的话）再回待机 */
+    private fun wakeUp() {
+        val v = petView ?: return
+        if (v !is ImageView) return
+        val wakeupFile = findGif(WAKEUP_FILE_NAME)
+        if (wakeupFile != null) {
+            playOnce(v, wakeupFile) {
+                backToPet()
+            }
+        } else {
+            backToPet()
+        }
+    }
+
+    /** 切回待机动画（强制睡觉期间不切换） */
+    private fun backToPet() {
+        if (forcedSleep) return
+        val v = petView as? ImageView ?: return
+        val petFile = findPetFile() ?: return
+        loadGif(v, petFile)
     }
 
     /** 走路：切 walk.gif，窗口左右走两步再回原位，然后切回待机 */
@@ -576,9 +647,7 @@ class FloatingPetService : Service() {
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: android.animation.Animator) {
                     walkAnimator = null
-                    val pv = petView as? ImageView ?: return
-                    val petFile = findPetFile() ?: return
-                    loadGif(pv, petFile)
+                    backToPet()
                 }
             })
             start()
@@ -593,14 +662,12 @@ class FloatingPetService : Service() {
         if (isNight && sleepFile != null) {
             if (!forcedSleep) {
                 forcedSleep = true
-                playSleep(sleepFile, forced = true)
+                playSleep(forced = true)
             }
         } else {
             if (forcedSleep) {
                 forcedSleep = false
-                val pv = petView as? ImageView ?: return
-                val petFile = findPetFile() ?: return
-                loadGif(pv, petFile)
+                wakeUp()
             }
         }
     }
