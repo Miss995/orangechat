@@ -6,6 +6,7 @@
 
 package me.rerere.rikkahub.data.service
 
+import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.app.Service
 import android.content.Context
@@ -516,12 +517,14 @@ class FloatingPetService : Service() {
                 params.x = it.animatedValue as Int
                 runCatching { windowManager.updateViewLayout(v, params) }
             }
-            doOnEnd {
-                walkAnimator = null
-                val pv = petView as? ImageView ?: return@doOnEnd
-                val petFile = findPetFile() ?: return@doOnEnd
-                loadGif(pv, petFile)
-            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    walkAnimator = null
+                    val pv = petView as? ImageView ?: return
+                    val petFile = findPetFile() ?: return
+                    loadGif(pv, petFile)
+                }
+            })
             start()
         }
     }
