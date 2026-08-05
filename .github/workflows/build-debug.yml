@@ -104,11 +104,13 @@ jobs:
             -dname "CN=Android Debug,O=Android,C=US"
 
       # 版本号用秒级时间戳递增：保证每版 versionCode 都比上一版高 → 覆盖安装畅通
+      # 铁桶 sed：只保留 "versionCode = <时间戳>"，把该行数字之后的内容全部清掉，避免粘字
       - name: Bump versionCode to timestamp
         run: |
           VER=$(date +%s)
-          sed -i "s/versionCode = [0-9]*/versionCode = $VER/" app/build.gradle.kts
+          sed -i "s/\(versionCode = \)[0-9][0-9]*.*/\1$VER/" app/build.gradle.kts
           echo "bumped versionCode to $VER"
+          grep -n "versionCode = " app/build.gradle.kts | head -5
 
       - name: Build Debug APK
         run: |
