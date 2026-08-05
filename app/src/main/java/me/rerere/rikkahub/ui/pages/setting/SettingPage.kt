@@ -288,42 +288,67 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text("AI 在设定间隔内主动发消息，有记忆有上下文") },
                         headlineContent = { Text("主动消息") },
                     )
-                    // 🐱 悬浮桌宠开关（透明 GIF 桌面宠物）
+                    // 🐱 悬浮桌宠开关 + 大小调节
+                    val petContext = LocalContext.current
+                    val petPrefs = remember { petContext.getSharedPreferences("floating_pet", Context.MODE_PRIVATE) }
+                    var petOn by remember { mutableStateOf(petPrefs.getBoolean("enabled", false)) }
+                    val overlayPermissionLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.StartActivityForResult()
+                    ) { }
                     item(
                         leadingContent = { Icon(HugeIcons.InLove, null) },
                         supportingContent = { Text("用透明 GIF 做桌面悬浮宠物，素材放 OrangePet 文件夹（自动创建）") },
                         headlineContent = { Text("🐱 悬浮桌宠") },
                         trailingContent = {
-                            val context = LocalContext.current
-                            val prefs = remember { context.getSharedPreferences("floating_pet", Context.MODE_PRIVATE) }
-                            var petOn by remember { mutableStateOf(prefs.getBoolean("enabled", false)) }
-                            val overlayPermissionLauncher = rememberLauncherForActivityResult(
-                                contract = ActivityResultContracts.StartActivityForResult()
-                            ) { }
                             Switch(
                                 checked = petOn,
                                 onCheckedChange = { enabled ->
                                     if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-                                        !Settings.canDrawOverlays(context)
+                                        !Settings.canDrawOverlays(petContext)
                                     ) {
                                         val intent = Intent(
                                             Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                            Uri.parse("package:${context.packageName}")
+                                            Uri.parse("package:${petContext.packageName}")
                                         )
                                         overlayPermissionLauncher.launch(intent)
                                         return@Switch
                                     }
-                                    prefs.edit().putBoolean("enabled", enabled).apply()
+                                    petPrefs.edit().putBoolean("enabled", enabled).apply()
                                     petOn = enabled
                                     if (enabled) {
-                                        FloatingPetService.start(context)
+                                        FloatingPetService.start(petContext)
                                     } else {
-                                        FloatingPetService.stop(context)
+                                        FloatingPetService.stop(petContext)
                                     }
                                 }
                             )
                         }
                     )
+                    if (petOn) {
+                        item(
+                            headlineContent = { Text("桌宠大小") },
+                            supportingContent = { Text("小 / 标准 / 大，改完自动重启桌宠生效") },
+                            trailingContent = {
+                                Select(
+                                    options = listOf(100, 140, 180),
+                                    selectedOption = petPrefs.getInt("size", 140),
+                                    onOptionSelected = { size ->
+                                        petPrefs.edit().putInt("size", size).apply()
+                                        if (petOn) {
+                                            FloatingPetService.stop(petContext)
+                                            FloatingPetService.start(petContext)
+                                        }
+                                    },
+                                    optionToString = { when (it) {
+                                        100 -> "小"
+                                        140 -> "标准"
+                                        180 -> "大"
+                                        else -> "${it}dp"
+                                    } }
+                                )
+                            }
+                        )
+                    }
                     item(
                         onClick = { navController.navigate(Screen.SettingWeixinBot) },
                         leadingContent = { Icon(HugeIcons.MessageMultiple01, null) },
