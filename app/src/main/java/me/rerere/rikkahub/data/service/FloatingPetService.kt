@@ -407,7 +407,7 @@ class FloatingPetService : Service() {
         val v = petView ?: return
         when (Random.nextInt(3)) {
             0 -> { // 小跳
-                v.animate().translationY(-dp(18)).setDuration(180).withEndAction {
+                v.animate().translationY((-dp(18)).toFloat()).setDuration(180).withEndAction {
                     v.animate().translationY(0f).setDuration(180).start()
                 }.start()
             }
