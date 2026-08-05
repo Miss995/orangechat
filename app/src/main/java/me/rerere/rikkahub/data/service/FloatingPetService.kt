@@ -212,7 +212,7 @@ class FloatingPetService : Service() {
                 val source = android.graphics.ImageDecoder.createSource(file)
                 val drawable = android.graphics.ImageDecoder.decodeDrawable(source)
                 if (drawable is android.graphics.drawable.AnimatedImageDrawable) {
-                    drawable.repeatCount = android.graphics.drawable.AnimatedImageDrawable.INFINITE
+                    drawable.repeatCount = android.graphics.drawable.AnimatedImageDrawable.REPEAT_INFINITE
                     drawable.start()
                 }
                 imageView.setImageDrawable(drawable)
