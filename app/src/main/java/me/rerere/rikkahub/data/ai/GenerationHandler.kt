@@ -611,7 +611,7 @@ class GenerationHandler(
             aiLoggingManager.addLog(
                 AILogging.Generation(
                     params = params,
-                    messages = messages,
+                    messages = internalMessages,
                     providerSetting = provider,
                     stream = true
                 )
@@ -637,7 +637,7 @@ class GenerationHandler(
             aiLoggingManager.addLog(
                 AILogging.Generation(
                     params = params,
-                    messages = messages,
+                    messages = internalMessages,
                     providerSetting = provider,
                     stream = false
                 )
