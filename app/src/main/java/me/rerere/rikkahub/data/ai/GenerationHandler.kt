@@ -93,7 +93,7 @@ class GenerationHandler(
     private val conversationRepo: ConversationRepository,
     private val aiLoggingManager: AILoggingManager,
     private val memoryBankService: MemoryBankService,
-    private var lastObBreathMs = 0L,
+    private var lastObBreathMs: Long = 0L,
 ) {
     fun generateText(
         settings: Settings,
