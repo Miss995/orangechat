@@ -26,6 +26,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
@@ -72,6 +73,10 @@ private const val TAG = "GenerationHandler"
 // animateContentSize 的尺寸补间动画被不断打断重启），表现为打字机效果的"抖动/掉帧"。
 // 这里把推送频率限制在这个间隔以内，肉眼完全感知不到延迟，但能大幅降低重组频率。
 private const val STREAM_UI_THROTTLE_MS = 50L
+
+// OB 自动记忆浮现（SessionStart breath-hook 等价物）：节流间隔与单次注入上限
+private const val OB_BREATH_INTERVAL_MS = 5 * 60 * 1000L
+private const val OB_BREATH_MAX_CHARS = 3000
  
 @Serializable
 sealed interface GenerationChunk {
@@ -88,6 +93,7 @@ class GenerationHandler(
     private val conversationRepo: ConversationRepository,
     private val aiLoggingManager: AILoggingManager,
     private val memoryBankService: MemoryBankService,
+    private var lastObBreathMs = 0L,
 ) {
     fun generateText(
         settings: Settings,
@@ -282,7 +288,7 @@ class GenerationHandler(
                             )
                         )
                     }
-
+ 
                     is ToolApprovalState.Answered -> {
                         // Tool was answered by user (e.g., ask_user tool)
                         val answer = (tool.approvalState as ToolApprovalState.Answered).answer
@@ -292,11 +298,11 @@ class GenerationHandler(
                             )
                         )
                     }
-
+ 
                     is ToolApprovalState.Pending -> {
                         // Should not reach here, but just in case
                     }
-
+ 
                     else -> {
                         // Auto or Approved - execute the tool
                         runCatching {
@@ -448,25 +454,17 @@ class GenerationHandler(
                                                 }
                                             } else {
                                                 // 回退：文本召回聊天记录
-                                                // 多入口同步：始终拉最近消息（完整上下文），关键词搜索补充
-                                                val recalledMessages = buildList {
-                                                    addAll(
-                                                        service.queryLatestMessages(
-                                                            assistantId = assistant.id.toString(),
-                                                            limit = config.recallCount,
-                                                        ).getOrDefault(emptyList())
-                                                    )
-                                                    if (queryText.isNotBlank()) {
-                                                        val existingContents = map { it.content }
-                                                        addAll(
-                                                            service.searchMessages(
-                                                                assistantId = assistant.id.toString(),
-                                                                keyword = queryText,
-                                                                limit = config.recallCount,
-                                                            ).getOrDefault(emptyList())
-                                                                .filter { it.content !in existingContents }
-                                                        )
-                                                    }
+                                                val recalledMessages = if (queryText.isNotBlank()) {
+                                                    service.searchMessages(
+                                                        assistantId = assistant.id.toString(),
+                                                        keyword = queryText,
+                                                        limit = config.recallCount,
+                                                    ).getOrDefault(emptyList())
+                                                } else {
+                                                    service.queryLatestMessages(
+                                                        assistantId = assistant.id.toString(),
+                                                        limit = config.recallCount,
+                                                    ).getOrDefault(emptyList())
                                                 }
                                                 recalledMessages.forEach { msg ->
                                                     val prefix = when (msg.role) {
@@ -500,6 +498,28 @@ class GenerationHandler(
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "External memory recall failed", e)
+                }
+
+                // OB 记忆自动浮现（等价于 SessionStart breath-hook）
+                try {
+                    val now = Clock.System.now().toEpochMilliseconds()
+                    if (now - lastObBreathMs > OB_BREATH_INTERVAL_MS) {
+                        val breathTool = tools.find { it.name.endsWith("_breath") }
+                        if (breathTool != null) {
+                            val result = breathTool.execute(json.parseToJsonElement("{}").jsonObject)
+                            val recalledText = result.filterIsInstance<UIMessagePart.Text>()
+                                .joinToString("\n") { it.text }
+                            if (recalledText.isNotBlank()) {
+                                appendLine()
+                                appendLine("## 记忆浮现")
+                                append(recalledText.take(OB_BREATH_MAX_CHARS))
+                                Log.i(TAG, "OB breath injected ${recalledText.length} chars")
+                            }
+                            lastObBreathMs = now
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "OB breath auto-recall failed", e)
                 }
  
                 if (assistant.enableRecentChatsReference) {
@@ -749,6 +769,7 @@ private fun buildCodeBlockPrompt(): String = buildString {
     appendLine("   - ✅ Correct: ```index.html instead of ```html")
     appendLine("   - ✅ Correct: ```styles.css instead of ```css")
     appendLine("   - ✅ Correct: ```package.json instead of ```json")
+    appendLine("   - ✅ Correct: ```manifest.xml instead of ```xml")
     appendLine("   - ✅ Correct: ```main.py instead of ```python")
     appendLine("   - ✅ Correct: ```App.vue instead of ```vue")
     appendLine("   - ❌ Wrong: ```kotlin, ```python, ```javascript (these don't provide filenames)")
