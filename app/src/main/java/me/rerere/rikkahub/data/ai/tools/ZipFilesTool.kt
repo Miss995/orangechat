@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -6,6 +6,7 @@
 
 package me.rerere.rikkahub.data.ai.tools
 
+import android.content.Context
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -17,38 +18,89 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 文件缓存：按 conversationId 隔离，存储最近一次 write_files 工具调用的文件内容
  * 用于后续的增量修改（edits）模式
- * 修复：之前是全局单例，不同对话之间会互相串文件
+ *
+ * 持久化：缓存同时落盘到 App files 目录（filesDir/writefiles_cache/{convId}.json），
+ * 进程被杀 / App 重启后仍可从磁盘恢复，避免"缓存丢失导致 edits 增量编辑失效"的问题。
+ *
+ * 修复：之前是全局内存单例，App 进程一重启缓存就全丢，不同对话之间还会互相串文件。
  */
 object WriteFilesCache {
     private val caches = ConcurrentHashMap<String, MutableMap<String, String>>()
+    private var baseDir: File? = null
+    private val lock = Any()
 
-    fun get(conversationId: String, name: String): String? =
-        caches[conversationId]?.get(name)
-
-    fun put(conversationId: String, name: String, content: String) {
-        caches.computeIfAbsent(conversationId) { ConcurrentHashMap() }[name] = content
+    /**
+     * 首次使用时用 Context 初始化磁盘缓存目录，并把历史缓存加载进内存。
+     * 由 buildWriteFilesTool 的 execute 在每次调用前确保调用。
+     */
+    fun ensureInit(context: Context) {
+        if (baseDir == null) {
+            synchronized(lock) {
+                if (baseDir == null) {
+                    val dir = File(context.filesDir, "writefiles_cache").apply { mkdirs() }
+                    dir.listFiles()?.forEach { f ->
+                        val convId = f.nameWithoutExtension
+                        runCatching {
+                            val data = kotlinx.serialization.json.Json.parseToJsonElement(f.readText()).jsonObject
+                            val map = ConcurrentHashMap<String, String>()
+                            data.forEach { (k, v) -> map[k] = v.jsonPrimitive.content }
+                            caches[convId] = map
+                        }
+                    }
+                    baseDir = dir
+                }
+            }
+        }
     }
 
-    fun getAll(conversationId: String): Map<String, String> =
-        caches[conversationId]?.toMap() ?: emptyMap()
+    private fun fileFor(convId: String): File? = baseDir?.let { File(it, "$convId.json") }
 
-    fun clear(conversationId: String) {
-        caches.remove(conversationId)
+    /** 把某个会话的缓存写回磁盘 */
+    private fun persist(convId: String) {
+        val map = caches[convId] ?: return
+        val f = fileFor(convId) ?: return
+        synchronized(lock) {
+            runCatching {
+                val obj = buildJsonObject {
+                    map.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
+                }
+                f.writeText(obj.toString())
+            }
+        }
+    }
+
+    fun get(convId: String, name: String): String? =
+        caches[convId]?.get(name)
+
+    fun put(convId: String, name: String, content: String) {
+        caches.computeIfAbsent(convId) { ConcurrentHashMap() }[name] = content
+        persist(convId)
+    }
+
+    fun getAll(convId: String): Map<String, String> =
+        caches[convId]?.toMap() ?: emptyMap()
+
+    fun clear(convId: String) {
+        caches.remove(convId)
+        fileFor(convId)?.delete()
     }
 
     fun clearAll() {
         caches.clear()
+        baseDir?.listFiles()?.forEach { it.delete() }
     }
 
-    fun updateAll(conversationId: String, files: Map<String, String>) {
-        val map = caches.computeIfAbsent(conversationId) { ConcurrentHashMap() }
+    fun updateAll(convId: String, files: Map<String, String>) {
+        val map = caches.computeIfAbsent(convId) { ConcurrentHashMap() }
         map.clear()
         map.putAll(files)
+        persist(convId)
     }
 }
 
@@ -59,9 +111,10 @@ object WriteFilesCache {
  * 1. 完整写入模式：传入 files 数组，每个文件包含完整内容
  * 2. 增量修改模式：传入 edits 数组，对已缓存文件进行 search/replace 修改
  *
+ * context: 用于把缓存持久化到 App files 目录（进程重启后缓存仍在）
  * conversationId: 用于隔离不同对话的文件缓存，防止串文件
  */
-fun buildWriteFilesTool(conversationId: String? = null): Tool = Tool(
+fun buildWriteFilesTool(context: Context, conversationId: String? = null): Tool = Tool(
     name = "write_files",
     description = """
         Package files into a ZIP archive for the user to download.
@@ -148,6 +201,9 @@ fun buildWriteFilesTool(conversationId: String? = null): Tool = Tool(
         )
     },
     execute = {
+        // 确保缓存已持久化初始化（磁盘恢复历史缓存）
+        WriteFilesCache.ensureInit(context)
+
         val params = it.jsonObject
         val zipName = params["zip_name"]?.jsonPrimitive?.contentOrNull
             ?: error("zip_name is required")
@@ -187,7 +243,6 @@ fun buildWriteFilesTool(conversationId: String? = null): Tool = Tool(
 
             // Apply edits - 如果任何一个 search 找不到，整个工具调用失败
             if (editsParam != null) {
-                val editResults = mutableListOf<Map<String, String>>()
                 editsParam.forEach { editElement ->
                     val obj = editElement.jsonObject
                     val name = obj["name"]?.jsonPrimitive?.contentOrNull
@@ -199,17 +254,11 @@ fun buildWriteFilesTool(conversationId: String? = null): Tool = Tool(
 
                     val currentContent = finalFiles[name]
                     if (currentContent == null) {
-                        // 明确报错：文件不存在
                         error("Edit failed: file '$name' not found in cached files. Available files: ${finalFiles.keys.joinToString(", ")}")
                     } else if (!currentContent.contains(search)) {
-                        // 明确报错：search 文本未找到
                         error("Edit failed: search text not found in file '$name'. Make sure your search text is an EXACT verbatim copy of the original. Search text was: ${search.take(100)}${if (search.length > 100) "..." else ""}")
                     } else {
                         finalFiles[name] = currentContent.replace(search, replace)
-                        editResults.add(mapOf(
-                            "name" to name,
-                            "status" to "applied"
-                        ))
                     }
                 }
             }
@@ -229,7 +278,7 @@ fun buildWriteFilesTool(conversationId: String? = null): Tool = Tool(
             error("No files to package. Provide 'files' array or use 'base_files':'previous' with 'edits'.")
         }
 
-        // Update cache with the final file contents (按 conversationId 隔离)
+        // Update cache with the final file contents (按 conversationId 隔离 + 持久化到磁盘)
         WriteFilesCache.updateAll(convId, finalFiles)
 
         listOf(
@@ -259,7 +308,3 @@ fun buildWriteFilesTool(conversationId: String? = null): Tool = Tool(
         )
     }
 )
-
-// Keep backward compatibility alias
-@Deprecated("Use buildWriteFilesTool with conversationId instead", ReplaceWith("buildWriteFilesTool(conversationId)"))
-fun buildWriteFilesTool(): Tool = buildWriteFilesTool(null)

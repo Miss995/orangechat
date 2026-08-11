@@ -140,8 +140,8 @@ class GenerationHandler(
                         }
                     ).let(this::addAll)
                 }
-                // 文件写入工具 - AI可直接将文件内容写入设备或打包ZIP
-                add(buildWriteFilesTool(conversationId))
+                // 文件写入工具 - AI可直接将文件内容写入设备或打包ZIP（缓存持久化到 App files 目录）
+                add(buildWriteFilesTool(context, conversationId))
                 addAll(tools)
             }
  
@@ -398,13 +398,23 @@ class GenerationHandler(
                     append(effectiveSystemPrompt)
                 }
  
-                // 记忆
+                // 代码文件命名和ZIP打包功能说明（稳定前缀，置于动态内容之前以提升前缀缓存命中率）
+                appendLine()
+                append(buildCodeBlockPrompt())
+ 
+                // 工具prompt（稳定前缀）
+                tools.forEach { tool ->
+                    appendLine()
+                    append(tool.systemPrompt(model, messages))
+                }
+ 
+                // 记忆（动态内容统一放到稳定前缀之后）
                 if (assistant.enableMemory) {
                     appendLine()
                     append(buildMemoryPrompt(memories = memories))
                 }
  
-                // 外置记忆库召回
+                // 外置记忆库召回（动态）
                 try {
                     val externalMemoryConfigs = settings.externalMemories.filter {
                         it.enabled && it.id in assistant.externalMemoryIds
@@ -424,7 +434,7 @@ class GenerationHandler(
                                             val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
                                             val recalled = mutableListOf<String>()
 
-                            // 如果配置了向量模型且开启了日记摘要，使用向量召回日记摘要
+                            // 如果配置了向量模型且开启了日记摘要，使用向量+最新混合召回日记摘要
                             if (config.embeddingModelId != null && queryText.isNotBlank() && config.autoSaveDiarySummary) {
                                                 val embeddingModel = settings.findModelById(config.embeddingModelId)
                                                 if (embeddingModel != null) {
@@ -440,15 +450,23 @@ class GenerationHandler(
                                                         )
                                                         val queryEmbedding = embedResult.embeddings.firstOrNull()
                                                         if (queryEmbedding != null) {
+                                                            // 混合召回：语义最相似的日记 + 按时间最新的日记，按内容去重合并
                                                             val recalledSummaries = service.vectorRecallSummaries(
                                                                 queryEmbedding = queryEmbedding,
                                                                 assistantId = assistant.id.toString(),
                                                                 count = config.recallCount,
                                                             ).getOrDefault(emptyList())
-                                                            recalledSummaries.forEach { summary ->
-                                                                recalled.add(summary.content)
+                                                            val latestSummaries = service.queryLatestSummaries(
+                                                                assistantId = assistant.id.toString(),
+                                                                limit = config.recallCount,
+                                                            ).getOrDefault(emptyList())
+                                                            val seen = mutableSetOf<String>()
+                                                            (recalledSummaries + latestSummaries).forEach { summary ->
+                                                                if (seen.add(summary.content)) {
+                                                                    recalled.add(summary.content)
+                                                                }
                                                             }
-                                                            Log.d(TAG, "Vector recall ${recalledSummaries.size} summaries from ${config.name}")
+                                                            Log.d(TAG, "Mixed diary recall: ${recalledSummaries.size} semantic + ${latestSummaries.size} latest from ${config.name}")
                                                         }
                                                     }
                                                 }
@@ -500,7 +518,7 @@ class GenerationHandler(
                     Log.w(TAG, "External memory recall failed", e)
                 }
 
-                // OB 记忆自动浮现（等价于 SessionStart breath-hook）
+                // OB 记忆自动浮现（等价于 SessionStart breath-hook，动态）
                 try {
                     val now = Clock.System.now().toEpochMilliseconds()
                     if (now - lastObBreathMs > OB_BREATH_INTERVAL_MS) {
@@ -522,22 +540,13 @@ class GenerationHandler(
                     Log.w(TAG, "OB breath auto-recall failed", e)
                 }
  
+                // 最近聊天引用（动态）
                 if (assistant.enableRecentChatsReference) {
                     appendLine()
                     append(buildRecentChatsPrompt(assistant, conversationRepo))
                 }
  
-                // 代码文件命名和ZIP打包功能说明
-                appendLine()
-                append(buildCodeBlockPrompt())
- 
-                // 工具prompt
-                tools.forEach { tool ->
-                    appendLine()
-                    append(tool.systemPrompt(model, messages))
-                }
- 
-                // 插件提示词注入
+                // 插件提示词注入（动态）
                 if (pluginPromptInjections.isNotEmpty()) {
                     pluginPromptInjections.forEach { injection ->
                         appendLine()
