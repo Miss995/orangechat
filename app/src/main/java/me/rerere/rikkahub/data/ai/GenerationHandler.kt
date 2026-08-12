@@ -436,64 +436,27 @@ class GenerationHandler(
                                             val recalled = mutableListOf<String>()
 
                             // 日记摘要召回已停用（固定前一天一篇走 daily_ob_grow 管线），外置库只召回聊天记录
-                            if (false) {
-                                                val embeddingModel = settings.findModelById(config.embeddingModelId)
-                                                if (embeddingModel != null) {
-                                                    val embeddingProvider = embeddingModel.findProvider(settings.providers)
-                                                    if (embeddingProvider != null) {
-                                                        val embeddingProviderImpl = providerManager.getProviderByType(embeddingProvider)
-                                                        val embedResult = embeddingProviderImpl.generateEmbedding(
-                                                            providerSetting = embeddingProvider,
-                                                            params = EmbeddingGenerationParams(
-                                                                model = embeddingModel,
-                                                                input = listOf(queryText),
-                                                            )
-                                                        )
-                                                        val queryEmbedding = embedResult.embeddings.firstOrNull()
-                                                        if (queryEmbedding != null) {
-                                                            // 混合召回：语义最相似的日记 + 按时间最新的日记，按内容去重合并
-                                                            val recalledSummaries = service.vectorRecallSummaries(
-                                                                queryEmbedding = queryEmbedding,
-                                                                assistantId = assistant.id.toString(),
-                                                                count = config.recallCount,
-                                                            ).getOrDefault(emptyList())
-                                                            val latestSummaries = service.queryLatestSummaries(
-                                                                assistantId = assistant.id.toString(),
-                                                                limit = config.recallCount,
-                                                            ).getOrDefault(emptyList())
-                                                            val seen = mutableSetOf<String>()
-                                                            (recalledSummaries + latestSummaries).forEach { summary ->
-                                                                if (seen.add(summary.content)) {
-                                                                    recalled.add(summary.content)
-                                                                }
-                                                            }
-                                                            Log.d(TAG, "Mixed diary recall: ${recalledSummaries.size} semantic + ${latestSummaries.size} latest from ${config.name}")
-                                                        }
-                                                    }
-                                                }
-                                            } else {
-                                                // 回退：文本召回聊天记录
-                                                val recalledMessages = if (queryText.isNotBlank()) {
-                                                    service.searchMessages(
-                                                        assistantId = assistant.id.toString(),
-                                                        keyword = queryText,
-                                                        limit = config.recallCount,
-                                                    ).getOrDefault(emptyList())
-                                                } else {
-                                                    service.queryLatestMessages(
-                                                        assistantId = assistant.id.toString(),
-                                                        limit = config.recallCount,
-                                                    ).getOrDefault(emptyList())
-                                                }
-                                                recalledMessages.forEach { msg ->
-                                                    val prefix = when (msg.role) {
-                                                        "assistant" -> "AI"
-                                                        "user" -> "用户"
-                                                        else -> msg.role
-                                                    }
-                                                    recalled.add("[$prefix] ${msg.content}")
-                                                }
-                                            }
+                            // 文本召回聊天记录：有输入按输入搜，无输入拉最近消息
+                            val recalledMessages = if (queryText.isNotBlank()) {
+                                service.searchMessages(
+                                    assistantId = assistant.id.toString(),
+                                    keyword = queryText,
+                                    limit = config.recallCount,
+                                ).getOrDefault(emptyList())
+                            } else {
+                                service.queryLatestMessages(
+                                    assistantId = assistant.id.toString(),
+                                    limit = config.recallCount,
+                                ).getOrDefault(emptyList())
+                            }
+                            recalledMessages.forEach { msg ->
+                                val prefix = when (msg.role) {
+                                    "assistant" -> "AI"
+                                    "user" -> "用户"
+                                    else -> msg.role
+                                }
+                                recalled.add("[$prefix] ${msg.content}")
+                            }
                                             recalled
                                         }.onFailure {
                                             Log.w(TAG, "External memory recall failed for ${config.name}", it)
