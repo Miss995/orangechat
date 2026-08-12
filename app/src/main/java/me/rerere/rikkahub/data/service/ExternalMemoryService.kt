@@ -1,5 +1,4 @@
-﻿/*
- * 橘瓣 OrangeChat
+/* 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
  */
@@ -33,12 +32,14 @@ class ExternalMemoryService(
 
     /**
      * 保存聊天消息到外置记忆库
+     * @param embedding 可选的消息向量（bge-m3 1024 维），提供时写入 embedding 列用于语义召回
      */
     suspend fun saveMessage(
         assistantId: String,
         conversationId: String,
         role: String,
         content: String,
+        embedding: List<Float>? = null,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val url = config.supabaseUrl.trimEnd('/')
@@ -51,6 +52,9 @@ class ExternalMemoryService(
                 put("role", JsonPrimitive(role))
                 put("content", JsonPrimitive(content))
                 put("created_at", JsonPrimitive(sdf.format(java.util.Date())))
+                if (embedding != null) {
+                    put("embedding", JsonPrimitive(embedding.joinToString(",", "[", "]")))
+                }
             }.toString()
 
             val connection = (endpoint.openConnection() as HttpURLConnection).apply {
@@ -140,6 +144,53 @@ class ExternalMemoryService(
             if (responseCode !in 200..299) {
                 val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
                 Log.e(TAG, "searchMessages HTTP $responseCode body=$errorBody")
+                throw Exception("Supabase API error ($responseCode): $errorBody")
+            }
+
+            val responseText = connection.inputStream.bufferedReader().readText()
+            parseMessages(responseText)
+        }
+    }
+
+    /**
+     * 向量语义召回聊天记录（调 Supabase RPC match_chat_messages，hnsw 索引加速）
+     * 返回按相似度降序的最近 count 条消息。
+     */
+    suspend fun vectorRecallMessages(
+        queryEmbedding: List<Float>,
+        assistantId: String,
+        count: Int = 5,
+    ): Result<List<ExternalMemoryMessage>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = config.supabaseUrl.trimEnd('/')
+            val endpoint = URL("$url/rest/v1/rpc/match_chat_messages")
+
+            val body = buildJsonObject {
+                put("query_embedding", JsonPrimitive(queryEmbedding.joinToString(",", "[", "]")))
+                put("match_count", JsonPrimitive(count))
+                put("assistant_filter", JsonPrimitive(assistantId))
+            }.toString()
+
+            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("apikey", config.supabaseKey)
+                setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                setRequestProperty("Accept", "application/json")
+                doOutput = true
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+
+            connection.outputStream.bufferedWriter().use { writer ->
+                writer.write(body)
+                writer.flush()
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                Log.e(TAG, "vectorRecallMessages HTTP $responseCode body=$errorBody")
                 throw Exception("Supabase API error ($responseCode): $errorBody")
             }
 
