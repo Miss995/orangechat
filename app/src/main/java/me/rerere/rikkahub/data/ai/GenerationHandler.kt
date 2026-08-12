@@ -435,27 +435,51 @@ class GenerationHandler(
                                             val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
                                             val recalled = mutableListOf<String>()
 
-                            // 日记摘要召回已停用（固定前一天一篇走 daily_ob_grow 管线），外置库只召回聊天记录
-                            // 文本召回聊天记录：有输入按输入搜，无输入拉最近消息
-                            val recalledMessages = if (queryText.isNotBlank()) {
-                                service.searchMessages(
-                                    assistantId = assistant.id.toString(),
-                                    keyword = queryText,
-                                    limit = config.recallCount,
-                                ).getOrDefault(emptyList())
+                            // 1. 日记摘要：固定前一天一篇（最新1篇，不再混合召回）
+                            val latestSummaries = service.queryLatestSummaries(
+                                assistantId = assistant.id.toString(),
+                                limit = 1,
+                            ).getOrDefault(emptyList())
+                            latestSummaries.forEach { summary ->
+                                recalled.add(summary.content)
+                            }
+
+                            // 2. 聊天记录：用户输入拆关键词逐个搜索（解决整句搜不到），合并去重；无输入拉最近消息
+                            val seenMsg = mutableSetOf<String>()
+                            if (queryText.isNotBlank()) {
+                                val keywords = queryText
+                                    .split(Regex("[\\s，。！？、；：,.!?;:]+[）)]*"))
+                                    .map { it.trim() }
+                                    .filter { it.length >= 2 }
+                                    .distinct()
+                                    .take(3)
+                                keywords.forEach { kw ->
+                                    service.searchMessages(
+                                        assistantId = assistant.id.toString(),
+                                        keyword = kw,
+                                        limit = config.recallCount,
+                                    ).getOrDefault(emptyList()).forEach { msg ->
+                                        val prefix = when (msg.role) {
+                                            "assistant" -> "AI"
+                                            "user" -> "用户"
+                                            else -> msg.role
+                                        }
+                                        val line = "[$prefix] ${msg.content}"
+                                        if (seenMsg.add(line)) recalled.add(line)
+                                    }
+                                }
                             } else {
                                 service.queryLatestMessages(
                                     assistantId = assistant.id.toString(),
                                     limit = config.recallCount,
-                                ).getOrDefault(emptyList())
-                            }
-                            recalledMessages.forEach { msg ->
-                                val prefix = when (msg.role) {
-                                    "assistant" -> "AI"
-                                    "user" -> "用户"
-                                    else -> msg.role
+                                ).getOrDefault(emptyList()).forEach { msg ->
+                                    val prefix = when (msg.role) {
+                                        "assistant" -> "AI"
+                                        "user" -> "用户"
+                                        else -> msg.role
+                                    }
+                                    recalled.add("[$prefix] ${msg.content}")
                                 }
-                                recalled.add("[$prefix] ${msg.content}")
                             }
                                             recalled
                                         }.onFailure {
