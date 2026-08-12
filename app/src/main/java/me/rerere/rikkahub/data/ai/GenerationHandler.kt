@@ -78,6 +78,14 @@ private const val STREAM_UI_THROTTLE_MS = 50L
 // OB 自动记忆浮现（SessionStart breath-hook 等价物）：节流间隔与单次注入上限
 private const val OB_BREATH_INTERVAL_MS = 5 * 60 * 1000L
 private const val OB_BREATH_MAX_CHARS = 3000
+
+// 外置记忆库召回节流：同一会话内每 5 分钟最多召回一次
+// （工具循环的二次请求不再重复搜索，上下文里已有首次召回结果）
+private const val EXTERNAL_RECALL_INTERVAL_MS = 5 * 60 * 1000L
+// 外置库召回单次超时（Supabase 响应慢时放宽到 15 秒，减少超时空手）
+private const val EXTERNAL_RECALL_TIMEOUT_MS = 15_000L
+// 召回时排除最近 10 分钟内的消息（当前对话尾巴上下文里已有，避免把刚发的消息回显进外置记忆库）
+private const val EXTERNAL_RECALL_SKIP_RECENT_MS = 10 * 60 * 1000L
  
 @Serializable
 sealed interface GenerationChunk {
@@ -95,6 +103,7 @@ class GenerationHandler(
     private val aiLoggingManager: AILoggingManager,
     private val memoryBankService: MemoryBankService,
     private var lastObBreathMs: Long = 0L,
+    private var lastExternalRecallMs: Long = 0L,
 ) {
     fun generateText(
         settings: Settings,
@@ -415,105 +424,121 @@ class GenerationHandler(
                     append(buildMemoryPrompt(memories = memories))
                 }
  
-                // 外置记忆库召回（动态）
-                try {
-                    val externalMemoryConfigs = settings.externalMemories.filter {
-                        it.enabled && it.id in assistant.externalMemoryIds
-                    }
-                    externalMemoryConfigs.forEach { config ->
-                        Log.i(TAG, "ExternalMemory config: name=${config.name}, url=${config.supabaseUrl}, table=${config.tableName}, summaryTable=${config.summariesTableName}, embeddingModelId=${config.embeddingModelId}, autoSaveDiarySummary=${config.autoSaveDiarySummary}")
-                    }
-                    if (externalMemoryConfigs.isNotEmpty()) {
-                        val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
-                        val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
-                        // 并发检索所有外置记忆库配置，每个配置最多 8 秒超时
-                        val allRecalled = coroutineScope {
-                            externalMemoryConfigs.map { config ->
-                                async {
-                                    withTimeoutOrNull(8.seconds) {
-                                        runCatching {
-                                            val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
-                                            val recalled = mutableListOf<String>()
+                // 外置记忆库召回（动态）——节流：5 分钟内不重复召回（工具循环二次请求跳过，上下文已有首次结果）
+                val externalRecallNow = Clock.System.now().toEpochMilliseconds()
+                if (externalRecallNow - lastExternalRecallMs > EXTERNAL_RECALL_INTERVAL_MS) {
+                    try {
+                        val externalMemoryConfigs = settings.externalMemories.filter {
+                            it.enabled && it.id in assistant.externalMemoryIds
+                        }
+                        externalMemoryConfigs.forEach { config ->
+                            Log.i(TAG, "ExternalMemory config: name=${config.name}, url=${config.supabaseUrl}, table=${config.tableName}, summaryTable=${config.summariesTableName}, embeddingModelId=${config.embeddingModelId}, autoSaveDiarySummary=${config.autoSaveDiarySummary}")
+                        }
+                        if (externalMemoryConfigs.isNotEmpty()) {
+                            val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
+                            val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
+                            // 并发检索所有外置记忆库配置，每个配置最多 15 秒超时
+                            val allRecalled = coroutineScope {
+                                externalMemoryConfigs.map { config ->
+                                    async {
+                                        withTimeoutOrNull(EXTERNAL_RECALL_TIMEOUT_MS) {
+                                            runCatching {
+                                                val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
+                                                val recalled = mutableListOf<String>()
 
-                            // 1. 日记摘要：固定前一天一篇（最新1篇，不再混合召回）
-                            val latestSummaries = service.queryLatestSummaries(
-                                assistantId = assistant.id.toString(),
-                                limit = 1,
-                            ).getOrDefault(emptyList())
-                            latestSummaries.forEach { summary ->
-                                recalled.add(summary.content)
-                            }
+                                // 1. 日记摘要：固定前一天一篇（最新1篇，不再混合召回）
+                                val latestSummaries = service.queryLatestSummaries(
+                                    assistantId = assistant.id.toString(),
+                                    limit = 1,
+                                ).getOrDefault(emptyList())
+                                latestSummaries.forEach { summary ->
+                                    recalled.add(summary.content)
+                                }
 
-                            // 2. 聊天记录：中文 ngram 片段搜索（2-3字滑动切块），合并去重；无输入拉最近消息
-                            val seenMsg = mutableSetOf<String>()
-                            if (queryText.isNotBlank()) {
-                                val keywords = buildList {
-                                    queryText.split(Regex("[\\s，。！？、；：,.!?;:（）()\\u0022'\\u0027]+[）)]*"))
-                                        .filter { it.isNotBlank() }
-                                        .forEach { part ->
-                                            if (part.length <= 4) {
-                                                add(part)
-                                            } else {
-                                                var i = 0
-                                                while (i < part.length - 1) {
-                                                    add(part.substring(i, minOf(i + 2, part.length)))
-                                                    if (i + 3 <= part.length) add(part.substring(i, i + 3))
-                                                    i += 2
+                                // 2. 聊天记录：中文 ngram 片段搜索（2-3字滑动切块），排除最近10分钟避免回显当前对话；无输入拉最近消息
+                                val seenMsg = mutableSetOf<String>()
+                                // 时间过滤：只召回 10 分钟前的消息（当前对话尾巴上下文里已有，不重复回显）
+                                val cutoffMs = System.currentTimeMillis() - EXTERNAL_RECALL_SKIP_RECENT_MS
+                                val timeSdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                                fun isHistorical(msg: me.rerere.rikkahub.data.service.ExternalMemoryMessage): Boolean {
+                                    val createdMs = runCatching { timeSdf.parse(msg.createdAt)?.time ?: 0L }.getOrDefault(0L)
+                                    return createdMs > 0 && createdMs < cutoffMs
+                                }
+                                if (queryText.isNotBlank()) {
+                                    val keywords = buildList {
+                                        queryText.split(Regex("[\\s，。！？、；：,.!?;:（）()\\u0022'\\u0027]+[）)]*"))
+                                            .filter { it.isNotBlank() }
+                                            .forEach { part ->
+                                                if (part.length <= 4) {
+                                                    add(part)
+                                                } else {
+                                                    var i = 0
+                                                    while (i < part.length - 1) {
+                                                        add(part.substring(i, minOf(i + 2, part.length)))
+                                                        if (i + 3 <= part.length) add(part.substring(i, i + 3))
+                                                        i += 2
+                                                    }
                                                 }
                                             }
-                                        }
-                                }.distinct().filter { it.length >= 2 }.take(6)
-                                keywords.forEach { kw ->
-                                    service.searchMessages(
+                                    }.distinct().filter { it.length >= 2 }.take(6)
+                                    keywords.forEach { kw ->
+                                        service.searchMessages(
+                                            assistantId = assistant.id.toString(),
+                                            keyword = kw,
+                                            limit = config.recallCount,
+                                        ).getOrDefault(emptyList())
+                                            .filter { isHistorical(it) }
+                                            .forEach { msg ->
+                                                val prefix = when (msg.role) {
+                                                    "assistant" -> "AI"
+                                                    "user" -> "用户"
+                                                    else -> msg.role
+                                                }
+                                                val line = "[$prefix] ${msg.content}"
+                                                if (seenMsg.add(line)) recalled.add(line)
+                                            }
+                                    }
+                                } else {
+                                    service.queryLatestMessages(
                                         assistantId = assistant.id.toString(),
-                                        keyword = kw,
                                         limit = config.recallCount,
-                                    ).getOrDefault(emptyList()).forEach { msg ->
-                                        val prefix = when (msg.role) {
-                                            "assistant" -> "AI"
-                                            "user" -> "用户"
-                                            else -> msg.role
+                                    ).getOrDefault(emptyList())
+                                        .filter { isHistorical(it) }
+                                        .forEach { msg ->
+                                            val prefix = when (msg.role) {
+                                                "assistant" -> "AI"
+                                                "user" -> "用户"
+                                                else -> msg.role
+                                            }
+                                            recalled.add("[$prefix] ${msg.content}")
                                         }
-                                        val line = "[$prefix] ${msg.content}"
-                                        if (seenMsg.add(line)) recalled.add(line)
-                                    }
                                 }
-                            } else {
-                                service.queryLatestMessages(
-                                    assistantId = assistant.id.toString(),
-                                    limit = config.recallCount,
-                                ).getOrDefault(emptyList()).forEach { msg ->
-                                    val prefix = when (msg.role) {
-                                        "assistant" -> "AI"
-                                        "user" -> "用户"
-                                        else -> msg.role
+                                                recalled
+                                            }.onFailure {
+                                                Log.w(TAG, "External memory recall failed for ${config.name}", it)
+                                            }.getOrNull()
+                                        } ?: run {
+                                            Log.w(TAG, "External memory recall timed out for ${config.name}")
+                                            null
+                                        }
                                     }
-                                    recalled.add("[$prefix] ${msg.content}")
+                                }.awaitAll()
+                                    .filterNotNull()
+                                    .flatten()
+                            }
+                            if (allRecalled.isNotEmpty()) {
+                                appendLine()
+                                appendLine("## 外置记忆库")
+                                allRecalled.reversed().forEachIndexed { index, memory ->
+                                    appendLine("${index + 1}. ${memory}")
                                 }
                             }
-                                            recalled
-                                        }.onFailure {
-                                            Log.w(TAG, "External memory recall failed for ${config.name}", it)
-                                        }.getOrNull()
-                                    } ?: run {
-                                        Log.w(TAG, "External memory recall timed out for ${config.name}")
-                                        null
-                                    }
-                                }
-                            }.awaitAll()
-                                .filterNotNull()
-                                .flatten()
                         }
-                        if (allRecalled.isNotEmpty()) {
-                            appendLine()
-                            appendLine("## 外置记忆库")
-                            allRecalled.reversed().forEachIndexed { index, memory ->
-                                appendLine("${index + 1}. ${memory}")
-                            }
-                        }
+                        lastExternalRecallMs = Clock.System.now().toEpochMilliseconds()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "External memory recall failed", e)
+                        lastExternalRecallMs = Clock.System.now().toEpochMilliseconds()
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "External memory recall failed", e)
                 }
 
                 // OB 记忆自动浮现（等价于 SessionStart breath-hook，动态）
