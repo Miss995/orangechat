@@ -444,15 +444,25 @@ class GenerationHandler(
                                 recalled.add(summary.content)
                             }
 
-                            // 2. 聊天记录：用户输入拆关键词逐个搜索（解决整句搜不到），合并去重；无输入拉最近消息
+                            // 2. 聊天记录：中文 ngram 片段搜索（2-3字滑动切块），合并去重；无输入拉最近消息
                             val seenMsg = mutableSetOf<String>()
                             if (queryText.isNotBlank()) {
-                                val keywords = queryText
-                                    .split(Regex("[\\s，。！？、；：,.!?;:]+[）)]*"))
-                                    .map { it.trim() }
-                                    .filter { it.length >= 2 }
-                                    .distinct()
-                                    .take(3)
+                                val keywords = buildList {
+                                    queryText.split(Regex("[\\s，。！？、；：,.!?;:（）()\\u0022'\\u0027]+[）)]*"))
+                                        .filter { it.isNotBlank() }
+                                        .forEach { part ->
+                                            if (part.length <= 4) {
+                                                add(part)
+                                            } else {
+                                                var i = 0
+                                                while (i < part.length - 1) {
+                                                    add(part.substring(i, minOf(i + 2, part.length)))
+                                                    if (i + 3 <= part.length) add(part.substring(i, i + 3))
+                                                    i += 2
+                                                }
+                                            }
+                                        }
+                                }.distinct().filter { it.length >= 2 }.take(6)
                                 keywords.forEach { kw ->
                                     service.searchMessages(
                                         assistantId = assistant.id.toString(),
