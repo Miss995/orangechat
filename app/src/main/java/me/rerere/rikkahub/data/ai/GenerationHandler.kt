@@ -1,5 +1,4 @@
-/*
- * 橘瓣 OrangeChat
+/* 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
  */
@@ -461,12 +460,21 @@ class GenerationHandler(
                                 val cutoffMs = System.currentTimeMillis() - EXTERNAL_RECALL_SKIP_RECENT_MS
                                 val timeSdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
                                 fun isHistorical(msg: me.rerere.rikkahub.data.service.ExternalMemoryMessage): Boolean {
-                                    val createdMs = runCatching { timeSdf.parse(msg.createdAt)?.time ?: 0L }.getOrDefault(0L)
+                                    // Supabase timestamptz 返回 ISO 8601（如 2026-06-29T05:58:38.057815+00:00 / ...Z），
+                                    // 本地写入是 "yyyy-MM-dd HH:mm:ss"。归一化后再解析，避免解析失败把全部消息过滤成空召回。
+                                    val createdMs = runCatching {
+                                        val clean = msg.createdAt
+                                            .replace('T', ' ')
+                                            .substringBefore('+')
+                                            .substringBefore('Z')
+                                            .substringBefore('.')
+                                        timeSdf.parse(clean)?.time ?: 0L
+                                    }.getOrDefault(0L)
                                     return createdMs > 0 && createdMs < cutoffMs
                                 }
                                 if (queryText.isNotBlank()) {
                                     val keywords = buildList {
-                                        queryText.split(Regex("[\\s，。！？、；：,.!?;:（）()\\u0022'\\u0027]+[）)]*"))
+                                        queryText.split(Regex("[\\s，。！？、；：,.!?;:（）()\"'']+[）)]*"))
                                             .filter { it.isNotBlank() }
                                             .forEach { part ->
                                                 if (part.length <= 4) {
