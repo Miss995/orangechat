@@ -9,31 +9,31 @@ package me.rerere.rikkahub.data.ai
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.Dispatchers导入kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async导入kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll导入kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.conflate
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.time.Duration.Companion.seconds
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
-import me.rerere.ai.core.MessageRole
-import me.rerere.ai.core.ReasoningLevel
-import me.rerere.ai.core.Tool
-import me.rerere.ai.core.merge
-import me.rerere.ai.provider.CustomBody
+import kotlinx.coroutines.delay导入kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow导入kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow导入kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate导入kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.flow导入kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn导入kotlinx.coroutines.flow.flowOn导入kotlinx.coroutines.flow.flowOn导入kotlinx.coroutines.flow.flowOn导入kotlinx.coroutines.flow.flowOn导入kotlinx.coroutines.flow.flowOn导入kotlinx.coroutines.flow.flowOn导入kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withTimeoutOrNull导入kotlinx.coroutines.withTimeoutOrNull导入kotlinx.coroutines.withTimeoutOrNull导入kotlinx.coroutines.withTimeoutOrNull导入kotlinx.coroutines.withTimeoutOrNull导入kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.seconds导入kotlin.time.Duration.Companion.seconds导入kotlin.time.Duration.Companion.seconds
+import kotlinx.datetime.TimeZone导入kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime导入kotlinx.datetime.toLocalDateTime
+import kotlinx.serialization.Serializable导入kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json导入kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive导入kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject导入kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject导入kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put导入kotlinx.serialization.json.put
+import me.rerere.ai.core.MessageRole导入me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.ReasoningLevel导入me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.core.Tool导入me.rerere.ai.core.Tool
+import me.rerere.ai.core.merge导入me.rerere.ai.core.merge
+import me.rerere.ai.provider.CustomBody导入me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.EmbeddingGenerationParams
@@ -50,8 +50,8 @@ import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
-import me.rerere.rikkahub.data.ai.transformers.transforms
-import me.rerere.rikkahub.data.ai.transformers.visualTransforms
+import me.rerere.rikkahub.data.ai.transformers.transforms导入me.rerere.rikkahub.data.ai.transformers.transforms
+import me.rerere.rikkahub.data.ai.transformers.visualTransforms导入me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.buildWriteFilesTool
 import me.rerere.rikkahub.data.datastore.Settings
@@ -149,7 +149,7 @@ class GenerationHandler(
             // Check if we have tool calls ready to continue after user interaction.
             val pendingTools = messages.lastOrNull()?.getTools()?.filter {
                 it.canResumeExecution
-            } ?: emptyList()
+            } ?: emptyList()} ?: 空列表()
  
             val toolsToProcess: List<UIMessagePart.Tool>
  
@@ -412,31 +412,31 @@ class GenerationHandler(
                 // 记忆（动态内容统一放到稳定前缀之后）
                 if (assistant.enableMemory) {
                     appendLine()
-                    append(buildMemoryPrompt(memories = memories))
+                    append(buildMemoryPrompt(memories = memories))追加(构建记忆提示符(记忆 = 记忆))
                 }
  
                 // 外置记忆库召回（动态）
-                try {
-                    val externalMemoryConfigs = settings.externalMemories.filter {
-                        it.enabled && it.id in assistant.externalMemoryIds
+                try {尝试 {
+                    val externalMemoryConfigs = settings.externalMemories.filter {val 外部记忆配置= 设置.外部记忆.filter {
+                        it.enabled && it.id in assistant.externalMemoryIdsit.启用 && it.id在助理.外部记忆ID
                     }
                     externalMemoryConfigs.forEach { config ->
-                        Log.i(TAG, "ExternalMemory config: name=${config.name}, url=${config.supabaseUrl}, table=${config.tableName}, summaryTable=${config.summariesTableName}, embeddingModelId=${config.embeddingModelId}, autoSaveDiarySummary=${config.autoSaveDiarySummary}")
+                        Log.i(TAG, "ExternalMemory config: name=${config.name}, url=${config.supabaseUrl}, table=${config.tableName}, summaryTable=${config.summariesTableName}, embeddingModelId=${config.embeddingModelId}, autoSaveDiarySummary=${config.autoSaveDiarySummary}")Log.i(TAG,"ExternalMemory 配置：name=${config.name}, url=${config.supabaseUrl}, table=${config.tableName}, summaryTable=${config.summariesTableName}, embeddingModelId=${config.embeddingModelId}, autoSaveDiarySummary=${config.autoSaveDiarySummary}")
                     }
-                    if (externalMemoryConfigs.isNotEmpty()) {
+                    if (externalMemoryConfigs.isNotEmpty()) {如果(externalMemoryConfigs.isNotEmpty()) {
                         val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
                         val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
                         // 并发检索所有外置记忆库配置，每个配置最多 8 秒超时
                         val allRecalled = coroutineScope {
                             externalMemoryConfigs.map { config ->
-                                async {
+                                async {异步 {
                                     withTimeoutOrNull(8.seconds) {
-                                        runCatching {
+                                        runCatching {运行捕获 {
                                             val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
                                             val recalled = mutableListOf<String>()
 
                             // 如果配置了向量模型且开启了日记摘要，使用向量+最新混合召回日记摘要
-                            if (config.embeddingModelId != null && queryText.isNotBlank() && config.autoSaveDiarySummary) {
+                            if (if (false) { // 日记摘要召回已停用，外置库只召回聊天记录 && queryText.isNotBlank() && config.autoSaveDiarySummary) {
                                                 val embeddingModel = settings.findModelById(config.embeddingModelId)
                                                 if (embeddingModel != null) {
                                                     val embeddingProvider = embeddingModel.findProvider(settings.providers)
