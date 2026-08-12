@@ -8,6 +8,7 @@ package me.rerere.rikkahub.data.ai
  
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -288,7 +289,7 @@ class GenerationHandler(
                             )
                         )
                     }
- 
+
                     is ToolApprovalState.Answered -> {
                         // Tool was answered by user (e.g., ask_user tool)
                         val answer = (tool.approvalState as ToolApprovalState.Answered).answer
@@ -298,11 +299,11 @@ class GenerationHandler(
                             )
                         )
                     }
- 
+
                     is ToolApprovalState.Pending -> {
                         // Should not reach here, but just in case
                     }
- 
+
                     else -> {
                         // Auto or Approved - execute the tool
                         runCatching {
@@ -598,6 +599,18 @@ class GenerationHandler(
             processingStatus = processingStatus,
             workspaceCwd = workspaceCwd,
         )
+
+        // === 请求编辑模式：发送前拦截，交给用户手动控制上下文 ===
+        val finalMessages: List<UIMessage>
+        if (settings.requestEditMode && internalMessages.isNotEmpty()) {
+            val editData = RequestEditController.toEditData(internalMessages)
+            val edited = RequestEditController.waitForEdit(editData)
+                ?: throw CancellationException("Request edit cancelled by user")
+            finalMessages = RequestEditController.toMessages(edited, internalMessages)
+            Log.i(TAG, "requestEditMode: user edited request, ${internalMessages.size} -> ${finalMessages.size} messages")
+        } else {
+            finalMessages = internalMessages
+        }
  
         var messages: List<UIMessage> = messages
         val params = TextGenerationParams(
@@ -620,14 +633,14 @@ class GenerationHandler(
             aiLoggingManager.addLog(
                 AILogging.Generation(
                     params = params,
-                    messages = internalMessages,
+                    messages = finalMessages,
                     providerSetting = provider,
                     stream = true
                 )
             )
             providerImpl.streamText(
                 providerSetting = provider,
-                messages = internalMessages,
+                messages = finalMessages,
                 params = params
             ).collect {
                 messages = messages.handleMessageChunk(chunk = it, model = model)
@@ -646,14 +659,14 @@ class GenerationHandler(
             aiLoggingManager.addLog(
                 AILogging.Generation(
                     params = params,
-                    messages = internalMessages,
+                    messages = finalMessages,
                     providerSetting = provider,
                     stream = false
                 )
             )
             val chunk = providerImpl.generateText(
                 providerSetting = provider,
-                messages = internalMessages,
+                messages = finalMessages,
                 params = params,
             )
             messages = messages.handleMessageChunk(chunk = chunk, model = model)
