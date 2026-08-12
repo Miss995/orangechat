@@ -35,9 +35,16 @@ object RequestEditController {
         val enabled: Boolean = true,
     )
 
+    /** 一个可勾选的工具（勾选 = 本轮注入给 AI） */
+    data class ToolEditItem(
+        val name: String,
+        val enabled: Boolean = true,
+    )
+
     data class RequestEditData(
         val sections: List<EditSection>,
         val history: List<EditItem>,
+        val tools: List<ToolEditItem> = emptyList(),
     )
 
     private val _pending = MutableStateFlow<RequestEditData?>(null)
@@ -67,8 +74,11 @@ object RequestEditController {
         deferred?.complete(result)
     }
 
-    /** 把内部消息转成可编辑数据（system 分段 + 历史列表） */
-    fun toEditData(messages: List<UIMessage>): RequestEditData {
+    /**
+     * 把内部消息转成可编辑数据（system 分段 + 历史列表 + 工具勾选列表）。
+     * @param toolNames 本轮将要注入的工具名列表（默认全勾选，用户可取消）。
+     */
+    fun toEditData(messages: List<UIMessage>, toolNames: List<String> = emptyList()): RequestEditData {
         val systemText = messages.firstOrNull { it.role == MessageRole.SYSTEM }?.toText() ?: ""
         val sections = splitSystem(systemText)
         val history = messages.filter { it.role != MessageRole.SYSTEM }.map { msg ->
@@ -77,7 +87,8 @@ object RequestEditController {
                 text = msg.toText().take(120),
             )
         }
-        return RequestEditData(sections = sections, history = history)
+        val tools = toolNames.map { ToolEditItem(name = it) }
+        return RequestEditData(sections = sections, history = history, tools = tools)
     }
 
     /** 把编辑结果还原成内部消息；edited 为 null 时返回原始消息（调用方应已处理取消） */

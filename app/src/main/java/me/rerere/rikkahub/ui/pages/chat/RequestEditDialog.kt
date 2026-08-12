@@ -41,7 +41,8 @@ import me.rerere.rikkahub.data.ai.RequestEditController
 
 /**
  * 请求编辑弹窗：发送前展示将要发出的请求内容，
- * 用户可以勾选/删除 system 分节与历史消息、点 ✏️ 编辑某段 system。
+ * 用户可以勾选/删除 system 分节与历史消息、点 ✏️ 编辑某段 system，
+ * 并选择性勾选本轮要注入的工具（默认全选，取消勾选 = 不注入）。
  */
 @Composable
 fun RequestEditDialog(
@@ -51,6 +52,7 @@ fun RequestEditDialog(
 ) {
     var sections by remember(data) { mutableStateOf(data.sections) }
     var history by remember(data) { mutableStateOf(data.history) }
+    var tools by remember(data) { mutableStateOf(data.tools) }
     var editing by remember { mutableStateOf<Pair<Int, RequestEditController.EditSection>?>(null) }
 
     Dialog(onDismissRequest = onCancel) {
@@ -137,6 +139,37 @@ fun RequestEditDialog(
                             )
                         }
                     }
+                    item {
+                        Text(
+                            "工具（勾选 = 本轮注入，默认全选，取消 = 省 token）",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
+                    itemsIndexed(tools) { index, tool ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                        ) {
+                            Checkbox(
+                                checked = tool.enabled,
+                                onCheckedChange = { checked ->
+                                    tools = tools.toMutableList().also {
+                                        it[index] = tool.copy(enabled = checked)
+                                    }
+                                },
+                            )
+                            Text(
+                                tool.name,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
                 }
                 HorizontalDivider()
                 Row(
@@ -153,6 +186,7 @@ fun RequestEditDialog(
                                 RequestEditController.RequestEditData(
                                     sections = sections,
                                     history = history,
+                                    tools = tools,
                                 )
                             )
                         },
