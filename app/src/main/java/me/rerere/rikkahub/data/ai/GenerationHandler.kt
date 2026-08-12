@@ -454,9 +454,8 @@ class GenerationHandler(
                                     recalled.add(summary.content)
                                 }
 
-                                // 2. 聊天记录：中文 ngram 片段搜索（2-3字滑动切块），排除最近10分钟避免回显当前对话；无输入拉最近消息
+                                // 2. 聊天记录：向量语义搜索优先（需 embedding 模型配置），结果不足时 ILIKE 兜底；排除最近10分钟避免回显当前对话
                                 val seenMsg = mutableSetOf<String>()
-                                // 时间过滤：只召回 10 分钟前的消息（当前对话尾巴上下文里已有，不重复回显）
                                 val cutoffMs = System.currentTimeMillis() - EXTERNAL_RECALL_SKIP_RECENT_MS
                                 val timeSdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
                                 fun isHistorical(msg: me.rerere.rikkahub.data.service.ExternalMemoryMessage): Boolean {
@@ -473,38 +472,78 @@ class GenerationHandler(
                                     return createdMs > 0 && createdMs < cutoffMs
                                 }
                                 if (queryText.isNotBlank()) {
-                                    val keywords = buildList {
-                                        queryText.split(Regex("[\\s，。！？、；：,.!?;:（）()\"'']+[）)]*"))
-                                            .filter { it.isNotBlank() }
-                                            .forEach { part ->
-                                                if (part.length <= 4) {
-                                                    add(part)
-                                                } else {
-                                                    var i = 0
-                                                    while (i < part.length - 1) {
-                                                        add(part.substring(i, minOf(i + 2, part.length)))
-                                                        if (i + 3 <= part.length) add(part.substring(i, i + 3))
-                                                        i += 2
+                                    // 2a. 向量语义召回：queryText 生成 embedding -> RPC 相似度搜索
+                                    var vectorHits = emptyList<me.rerere.rikkahub.data.service.ExternalMemoryMessage>()
+                                    val embeddingModel = config.embeddingModelId?.let { settings.findModelById(it) }
+                                    val embeddingProvider = embeddingModel?.findProvider(settings.providers)
+                                    if (embeddingProvider != null) {
+                                        val embeddingProviderImpl = providerManager.getProviderByType(embeddingProvider)
+                                        runCatching {
+                                            val embedResult = embeddingProviderImpl.generateEmbedding(
+                                                providerSetting = embeddingProvider,
+                                                params = EmbeddingGenerationParams(
+                                                    model = embeddingModel,
+                                                    input = listOf(queryText),
+                                                )
+                                            )
+                                            val queryEmbedding = embedResult.embeddings.firstOrNull()
+                                            if (queryEmbedding != null) {
+                                                vectorHits = service.vectorRecallMessages(
+                                                    queryEmbedding = queryEmbedding,
+                                                    assistantId = assistant.id.toString(),
+                                                    count = config.recallCount,
+                                                ).getOrDefault(emptyList())
+                                                    .filter { isHistorical(it) }
+                                                Log.d(TAG, "Vector recall ${vectorHits.size} messages from ${config.name}")
+                                            }
+                                        }.onFailure {
+                                            Log.w(TAG, "Vector recall failed for ${config.name}", it)
+                                        }
+                                    }
+                                    vectorHits.forEach { msg ->
+                                        val prefix = when (msg.role) {
+                                            "assistant" -> "AI"
+                                            "user" -> "用户"
+                                            else -> msg.role
+                                        }
+                                        val line = "[$prefix] ${msg.content}"
+                                        if (seenMsg.add(line)) recalled.add(line)
+                                    }
+                                    // 2b. 向量结果不足时 ILIKE 兜底（中文 ngram 片段搜索）
+                                    if (vectorHits.size < 3) {
+                                        val keywords = buildList {
+                                            queryText.split(Regex("[\\s，。！？、；：,.!?;:（）()\"'']+[）)]*"))
+                                                .filter { it.isNotBlank() }
+                                                .forEach { part ->
+                                                    if (part.length <= 4) {
+                                                        add(part)
+                                                    } else {
+                                                        var i = 0
+                                                        while (i < part.length - 1) {
+                                                            add(part.substring(i, minOf(i + 2, part.length)))
+                                                            if (i + 3 <= part.length) add(part.substring(i, i + 3))
+                                                            i += 2
+                                                        }
                                                     }
                                                 }
-                                            }
-                                    }.distinct().filter { it.length >= 2 }.take(6)
-                                    keywords.forEach { kw ->
-                                        service.searchMessages(
-                                            assistantId = assistant.id.toString(),
-                                            keyword = kw,
-                                            limit = config.recallCount,
-                                        ).getOrDefault(emptyList())
-                                            .filter { isHistorical(it) }
-                                            .forEach { msg ->
-                                                val prefix = when (msg.role) {
-                                                    "assistant" -> "AI"
-                                                    "user" -> "用户"
-                                                    else -> msg.role
+                                        }.distinct().filter { it.length >= 2 }.take(6)
+                                        keywords.forEach { kw ->
+                                            service.searchMessages(
+                                                assistantId = assistant.id.toString(),
+                                                keyword = kw,
+                                                limit = config.recallCount,
+                                            ).getOrDefault(emptyList())
+                                                .filter { isHistorical(it) }
+                                                .forEach { msg ->
+                                                    val prefix = when (msg.role) {
+                                                        "assistant" -> "AI"
+                                                        "user" -> "用户"
+                                                        else -> msg.role
+                                                    }
+                                                    val line = "[$prefix] ${msg.content}"
+                                                    if (seenMsg.add(line)) recalled.add(line)
                                                 }
-                                                val line = "[$prefix] ${msg.content}"
-                                                if (seenMsg.add(line)) recalled.add(line)
-                                            }
+                                        }
                                     }
                                 } else {
                                     service.queryLatestMessages(
