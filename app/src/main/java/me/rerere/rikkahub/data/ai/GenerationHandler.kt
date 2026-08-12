@@ -657,12 +657,16 @@ class GenerationHandler(
 
         // === 请求编辑模式：发送前拦截，交给用户手动控制上下文 ===
         val finalMessages: List<UIMessage>
+        var effectiveTools = tools
         if (settings.requestEditMode && internalMessages.isNotEmpty()) {
-            val editData = RequestEditController.toEditData(internalMessages)
+            val editData = RequestEditController.toEditData(internalMessages, tools.map { it.name })
             val edited = RequestEditController.waitForEdit(editData)
                 ?: throw CancellationException("Request edit cancelled by user")
             finalMessages = RequestEditController.toMessages(edited, internalMessages)
-            Log.i(TAG, "requestEditMode: user edited request, ${internalMessages.size} -> ${finalMessages.size} messages")
+            // 按用户勾选过滤工具：只注入勾选的（默认全选；全不勾 = 本轮不带工具，省 token）
+            val enabledNames = edited.tools.filter { it.enabled }.map { it.name }.toSet()
+            effectiveTools = if (enabledNames.isEmpty()) emptyList() else tools.filter { it.name in enabledNames }
+            Log.i(TAG, "requestEditMode: user edited request, ${internalMessages.size} -> ${finalMessages.size} messages, tools ${tools.size} -> ${effectiveTools.size}")
         } else {
             finalMessages = internalMessages
         }
@@ -673,7 +677,7 @@ class GenerationHandler(
             temperature = assistant.temperature,
             topP = assistant.topP,
             maxTokens = assistant.maxTokens,
-            tools = tools,
+            tools = effectiveTools,
             reasoningLevel = assistant.reasoningLevel,
             customHeaders = buildList {
                 addAll(assistant.customHeaders)
