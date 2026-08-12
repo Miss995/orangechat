@@ -60,6 +60,7 @@ import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.hugeicons.stroke.Voice
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.ai.RequestEditController
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -267,6 +268,16 @@ private fun ChatPageContent(
 
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)
 
+    // 请求编辑模式：监听待编辑请求，非空时弹出编辑界面
+    val pendingEdit by RequestEditController.pending.collectAsStateWithLifecycle()
+    if (pendingEdit != null) {
+        RequestEditDialog(
+            data = pendingEdit!!,
+            onConfirm = { RequestEditController.submit(it) },
+            onCancel = { RequestEditController.submit(null) },
+        )
+    }
+
     Surface(
         color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize()
@@ -280,6 +291,10 @@ private fun ChatPageContent(
                     bigScreen = bigScreen,
                     drawerState = drawerState,
                     previewMode = previewMode,
+                    requestEditMode = setting.requestEditMode,
+                    onToggleRequestEdit = {
+                        vm.updateSettings(setting.copy(requestEditMode = !setting.requestEditMode))
+                    },
                     onNewChat = {
                         navigateToChatPage(navController)
                     },
@@ -490,6 +505,8 @@ private fun TopBar(
     drawerState: DrawerState,
     bigScreen: Boolean,
     previewMode: Boolean,
+    requestEditMode: Boolean,
+    onToggleRequestEdit: () -> Unit,
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
     onUpdateTitle: (String) -> Unit,
@@ -551,6 +568,19 @@ private fun TopBar(
             }
         },
         actions = {
+            TextButton(
+                onClick = onToggleRequestEdit,
+            ) {
+                Text(
+                    text = if (requestEditMode) "请求编辑·开" else "请求编辑",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (requestEditMode) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        LocalContentColor.current.copy(alpha = 0.7f)
+                    },
+                )
+            }
             IconButton(
                 onClick = {
                     onVoiceCall()
