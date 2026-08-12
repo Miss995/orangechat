@@ -540,6 +540,31 @@ class GenerationHandler(
                 } catch (e: Exception) {
                     Log.w(TAG, "OB breath auto-recall failed", e)
                 }
+
+                // Mem0 第三大脑自动召回（动态，语义搜索）
+                try {
+                    val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
+                    val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
+                    if (queryText.isNotEmpty()) {
+                        val mem0Tool = tools.find { it.name.endsWith("_search_memory") }
+                        if (mem0Tool != null) {
+                            val args = buildJsonObject {
+                                put("query", JsonPrimitive(queryText))
+                            }
+                            val result = mem0Tool.execute(json.parseToJsonElement(args.toString()).jsonObject)
+                            val recalledText = result.filterIsInstance<UIMessagePart.Text>()
+                                .joinToString("\n") { it.text }
+                            if (recalledText.isNotBlank()) {
+                                appendLine()
+                                appendLine("## Mem0 记忆（第三大脑语义召回）")
+                                append(recalledText.take(OB_BREATH_MAX_CHARS))
+                                Log.i(TAG, "Mem0 recall injected ${recalledText.length} chars")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Mem0 recall failed", e)
+                }
  
                 // 最近聊天引用（动态）
                 if (assistant.enableRecentChatsReference) {
