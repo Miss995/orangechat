@@ -249,7 +249,7 @@ class ExternalMemoryService(
         val connection = (endpoint.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             setRequestProperty("apikey", config.supabaseKey)
-            setRequestProperty("Authorization", "Bearer ${config.supabaseKey}"
+            setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
             setRequestProperty("Accept", "application/json")
             connectTimeout = 15000
             readTimeout = 15000
