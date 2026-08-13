@@ -49,10 +49,17 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Database02
 import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.Pulse01
+import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
+import me.rerere.rikkahub.data.ai.mcp.McpStatus
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.model.ExternalMemory
 import me.rerere.rikkahub.data.service.ExternalMemoryMessage
@@ -73,20 +80,62 @@ data class SourceStatus(
     val loading: Boolean = false,
 )
 
+/** MCP 记忆源（OB / Mem0）的状态灯信息 */
+data class McpSourceStatus(
+    val color: Color,
+    val info: String,
+)
+
+/** 把 MCP 连接状态转成状态灯颜色 + 文案 */
+fun McpStatus.toSourceStatus(): McpSourceStatus {
+    return when (this) {
+        is McpStatus.Connected -> McpSourceStatus(Color(0xFF4CAF50), "已连接")
+        is McpStatus.Error -> McpSourceStatus(Color(0xFFF44336), "出错：${message.take(40)}")
+        is McpStatus.NeedsAuthorization -> McpSourceStatus(Color(0xFFFFC107), "需要授权")
+        is McpStatus.Connecting -> McpSourceStatus(Color(0xFFFFC107), "连接中…")
+        is McpStatus.Reconnecting -> McpSourceStatus(Color(0xFFFFC107), "重连中…")
+        is McpStatus.Authorizing -> McpSourceStatus(Color(0xFFFFC107), "授权中…")
+        else -> McpSourceStatus(Color(0xFFFFC107), "未连接")
+    }
+}
+
 /**
  * 记忆监工台：记忆源状态灯 + 召回体检 + 记忆浏览(150条) + 召回条数调节
- * V1 先做外置记忆库完整功能，OB / Mem0 状态灯与召回体检后续接入。
+ * V2：接入 OB / Mem0（MCP）状态灯 + 召回体检。
  */
 @Composable
 fun MemoryWatchPage() {
     val settings = LocalSettings.current
     val currentAssistant = LocalCurrentAssistant.current
     val settingsStore: SettingsStore = koinInject()
+    val mcManager: McpManager = koinInject()
     val scope = rememberCoroutineScope()
 
     val assistantId = currentAssistant?.id?.toString() ?: ""
     val externalConfigs = remember(settings.externalMemories) {
         settings.externalMemories.filter { it.enabled }
+    }
+
+    // 找 OB / Mem0 的 MCP server 配置（按名字模糊匹配）
+    val obServer = remember(settings.mcpServers) {
+        settings.mcpServers.firstOrNull {
+            it.commonOptions.enable && it.commonOptions.name.contains("ob", ignoreCase = true)
+        }
+    }
+    val mem0Server = remember(settings.mcpServers) {
+        settings.mcpServers.firstOrNull {
+            it.commonOptions.enable && it.commonOptions.name.contains("mem0", ignoreCase = true)
+        }
+    }
+
+    // OB / Mem0 的 MCP 连接状态
+    var obStatus by remember { mutableStateOf<McpStatus>(McpStatus.Idle) }
+    var mem0Status by remember { mutableStateOf<McpStatus>(McpStatus.Idle) }
+    LaunchedEffect(obServer) {
+        if (obServer != null) mcManager.getStatus(obServer).collect { obStatus = it }
+    }
+    LaunchedEffect(mem0Server) {
+        if (mem0Server != null) mcManager.getStatus(mem0Server).collect { mem0Status = it }
     }
 
     // 每个外置库的状态（灯 + 条数 + 说明）
@@ -99,6 +148,7 @@ fun MemoryWatchPage() {
     // 召回体检
     var recallQuery by remember { mutableStateOf("") }
     var recallResults by remember { mutableStateOf<Map<String, List<ExternalMemoryMessage>>>(emptyMap()) }
+    var mcpRecallResults by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var recallDone by remember { mutableStateOf(false) }
     var recallRunning by remember { mutableStateOf(false) }
     // 体检诊断（自报进度，方便定位问题）
@@ -168,6 +218,10 @@ fun MemoryWatchPage() {
                 StatusSection(
                     externalConfigs = externalConfigs,
                     statusMap = statusMap,
+                    obServer = obServer,
+                    obStatus = obStatus,
+                    mem0Server = mem0Server,
+                    mem0Status = mem0Status,
                 )
             }
 
@@ -178,23 +232,28 @@ fun MemoryWatchPage() {
                     recallQuery = recallQuery,
                     onQueryChange = { recallQuery = it },
                     recallResults = recallResults,
+                    mcpRecallResults = mcpRecallResults,
                     recallDone = recallDone,
                     recallRunning = recallRunning,
                     recallDiag = recallDiag,
                     onRunRecall = {
                         recallDiag = "已触发点击：词=\"${recallQuery.trim()}\" 助手id=\"${assistantId.take(8)}…\" 外置库=${externalConfigs.size} 个"
-                        val canRun = recallQuery.isNotBlank() &&
-                            assistantId.isNotBlank() &&
-                            externalConfigs.isNotEmpty()
+                        val canRun = recallQuery.isNotBlank() && assistantId.isNotBlank() &&
+                            (externalConfigs.isNotEmpty() || obServer != null || mem0Server != null)
                         if (canRun) {
                             recallRunning = true
                             recallDone = true
                             recallResults = emptyMap()
+                            mcpRecallResults = emptyMap()
                             val querySnapshot = recallQuery.trim()
                             val configsSnapshot = externalConfigs
                             val assistantSnapshot = assistantId
-                            recallDiag = "开始搜索 ${configsSnapshot.size} 个外置库…（词=\"$querySnapshot\"）"
+                            val obSnapshot = obServer
+                            val mem0Snapshot = mem0Server
+                            val mcSnapshot = mcManager
+                            recallDiag = "开始搜索：外置库 ${configsSnapshot.size} 个 + MCP ${listOfNotNull(obSnapshot, mem0Snapshot).size} 个…（词=\"$querySnapshot\"）"
                             scope.launch {
+                                // 外置库搜索
                                 val results = configsSnapshot.map { cfg ->
                                     async {
                                         val service = ExternalMemoryService(cfg)
@@ -207,9 +266,46 @@ fun MemoryWatchPage() {
                                     }
                                 }.awaitAll().toMap()
                                 recallResults = results
+
+                                // OB / Mem0（MCP）搜索
+                                val mcpResults = mutableMapOf<String, String>()
+                                if (obSnapshot != null) {
+                                    mcpResults["OB"] = runCatching {
+                                        val parts = mcSnapshot.callTool(
+                                            serverId = obSnapshot.id,
+                                            toolName = "breath_search",
+                                            args = buildJsonObject {
+                                                put("query", JsonPrimitive(querySnapshot))
+                                                put("max_results", JsonPrimitive(5))
+                                            },
+                                        )
+                                        parts.filterIsInstance<UIMessagePart.Text>()
+                                            .joinToString("\n") { it.text }
+                                            .ifBlank { "（空返回）" }
+                                    }.getOrElse { "调用失败：${it.message?.take(50)}" }
+                                }
+                                if (mem0Snapshot != null) {
+                                    mcpResults["Mem0"] = runCatching {
+                                        val parts = mcSnapshot.callTool(
+                                            serverId = mem0Snapshot.id,
+                                            toolName = "search_memory",
+                                            args = buildJsonObject {
+                                                put("query", JsonPrimitive(querySnapshot))
+                                                put("limit", JsonPrimitive(5))
+                                            },
+                                        )
+                                        parts.filterIsInstance<UIMessagePart.Text>()
+                                            .joinToString("\n") { it.text }
+                                            .ifBlank { "（空返回）" }
+                                    }.getOrElse { "调用失败：${it.message?.take(50)}" }
+                                }
+                                mcpRecallResults = mcpResults
+
                                 recallRunning = false
                                 val summary = results.entries.joinToString("；") { (name, hits) ->
                                     "$name 召回 ${hits.size} 条"
+                                } + mcpResults.entries.joinToString("；") { (name, text) ->
+                                    "$name ${if (text.startsWith("调用失败")) "失败" else "已返回"}"
                                 }
                                 recallDiag = "✅ 体检完成：$summary"
                             }
@@ -217,10 +313,10 @@ fun MemoryWatchPage() {
                             val why = when {
                                 recallQuery.isBlank() -> "体检词为空"
                                 assistantId.isBlank() -> "未检测到当前助手"
-                                externalConfigs.isEmpty() -> "没有启用的外置记忆库"
+                                externalConfigs.isEmpty() && obServer == null && mem0Server == null -> "没有可用的记忆源"
                                 else -> "未知原因"
                             }
-                            recallDiag = "❌ 无法体检：$why（按钮应已置灰）"
+                            recallDiag = "❌ 无法体检：$why"
                         }
                     },
                 )
@@ -327,11 +423,16 @@ fun MemoryWatchPage() {
 private fun StatusSection(
     externalConfigs: List<ExternalMemory>,
     statusMap: Map<Uuid, SourceStatus>,
+    obServer: McpServerConfig?,
+    obStatus: McpStatus,
+    mem0Server: McpServerConfig?,
+    mem0Status: McpStatus,
 ) {
     CardGroup(
         modifier = Modifier.padding(horizontal = 8.dp),
         title = { Text("记忆源状态") },
     ) {
+        // 外置库
         if (externalConfigs.isEmpty()) {
             item(
                 leadingContent = { Icon(HugeIcons.Database02, null) },
@@ -361,28 +462,31 @@ private fun StatusSection(
                 )
             }
         }
-        // OB / Mem0（后续接入）
+        // OB
+        val obSource = obStatus.toSourceStatus()
         item(
             leadingContent = {
                 Box(
                     modifier = Modifier
                         .size(12.dp)
-                        .background(Color(0xFFFFC107), CircleShape)
+                        .background(obSource.color, CircleShape)
                 )
             },
-            headlineContent = { Text("OB（Termux）") },
-            supportingContent = { Text("待接入 · MCP 对接中") },
+            headlineContent = { Text(if (obServer != null) "OB（Termux）" else "OB（Termux）未配置") },
+            supportingContent = { Text(obServer?.let { obSource.info } ?: "MCP 设置里加个名字含 OB 的服务器") },
         )
+        // Mem0
+        val mem0Source = mem0Status.toSourceStatus()
         item(
             leadingContent = {
                 Box(
                     modifier = Modifier
                         .size(12.dp)
-                        .background(Color(0xFFFFC107), CircleShape)
+                        .background(mem0Source.color, CircleShape)
                 )
             },
-            headlineContent = { Text("Mem0") },
-            supportingContent = { Text("待接入 · MCP 对接中") },
+            headlineContent = { Text(if (mem0Server != null) "Mem0" else "Mem0 未配置") },
+            supportingContent = { Text(mem0Server?.let { mem0Source.info } ?: "MCP 设置里加个名字含 Mem0 的服务器") },
         )
     }
 }
@@ -395,6 +499,7 @@ private fun RecallTestSection(
     recallQuery: String,
     onQueryChange: (String) -> Unit,
     recallResults: Map<String, List<ExternalMemoryMessage>>,
+    mcpRecallResults: Map<String, String>,
     recallDone: Boolean,
     recallRunning: Boolean,
     recallDiag: String,
@@ -410,19 +515,6 @@ private fun RecallTestSection(
             headlineContent = { Text("体检进度", color = MaterialTheme.colorScheme.primary) },
             supportingContent = { Text(recallDiag) },
         )
-        if (assistantId.isBlank()) {
-            item(
-                leadingContent = { Icon(HugeIcons.Pulse01, null) },
-                headlineContent = { Text("⚠ 未检测到当前助手") },
-                supportingContent = { Text("先回到聊天界面选一个助手，再来体检") },
-            )
-        } else if (externalConfigs.isEmpty()) {
-            item(
-                leadingContent = { Icon(HugeIcons.Pulse01, null) },
-                headlineContent = { Text("⚠ 没有启用的外置记忆库") },
-                supportingContent = { Text("去「进阶记忆」启用后再来体检") },
-            )
-        }
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -438,10 +530,7 @@ private fun RecallTestSection(
                 )
                 Button(
                     onClick = onRunRecall,
-                    enabled = !recallRunning &&
-                        recallQuery.isNotBlank() &&
-                        assistantId.isNotBlank() &&
-                        externalConfigs.isNotEmpty(),
+                    enabled = !recallRunning && recallQuery.isNotBlank(),
                 ) {
                     Text(if (recallRunning) "体检中…" else "体检")
                 }
@@ -449,11 +538,11 @@ private fun RecallTestSection(
         }
         // 体检结果：体检过就显示（哪怕全是 0 条），不再无声无息
         if (recallDone) {
-            if (recallResults.isEmpty()) {
+            if (recallResults.isEmpty() && mcpRecallResults.isEmpty()) {
                 item(
                     leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
                     headlineContent = { Text("体检完成") },
-                    supportingContent = { Text("没有可体检的记忆源（未启用外置库）") },
+                    supportingContent = { Text("没有可体检的记忆源（未配置外置库/OB/Mem0）") },
                 )
             } else {
                 recallResults.forEach { (name, hits) ->
@@ -478,6 +567,20 @@ private fun RecallTestSection(
                                     }
                                 }
                             }
+                        },
+                    )
+                }
+                mcpRecallResults.forEach { (name, text) ->
+                    item(
+                        leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
+                        headlineContent = { Text("$name · MCP 召回") },
+                        supportingContent = {
+                            Text(
+                                text = text.take(150),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         },
                     )
                 }
