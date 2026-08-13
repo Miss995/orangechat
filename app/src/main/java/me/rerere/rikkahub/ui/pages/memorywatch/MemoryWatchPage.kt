@@ -99,6 +99,22 @@ fun McpStatus.toSourceStatus(): McpSourceStatus {
 }
 
 /**
+ * 判断召回文本是否为"空结果"（OB 搜空会返回"未匹配到相关内容"之类的正式声明）
+ */
+private fun isNoResultText(text: String): Boolean {
+    val t = text.trim()
+    if (t.isEmpty()) return true
+    return t.contains("未匹配") ||
+        t.contains("没有搜到") ||
+        t.contains("未找到") ||
+        t.contains("没有找到") ||
+        t.contains("无相关") ||
+        t.contains("没有相关") ||
+        t.contains("未检索") ||
+        t.contains("（空")
+}
+
+/**
  * 记忆监工台：记忆源状态灯 + 召回体检 + 记忆浏览(150条) + 召回条数调节 + OB/Mem0 全部浏览
  * V3：OB 记忆目录（catalog）+ Mem0 全部记忆（list_memories）。
  */
@@ -309,7 +325,11 @@ fun MemoryWatchPage() {
                                 val summary = results.entries.joinToString("；") { (name, hits) ->
                                     "$name 召回 ${hits.size} 条"
                                 } + mcpResults.entries.joinToString("；") { (name, text) ->
-                                    "$name ${if (text.startsWith("调用失败")) "失败" else "已返回"}"
+                                    "$name ${when {
+                                        text.startsWith("调用失败") -> "失败"
+                                        isNoResultText(text) -> "未匹配"
+                                        else -> "已返回"
+                                    }}"
                                 }
                                 recallDiag = "✅ 体检完成：$summary"
                             }
@@ -634,12 +654,17 @@ private fun RecallTestSection(
                     )
                 }
                 mcpRecallResults.forEach { (name, text) ->
+                    val noResult = isNoResultText(text)
                     item(
                         leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
-                        headlineContent = { Text("$name · MCP 召回") },
+                        headlineContent = { Text("$name · MCP 召回${if (noResult) "（未匹配）" else ""}") },
                         supportingContent = {
                             Text(
-                                text = text.take(150),
+                                text = if (noResult) {
+                                    "❌ 没搜到相关内容（OB 搜空会发正式声明）\n" + text.take(150)
+                                } else {
+                                    text.take(150)
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 4,
                                 overflow = TextOverflow.Ellipsis,
