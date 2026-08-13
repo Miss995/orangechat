@@ -74,7 +74,7 @@ private const val TAG = "GenerationHandler"
 // 这里把推送频率限制在这个间隔以内，肉眼完全感知不到延迟，但能大幅降低重组频率。
 private const val STREAM_UI_THROTTLE_MS = 50L
 
-// OB 自动记忆浮现（SessionStart breath-hook 等价物）：节流间隔与单次注入上限
+// OB 记忆按需搜索（搜索型）：节流间隔与单次注入上限
 private const val OB_BREATH_INTERVAL_MS = 5 * 60 * 1000L
 private const val OB_BREATH_MAX_CHARS = 3000
 
@@ -588,26 +588,33 @@ class GenerationHandler(
                     }
                 }
 
-                // OB 记忆自动浮现（等价于 SessionStart breath-hook，动态）
+                // OB 记忆按需搜索（搜索型：不自动浮现，按用户消息内容调 breath_search，不吵不费token）
                 try {
                     val now = Clock.System.now().toEpochMilliseconds()
                     if (now - lastObBreathMs > OB_BREATH_INTERVAL_MS) {
-                        val breathTool = tools.find { it.name.endsWith("_breath") }
-                        if (breathTool != null) {
-                            val result = breathTool.execute(json.parseToJsonElement("{}").jsonObject)
-                            val recalledText = result.filterIsInstance<UIMessagePart.Text>()
-                                .joinToString("\n") { it.text }
-                            if (recalledText.isNotBlank()) {
-                                appendLine()
-                                appendLine("## 记忆浮现")
-                                append(recalledText.take(OB_BREATH_MAX_CHARS))
-                                Log.i(TAG, "OB breath injected ${recalledText.length} chars")
+                        val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
+                        val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
+                        if (queryText.isNotBlank()) {
+                            val searchTool = tools.find { it.name.endsWith("_breath_search") }
+                            if (searchTool != null) {
+                                val args = buildJsonObject {
+                                    put("query", JsonPrimitive(queryText))
+                                }
+                                val result = searchTool.execute(json.parseToJsonElement(args.toString()).jsonObject)
+                                val recalledText = result.filterIsInstance<UIMessagePart.Text>()
+                                    .joinToString("\n") { it.text }
+                                if (recalledText.isNotBlank()) {
+                                    appendLine()
+                                    appendLine("## 记忆浮现")
+                                    append(recalledText.take(OB_BREATH_MAX_CHARS))
+                                    Log.i(TAG, "OB search injected ${recalledText.length} chars")
+                                }
+                                lastObBreathMs = now
                             }
-                            lastObBreathMs = now
                         }
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "OB breath auto-recall failed", e)
+                    Log.w(TAG, "OB search auto-recall failed", e)
                 }
 
                 // Mem0 第三大脑自动召回（动态，语义搜索）
