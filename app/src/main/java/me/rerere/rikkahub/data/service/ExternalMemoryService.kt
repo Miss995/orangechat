@@ -26,6 +26,16 @@ class ExternalMemoryService(
 ) {
     companion object {
         private const val TAG = "ExternalMemoryService"
+
+        // 中文虚词/无意义高频词（拆词召回时剔除，避免 "的""我们" 之类搜出一堆不相干）
+        private val STOP_WORDS = setOf(
+            "我们", "你们", "他们", "她们", "它们", "这个", "那个", "什么", "怎么", "为什么",
+            "一个", "一下", "还有", "然后", "因为", "所以", "但是", "如果", "就是", "真的",
+            "这么", "那么", "今天", "明天", "昨天", "现在", "时候", "知道", "觉得", "有点",
+            "哈哈", "嗯嗯", "还是", "可以", "没有", "不是", "而且", "其实", "应该", "可能",
+            "大概", "之前", "之后", "最近", "上次", "记得", "感觉", "好像", "看到", "听到",
+            "说到", "想到", "想问", "宝贝", "小宝", "橘仔", "宝和", "想问"
+        )
     }
 
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
@@ -186,7 +196,14 @@ class ExternalMemoryService(
     }
 
     /**
-     * 关键词搜索消息
+     * 关键词搜索消息（查询加工版）
+     *
+     * 不再直接 ILIKE 整句（长句几乎必然搜空），而是自适应：
+     * 1. 先整句 ILIKE 搜（精确命中直接用）
+     * 2. 结果不足时自动拆词（标点分段 + 2-3 字 ngram，去虚词）多关键词合并去重
+     * 3. 搜够条数就停（避免慢）
+     *
+     * 监工台召回体检与生成时兜底都走这里，一起变聪明。
      */
     suspend fun searchMessages(
         assistantId: String,
@@ -194,30 +211,83 @@ class ExternalMemoryService(
         limit: Int = 10,
     ): Result<List<ExternalMemoryMessage>> = withContext(Dispatchers.IO) {
         runCatching {
-            val url = config.supabaseUrl.trimEnd('/')
-            val encodedKeyword = URLEncoder.encode("%$keyword%", "UTF-8")
-            val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}&content=ilike.$encodedKeyword&order=created_at.desc&limit=$limit"
-            val endpoint = URL("$url/rest/v1/${config.tableName}?$query")
+            val trimmed = keyword.trim()
+            if (trimmed.isBlank()) return@runCatching emptyList()
 
-            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                setRequestProperty("apikey", config.supabaseKey)
-                setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
-                setRequestProperty("Accept", "application/json")
-                connectTimeout = 15000
-                readTimeout = 15000
+            val safeLimit = limit.coerceIn(1, 50)
+
+            // 1. 整句 ILIKE 优先
+            var results = searchMessagesOnce(assistantId, trimmed, safeLimit)
+
+            // 2. 不足则拆词合并（去重，搜够即停）
+            if (results.size < safeLimit) {
+                val keywords = buildSearchKeywords(trimmed)
+                val seen = results.map { it.id }.toMutableSet()
+                val merged = results.toMutableList()
+                for (kw in keywords) {
+                    if (merged.size >= safeLimit) break
+                    searchMessagesOnce(assistantId, kw, safeLimit)
+                        .filter { seen.add(it.id) }
+                        .forEach { merged.add(it) }
+                }
+                results = merged.take(safeLimit)
             }
-
-            val responseCode = connection.responseCode
-            if (responseCode !in 200..299) {
-                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
-                Log.e(TAG, "searchMessages HTTP $responseCode body=$errorBody")
-                throw Exception("Supabase API error ($responseCode): $errorBody")
-            }
-
-            val responseText = connection.inputStream.bufferedReader().readText()
-            parseMessages(responseText)
+            results
         }
+    }
+
+    /** 单次 ILIKE 搜索（searchMessages 内部用） */
+    private fun searchMessagesOnce(
+        assistantId: String,
+        keyword: String,
+        limit: Int,
+    ): List<ExternalMemoryMessage> {
+        val url = config.supabaseUrl.trimEnd('/')
+        val encodedKeyword = URLEncoder.encode("%$keyword%", "UTF-8")
+        val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}&content=ilike.$encodedKeyword&order=created_at.desc&limit=$limit"
+        val endpoint = URL("$url/rest/v1/${config.tableName}?$query")
+
+        val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("apikey", config.supabaseKey)
+            setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+            setRequestProperty("Accept", "application/json")
+            connectTimeout = 15000
+            readTimeout = 15000
+        }
+
+        val responseCode = connection.responseCode
+        if (responseCode !in 200..299) {
+            val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+            Log.e(TAG, "searchMessagesOnce HTTP $responseCode body=$errorBody")
+            throw Exception("Supabase API error ($responseCode): $errorBody")
+        }
+
+        val responseText = connection.inputStream.bufferedReader().readText()
+        parseMessages(responseText)
+    }
+
+    /** 拆词：标点分段 + 2-3 字 ngram，去虚词/纯标点，最多取 8 个 */
+    private fun buildSearchKeywords(query: String): List<String> {
+        val parts = query.split(Regex("[\\s，。！？、；：,.!?;:（）()\"'']+"))
+            .filter { it.isNotBlank() }
+        val keywords = mutableListOf<String>()
+        parts.forEach { part ->
+            if (part.length <= 4) {
+                keywords.add(part)
+            } else {
+                var i = 0
+                while (i < part.length - 1) {
+                    keywords.add(part.substring(i, minOf(i + 2, part.length)))
+                    if (i + 3 <= part.length) keywords.add(part.substring(i, i + 3))
+                    i += 2
+                }
+            }
+        }
+        return keywords
+            .distinct()
+            .filter { it.length >= 2 && it !in STOP_WORDS && it.any { c -> c.isLetterOrDigit() } }
+            .take(8)
     }
 
     /**
