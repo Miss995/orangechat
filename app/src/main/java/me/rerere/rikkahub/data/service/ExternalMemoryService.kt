@@ -27,14 +27,24 @@ class ExternalMemoryService(
     companion object {
         private const val TAG = "ExternalMemoryService"
 
-        // 中文虚词/无意义高频词（拆词召回时剔除，避免 "的""我们" 之类搜出一堆不相干）
+        // 中文虚词/无意义高频词（拆词召回时剔除，避免 "速速""我们" 之类口语虚词搜出一堆不相干）
         private val STOP_WORDS = setOf(
-            "我们", "你们", "他们", "她们", "它们", "这个", "那个", "什么", "怎么", "为什么",
-            "一个", "一下", "还有", "然后", "因为", "所以", "但是", "如果", "就是", "真的",
-            "这么", "那么", "今天", "明天", "昨天", "现在", "时候", "知道", "觉得", "有点",
-            "哈哈", "嗯嗯", "还是", "可以", "没有", "不是", "而且", "其实", "应该", "可能",
-            "大概", "之前", "之后", "最近", "上次", "记得", "感觉", "好像", "看到", "听到",
-            "说到", "想到", "想问", "宝贝", "小宝", "橘仔", "宝和", "想问"
+            // 人称/指代
+            "我们", "你们", "他们", "她们", "它们", "咱们", "人家", "自己", "大家",
+            "这个", "那个", "这些", "那些", "这里", "那里", "这边", "那边", "这样", "那样",
+            // 疑问/连接
+            "什么", "怎么", "为什么", "如何", "为何", "哪里", "哪儿", "哪个", "哪些", "多少", "何时", "几时",
+            "因为", "所以", "但是", "可是", "然而", "如果", "虽然", "尽管", "即使", "就算", "不管", "无论", "只要", "除非", "以及", "或者", "还是", "要么", "而且", "其实", "不过", "反正", "然后", "还有", "之类", "等等", "就是", "真的",
+            // 时间/状态
+            "今天", "明天", "昨天", "现在", "刚才", "最近", "上次", "之前", "之后", "时候", "这会儿", "一下子",
+            // 口语高频（宝实测："速速给自己点一个大鸡腿吃"拆出"速速"当关键词，纯噪声）
+            "速速", "快快", "赶紧", "马上", "立刻", "快点", "顺便", "直接", "突然", "忽然", "居然", "竟然", "到底", "究竟", "难道", "莫非", "非常", "特别", "十分", "相当", "比较", "稍微", "略微", "简直", "实在", "的确", "确实", "明显", "显然", "当然", "自然", "毕竟", "终究",
+            // 认知/感受（作为搜索词太泛）
+            "知道", "觉得", "感觉", "好像", "有点", "有点", "记得", "想问", "想到", "看到", "听到", "说到", "想到",
+            // 语气/拟声
+            "哈哈", "嗯嗯", "嘿嘿", "嘻嘻", "呜呜", "啊啊", "哦哦", "好吧", "好的", "好了", "可以", "没有", "不是", "应该", "可能", "大概", "一个", "一下", "这么", "那么",
+            // 专属称呼（作为搜索词无意义）
+            "宝贝", "小宝", "橘仔", "宝和", "年糕", "猫猫", "喵喵"
         )
     }
 
@@ -211,22 +221,14 @@ class ExternalMemoryService(
         limit: Int = 10,
     ): Result<List<ExternalMemoryMessage>> = withContext(Dispatchers.IO) {
         runCatching {
-            doSearchMessages(assistantId, keyword, limit)
-        }
-    }
+            val trimmed = keyword.trim()
+            if (trimmed.isBlank()) return@runCatching emptyList()
 
-    /** 查询加工核心逻辑（拆成普通函数避免嵌套 inline lambda 返回推断问题） */
-    private fun doSearchMessages(
-        assistantId: String,
-        keyword: String,
-        limit: Int,
-    ): List<ExternalMemoryMessage> {
-        val trimmed = keyword.trim()
-        val safeLimit = limit.coerceIn(1, 50)
-        var results: List<ExternalMemoryMessage> = emptyList()
-        if (trimmed.isNotBlank()) {
+            val safeLimit = limit.coerceIn(1, 50)
+
             // 1. 整句 ILIKE 优先
-            results = searchMessagesOnce(assistantId, trimmed, safeLimit)
+            var results = searchMessagesOnce(assistantId, trimmed, safeLimit)
+
             // 2. 不足则拆词合并（去重，搜够即停）
             if (results.size < safeLimit) {
                 val keywords = buildSearchKeywords(trimmed)
@@ -240,8 +242,8 @@ class ExternalMemoryService(
                 }
                 results = merged.take(safeLimit)
             }
+            results
         }
-        return results
     }
 
     /** 单次 ILIKE 搜索（searchMessages 内部用） */
@@ -272,12 +274,12 @@ class ExternalMemoryService(
         }
 
         val responseText = connection.inputStream.bufferedReader().readText()
-        return parseMessages(responseText)
+        parseMessages(responseText)
     }
 
     /** 拆词：标点分段 + 2-3 字 ngram，去虚词/纯标点，最多取 8 个 */
     private fun buildSearchKeywords(query: String): List<String> {
-        val parts = query.split(Regex("""[\s，。！？、；：,.!?;:（）()"']+"""))
+        val parts = query.split(Regex("[\\s，。！？、；：,.!?;:（）()\"'']+"))
             .filter { it.isNotBlank() }
         val keywords = mutableListOf<String>()
         parts.forEach { part ->
@@ -292,11 +294,10 @@ class ExternalMemoryService(
                 }
             }
         }
-        val result = keywords
+        return keywords
             .distinct()
             .filter { it.length >= 2 && it !in STOP_WORDS && it.any { c -> c.isLetterOrDigit() } }
             .take(8)
-        return result
     }
 
     /**
