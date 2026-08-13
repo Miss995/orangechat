@@ -99,6 +99,7 @@ fun MemoryWatchPage() {
     // 召回体检
     var recallQuery by remember { mutableStateOf("") }
     var recallResults by remember { mutableStateOf<Map<String, List<ExternalMemoryMessage>>>(emptyMap()) }
+    var recallDone by remember { mutableStateOf(false) }
     var recallRunning by remember { mutableStateOf(false) }
     // 详情弹窗
     var detailMessage by remember { mutableStateOf<ExternalMemoryMessage?>(null) }
@@ -173,11 +174,15 @@ fun MemoryWatchPage() {
                     recallQuery = recallQuery,
                     onQueryChange = { recallQuery = it },
                     recallResults = recallResults,
+                    recallDone = recallDone,
                     recallRunning = recallRunning,
                     onRunRecall = {
-                        val canRun = recallQuery.isNotBlank() && assistantId.isNotBlank()
+                        val canRun = recallQuery.isNotBlank() &&
+                            assistantId.isNotBlank() &&
+                            externalConfigs.isNotEmpty()
                         if (canRun) {
                             recallRunning = true
+                            recallDone = true
                             recallResults = emptyMap()
                             val querySnapshot = recallQuery.trim()
                             scope.launch {
@@ -228,7 +233,11 @@ fun MemoryWatchPage() {
             if (messages.isEmpty() && !messagesLoading) {
                 item("emptyHint") {
                     Text(
-                        text = "（这个库里还没有消息，或当前助手无记录）",
+                        text = if (assistantId.isBlank()) {
+                            "（未检测到当前助手，无法读取记忆）"
+                        } else {
+                            "（这个库里还没有消息，或当前助手无记录）"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -306,6 +315,7 @@ private fun StatusSection(
             item(
                 leadingContent = { Icon(HugeIcons.Database02, null) },
                 headlineContent = { Text("没有启用的外置记忆库") },
+                supportingContent = { Text("去「进阶记忆」配置里启用一个") },
             )
         } else {
             externalConfigs.forEach { cfg ->
@@ -364,6 +374,7 @@ private fun RecallTestSection(
     recallQuery: String,
     onQueryChange: (String) -> Unit,
     recallResults: Map<String, List<ExternalMemoryMessage>>,
+    recallDone: Boolean,
     recallRunning: Boolean,
     onRunRecall: () -> Unit,
 ) {
@@ -376,6 +387,19 @@ private fun RecallTestSection(
             headlineContent = { Text("外置记忆库关键词召回") },
             supportingContent = { Text("输入后点「体检」，每个库按召回条数各搜一次") },
         )
+        if (assistantId.isBlank()) {
+            item(
+                leadingContent = { Icon(HugeIcons.Pulse01, null) },
+                headlineContent = { Text("⚠ 未检测到当前助手") },
+                supportingContent = { Text("先回到聊天界面选一个助手，再来体检") },
+            )
+        } else if (externalConfigs.isEmpty()) {
+            item(
+                leadingContent = { Icon(HugeIcons.Pulse01, null) },
+                headlineContent = { Text("⚠ 没有启用的外置记忆库") },
+                supportingContent = { Text("去「进阶记忆」启用后再来体检") },
+            )
+        }
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -391,37 +415,49 @@ private fun RecallTestSection(
                 )
                 Button(
                     onClick = onRunRecall,
-                    enabled = !recallRunning && recallQuery.isNotBlank() && assistantId.isNotBlank(),
+                    enabled = !recallRunning &&
+                        recallQuery.isNotBlank() &&
+                        assistantId.isNotBlank() &&
+                        externalConfigs.isNotEmpty(),
                 ) {
                     Text(if (recallRunning) "体检中…" else "体检")
                 }
             }
         }
-        if (recallResults.isNotEmpty()) {
-            recallResults.forEach { (name, hits) ->
+        // 体检结果：体检过就显示（哪怕全是 0 条），不再无声无息
+        if (recallDone) {
+            if (recallResults.isEmpty()) {
                 item(
                     leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
-                    headlineContent = { Text("$name · 召回 ${hits.size} 条") },
-                    supportingContent = {
-                        if (hits.isEmpty()) {
-                            Text("什么都没搜到")
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                hits.take(3).forEach { m ->
-                                    Text(
-                                        text = (if (m.role == "user") "用户：" else "AI：") + m.content.take(60),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                if (hits.size > 3) {
-                                    Text("…还有 ${hits.size - 3} 条", style = MaterialTheme.typography.bodySmall)
+                    headlineContent = { Text("体检完成") },
+                    supportingContent = { Text("没有可体检的记忆源（未启用外置库）") },
+                )
+            } else {
+                recallResults.forEach { (name, hits) ->
+                    item(
+                        leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
+                        headlineContent = { Text("$name · 召回 ${hits.size} 条") },
+                        supportingContent = {
+                            if (hits.isEmpty()) {
+                                Text("什么都没搜到")
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    hits.take(3).forEach { m ->
+                                        Text(
+                                            text = (if (m.role == "user") "用户：" else "AI：") + m.content.take(60),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    if (hits.size > 3) {
+                                        Text("…还有 ${hits.size - 3} 条", style = MaterialTheme.typography.bodySmall)
+                                    }
                                 }
                             }
-                        }
-                    },
-                )
+                        },
+                    )
+                }
             }
         }
     }
