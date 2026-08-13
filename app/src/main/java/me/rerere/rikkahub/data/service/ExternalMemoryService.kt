@@ -28,7 +28,8 @@ class ExternalMemoryService(
         private const val TAG = "ExternalMemoryService"
 
         // 中文虚词/无意义高频词（拆词召回时剔除，避免 "速速""我们" 之类口语虚词搜出一堆不相干）
-        private val STOP_WORDS = setOf(
+        // internal：QueryKeywordExtractor 过滤 AI 拆词结果时也复用这份表
+        internal val STOP_WORDS = setOf(
             // 人称/指代
             "我们", "你们", "他们", "她们", "它们", "咱们", "人家", "自己", "大家",
             "这个", "那个", "这些", "那些", "这里", "那里", "这边", "那边", "这样", "那样",
@@ -246,7 +247,30 @@ class ExternalMemoryService(
         }
     }
 
-    /** 单次 ILIKE 搜索（searchMessages 内部用） */
+    /**
+     * 按给定关键词列表逐个 ILIKE 搜索并合并去重（AI 拆词后使用；单个失败不影响整体）
+     */
+    suspend fun searchByKeywords(
+        assistantId: String,
+        keywords: List<String>,
+        limit: Int = 10,
+    ): Result<List<ExternalMemoryMessage>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val safeLimit = limit.coerceIn(1, 50)
+            val seen = mutableSetOf<Int>()
+            val merged = mutableListOf<ExternalMemoryMessage>()
+            for (kw in keywords) {
+                if (merged.size >= safeLimit) break
+                runCatching { searchMessagesOnce(assistantId, kw, safeLimit) }
+                    .getOrDefault(emptyList())
+                    .filter { seen.add(it.id) }
+                    .forEach { merged.add(it) }
+            }
+            merged.take(safeLimit)
+        }
+    }
+
+    /** 单次 ILIKE 搜索（searchMessages / searchByKeywords 内部用） */
     private fun searchMessagesOnce(
         assistantId: String,
         keyword: String,
