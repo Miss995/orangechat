@@ -212,27 +212,29 @@ class ExternalMemoryService(
     ): Result<List<ExternalMemoryMessage>> = withContext(Dispatchers.IO) {
         runCatching {
             val trimmed = keyword.trim()
-            if (trimmed.isBlank()) return@runCatching emptyList()
+            if (trimmed.isBlank()) {
+                emptyList()
+            } else {
+                val safeLimit = limit.coerceIn(1, 50)
 
-            val safeLimit = limit.coerceIn(1, 50)
+                // 1. 整句 ILIKE 优先
+                var results = searchMessagesOnce(assistantId, trimmed, safeLimit)
 
-            // 1. 整句 ILIKE 优先
-            var results = searchMessagesOnce(assistantId, trimmed, safeLimit)
-
-            // 2. 不足则拆词合并（去重，搜够即停）
-            if (results.size < safeLimit) {
-                val keywords = buildSearchKeywords(trimmed)
-                val seen = results.map { it.id }.toMutableSet()
-                val merged = results.toMutableList()
-                for (kw in keywords) {
-                    if (merged.size >= safeLimit) break
-                    searchMessagesOnce(assistantId, kw, safeLimit)
-                        .filter { seen.add(it.id) }
-                        .forEach { merged.add(it) }
+                // 2. 不足则拆词合并（去重，搜够即停）
+                if (results.size < safeLimit) {
+                    val keywords = buildSearchKeywords(trimmed)
+                    val seen = results.map { it.id }.toMutableSet()
+                    val merged = results.toMutableList()
+                    for (kw in keywords) {
+                        if (merged.size >= safeLimit) break
+                        searchMessagesOnce(assistantId, kw, safeLimit)
+                            .filter { seen.add(it.id) }
+                            .forEach { merged.add(it) }
+                    }
+                    results = merged.take(safeLimit)
                 }
-                results = merged.take(safeLimit)
+                results
             }
-            results
         }
     }
 
