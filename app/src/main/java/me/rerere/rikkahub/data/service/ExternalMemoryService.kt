@@ -212,14 +212,11 @@ class ExternalMemoryService(
     ): Result<List<ExternalMemoryMessage>> = withContext(Dispatchers.IO) {
         runCatching {
             val trimmed = keyword.trim()
-            if (trimmed.isBlank()) {
-                emptyList()
-            } else {
-                val safeLimit = limit.coerceIn(1, 50)
-
+            val safeLimit = limit.coerceIn(1, 50)
+            var results: List<ExternalMemoryMessage> = emptyList()
+            if (trimmed.isNotBlank()) {
                 // 1. 整句 ILIKE 优先
-                var results = searchMessagesOnce(assistantId, trimmed, safeLimit)
-
+                results = searchMessagesOnce(assistantId, trimmed, safeLimit)
                 // 2. 不足则拆词合并（去重，搜够即停）
                 if (results.size < safeLimit) {
                     val keywords = buildSearchKeywords(trimmed)
@@ -233,8 +230,8 @@ class ExternalMemoryService(
                     }
                     results = merged.take(safeLimit)
                 }
-                results
             }
+            results
         }
     }
 
@@ -252,7 +249,7 @@ class ExternalMemoryService(
         val connection = (endpoint.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             setRequestProperty("apikey", config.supabaseKey)
-            setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+            setRequestProperty("Authorization", "Bearer ${config.supabaseKey}"
             setRequestProperty("Accept", "application/json")
             connectTimeout = 15000
             readTimeout = 15000
