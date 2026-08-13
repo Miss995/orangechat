@@ -101,6 +101,8 @@ fun MemoryWatchPage() {
     var recallResults by remember { mutableStateOf<Map<String, List<ExternalMemoryMessage>>>(emptyMap()) }
     var recallDone by remember { mutableStateOf(false) }
     var recallRunning by remember { mutableStateOf(false) }
+    // 体检诊断（自报进度，方便定位问题）
+    var recallDiag by remember { mutableStateOf("就绪——输入一句话，点「体检」") }
     // 详情弹窗
     var detailMessage by remember { mutableStateOf<ExternalMemoryMessage?>(null) }
 
@@ -108,6 +110,7 @@ fun MemoryWatchPage() {
     LaunchedEffect(externalConfigs, assistantId) {
         if (assistantId.isBlank()) {
             statusMap = emptyMap()
+            recallDiag = "⚠ 未检测到当前助手（assistantId 为空）"
             return@LaunchedEffect
         }
         statusMap = externalConfigs.associate { cfg ->
@@ -125,6 +128,7 @@ fun MemoryWatchPage() {
             }
         }.awaitAll()
         statusMap = results.toMap()
+        recallDiag = "状态灯已刷新：${externalConfigs.size} 个外置库，助手 id=${assistantId.take(8)}…"
     }
 
     // 选中库变化 -> 加载最近 150 条
@@ -176,30 +180,47 @@ fun MemoryWatchPage() {
                     recallResults = recallResults,
                     recallDone = recallDone,
                     recallRunning = recallRunning,
+                    recallDiag = recallDiag,
                     onRunRecall = {
+                        recallDiag = "已触发点击：词=\"${recallQuery.trim()}\" 助手id=\"${assistantId.take(8)}…\" 外置库=${externalConfigs.size} 个"
                         val canRun = recallQuery.isNotBlank() &&
                             assistantId.isNotBlank() &&
                             externalConfigs.isNotEmpty()
-                        if (canRun) {
-                            recallRunning = true
-                            recallDone = true
-                            recallResults = emptyMap()
-                            val querySnapshot = recallQuery.trim()
-                            scope.launch {
-                                val results = externalConfigs.map { cfg ->
-                                    async {
-                                        val service = ExternalMemoryService(cfg)
-                                        val hits = service.searchMessages(
-                                            assistantId = assistantId,
-                                            keyword = querySnapshot,
-                                            limit = cfg.recallCount,
-                                        ).getOrDefault(emptyList())
-                                        cfg.name to hits
-                                    }
-                                }.awaitAll().toMap()
-                                recallResults = results
-                                recallRunning = false
+                        if (!canRun) {
+                            val why = when {
+                                recallQuery.isBlank() -> "体检词为空"
+                                assistantId.isBlank() -> "未检测到当前助手"
+                                externalConfigs.isEmpty() -> "没有启用的外置记忆库"
+                                else -> "未知原因"
                             }
+                            recallDiag = "❌ 无法体检：$why（按钮应已置灰）"
+                            return@onRunRecall
+                        }
+                        recallRunning = true
+                        recallDone = true
+                        recallResults = emptyMap()
+                        val querySnapshot = recallQuery.trim()
+                        val configsSnapshot = externalConfigs
+                        val assistantSnapshot = assistantId
+                        recallDiag = "开始搜索 ${configsSnapshot.size} 个外置库…（词=\"$querySnapshot\"）"
+                        scope.launch {
+                            val results = configsSnapshot.map { cfg ->
+                                async {
+                                    val service = ExternalMemoryService(cfg)
+                                    val hits = service.searchMessages(
+                                        assistantId = assistantSnapshot,
+                                        keyword = querySnapshot,
+                                        limit = cfg.recallCount,
+                                    ).getOrDefault(emptyList())
+                                    cfg.name to hits
+                                }
+                            }.awaitAll().toMap()
+                            recallResults = results
+                            recallRunning = false
+                            val summary = results.entries.joinToString("；") { (name, hits) ->
+                                "$name 召回 ${hits.size} 条"
+                            }
+                            recallDiag = "✅ 体检完成：$summary"
                         }
                     },
                 )
@@ -376,16 +397,18 @@ private fun RecallTestSection(
     recallResults: Map<String, List<ExternalMemoryMessage>>,
     recallDone: Boolean,
     recallRunning: Boolean,
+    recallDiag: String,
     onRunRecall: () -> Unit,
 ) {
     CardGroup(
         modifier = Modifier.padding(horizontal = 8.dp),
         title = { Text("召回体检（输入一句话，看谁能召回）") },
     ) {
+        // 自报进度诊断行（常驻，方便定位问题）
         item(
-            leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
-            headlineContent = { Text("外置记忆库关键词召回") },
-            supportingContent = { Text("输入后点「体检」，每个库按召回条数各搜一次") },
+            leadingContent = { Icon(HugeIcons.Pulse01, null) },
+            headlineContent = { Text("体检进度", color = MaterialTheme.colorScheme.primary) },
+            supportingContent = { Text(recallDiag) },
         )
         if (assistantId.isBlank()) {
             item(
