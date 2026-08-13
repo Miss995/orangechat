@@ -211,28 +211,37 @@ class ExternalMemoryService(
         limit: Int = 10,
     ): Result<List<ExternalMemoryMessage>> = withContext(Dispatchers.IO) {
         runCatching {
-            val trimmed = keyword.trim()
-            val safeLimit = limit.coerceIn(1, 50)
-            var results: List<ExternalMemoryMessage> = emptyList()
-            if (trimmed.isNotBlank()) {
-                // 1. 整句 ILIKE 优先
-                results = searchMessagesOnce(assistantId, trimmed, safeLimit)
-                // 2. 不足则拆词合并（去重，搜够即停）
-                if (results.size < safeLimit) {
-                    val keywords = buildSearchKeywords(trimmed)
-                    val seen = results.map { it.id }.toMutableSet()
-                    val merged = results.toMutableList()
-                    for (kw in keywords) {
-                        if (merged.size >= safeLimit) break
-                        searchMessagesOnce(assistantId, kw, safeLimit)
-                            .filter { seen.add(it.id) }
-                            .forEach { merged.add(it) }
-                    }
-                    results = merged.take(safeLimit)
-                }
-            }
-            results
+            doSearchMessages(assistantId, keyword, limit)
         }
+    }
+
+    /** 查询加工核心逻辑（拆成普通函数避免嵌套 inline lambda 返回推断问题） */
+    private fun doSearchMessages(
+        assistantId: String,
+        keyword: String,
+        limit: Int,
+    ): List<ExternalMemoryMessage> {
+        val trimmed = keyword.trim()
+        val safeLimit = limit.coerceIn(1, 50)
+        var results: List<ExternalMemoryMessage> = emptyList()
+        if (trimmed.isNotBlank()) {
+            // 1. 整句 ILIKE 优先
+            results = searchMessagesOnce(assistantId, trimmed, safeLimit)
+            // 2. 不足则拆词合并（去重，搜够即停）
+            if (results.size < safeLimit) {
+                val keywords = buildSearchKeywords(trimmed)
+                val seen = results.map { it.id }.toMutableSet()
+                val merged = results.toMutableList()
+                for (kw in keywords) {
+                    if (merged.size >= safeLimit) break
+                    searchMessagesOnce(assistantId, kw, safeLimit)
+                        .filter { seen.add(it.id) }
+                        .forEach { merged.add(it) }
+                }
+                results = merged.take(safeLimit)
+            }
+        }
+        return results
     }
 
     /** 单次 ILIKE 搜索（searchMessages 内部用） */
