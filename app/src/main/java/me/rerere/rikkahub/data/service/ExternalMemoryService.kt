@@ -298,7 +298,7 @@ class ExternalMemoryService(
         }
 
         val responseText = connection.inputStream.bufferedReader().readText()
-        parseMessages(responseText)
+        return parseMessages(responseText)
     }
 
     /** 拆词：标点分段 + 2-3 字 ngram，去虚词/纯标点，最多取 8 个 */

@@ -1,5 +1,4 @@
-/*
- * 橘瓣 OrangeChat
+/* 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
  */
@@ -8,6 +7,7 @@ package me.rerere.rikkahub.data.ai
  
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -26,6 +26,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
@@ -72,6 +73,18 @@ private const val TAG = "GenerationHandler"
 // animateContentSize 的尺寸补间动画被不断打断重启），表现为打字机效果的"抖动/掉帧"。
 // 这里把推送频率限制在这个间隔以内，肉眼完全感知不到延迟，但能大幅降低重组频率。
 private const val STREAM_UI_THROTTLE_MS = 50L
+
+// OB 记忆按需搜索（搜索型）：节流间隔与单次注入上限
+private const val OB_BREATH_INTERVAL_MS = 5 * 60 * 1000L
+private const val OB_BREATH_MAX_CHARS = 3000
+
+// 外置记忆库召回节流：同一会话内每 5 分钟最多召回一次
+// （工具循环的二次请求不再重复搜索，上下文里已有首次召回结果）
+private const val EXTERNAL_RECALL_INTERVAL_MS = 5 * 60 * 1000L
+// 外置库召回单次超时（Supabase 响应慢时放宽到 15 秒，减少超时空手）
+private const val EXTERNAL_RECALL_TIMEOUT_MS = 15_000L
+// 召回时排除最近 10 分钟内的消息（当前对话尾巴上下文里已有，避免把刚发的消息回显进外置记忆库）
+private const val EXTERNAL_RECALL_SKIP_RECENT_MS = 10 * 60 * 1000L
  
 @Serializable
 sealed interface GenerationChunk {
@@ -88,6 +101,8 @@ class GenerationHandler(
     private val conversationRepo: ConversationRepository,
     private val aiLoggingManager: AILoggingManager,
     private val memoryBankService: MemoryBankService,
+    private var lastObBreathMs: Long = 0L,
+    private var lastExternalRecallMs: Long = 0L,
 ) {
     fun generateText(
         settings: Settings,
@@ -134,8 +149,8 @@ class GenerationHandler(
                         }
                     ).let(this::addAll)
                 }
-                // 文件写入工具 - AI可直接将文件内容写入设备或打包ZIP
-                add(buildWriteFilesTool(conversationId))
+                // 文件写入工具 - AI可直接将文件内容写入设备或打包ZIP（缓存持久化到 App files 目录）
+                add(buildWriteFilesTool(context, conversationId))
                 addAll(tools)
             }
  
@@ -392,195 +407,262 @@ class GenerationHandler(
                     append(effectiveSystemPrompt)
                 }
  
-                // 记忆
-                if (assistant.enableMemory) {
-                    appendLine()
-                    append(buildMemoryPrompt(memories = memories))
-                }
- 
-                // 外置记忆库召回（聊天记录向量优先 + AI 拆词兜底（省钱版）+ ngram 保底）
-                try {
-                    val externalMemoryConfigs = settings.externalMemories.filter {
-                        it.enabled && it.id in assistant.externalMemoryIds
-                    }
-                    externalMemoryConfigs.forEach { config ->
-                        Log.i(TAG, "ExternalMemory config: name=${config.name}, url=${config.supabaseUrl}, table=${config.tableName}, summaryTable=${config.summariesTableName}, embeddingModelId=${config.embeddingModelId}, autoSaveDiarySummary=${config.autoSaveDiarySummary}")
-                    }
-                    if (externalMemoryConfigs.isNotEmpty()) {
-                        val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
-                        val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
-                        // 并发检索所有外置记忆库配置，每个配置最多 8 秒超时
-                        val allRecalled = coroutineScope {
-                            externalMemoryConfigs.map { config ->
-                                async {
-                                    withTimeoutOrNull(8.seconds) {
-                                        runCatching {
-                                            val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
-                                            val recalled = mutableListOf<String>()
-
-                                            // 判断是否有向量能力（配置了 embedding 模型 且有用户消息）
-                                            val hasEmbedding = config.embeddingModelId != null && queryText.isNotBlank()
-                                            if (hasEmbedding) {
-                                                val embeddingModel = settings.findModelById(config.embeddingModelId)
-                                                val embeddingProvider = embeddingModel?.findProvider(settings.providers)
-                                                val embeddingProviderImpl = embeddingProvider?.let { providerManager.getProviderByType(it) }
-                                                val queryEmbedding = if (embeddingModel != null && embeddingProvider != null && embeddingProviderImpl != null) {
-                                                    runCatching {
-                                                        embeddingProviderImpl.generateEmbedding(
-                                                            providerSetting = embeddingProvider,
-                                                            params = EmbeddingGenerationParams(
-                                                                model = embeddingModel,
-                                                                input = listOf(queryText),
-                                                            )
-                                                        ).embeddings.firstOrNull()
-                                                    }.getOrNull()
-                                                } else null
-
-                                                if (queryEmbedding != null) {
-                                                    // ① 向量召回聊天记录（主力：免费 + 按意思找，1 万条回填向量终于用上）
-                                                    val recalledMessages = service.vectorRecallMessages(
-                                                        queryEmbedding = queryEmbedding,
-                                                        assistantId = assistant.id.toString(),
-                                                        count = config.recallCount,
-                                                    ).getOrDefault(emptyList())
-                                                    recalledMessages.forEach { msg ->
-                                                        val prefix = when (msg.role) {
-                                                            "assistant" -> "AI"
-                                                            "user" -> "用户"
-                                                            else -> msg.role
-                                                        }
-                                                        recalled.add("[$prefix] ${msg.content}")
-                                                    }
-                                                    Log.d(TAG, "Vector recall ${recalledMessages.size} messages from ${config.name}")
-
-                                                    // ② 不足 → 关键词兜底（省钱版：AI 拆词，失败自动退回 ngram）
-                                                    if (recalledMessages.size < config.recallCount) {
-                                                        val keywords = (embeddingProvider as? me.rerere.ai.provider.ProviderSetting.OpenAI)?.let { openAi ->
-                                                            runCatching {
-                                                                me.rerere.rikkahub.data.service.QueryKeywordExtractor(
-                                                                    apiKey = openAi.apiKey,
-                                                                    apiBase = openAi.baseUrl,
-                                                                ).extract(queryText)
-                                                            }.getOrDefault(emptyList())
-                                                        }.orEmpty()
-                                                        val fallbackMessages = if (keywords.isNotEmpty()) {
-                                                            service.searchByKeywords(
-                                                                assistantId = assistant.id.toString(),
-                                                                keywords = keywords,
-                                                                limit = config.recallCount,
-                                                            ).getOrDefault(emptyList())
-                                                        } else {
-                                                            service.searchMessages(
-                                                                assistantId = assistant.id.toString(),
-                                                                keyword = queryText,
-                                                                limit = config.recallCount,
-                                                            ).getOrDefault(emptyList())
-                                                        }
-                                                        val seenIds = recalledMessages.map { it.id }.toSet()
-                                                        fallbackMessages.filter { it.id !in seenIds }.forEach { msg ->
-                                                            val prefix = when (msg.role) {
-                                                                "assistant" -> "AI"
-                                                                "user" -> "用户"
-                                                                else -> msg.role
-                                                            }
-                                                            recalled.add("[$prefix] ${msg.content}")
-                                                        }
-                                                        val added = fallbackMessages.count { it.id !in seenIds }
-                                                        Log.d(TAG, "Keyword fallback added $added msgs from ${config.name} (aiKeywords=${keywords.size})")
-                                                    }
-
-                                                    // ③ 日记摘要向量召回（保留原能力）
-                                                    if (config.autoSaveDiarySummary) {
-                                                        val recalledSummaries = service.vectorRecallSummaries(
-                                                            queryEmbedding = queryEmbedding,
-                                                            assistantId = assistant.id.toString(),
-                                                            count = config.recallCount,
-                                                        ).getOrDefault(emptyList())
-                                                        recalledSummaries.forEach { summary ->
-                                                            recalled.add(summary.content)
-                                                        }
-                                                        Log.d(TAG, "Vector recall ${recalledSummaries.size} summaries from ${config.name}")
-                                                    }
-                                                } else {
-                                                    // 向量生成失败 → 直接关键词搜索
-                                                    val recalledMessages = service.searchMessages(
-                                                        assistantId = assistant.id.toString(),
-                                                        keyword = queryText,
-                                                        limit = config.recallCount,
-                                                    ).getOrDefault(emptyList())
-                                                    recalledMessages.forEach { msg ->
-                                                        val prefix = when (msg.role) {
-                                                            "assistant" -> "AI"
-                                                            "user" -> "用户"
-                                                            else -> msg.role
-                                                        }
-                                                        recalled.add("[$prefix] ${msg.content}")
-                                                    }
-                                                }
-                                            } else {
-                                                // 无向量模型：文本召回聊天记录
-                                                val recalledMessages = if (queryText.isNotBlank()) {
-                                                    service.searchMessages(
-                                                        assistantId = assistant.id.toString(),
-                                                        keyword = queryText,
-                                                        limit = config.recallCount,
-                                                    ).getOrDefault(emptyList())
-                                                } else {
-                                                    service.queryLatestMessages(
-                                                        assistantId = assistant.id.toString(),
-                                                        limit = config.recallCount,
-                                                    ).getOrDefault(emptyList())
-                                                }
-                                                recalledMessages.forEach { msg ->
-                                                    val prefix = when (msg.role) {
-                                                        "assistant" -> "AI"
-                                                        "user" -> "用户"
-                                                        else -> msg.role
-                                                    }
-                                                    recalled.add("[$prefix] ${msg.content}")
-                                                }
-                                            }
-                                            recalled
-                                        }.onFailure {
-                                            Log.w(TAG, "External memory recall failed for ${config.name}", it)
-                                        }.getOrNull()
-                                    } ?: run {
-                                        Log.w(TAG, "External memory recall timed out for ${config.name}")
-                                        null
-                                    }
-                                }
-                            }.awaitAll()
-                                .filterNotNull()
-                                .flatten()
-                        }
-                        if (allRecalled.isNotEmpty()) {
-                            appendLine()
-                            appendLine("## 外置记忆库")
-                            allRecalled.distinct().reversed().forEachIndexed { index, memory ->
-                                appendLine("${index + 1}. ${memory}")
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "External memory recall failed", e)
-                }
- 
-                if (assistant.enableRecentChatsReference) {
-                    appendLine()
-                    append(buildRecentChatsPrompt(assistant, conversationRepo))
-                }
- 
-                // 代码文件命名和ZIP打包功能说明
+                // 代码文件命名和ZIP打包功能说明（稳定前缀，置于动态内容之前以提升前缀缓存命中率）
                 appendLine()
                 append(buildCodeBlockPrompt())
  
-                // 工具prompt
+                // 工具prompt（稳定前缀）
                 tools.forEach { tool ->
                     appendLine()
                     append(tool.systemPrompt(model, messages))
                 }
  
-                // 插件提示词注入
+                // 记忆（动态内容统一放到稳定前缀之后）
+                if (assistant.enableMemory) {
+                    appendLine()
+                    append(buildMemoryPrompt(memories = memories))
+                }
+ 
+                // 外置记忆库召回（动态）——节流：5 分钟内不重复召回（工具循环二次请求跳过，上下文已有首次结果）
+                val externalRecallNow = Clock.System.now().toEpochMilliseconds()
+                if (externalRecallNow - lastExternalRecallMs > EXTERNAL_RECALL_INTERVAL_MS) {
+                    try {
+                        val externalMemoryConfigs = settings.externalMemories.filter {
+                            it.enabled && it.id in assistant.externalMemoryIds
+                        }
+                        externalMemoryConfigs.forEach { config ->
+                            Log.i(TAG, "ExternalMemory config: name=${config.name}, url=${config.supabaseUrl}, table=${config.tableName}, summaryTable=${config.summariesTableName}, embeddingModelId=${config.embeddingModelId}, autoSaveDiarySummary=${config.autoSaveDiarySummary}")
+                        }
+                        if (externalMemoryConfigs.isNotEmpty()) {
+                            val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
+                            val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
+                            // 并发检索所有外置记忆库配置，每个配置最多 15 秒超时
+                            val allRecalled = coroutineScope {
+                                externalMemoryConfigs.map { config ->
+                                    async {
+                                        withTimeoutOrNull(EXTERNAL_RECALL_TIMEOUT_MS) {
+                                            runCatching {
+                                                val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
+                                                val recalled = mutableListOf<String>()
+
+                                // 1. 日记摘要：固定前一天一篇（最新1篇，不再混合召回）
+                                val latestSummaries = service.queryLatestSummaries(
+                                    assistantId = assistant.id.toString(),
+                                    limit = 1,
+                                ).getOrDefault(emptyList())
+                                latestSummaries.forEach { summary ->
+                                    recalled.add(summary.content)
+                                }
+
+                                // 2. 聊天记录：向量语义搜索优先（需 embedding 模型配置），结果不足时 ILIKE 兜底；排除最近10分钟避免回显当前对话
+                                val seenMsg = mutableSetOf<String>()
+                                val cutoffMs = System.currentTimeMillis() - EXTERNAL_RECALL_SKIP_RECENT_MS
+                                val timeSdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                                fun isHistorical(msg: me.rerere.rikkahub.data.service.ExternalMemoryMessage): Boolean {
+                                    // Supabase timestamptz 返回 ISO 8601（如 2026-06-29T05:58:38.057815+00:00 / ...Z），
+                                    // 本地写入是 "yyyy-MM-dd HH:mm:ss"。归一化后再解析，避免解析失败把全部消息过滤成空召回。
+                                    val createdMs = runCatching {
+                                        val clean = msg.createdAt
+                                            .replace('T', ' ')
+                                            .substringBefore('+')
+                                            .substringBefore('Z')
+                                            .substringBefore('.')
+                                        timeSdf.parse(clean)?.time ?: 0L
+                                    }.getOrDefault(0L)
+                                    return createdMs > 0 && createdMs < cutoffMs
+                                }
+                                if (queryText.isNotBlank()) {
+                                    // 2a. 向量语义召回：queryText 生成 embedding -> RPC 相似度搜索
+                                    var vectorHits = emptyList<me.rerere.rikkahub.data.service.ExternalMemoryMessage>()
+                                    val embeddingModel = config.embeddingModelId?.let { settings.findModelById(it) }
+                                    val embeddingProvider = embeddingModel?.findProvider(settings.providers)
+                                    if (embeddingProvider != null) {
+                                        val embeddingProviderImpl = providerManager.getProviderByType(embeddingProvider)
+                                        runCatching {
+                                            val embedResult = embeddingProviderImpl.generateEmbedding(
+                                                providerSetting = embeddingProvider,
+                                                params = EmbeddingGenerationParams(
+                                                    model = embeddingModel,
+                                                    input = listOf(queryText),
+                                                )
+                                            )
+                                            val queryEmbedding = embedResult.embeddings.firstOrNull()
+                                            if (queryEmbedding != null) {
+                                                vectorHits = service.vectorRecallMessages(
+                                                    queryEmbedding = queryEmbedding,
+                                                    assistantId = assistant.id.toString(),
+                                                    count = config.recallCount,
+                                                ).getOrDefault(emptyList())
+                                                    .filter { isHistorical(it) }
+                                                Log.d(TAG, "Vector recall ${vectorHits.size} messages from ${config.name}")
+                                            }
+                                        }.onFailure {
+                                            Log.w(TAG, "Vector recall failed for ${config.name}", it)
+                                        }
+                                    }
+                                    vectorHits.forEach { msg ->
+                                        val prefix = when (msg.role) {
+                                            "assistant" -> "AI"
+                                            "user" -> "用户"
+                                            else -> msg.role
+                                        }
+                                        val line = "[$prefix] ${msg.content}"
+                                        if (seenMsg.add(line)) recalled.add(line)
+                                    }
+                                    // 2b. 向量结果不足时 ILIKE 兜底（AI 拆词省钱版优先，失败退回中文 ngram 片段搜索）
+                                    if (vectorHits.size < 3) {
+                                        // AI 拆词：把整句交给便宜 LLM 拆成真关键词（如"速速给自己点一个大鸡腿吃"→"鸡腿"），
+                                        // 避免 ngram 拆出"速速/速给"这类碎片关键词；只在向量不足时才调，省钱。
+                                        val aiKeywords = runCatching {
+                                            (embeddingProvider as? me.rerere.ai.provider.ProviderSetting.OpenAI)?.let { openAi ->
+                                                me.rerere.rikkahub.data.service.QueryKeywordExtractor(
+                                                    apiKey = openAi.apiKey,
+                                                    apiBase = openAi.baseUrl,
+                                                ).extract(queryText)
+                                            }.orEmpty()
+                                        }.getOrDefault(emptyList())
+                                        val keywords = aiKeywords.ifEmpty {
+                                            buildList {
+                                                queryText.split(Regex("[\\s，。！？、；：,.!?;:（）()\"']+[）)]*"))
+                                                    .filter { it.isNotBlank() }
+                                                    .forEach { part ->
+                                                        if (part.length <= 4) {
+                                                            add(part)
+                                                        } else {
+                                                            var i = 0
+                                                            while (i < part.length - 1) {
+                                                                add(part.substring(i, minOf(i + 2, part.length)))
+                                                                if (i + 3 <= part.length) add(part.substring(i, i + 3))
+                                                                i += 2
+                                                            }
+                                                        }
+                                                    }
+                                            }.distinct()
+                                                .filter { it.length >= 2 && it !in me.rerere.rikkahub.data.service.ExternalMemoryService.STOP_WORDS }
+                                                .take(6)
+                                        }
+                                        keywords.forEach { kw ->
+                                            service.searchMessages(
+                                                assistantId = assistant.id.toString(),
+                                                keyword = kw,
+                                                limit = config.recallCount,
+                                            ).getOrDefault(emptyList())
+                                                .filter { isHistorical(it) }
+                                                .forEach { msg ->
+                                                    val prefix = when (msg.role) {
+                                                        "assistant" -> "AI"
+                                                        "user" -> "用户"
+                                                        else -> msg.role
+                                                    }
+                                                    val line = "[$prefix] ${msg.content}"
+                                                    if (seenMsg.add(line)) recalled.add(line)
+                                                }
+                                        }
+                                    }
+                                } else {
+                                    service.queryLatestMessages(
+                                        assistantId = assistant.id.toString(),
+                                        limit = config.recallCount,
+                                    ).getOrDefault(emptyList())
+                                        .filter { isHistorical(it) }
+                                        .forEach { msg ->
+                                            val prefix = when (msg.role) {
+                                                "assistant" -> "AI"
+                                                "user" -> "用户"
+                                                else -> msg.role
+                                            }
+                                            recalled.add("[$prefix] ${msg.content}")
+                                        }
+                                }
+                                                recalled
+                                            }.onFailure {
+                                                Log.w(TAG, "External memory recall failed for ${config.name}", it)
+                                            }.getOrNull()
+                                        } ?: run {
+                                            Log.w(TAG, "External memory recall timed out for ${config.name}")
+                                            null
+                                        }
+                                    }
+                                }.awaitAll()
+                                    .filterNotNull()
+                                    .flatten()
+                            }
+                            if (allRecalled.isNotEmpty()) {
+                                appendLine()
+                                appendLine("## 外置记忆库")
+                                allRecalled.reversed().forEachIndexed { index, memory ->
+                                    appendLine("${index + 1}. ${memory}")
+                                }
+                            }
+                        }
+                        lastExternalRecallMs = Clock.System.now().toEpochMilliseconds()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "External memory recall failed", e)
+                        lastExternalRecallMs = Clock.System.now().toEpochMilliseconds()
+                    }
+                }
+
+                // OB 记忆按需搜索（搜索型：不自动浮现，按用户消息内容调 breath_search，不吵不费token）
+                try {
+                    val now = Clock.System.now().toEpochMilliseconds()
+                    if (now - lastObBreathMs > OB_BREATH_INTERVAL_MS) {
+                        val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
+                        val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
+                        if (queryText.isNotBlank()) {
+                            val searchTool = tools.find { it.name.endsWith("_breath_search") }
+                            if (searchTool != null) {
+                                val args = buildJsonObject {
+                                    put("query", JsonPrimitive(queryText))
+                                }
+                                val result = searchTool.execute(json.parseToJsonElement(args.toString()).jsonObject)
+                                val recalledText = result.filterIsInstance<UIMessagePart.Text>()
+                                    .joinToString("\n") { it.text }
+                                if (recalledText.isNotBlank()) {
+                                    appendLine()
+                                    appendLine("## 记忆浮现")
+                                    append(recalledText.take(OB_BREATH_MAX_CHARS))
+                                    Log.i(TAG, "OB search injected ${recalledText.length} chars")
+                                }
+                                lastObBreathMs = now
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "OB search auto-recall failed", e)
+                }
+
+                // Mem0 第三大脑自动召回（动态，语义搜索）
+                try {
+                    val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
+                    val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
+                    if (queryText.isNotEmpty()) {
+                        val mem0Tool = tools.find { it.name.endsWith("_search_memory") }
+                        if (mem0Tool != null) {
+                            val args = buildJsonObject {
+                                put("query", JsonPrimitive(queryText))
+                            }
+                            val result = mem0Tool.execute(json.parseToJsonElement(args.toString()).jsonObject)
+                            val recalledText = result.filterIsInstance<UIMessagePart.Text>()
+                                .joinToString("\n") { it.text }
+                            if (recalledText.isNotBlank()) {
+                                appendLine()
+                                appendLine("## Mem0 记忆（第三大脑语义召回）")
+                                append(recalledText.take(OB_BREATH_MAX_CHARS))
+                                Log.i(TAG, "Mem0 recall injected ${recalledText.length} chars")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Mem0 recall failed", e)
+                }
+ 
+                // 最近聊天引用（动态）
+                if (assistant.enableRecentChatsReference) {
+                    appendLine()
+                    append(buildRecentChatsPrompt(assistant, conversationRepo))
+                }
+ 
+                // 插件提示词注入（动态）
                 if (pluginPromptInjections.isNotEmpty()) {
                     pluginPromptInjections.forEach { injection ->
                         appendLine()
@@ -632,6 +714,22 @@ class GenerationHandler(
             processingStatus = processingStatus,
             workspaceCwd = workspaceCwd,
         )
+
+        // === 请求编辑模式：发送前拦截，交给用户手动控制上下文 ===
+        val finalMessages: List<UIMessage>
+        var effectiveTools = tools
+        if (settings.requestEditMode && internalMessages.isNotEmpty()) {
+            val editData = RequestEditController.toEditData(internalMessages, tools.map { it.name })
+            val edited = RequestEditController.waitForEdit(editData)
+                ?: throw CancellationException("Request edit cancelled by user")
+            finalMessages = RequestEditController.toMessages(edited, internalMessages)
+            // 按用户勾选过滤工具：只注入勾选的（默认全选；全不勾 = 本轮不带工具，省 token）
+            val enabledNames = edited.tools.filter { it.enabled }.map { it.name }.toSet()
+            effectiveTools = if (enabledNames.isEmpty()) emptyList() else tools.filter { it.name in enabledNames }
+            Log.i(TAG, "requestEditMode: user edited request, ${internalMessages.size} -> ${finalMessages.size} messages, tools ${tools.size} -> ${effectiveTools.size}")
+        } else {
+            finalMessages = internalMessages
+        }
  
         var messages: List<UIMessage> = messages
         val params = TextGenerationParams(
@@ -639,7 +737,7 @@ class GenerationHandler(
             temperature = assistant.temperature,
             topP = assistant.topP,
             maxTokens = assistant.maxTokens,
-            tools = tools,
+            tools = effectiveTools,
             reasoningLevel = assistant.reasoningLevel,
             customHeaders = buildList {
                 addAll(assistant.customHeaders)
@@ -654,14 +752,14 @@ class GenerationHandler(
             aiLoggingManager.addLog(
                 AILogging.Generation(
                     params = params,
-                    messages = messages,
+                    messages = finalMessages,
                     providerSetting = provider,
                     stream = true
                 )
             )
             providerImpl.streamText(
                 providerSetting = provider,
-                messages = internalMessages,
+                messages = finalMessages,
                 params = params
             ).collect {
                 messages = messages.handleMessageChunk(chunk = it, model = model)
@@ -680,14 +778,14 @@ class GenerationHandler(
             aiLoggingManager.addLog(
                 AILogging.Generation(
                     params = params,
-                    messages = messages,
+                    messages = finalMessages,
                     providerSetting = provider,
                     stream = false
                 )
             )
             val chunk = providerImpl.generateText(
                 providerSetting = provider,
-                messages = internalMessages,
+                messages = finalMessages,
                 params = params,
             )
             messages = messages.handleMessageChunk(chunk = chunk, model = model)
