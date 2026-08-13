@@ -288,6 +288,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text("AI 在设定间隔内主动发消息，有记忆有上下文") },
                         headlineContent = { Text("主动消息") },
                     )
+                    item(
+                        onClick = { navController.navigate(Screen.MemoryWatch) },
+                        leadingContent = { Icon(HugeIcons.Pulse01, null) },
+                        supportingContent = { Text("外置库/OB/Mem0 状态灯、召回体检、记忆浏览与条数调节") },
+                        headlineContent = { Text("记忆监工台") },
+                    )
                     // 🐱 悬浮桌宠开关 + 大小调节
                     val petContext = LocalContext.current
                     val petPrefs = remember { petContext.getSharedPreferences("floating_pet", Context.MODE_PRIVATE) }
