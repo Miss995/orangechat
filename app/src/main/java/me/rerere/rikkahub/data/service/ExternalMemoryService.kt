@@ -118,6 +118,74 @@ class ExternalMemoryService(
     }
 
     /**
+     * 统计某助手的外置库消息总数（用于监工台状态灯显示）
+     * 通过 Prefer: count=exact + Range 0-0 从 Content-Range 头解析总数。
+     */
+    suspend fun countMessages(
+        assistantId: String,
+    ): Result<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = config.supabaseUrl.trimEnd('/')
+            val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}&select=id"
+            val endpoint = URL("$url/rest/v1/${config.tableName}?$query")
+
+            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("apikey", config.supabaseKey)
+                setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("Prefer", "count=exact")
+                setRequestProperty("Range", "0-0")
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                Log.e(TAG, "countMessages HTTP $responseCode body=$errorBody")
+                throw Exception("Supabase API error ($responseCode): $errorBody")
+            }
+
+            // Content-Range 形如 0-0/12345，斜杠后是总数
+            val contentRange = connection.getHeaderField("Content-Range") ?: ""
+            val total = contentRange.substringAfter("/").trim().toIntOrNull() ?: 0
+            Log.d(TAG, "countMessages for assistant $assistantId = $total")
+            total
+        }
+    }
+
+    /**
+     * 删除一条消息（监工台「剔除」用；默认走归档语义——先物理删除，后续如需软删再改）
+     */
+    suspend fun deleteMessage(
+        id: Int,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = config.supabaseUrl.trimEnd('/')
+            val query = "id=eq.$id"
+            val endpoint = URL("$url/rest/v1/${config.tableName}?$query")
+
+            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                requestMethod = "DELETE"
+                setRequestProperty("apikey", config.supabaseKey)
+                setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                setRequestProperty("Prefer", "return=minimal")
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                Log.e(TAG, "deleteMessage HTTP $responseCode body=$errorBody")
+                throw Exception("Supabase API error ($responseCode): $errorBody")
+            }
+            Log.d(TAG, "Deleted message id=$id from ${config.tableName}")
+        }.map { }
+    }
+
+    /**
      * 关键词搜索消息
      */
     suspend fun searchMessages(
