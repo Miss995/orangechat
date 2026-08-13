@@ -134,6 +134,7 @@ import me.rerere.rikkahub.ui.pages.security.SecurityAuditPage
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppEditPage
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppManagerPage
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppPage
+import me.rerere.rikkahub.ui.pages.memorywatch.MemoryWatchPage
 import me.rerere.rikkahub.ui.pages.search.SearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayCodeInteractionPage
@@ -778,6 +779,10 @@ entry<Screen.Extensions> {
                                 )
                             }
 
+                            entry<Screen.MemoryWatch> {
+                                MemoryWatchPage()
+                            }
+
                             entry<Screen.EmojiPicker> {
                                 EmojiPickerPage(
                                     onBack = { backStack.removeLastOrNull() }
@@ -1104,6 +1109,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object MemoryBank : Screen
+
+    @Serializable
+    data object MemoryWatch : Screen
 
     @Serializable
     data object EmojiPicker : Screen
