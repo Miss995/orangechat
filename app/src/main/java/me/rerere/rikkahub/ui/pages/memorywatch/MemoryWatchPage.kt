@@ -62,6 +62,7 @@ import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.context.LocalCurrentAssistant
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.theme.CustomColors
+import me.rerere.rikkahub.utils.plus
 import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
 
@@ -203,10 +204,12 @@ fun MemoryWatchPage() {
                 RecallCountSection(
                     externalConfigs = externalConfigs,
                     onCountChange = { cfg, newCount ->
-                        settingsStore.update { s ->
-                            s.copy(externalMemories = s.externalMemories.map { m ->
-                                if (m.id == cfg.id) m.copy(recallCount = newCount) else m
-                            })
+                        scope.launch {
+                            settingsStore.update { s ->
+                                s.copy(externalMemories = s.externalMemories.map { m ->
+                                    if (m.id == cfg.id) m.copy(recallCount = newCount) else m
+                                })
+                            }
                         }
                     },
                 )
