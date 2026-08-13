@@ -186,7 +186,34 @@ fun MemoryWatchPage() {
                         val canRun = recallQuery.isNotBlank() &&
                             assistantId.isNotBlank() &&
                             externalConfigs.isNotEmpty()
-                        if (!canRun) {
+                        if (canRun) {
+                            recallRunning = true
+                            recallDone = true
+                            recallResults = emptyMap()
+                            val querySnapshot = recallQuery.trim()
+                            val configsSnapshot = externalConfigs
+                            val assistantSnapshot = assistantId
+                            recallDiag = "开始搜索 ${configsSnapshot.size} 个外置库…（词=\"$querySnapshot\"）"
+                            scope.launch {
+                                val results = configsSnapshot.map { cfg ->
+                                    async {
+                                        val service = ExternalMemoryService(cfg)
+                                        val hits = service.searchMessages(
+                                            assistantId = assistantSnapshot,
+                                            keyword = querySnapshot,
+                                            limit = cfg.recallCount,
+                                        ).getOrDefault(emptyList())
+                                        cfg.name to hits
+                                    }
+                                }.awaitAll().toMap()
+                                recallResults = results
+                                recallRunning = false
+                                val summary = results.entries.joinToString("；") { (name, hits) ->
+                                    "$name 召回 ${hits.size} 条"
+                                }
+                                recallDiag = "✅ 体检完成：$summary"
+                            }
+                        } else {
                             val why = when {
                                 recallQuery.isBlank() -> "体检词为空"
                                 assistantId.isBlank() -> "未检测到当前助手"
@@ -194,33 +221,6 @@ fun MemoryWatchPage() {
                                 else -> "未知原因"
                             }
                             recallDiag = "❌ 无法体检：$why（按钮应已置灰）"
-                            return@onRunRecall
-                        }
-                        recallRunning = true
-                        recallDone = true
-                        recallResults = emptyMap()
-                        val querySnapshot = recallQuery.trim()
-                        val configsSnapshot = externalConfigs
-                        val assistantSnapshot = assistantId
-                        recallDiag = "开始搜索 ${configsSnapshot.size} 个外置库…（词=\"$querySnapshot\"）"
-                        scope.launch {
-                            val results = configsSnapshot.map { cfg ->
-                                async {
-                                    val service = ExternalMemoryService(cfg)
-                                    val hits = service.searchMessages(
-                                        assistantId = assistantSnapshot,
-                                        keyword = querySnapshot,
-                                        limit = cfg.recallCount,
-                                    ).getOrDefault(emptyList())
-                                    cfg.name to hits
-                                }
-                            }.awaitAll().toMap()
-                            recallResults = results
-                            recallRunning = false
-                            val summary = results.entries.joinToString("；") { (name, hits) ->
-                                "$name 召回 ${hits.size} 条"
-                            }
-                            recallDiag = "✅ 体检完成：$summary"
                         }
                     },
                 )
