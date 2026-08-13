@@ -756,7 +756,7 @@ private fun ObCatalogSection(
         if (catalogText.isNotBlank()) {
             item(
                 leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
-                headlineContent = { Text(catalogText, maxLines = 30, overflow = TextOverflow.Ellipsis) },
+                headlineContent = { Text(catalogText) },
             )
         }
     }
@@ -790,7 +790,7 @@ private fun Mem0ListSection(
         if (listText.isNotBlank()) {
             item(
                 leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
-                headlineContent = { Text(listText, maxLines = 30, overflow = TextOverflow.Ellipsis) },
+                headlineContent = { Text(listText) },
             )
         }
     }
