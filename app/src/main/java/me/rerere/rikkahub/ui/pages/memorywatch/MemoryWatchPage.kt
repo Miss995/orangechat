@@ -49,7 +49,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import me.rerere.ai.ui.UIMessagePart
@@ -100,8 +99,8 @@ fun McpStatus.toSourceStatus(): McpSourceStatus {
 }
 
 /**
- * 记忆监工台：记忆源状态灯 + 召回体检 + 记忆浏览(150条) + 召回条数调节
- * V2：接入 OB / Mem0（MCP）状态灯 + 召回体检。
+ * 记忆监工台：记忆源状态灯 + 召回体检 + 记忆浏览(150条) + 召回条数调节 + OB/Mem0 全部浏览
+ * V3：OB 记忆目录（catalog）+ Mem0 全部记忆（list_memories）。
  */
 @Composable
 fun MemoryWatchPage() {
@@ -153,6 +152,11 @@ fun MemoryWatchPage() {
     var recallRunning by remember { mutableStateOf(false) }
     // 体检诊断（自报进度，方便定位问题）
     var recallDiag by remember { mutableStateOf("就绪——输入一句话，点「体检」") }
+    // OB 目录 / Mem0 全部
+    var obCatalogText by remember { mutableStateOf("") }
+    var obCatalogLoading by remember { mutableStateOf(false) }
+    var mem0ListText by remember { mutableStateOf("") }
+    var mem0ListLoading by remember { mutableStateOf(false) }
     // 详情弹窗
     var detailMessage by remember { mutableStateOf<ExternalMemoryMessage?>(null) }
 
@@ -238,7 +242,7 @@ fun MemoryWatchPage() {
                     recallDiag = recallDiag,
                     onRunRecall = {
                         recallDiag = "已触发点击：词=\"${recallQuery.trim()}\" 助手id=\"${assistantId.take(8)}…\" 外置库=${externalConfigs.size} 个"
-                        val canRun = recallQuery.isNotBlank() && assistantId.isNotBlank() &&
+                        val canRun = recallQuery.isNotBlank() &&
                             (externalConfigs.isNotEmpty() || obServer != null || mem0Server != null)
                         if (canRun) {
                             recallRunning = true
@@ -312,7 +316,6 @@ fun MemoryWatchPage() {
                         } else {
                             val why = when {
                                 recallQuery.isBlank() -> "体检词为空"
-                                assistantId.isBlank() -> "未检测到当前助手"
                                 externalConfigs.isEmpty() && obServer == null && mem0Server == null -> "没有可用的记忆源"
                                 else -> "未知原因"
                             }
@@ -366,6 +369,69 @@ fun MemoryWatchPage() {
                 MessageRow(
                     msg = msg,
                     onClick = { detailMessage = msg },
+                )
+            }
+
+            // OB 记忆目录（全部记忆桶）
+            item("obCatalogSection") {
+                ObCatalogSection(
+                    obServer = obServer,
+                    catalogText = obCatalogText,
+                    catalogLoading = obCatalogLoading,
+                    onLoadCatalog = {
+                        if (obServer != null) {
+                            obCatalogLoading = true
+                            val obSnapshot = obServer
+                            val mcSnapshot = mcManager
+                            scope.launch {
+                                obCatalogText = runCatching {
+                                    val parts = mcSnapshot.callTool(
+                                        serverId = obSnapshot.id,
+                                        toolName = "breath_advanced",
+                                        args = buildJsonObject {
+                                            put("catalog", JsonPrimitive(true))
+                                            put("max_results", JsonPrimitive(50))
+                                        },
+                                    )
+                                    parts.filterIsInstance<UIMessagePart.Text>()
+                                        .joinToString("\n") { it.text }
+                                        .ifBlank { "（空目录）" }
+                                }.getOrElse { "调用失败：${it.message?.take(60)}" }
+                                obCatalogLoading = false
+                            }
+                        }
+                    },
+                )
+            }
+
+            // Mem0 全部记忆
+            item("mem0ListSection") {
+                Mem0ListSection(
+                    mem0Server = mem0Server,
+                    listText = mem0ListText,
+                    listLoading = mem0ListLoading,
+                    onLoadList = {
+                        if (mem0Server != null) {
+                            mem0ListLoading = true
+                            val mem0Snapshot = mem0Server
+                            val mcSnapshot = mcManager
+                            scope.launch {
+                                mem0ListText = runCatching {
+                                    val parts = mcSnapshot.callTool(
+                                        serverId = mem0Snapshot.id,
+                                        toolName = "list_memories",
+                                        args = buildJsonObject {
+                                            put("limit", JsonPrimitive(100))
+                                        },
+                                    )
+                                    parts.filterIsInstance<UIMessagePart.Text>()
+                                        .joinToString("\n") { it.text }
+                                        .ifBlank { "（空）" }
+                                }.getOrElse { "调用失败：${it.message?.take(60)}" }
+                                mem0ListLoading = false
+                            }
+                        }
+                    },
                 )
             }
         }
@@ -432,7 +498,6 @@ private fun StatusSection(
         modifier = Modifier.padding(horizontal = 8.dp),
         title = { Text("记忆源状态") },
     ) {
-        // 外置库
         if (externalConfigs.isEmpty()) {
             item(
                 leadingContent = { Icon(HugeIcons.Database02, null) },
@@ -509,7 +574,6 @@ private fun RecallTestSection(
         modifier = Modifier.padding(horizontal = 8.dp),
         title = { Text("召回体检（输入一句话，看谁能召回）") },
     ) {
-        // 自报进度诊断行（常驻，方便定位问题）
         item(
             leadingContent = { Icon(HugeIcons.Pulse01, null) },
             headlineContent = { Text("体检进度", color = MaterialTheme.colorScheme.primary) },
@@ -536,7 +600,6 @@ private fun RecallTestSection(
                 }
             }
         }
-        // 体检结果：体检过就显示（哪怕全是 0 条），不再无声无息
         if (recallDone) {
             if (recallResults.isEmpty() && mcpRecallResults.isEmpty()) {
                 item(
@@ -662,6 +725,74 @@ private fun MemoryListHeader(
             leadingContent = { Icon(HugeIcons.Pulse01, null) },
             headlineContent = { Text(if (messagesLoading) "加载中…" else "共 $messageCount 条") },
         )
+    }
+}
+
+/** OB 记忆目录（全部记忆桶） */
+@Composable
+private fun ObCatalogSection(
+    obServer: McpServerConfig?,
+    catalogText: String,
+    catalogLoading: Boolean,
+    onLoadCatalog: () -> Unit,
+) {
+    CardGroup(
+        modifier = Modifier.padding(horizontal = 8.dp),
+        title = { Text("OB 记忆目录（全部记忆桶）") },
+    ) {
+        item(
+            leadingContent = { Icon(HugeIcons.Pulse01, null) },
+            headlineContent = { Text(if (obServer != null) "OB 全部记忆桶" else "OB 未配置") },
+            supportingContent = { Text(if (obServer != null) "点「加载」列出全部桶（名称|域|重要度）" else "MCP 设置里加个名字含 OB 的服务器") },
+            trailingContent = {
+                Button(
+                    onClick = onLoadCatalog,
+                    enabled = obServer != null && !catalogLoading,
+                ) {
+                    Text(if (catalogLoading) "加载中…" else "加载")
+                }
+            },
+        )
+        if (catalogText.isNotBlank()) {
+            item(
+                leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
+                headlineContent = { Text(catalogText, maxLines = 30, overflow = TextOverflow.Ellipsis) },
+            )
+        }
+    }
+}
+
+/** Mem0 全部记忆 */
+@Composable
+private fun Mem0ListSection(
+    mem0Server: McpServerConfig?,
+    listText: String,
+    listLoading: Boolean,
+    onLoadList: () -> Unit,
+) {
+    CardGroup(
+        modifier = Modifier.padding(horizontal = 8.dp),
+        title = { Text("Mem0 全部记忆") },
+    ) {
+        item(
+            leadingContent = { Icon(HugeIcons.Database02, null) },
+            headlineContent = { Text(if (mem0Server != null) "Mem0 全部记忆（无前端，在这里看）" else "Mem0 未配置") },
+            supportingContent = { Text(if (mem0Server != null) "点「加载」列出全部记忆（需要服务器已加 list_memories 工具）" else "MCP 设置里加个名字含 Mem0 的服务器") },
+            trailingContent = {
+                Button(
+                    onClick = onLoadList,
+                    enabled = mem0Server != null && !listLoading,
+                ) {
+                    Text(if (listLoading) "加载中…" else "加载")
+                }
+            },
+        )
+        if (listText.isNotBlank()) {
+            item(
+                leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
+                headlineContent = { Text(listText, maxLines = 30, overflow = TextOverflow.Ellipsis) },
+            )
+        }
     }
 }
 
