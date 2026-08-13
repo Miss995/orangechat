@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,9 +24,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -49,12 +46,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Alert01
 import me.rerere.hugeicons.stroke.Database02
 import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.Pulse01
@@ -70,8 +65,15 @@ import me.rerere.rikkahub.ui.theme.CustomColors
 import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
 
+/** 单个记忆源的状态（监工台状态灯） */
+data class SourceStatus(
+    val ok: Boolean,
+    val info: String,
+    val loading: Boolean = false,
+)
+
 /**
- * 记忆监工台：三源状态灯 + 召回体检 + 记忆浏览(150条) + 召回条数调节
+ * 记忆监工台：记忆源状态灯 + 召回体检 + 记忆浏览(150条) + 召回条数调节
  * V1 先做外置记忆库完整功能，OB / Mem0 状态灯与召回体检后续接入。
  */
 @Composable
@@ -87,7 +89,6 @@ fun MemoryWatchPage() {
     }
 
     // 每个外置库的状态（灯 + 条数 + 说明）
-    data class SourceStatus(val ok: Boolean, val info: String, val loading: Boolean = false)
     var statusMap by remember { mutableStateOf<Map<Uuid, SourceStatus>>(emptyMap()) }
     // 当前浏览的库
     var selectedConfigId by remember { mutableStateOf<Uuid?>(externalConfigs.firstOrNull()?.id) }
@@ -173,24 +174,26 @@ fun MemoryWatchPage() {
                     recallResults = recallResults,
                     recallRunning = recallRunning,
                     onRunRecall = {
-                        if (recallQuery.isBlank() || assistantId.isBlank()) return@RecallTestSection
-                        recallRunning = true
-                        recallResults = emptyMap()
-                        scope.launch {
-                            val results = externalConfigs.map { cfg ->
-                                async {
-                                    val service = ExternalMemoryService(cfg)
-                                    val kw = recallQuery.trim()
-                                    val hits = service.searchMessages(
-                                        assistantId = assistantId,
-                                        keyword = kw,
-                                        limit = cfg.recallCount,
-                                    ).getOrDefault(emptyList())
-                                    cfg.name to hits
-                                }
-                            }.awaitAll().toMap()
-                            recallResults = results
-                            recallRunning = false
+                        val canRun = recallQuery.isNotBlank() && assistantId.isNotBlank()
+                        if (canRun) {
+                            recallRunning = true
+                            recallResults = emptyMap()
+                            val querySnapshot = recallQuery.trim()
+                            scope.launch {
+                                val results = externalConfigs.map { cfg ->
+                                    async {
+                                        val service = ExternalMemoryService(cfg)
+                                        val hits = service.searchMessages(
+                                            assistantId = assistantId,
+                                            keyword = querySnapshot,
+                                            limit = cfg.recallCount,
+                                        ).getOrDefault(emptyList())
+                                        cfg.name to hits
+                                    }
+                                }.awaitAll().toMap()
+                                recallResults = results
+                                recallRunning = false
+                            }
                         }
                     },
                 )
@@ -215,6 +218,7 @@ fun MemoryWatchPage() {
                     selectedConfigId = selectedConfigId,
                     onSelect = { selectedConfigId = it },
                     messagesLoading = messagesLoading,
+                    messageCount = messages.size,
                 )
             }
 
@@ -229,7 +233,7 @@ fun MemoryWatchPage() {
                 }
             }
 
-            items(messages, key = { it.id }) { msg ->
+            items(messages, key = { "${it.id}-${it.createdAt}" }) { msg ->
                 MessageRow(
                     msg = msg,
                     onClick = { detailMessage = msg },
@@ -269,7 +273,6 @@ fun MemoryWatchPage() {
                             scope.launch {
                                 ExternalMemoryService(cfg).deleteMessage(msg.id)
                                 detailMessage = null
-                                // 刷新列表
                                 val result = ExternalMemoryService(cfg).queryLatestMessages(
                                     assistantId = assistantId,
                                     limit = 150,
@@ -290,15 +293,17 @@ fun MemoryWatchPage() {
 @Composable
 private fun StatusSection(
     externalConfigs: List<ExternalMemory>,
-    statusMap: Map<Uuid, MemoryWatchPageStatus>,
+    statusMap: Map<Uuid, SourceStatus>,
 ) {
     CardGroup(
         modifier = Modifier.padding(horizontal = 8.dp),
         title = { Text("记忆源状态") },
     ) {
-        // 外置库
         if (externalConfigs.isEmpty()) {
-            item(headlineContent = { Text("没有启用的外置记忆库") })
+            item(
+                leadingContent = { Icon(HugeIcons.Database02, null) },
+                headlineContent = { Text("没有启用的外置记忆库") },
+            )
         } else {
             externalConfigs.forEach { cfg ->
                 val status = statusMap[cfg.id]
@@ -363,6 +368,11 @@ private fun RecallTestSection(
         modifier = Modifier.padding(horizontal = 8.dp),
         title = { Text("召回体检（输入一句话，看谁能召回）") },
     ) {
+        item(
+            leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
+            headlineContent = { Text("外置记忆库关键词召回") },
+            supportingContent = { Text("输入后点「体检」，每个库按召回条数各搜一次") },
+        )
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -424,6 +434,12 @@ private fun RecallCountSection(
         modifier = Modifier.padding(horizontal = 8.dp),
         title = { Text("召回条数（改完保存，下次请求生效）") },
     ) {
+        if (externalConfigs.isEmpty()) {
+            item(
+                leadingContent = { Icon(HugeIcons.Database02, null) },
+                headlineContent = { Text("没有启用的外置记忆库") },
+            )
+        }
         externalConfigs.forEach { cfg ->
             item(
                 leadingContent = { Icon(HugeIcons.Database02, null) },
@@ -450,9 +466,6 @@ private fun RecallCountSection(
                 },
             )
         }
-        if (externalConfigs.isEmpty()) {
-            item(headlineContent = { Text("没有启用的外置记忆库") })
-        }
     }
 }
 
@@ -463,6 +476,7 @@ private fun MemoryListHeader(
     selectedConfigId: Uuid?,
     onSelect: (Uuid) -> Unit,
     messagesLoading: Boolean,
+    messageCount: Int,
 ) {
     CardGroup(
         modifier = Modifier.padding(horizontal = 8.dp),
@@ -480,7 +494,8 @@ private fun MemoryListHeader(
             }
         }
         item(
-            headlineContent = { Text(if (messagesLoading) "加载中…" else "共 ${0 + messagesCount()} 条") },
+            leadingContent = { Icon(HugeIcons.Pulse01, null) },
+            headlineContent = { Text(if (messagesLoading) "加载中…" else "共 $messageCount 条") },
         )
     }
 }
