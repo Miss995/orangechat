@@ -51,6 +51,7 @@ import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
+import me.rerere.rikkahub.data.ai.tools.buildFetchChatSourcesTool
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.buildWriteFilesTool
 import me.rerere.rikkahub.data.datastore.Settings
@@ -74,13 +75,9 @@ private const val TAG = "GenerationHandler"
 // 这里把推送频率限制在这个间隔以内，肉眼完全感知不到延迟，但能大幅降低重组频率。
 private const val STREAM_UI_THROTTLE_MS = 50L
 
-// OB 记忆按需搜索（搜索型）：节流间隔与单次注入上限
-private const val OB_BREATH_INTERVAL_MS = 5 * 60 * 1000L
+// OB 记忆按需搜索（搜索型）：单次注入上限
 private const val OB_BREATH_MAX_CHARS = 3000
 
-// 外置记忆库召回节流：同一会话内每 5 分钟最多召回一次
-// （工具循环的二次请求不再重复搜索，上下文里已有首次召回结果）
-private const val EXTERNAL_RECALL_INTERVAL_MS = 5 * 60 * 1000L
 // 外置库召回单次超时（Supabase 响应慢时放宽到 15 秒，减少超时空手）
 private const val EXTERNAL_RECALL_TIMEOUT_MS = 15_000L
 // 召回时排除最近 10 分钟内的消息（当前对话尾巴上下文里已有，避免把刚发的消息回显进外置记忆库）
@@ -151,6 +148,25 @@ class GenerationHandler(
                 }
                 // 文件写入工具 - AI可直接将文件内容写入设备或打包ZIP（缓存持久化到 App files 目录）
                 add(buildWriteFilesTool(context, conversationId))
+                // 查原文工具（主动版）：外置记忆库事件召回后，模型可按 日期+消息号 主动拉原始聊天记录深挖
+                val extConfigsForChatSources = settings.externalMemories.filter { it.enabled && it.id in assistant.externalMemoryIds }
+                if (extConfigsForChatSources.isNotEmpty()) {
+                    add(buildFetchChatSourcesTool { date, ids ->
+                        val service = me.rerere.rikkahub.data.service.ExternalMemoryService(extConfigsForChatSources.first())
+                        val messages = service.queryMessagesByDate(date).getOrDefault(emptyList()).sortedBy { it.createdAt }
+                        val pick = if (ids.isEmpty()) messages.take(30) else ids.mapNotNull { id ->
+                            messages.getOrNull(id - 1) // 消息号=当天1-based序号（与 fetchEventSources 同口径）
+                        }
+                        pick.map { msg ->
+                            val prefix = when (msg.role) {
+                                "assistant" -> "AI"
+                                "user" -> "用户"
+                                else -> msg.role
+                            }
+                            "[$prefix] ${msg.content}"
+                        }
+                    })
+                }
                 addAll(tools)
             }
  
@@ -423,27 +439,25 @@ class GenerationHandler(
                     append(buildMemoryPrompt(memories = memories))
                 }
  
-                // 外置记忆库召回（动态）——节流：5 分钟内不重复召回（工具循环二次请求跳过，上下文已有首次结果）
-                val externalRecallNow = Clock.System.now().toEpochMilliseconds()
-                if (externalRecallNow - lastExternalRecallMs > EXTERNAL_RECALL_INTERVAL_MS) {
-                    try {
-                        val externalMemoryConfigs = settings.externalMemories.filter {
-                            it.enabled && it.id in assistant.externalMemoryIds
-                        }
-                        externalMemoryConfigs.forEach { config ->
-                            Log.i(TAG, "ExternalMemory config: name=${config.name}, url=${config.supabaseUrl}, table=${config.tableName}, summaryTable=${config.summariesTableName}, embeddingModelId=${config.embeddingModelId}, autoSaveDiarySummary=${config.autoSaveDiarySummary}")
-                        }
-                        if (externalMemoryConfigs.isNotEmpty()) {
-                            val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
-                            val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
-                            // 并发检索所有外置记忆库配置，每个配置最多 15 秒超时
-                            val allRecalled = coroutineScope {
-                                externalMemoryConfigs.map { config ->
-                                    async {
-                                        withTimeoutOrNull(EXTERNAL_RECALL_TIMEOUT_MS) {
-                                            runCatching {
-                                                val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
-                                                val recalled = mutableListOf<String>()
+                // 外置记忆库召回（动态）——2026-08-15 宝要求去节流：每次请求都召回，回忆要即时
+                try {
+                    val externalMemoryConfigs = settings.externalMemories.filter {
+                        it.enabled && it.id in assistant.externalMemoryIds
+                    }
+                    externalMemoryConfigs.forEach { config ->
+                        Log.i(TAG, "ExternalMemory config: name=${config.name}, url=${config.supabaseUrl}, table=${config.tableName}, summaryTable=${config.summariesTableName}, embeddingModelId=${config.embeddingModelId}, autoSaveDiarySummary=${config.autoSaveDiarySummary}")
+                    }
+                    if (externalMemoryConfigs.isNotEmpty()) {
+                        val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
+                        val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
+                        // 并发检索所有外置记忆库配置，每个配置最多 15 秒超时
+                        val allRecalled = coroutineScope {
+                            externalMemoryConfigs.map { config ->
+                                async {
+                                    withTimeoutOrNull(EXTERNAL_RECALL_TIMEOUT_MS) {
+                                        runCatching {
+                                            val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
+                                            val recalled = mutableListOf<String>()
 
                                 // 1. 日记摘要：固定前一天一篇（最新1篇，不再混合召回）
                                 val latestSummaries = service.queryLatestSummaries(
@@ -622,28 +636,24 @@ class GenerationHandler(
                     }
                 }
 
-                // OB 记忆按需搜索（搜索型：不自动浮现，按用户消息内容调 breath_search，不吵不费token）
+                // OB 记忆按需搜索（搜索型：按用户消息内容调 breath_search；2026-08-15 宝要求去节流，每次请求都搜）
                 try {
-                    val now = Clock.System.now().toEpochMilliseconds()
-                    if (now - lastObBreathMs > OB_BREATH_INTERVAL_MS) {
-                        val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
-                        val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
-                        if (queryText.isNotBlank()) {
-                            val searchTool = tools.find { it.name.endsWith("_breath_search") }
-                            if (searchTool != null) {
-                                val args = buildJsonObject {
-                                    put("query", JsonPrimitive(queryText))
-                                }
-                                val result = searchTool.execute(json.parseToJsonElement(args.toString()).jsonObject)
-                                val recalledText = result.filterIsInstance<UIMessagePart.Text>()
-                                    .joinToString("\n") { it.text }
-                                if (recalledText.isNotBlank()) {
-                                    appendLine()
-                                    appendLine("## 记忆浮现")
-                                    append(recalledText.take(OB_BREATH_MAX_CHARS))
-                                    Log.i(TAG, "OB search injected ${recalledText.length} chars")
-                                }
-                                lastObBreathMs = now
+                    val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
+                    val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
+                    if (queryText.isNotBlank()) {
+                        val searchTool = tools.find { it.name.endsWith("_breath_search") }
+                        if (searchTool != null) {
+                            val args = buildJsonObject {
+                                put("query", JsonPrimitive(queryText))
+                            }
+                            val result = searchTool.execute(json.parseToJsonElement(args.toString()).jsonObject)
+                            val recalledText = result.filterIsInstance<UIMessagePart.Text>()
+                                .joinToString("\n") { it.text }
+                            if (recalledText.isNotBlank()) {
+                                appendLine()
+                                appendLine("## 记忆浮现")
+                                append(recalledText.take(OB_BREATH_MAX_CHARS))
+                                Log.i(TAG, "OB search injected ${recalledText.length} chars")
                             }
                         }
                     }
