@@ -634,7 +634,6 @@ class GenerationHandler(
                         Log.w(TAG, "External memory recall failed", e)
                         lastExternalRecallMs = Clock.System.now().toEpochMilliseconds()
                     }
-                }
 
                 // OB 记忆按需搜索（搜索型：按用户消息内容调 breath_search；2026-08-15 宝要求去节流，每次请求都搜）
                 try {
