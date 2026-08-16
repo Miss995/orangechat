@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -276,11 +276,26 @@ fun List<UIMessagePart>.isEmptyUIMessage(): Boolean {
     }
 }
 
-fun List<UIMessage>.limitContext(size: Int): List<UIMessage> {
+/**
+ * 裁剪上下文消息列表
+ *
+ * @param size 保留的消息条数（<=0 表示不裁剪）
+ * @param groupSize 按组分批裁剪：以 groupSize 条消息为最小丢弃单位，起点向前对齐到组边界。
+ *        这样新增消息不足一整组时前缀保持不变，有利于 API 缓存命中（如 DeepSeek 缓存）。
+ *        0 或 1 表示按条裁剪（旧行为）。
+ */
+fun List<UIMessage>.limitContext(size: Int, groupSize: Int = 0): List<UIMessage> {
     if (size <= 0 || this.size <= size) return this
 
     val startIndex = this.size - size
     var adjustedStartIndex = startIndex
+
+    // 按组裁剪（缓存优化）：起点向前对齐到最近的组边界（向下取整到 groupSize 的倍数）。
+    // 例：size=20, groupSize=4, 消息 91 条 -> startIndex=71 -> 对齐到 68（保留 68..91 = 6 组）。
+    // 新增 1~4 条时起点不变（前缀稳定），第 5 条起推掉最旧一组。
+    if (groupSize > 1) {
+        adjustedStartIndex = (startIndex / groupSize) * groupSize
+    }
 
     // 循环往前查找，直到满足所有依赖条件
     var needsAdjustment = true

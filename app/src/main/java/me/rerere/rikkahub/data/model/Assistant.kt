@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -28,6 +28,7 @@ data class Assistant(
     val temperature: Float? = null,
     val topP: Float? = null,
     val contextMessageSize: Int = 0,
+    val contextGroupSize: Int = 4, // 上下文按组分批裁剪的组大小（2的倍数，0=按条裁剪）
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
     val useGlobalMemory: Boolean = false, // 使用全局共享记忆而非助手隔离记忆
@@ -152,7 +153,7 @@ sealed class PromptInjection {
     abstract val role: MessageRole  // 注入角色：USER 或 ASSISTANT
  
     /**
-     * 模式注入 - 基于开关状态触发
+     * 模式注入 - 基于模式开关状态触发
      */
     @Serializable
     @SerialName("mode")
