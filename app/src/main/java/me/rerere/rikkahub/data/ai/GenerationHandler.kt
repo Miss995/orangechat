@@ -425,10 +425,23 @@ class GenerationHandler(
                 appendLine()
                 append(buildCodeBlockPrompt())
  
-                // 工具prompt（稳定前缀）
+                // 工具说明（稳定前缀）：强制注入全部工具的 name+description 文字版，
+                // 让工具信息落在每次请求开头的稳定前缀里 -> 提升 DeepSeek 前缀缓存命中率。
+                // 背景：结构化 tools 参数在请求尾部，被不断变化的聊天消息挡住，几乎吃不到缓存；
+                // 这里用文字版在稳定前缀里兜住工具信息（name+description），每次请求开头一致 -> 命中缓存。
                 tools.forEach { tool ->
                     appendLine()
-                    append(tool.systemPrompt(model, messages))
+                    append("### 工具 ${tool.name}")
+                    if (tool.description.isNotBlank()) {
+                        appendLine()
+                        append(tool.description)
+                    }
+                    // 若工具有自定义 systemPrompt（如操作说明），也一并注入
+                    val customPrompt = tool.systemPrompt(model, messages)
+                    if (customPrompt.isNotBlank()) {
+                        appendLine()
+                        append(customPrompt)
+                    }
                 }
  
                 // 记忆（动态内容统一放到稳定前缀之后）
