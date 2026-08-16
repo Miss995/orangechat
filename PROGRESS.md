@@ -6,6 +6,16 @@
 
 ## 2026-08-16
 
+### commit 59edf368 + bfad1cef — 按组裁剪缓存优化（宝原创脑洞）
+- 文件：ai/src/main/java/me/rerere/ai/ui/Message.kt + app/.../data/model/Assistant.kt + app/.../ui/pages/assistant/detail/AssistantBasicPage.kt + app/.../data/ai/GenerationHandler.kt
+- 改动：
+  1. limitContext 加 groupSize 参数（默认 0=按条，旧行为不变）：起点向前对齐到组边界（向下取整到 groupSize 的倍数），新消息不足一整组时前缀不变 → DS 缓存命中
+  2. Assistant 加 contextGroupSize 字段（默认 4）
+  3. 基础设置加「上下文分组条数」开关（0/2/4/6/8/10，0=按条）
+  4. GenerationHandler 调用 limitContext 传入 contextGroupSize
+- 为啥：宝观察 20 条上下文实际 91 条（工具结果撑爆）；limitContext 按条滑动 → 每次前缀断 → 聊天段 79k 永远 miss（缓存命中率仅 29%）；按组滑动 → 5 回合内前缀稳定 → 缓存命中率↑（省 token，DS 明天涨价）
+- 状态：✅ 已推 main；⏳ 宝构建验证（基础设置默认 4 条一组；请求日志对比缓存命中率）
+
 ### commit — 日记按天缓存（保缓存率 + 防 Supabase 慢/挂）
 - 文件：app/src/main/java/me/rerere/rikkahub/data/ai/GenerationHandler.kt
 - 改动：日记摘要段加本地按天缓存（SharedPreferences "diary_cache"，key=diary_{assistantId}_{今天}）——同一天只调一次 Supabase queryLatestSummaries，之后一整天直接用缓存；Supabase 拉不到时回退最近一次缓存（不阻塞、前缀稳定）
@@ -58,10 +68,10 @@
 - 召回升级·向量优先 + AI 拆词兜底（QueryKeywordExtractor 调 SiliconFlow Qwen2.5-7B-Instruct 拆 2-5 关键词）——commit f894b9f3 / 4d5df6ab
 
 ## 待办（代码相关）
-- 修时间注入 bug（注入时间比实际慢约1小时——根源待查 TimeReminderTransformer/消息时间戳）
 - 查 OB 来源标记错位 bug（ob_sync_chat / V3 的 source_ranges 或来源拼写错位）
 - 工具调取内容存记忆库（愿望清单 id68-⑥）
 - 请求编辑 UI 升级（顺序/上下文数量/原文展开按钮——愿望清单 id68-②）
 - 三库缓存去重（愿望清单 id68-③）
 - OB/外置库全量召回（愿望清单 id68-④）
 - 外置库直召降级保底（愿望清单 id68-⑤）
+- 按组裁剪验证（build 后对比缓存命中率，不行回滚成按条）
