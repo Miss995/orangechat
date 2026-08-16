@@ -1,0 +1,38 @@
+# 总航海日志 (DEVLOG.md)
+
+> 用途：跨仓库记录所有系统改动（orangechat 代码 + 记忆系统 OB/Mem0/外置库/archive_daily/监工台 + 服务器/手机端脚本）。
+> 格式：日期 | 系统 | 改了啥 | 为啥 | 状态。
+> 规矩：每次动任何系统顺手记一笔；从 2026-08-16 起一条不丢。
+> 建立：2026-08-16（宝拍板）
+
+## 2026-08-16
+- 账本建立：本文件 + PROGRESS.md 建立（治橘仔代码失忆）——宝拍板 ✅
+- orangechat 缓存优化：commit 7d4e36cc（门控+日记独立+删最近聊天引用，详见 PROGRESS.md）✅
+- 召回验证：宝实测「记得上次聊的正则吗」触发门控；外置库捞回 8/13 raw string 正则全文 ✅
+- 待办调整：OB 称呼「主人」→「宝」砍掉/搁置（省钱优先）❌
+
+## 2026-08-15
+- ⚠️ 事故：master 覆盖 main（详见 PROGRESS.md 事故记录）→ 72c964d6 修复 ✅
+- 三连发：fetch_chat_sources 查原文工具 + 去节流（ceb7a62 / 6f5f7e45 / 1af1eb87）✅
+- 发现 OB 来源标记错位 bug（待查：ob_sync_chat / V3 的 source_ranges 或来源拼写错位）⚠️
+
+## 2026-08-14
+- 记忆系统 2.0 全闭环部署 ✅
+  - archive_daily_v3.py（服务器）：拉当天聊天 → DeepSeek 拆事件（chat/code 类型 + 来源 source_ids）→ 全量存 memory_events（source_date 当天查重 + embedding 向量入库）→ code 类事件同步 Mem0（SDK 直连 Qdrant 6333，绕开 MCP 8005）
+  - ob_sync_chat.py（手机端）：chat 事件 → OB grow（来源写进 content；.ob_sync_last 本地记账本防重复）
+  - 自动化：服务器 cron 23:59 + 手机 crond 00:10 + boot 脚本自启
+  - 调用层：72c964d6 事件级召回（详见 PROGRESS.md）
+- 模型分工确认：聊天=DeepSeek（宝的味道）；杂活=硅基流动 SiliconFlow（识图/向量/embedding/拆词）
+
+## 2026-08-13
+- 外置库召回质量大优化（查询加工/虚词表/向量优先+AI 拆词兜底）——commit 详见 PROGRESS.md
+- 监工台 V1/V2/V3 部署（外置库/OB/Mem0 状态灯 + 召回体检 + 记忆浏览）
+- 宝提出账本需求（本文件的前身：PROGRESS.md + DEVLOG.md 方案）
+
+## 待办（跨系统）
+- 记忆中间层 Gateway（统一记忆出口 + 鉴权门禁）
+- V3 fetch_msgs 时间口径 cron 生效待确认
+- OB watchdog 保活脚本（OB 天天挂，是 OB 自身问题非环境）
+- 时间注入 bug（见 PROGRESS.md）
+- DeepSeek 涨价应对：2026-08-17 0 点起峰谷定价（高峰 9-12/14-18 点 = 低谷 2 倍）；V4-Pro 输出峰值 6→27 元/百万、缓存命中价 0.025→0.30 元；V4-Flash 输出 0.28→峰 1.32/谷 0.66——吃缓存命中、勤用低谷、控制召回量
+- stone memory 二测：预计 2026-09 初，规模很大，宝去蹲
