@@ -6,6 +6,8 @@
 > 建立：2026-08-16（宝拍板）
 
 ## 2026-08-16
+- 🗓️ **写日记时间 11点 → 凌晨4点（Supabase pg_cron）**：真相=两条 cron 打架——daily-diary-summary（0 3 * * * = UTC 3:00 = 北京 11:00，每天 11 点抢先生成）+ daily-diary-summary-v2（0 20 * * * = UTC 20:00 = 北京 4:00，早已配好但被 11 点占坑跳过）。**修复**：cron.alter_job(1, active:=false) 停用 11 点那条；net.http_get 手动触发 v2 验证 200 正常（skipped_already_exists）。今晚起每天北京 4 点生成前一天日记 ✅
+- 📦 **日记按天缓存（App 端 GenerationHandler）**：同一天只调一次 Supabase 查日记，其余直接用本地缓存（SharedPreferences diary_cache）；Supabase 拉不到回退最近缓存不阻塞——保 DS 缓存前缀稳定/命中率（宝洞察：日记段注入不稳→前缀抖动→缓存 miss）✅ 已推 main（详见 PROGRESS.md）
 - 🐛 **V3 时间口径修复（事件对不齐根源）**：chat_messages 存储=北京时间原样标 UTC（偏 8h）；V3 fetch_msgs 却用正确 UTC 转换查 → 拉到「北京前一天 16:00~当天 15:59」（DeepSeek 看到 161 条）vs 橘瓣 queryMessagesByDate「北京当天」（19 条）→ 两套列表不同 → source_ids 编号错位 → 事件对不齐。**修复**：V3 fetch_msgs 改无时区字符串查询（与橘瓣同口径）✅ 宝 SSH 替换执行成功；新事件 source_ids 全在当天条数内（8/16=79 条）；fetch_chat_sources 按 source_ids 能精确拉原文 ✅ 存量 8/15 错位事件待重建 ⏳
 - 账本建立：本文件 + PROGRESS.md 建立（治橘仔代码失忆）——宝拍板 ✅
 - orangechat 缓存优化：commit 7d4e36cc（门控+日记独立+删最近聊天引用，详见 PROGRESS.md）✅

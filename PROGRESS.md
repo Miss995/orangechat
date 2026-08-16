@@ -6,6 +6,12 @@
 
 ## 2026-08-16
 
+### commit — 日记按天缓存（保缓存率 + 防 Supabase 慢/挂）
+- 文件：app/src/main/java/me/rerere/rikkahub/data/ai/GenerationHandler.kt
+- 改动：日记摘要段加本地按天缓存（SharedPreferences "diary_cache"，key=diary_{assistantId}_{今天}）——同一天只调一次 Supabase queryLatestSummaries，之后一整天直接用缓存；Supabase 拉不到时回退最近一次缓存（不阻塞、前缀稳定）
+- 为啥：日记段注入不稳 → 前缀抖动 → DS 缓存命中率掉（宝洞察）；Supabase 偶尔慢/超时导致日记拉不回来
+- 状态：✅ 已推 main；⏳ 宝构建验证（日志看 Diary [cache] / [supabase] / [fallback-cache]）
+
 ### commit 7d4e36cc — 召回门控 + 日记独立 + 删最近聊天引用
 - 文件：app/src/main/java/me/rerere/rikkahub/data/ai/GenerationHandler.kt
 - 改动：

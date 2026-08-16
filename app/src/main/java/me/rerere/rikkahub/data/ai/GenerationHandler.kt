@@ -446,22 +446,40 @@ class GenerationHandler(
                 }
 
                 // 日记摘要（稳定前缀：每天一篇，从外置记忆库拉最新日记摘要，单独成段——不随搜索门控走）
+                // 本地按天缓存：同一天只调一次 Supabase，之后一整天直接用缓存——前缀稳定（保 DS 缓存命中率）+ 防 Supabase 慢/挂
                 try {
                     val diaryConfigs = settings.externalMemories.filter {
                         it.enabled && it.id in assistant.externalMemoryIds
                     }
                     if (diaryConfigs.isNotEmpty()) {
-                        val service = me.rerere.rikkahub.data.service.ExternalMemoryService(diaryConfigs.first())
-                        val latestDiaries = service.queryLatestSummaries(
-                            assistantId = assistant.id.toString(),
-                            limit = 1,
-                        ).getOrDefault(emptyList())
-                        if (latestDiaries.isNotEmpty()) {
+                        val prefs = context.getSharedPreferences("diary_cache", Context.MODE_PRIVATE)
+                        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+                        val cacheKey = "diary_${assistant.id}_$today"
+                        var diaryText = prefs.getString(cacheKey, null)
+                        var source = "cache"
+                        if (diaryText == null) {
+                            source = "supabase"
+                            val service = me.rerere.rikkahub.data.service.ExternalMemoryService(diaryConfigs.first())
+                            val latestDiaries = service.queryLatestSummaries(
+                                assistantId = assistant.id.toString(),
+                                limit = 1,
+                            ).getOrDefault(emptyList())
+                            if (latestDiaries.isNotEmpty()) {
+                                diaryText = latestDiaries.joinToString("\n") { it.content }
+                                prefs.edit().putString(cacheKey, diaryText).apply()
+                            } else {
+                                // 拉不到：回退最近一次缓存（昨天的），保证日记段有内容（前缀稳定）
+                                diaryText = prefs.all.entries
+                                    .filter { it.key.startsWith("diary_${assistant.id}_") }
+                                    .maxByOrNull { it.key }?.value as? String
+                                if (diaryText != null) source = "fallback-cache"
+                            }
+                        }
+                        if (!diaryText.isNullOrBlank()) {
+                            Log.i(TAG, "Diary [$source] injected ($cacheKey)")
                             appendLine()
                             appendLine("## 日记")
-                            latestDiaries.forEach { diary ->
-                                append(diary.content)
-                            }
+                            append(diaryText)
                         }
                     }
                 } catch (e: Exception) {
@@ -864,7 +882,7 @@ private fun buildCodeBlockPrompt(): String = buildString {
     appendLine("2. **ZIP Download via `write_files` tool**: Users can download code files as a ZIP ONLY when you call this tool.")
     appendLine("   - **Full write** (first time / new files): `{\"zip_name\":\"project.zip\",\"files\":[{\"name\":\"MainActivity.kt\",\"content\":\"...\"}]}`")
     appendLine("   - **Incremental edit** (saves tokens! For modifying existing files): `{\"zip_name\":\"project-v2.zip\",\"base_files\":\"previous\",\"edits\":[{\"name\":\"MainActivity.kt\",\"search\":\"old code\",\"replace\":\"new code\"}]}`")
-    appendLine("   - The `edits` mode applies search/replace to the files from your previous `write_files` call. Files not mentioned in `edits` keep their content unchanged.")
+    appendLine("   - The `edits` mode applies search/replace to the files from your previous `write_files` call. Files not mentioned in `edits` keep their cached content unchanged.")
     appendLine("   - Always use actual filenames (e.g. `MainActivity.kt`) as code block language tags, not just language names (e.g. `kotlin`).")
 }
 
