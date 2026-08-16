@@ -119,6 +119,10 @@ class GenerationHandler(
         val providerImpl = providerManager.getProviderByType(provider)
  
         var messages: List<UIMessage> = messages
+
+        // 召回门控状态：一次生成流程（多步 agent 循环）只触发一次记忆召回，
+        // 二次请求不再重复判断/注入，避免工具步骤反复召回破坏前缀稳定。
+        var recallGatePassed = false
  
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -212,6 +216,8 @@ class GenerationHandler(
                     processingStatus = processingStatus,
                     conversationSystemPrompt = conversationSystemPrompt,
                     workspaceCwd = workspaceCwd,
+                    recallGate = recallGatePassed,
+                    onRecallGatePassed = { recallGatePassed = true },
                 )
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,
@@ -408,6 +414,8 @@ class GenerationHandler(
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
         conversationSystemPrompt: String? = null,
         workspaceCwd: String? = null,
+        recallGate: Boolean = false,
+        onRecallGatePassed: () -> Unit = {},
     ) {
         val internalMessages = buildList {
             val system = buildString {
@@ -425,23 +433,10 @@ class GenerationHandler(
                 appendLine()
                 append(buildCodeBlockPrompt())
  
-                // 工具说明（稳定前缀）：强制注入全部工具的 name+description 文字版，
-                // 让工具信息落在每次请求开头的稳定前缀里 -> 提升 DeepSeek 前缀缓存命中率。
-                // 背景：结构化 tools 参数在请求尾部，被不断变化的聊天消息挡住，几乎吃不到缓存；
-                // 这里用文字版在稳定前缀里兜住工具信息（name+description），每次请求开头一致 -> 命中缓存。
+                // 工具prompt（稳定前缀）
                 tools.forEach { tool ->
                     appendLine()
-                    append("### 工具 ${tool.name}")
-                    if (tool.description.isNotBlank()) {
-                        appendLine()
-                        append(tool.description)
-                    }
-                    // 若工具有自定义 systemPrompt（如操作说明），也一并注入
-                    val customPrompt = tool.systemPrompt(model, messages)
-                    if (customPrompt.isNotBlank()) {
-                        appendLine()
-                        append(customPrompt)
-                    }
+                    append(tool.systemPrompt(model, messages))
                 }
  
                 // 记忆（动态内容统一放到稳定前缀之后）
@@ -449,37 +444,50 @@ class GenerationHandler(
                     appendLine()
                     append(buildMemoryPrompt(memories = memories))
                 }
+
+                // 日记摘要（稳定前缀：每天一篇，从外置记忆库拉最新日记摘要，单独成段——不随搜索门控走）
+                try {
+                    val diaryConfigs = settings.externalMemories.filter {
+                        it.enabled && it.id in assistant.externalMemoryIds
+                    }
+                    if (diaryConfigs.isNotEmpty()) {
+                        val service = me.rerere.rikkahub.data.service.ExternalMemoryService(diaryConfigs.first())
+                        val latestDiaries = service.queryLatestSummaries(
+                            assistantId = assistant.id.toString(),
+                            limit = 1,
+                        ).getOrDefault(emptyList())
+                        if (latestDiaries.isNotEmpty()) {
+                            appendLine()
+                            appendLine("## 日记")
+                            latestDiaries.forEach { diary ->
+                                append(diary.content)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Diary summary load failed", e)
+                }
  
-                // 外置记忆库召回（动态）——2026-08-15 宝拍板：只留事件级召回+原文（去掉聊天记录向量直搜/关键词兜底，控制请求长度）
+                // 外置记忆库事件召回（动态——门控：仅搜索意图时触发；日记摘要已独立为稳定前缀）
                 try {
                     val externalMemoryConfigs = settings.externalMemories.filter {
                         it.enabled && it.id in assistant.externalMemoryIds
                     }
-                    externalMemoryConfigs.forEach { config ->
-                        Log.i(TAG, "ExternalMemory config: name=${config.name}, url=${config.supabaseUrl}, table=${config.tableName}, summaryTable=${config.summariesTableName}, embeddingModelId=${config.embeddingModelId}, autoSaveDiarySummary=${config.autoSaveDiarySummary}")
-                    }
                     if (externalMemoryConfigs.isNotEmpty()) {
                         val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
                         val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
-                        // 并发检索所有外置记忆库配置，每个配置最多 15 秒超时
-                        val allRecalled = coroutineScope {
-                            externalMemoryConfigs.map { config ->
-                                async {
-                                    withTimeoutOrNull(EXTERNAL_RECALL_TIMEOUT_MS) {
-                                        runCatching {
-                                            val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
-                                            val recalled = mutableListOf<String>()
+                        if (!recallGate && hasSearchIntent(queryText)) {
+                            onRecallGatePassed()
+                            // 并发检索所有外置记忆库配置，每个配置最多 15 秒超时
+                            val allRecalled = coroutineScope {
+                                externalMemoryConfigs.map { config ->
+                                    async {
+                                        withTimeoutOrNull(EXTERNAL_RECALL_TIMEOUT_MS) {
+                                            runCatching {
+                                                val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
+                                                val recalled = mutableListOf<String>()
 
-                                // 1. 日记摘要：固定前一天一篇（最新1篇，不再混合召回）
-                                val latestSummaries = service.queryLatestSummaries(
-                                    assistantId = assistant.id.toString(),
-                                    limit = 1,
-                                ).getOrDefault(emptyList())
-                                latestSummaries.forEach { summary ->
-                                    recalled.add(summary.content)
-                                }
-
-                                // 2. 事件级召回（唯一搜索通道）：向量搜 memory_events -> 命中事件 -> 展开原文（克制 take(4)，同日同段去重）
+                                // 事件级召回（搜索通道）：向量搜 memory_events -> 命中事件 -> 展开原文（克制 take(4)，同日同段去重）
                                 if (queryText.isNotBlank()) {
                                     val embeddingModel = config.embeddingModelId?.let { settings.findModelById(it) }
                                     val embeddingProvider = embeddingModel?.findProvider(settings.providers)
@@ -495,7 +503,6 @@ class GenerationHandler(
                                             )
                                             val queryEmbedding = embedResult.embeddings.firstOrNull()
                                             if (queryEmbedding != null) {
-                                                // 命中事件 -> 展开原文证据（同日/同段只注入一次，避免重复灌内容）
                                                 val recalledEvents = service.vectorRecallEvents(
                                                     queryEmbedding = queryEmbedding,
                                                     assistantId = assistant.id.toString(),
@@ -543,15 +550,17 @@ class GenerationHandler(
                                 }
                             }
                         }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "External memory recall failed", e)
                     }
+                } catch (e: Exception) {
+                    Log.w(TAG, "External memory recall failed", e)
+                }
 
-                // OB 记忆按需搜索（搜索型：按用户消息内容调 breath_search；2026-08-15 宝要求去节流，每次请求都搜）
+                // OB 记忆按需搜索（门控：仅搜索意图时触发，正常闲聊不注入以保持前缀稳定）
                 try {
                     val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
                     val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
-                    if (queryText.isNotBlank()) {
+                    if (!recallGate && hasSearchIntent(queryText)) {
+                        onRecallGatePassed()
                         val searchTool = tools.find { it.name.endsWith("_breath_search") }
                         if (searchTool != null) {
                             val args = buildJsonObject {
@@ -572,11 +581,12 @@ class GenerationHandler(
                     Log.w(TAG, "OB search auto-recall failed", e)
                 }
 
-                // Mem0 第三大脑自动召回（动态，语义搜索）
+                // Mem0 第三大脑自动召回（门控：仅搜索意图时触发，正常闲聊不注入以保持前缀稳定）
                 try {
                     val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
                     val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
-                    if (queryText.isNotEmpty()) {
+                    if (!recallGate && hasSearchIntent(queryText)) {
+                        onRecallGatePassed()
                         val mem0Tool = tools.find { it.name.endsWith("_search_memory") }
                         if (mem0Tool != null) {
                             val args = buildJsonObject {
@@ -595,12 +605,6 @@ class GenerationHandler(
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Mem0 recall failed", e)
-                }
- 
-                // 最近聊天引用（动态）
-                if (assistant.enableRecentChatsReference) {
-                    appendLine()
-                    append(buildRecentChatsPrompt(assistant, conversationRepo))
                 }
  
                 // 插件提示词注入（动态）
@@ -862,5 +866,20 @@ private fun buildCodeBlockPrompt(): String = buildString {
     appendLine("   - **Incremental edit** (saves tokens! For modifying existing files): `{\"zip_name\":\"project-v2.zip\",\"base_files\":\"previous\",\"edits\":[{\"name\":\"MainActivity.kt\",\"search\":\"old code\",\"replace\":\"new code\"}]}`")
     appendLine("   - The `edits` mode applies search/replace to the files from your previous `write_files` call. Files not mentioned in `edits` keep their content unchanged.")
     appendLine("   - Always use actual filenames (e.g. `MainActivity.kt`) as code block language tags, not just language names (e.g. `kotlin`).")
+}
+
+/**
+ * 判断用户消息是否含"搜索记忆"意图——自动召回门控：
+ * 含意图词才触发 OB/Mem0/外置库事件召回（正常闲聊不触发，保持前缀稳定）。
+ * 配合 recallGate：一次生成流程只判断/触发一次，二次请求不重复召回。
+ */
+private fun hasSearchIntent(text: String): Boolean {
+    if (text.isBlank()) return false
+    val intentKeywords = listOf(
+        "记得", "忘了", "忘记", "上次", "之前", "以前", "说过", "提到", "提过",
+        "聊过", "讲过", "什么时候", "哪一天", "哪天", "搜", "搜索", "找找",
+        "查一下", "查查", "回忆", "回想", "回顾", "叫什么", "来着", "想起来了",
+    )
+    return intentKeywords.any { text.contains(it) }
 }
  
