@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -445,6 +445,27 @@ internal fun AssistantBasicContent(
                     ) else stringResource(R.string.assistant_page_context_message_unlimited),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.75f),
+                )
+            }
+            HorizontalDivider()
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text("上下文分组条数")
+                },
+                description = {
+                    Text("按组裁剪上下文：新消息凑满一组才推掉最旧一组，前缀稳定→缓存命中率↑。0=按条裁剪（默认行为），可选 2 的倍数")
+                }
+            ) {
+                val groupOptions = remember { listOf(0, 2, 4, 6, 8, 10) }
+                Select(
+                    options = groupOptions,
+                    selectedOption = if (assistant.contextGroupSize in groupOptions) assistant.contextGroupSize else 0,
+                    onOptionSelected = { onUpdate(assistant.copy(contextGroupSize = it)) },
+                    optionToString = { value ->
+                        if (value == 0) "按条（0）" else "$value 条一组"
+                    },
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
             HorizontalDivider()

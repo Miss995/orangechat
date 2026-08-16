@@ -667,7 +667,7 @@ class GenerationHandler(
  
             }
             if (system.isNotBlank()) add(UIMessage.system(prompt = system))
-            addAll(messages.limitContext(assistant.contextMessageSize))
+            addAll(messages.limitContext(assistant.contextMessageSize, assistant.contextGroupSize))
         }.transforms(
             transformers = transformers,
             context = context,
@@ -873,7 +873,6 @@ private fun buildCodeBlockPrompt(): String = buildString {
     appendLine("   - ✅ Correct: ```index.html instead of ```html")
     appendLine("   - ✅ Correct: ```styles.css instead of ```css")
     appendLine("   - ✅ Correct: ```package.json instead of ```json")
-    appendLine("   - ✅ Correct: ```manifest.xml instead of ```xml")
     appendLine("   - ✅ Correct: ```main.py instead of ```python")
     appendLine("   - ✅ Correct: ```App.vue instead of ```vue")
     appendLine("   - ❌ Wrong: ```kotlin, ```python, ```javascript (these don't provide filenames)")
