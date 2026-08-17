@@ -4,6 +4,17 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-08-17
+
+### commit 9b7a6ce8 — 时间定位：搜索加时间过滤 date_from/date_to（宝定的记忆系统行动清单①）
+- 文件：app/src/main/java/me/rerere/rikkahub/data/ai/TimeRangeParser.kt（新建）+ ExternalMemoryService.kt + GenerationHandler.kt
+- 改动：
+  1. 新增 TimeRangeParser：从用户消息解析时间范围（今天/昨天/N天前/最近N天/上周/上周X/X月X号/X月/上个月/这个月/今年/去年/前几天等，支持阿拉伯+中文数字）；解析不到返回空=不限时间（旧行为）
+  2. ExternalMemoryService.vectorRecallEvents 加 dateFrom/dateTo 参数：按事件 source_date（yyyy-MM-dd 字典序=日期比较，与橘瓣同口径）本地过滤；无 source_date 的事件放行（保守不拦）
+  3. GenerationHandler：外置库事件召回传时间范围；OB breath_search 调用带 date_from/date_to（工具原生支持）；日志带 timeRange
+- 为啥：搜"上周说的那个事"只召回该时间范围的记忆，不整库乱捞（提升整体精确度）
+- 状态：✅ 已推 main；⏳ 宝构建验证（搜"上周/昨天/X月X号"看召回是否限时）
+
 ## 2026-08-16
 
 ### commit 59edf368 + bfad1cef — 按组裁剪缓存优化（宝原创脑洞）
