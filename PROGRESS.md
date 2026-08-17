@@ -6,6 +6,17 @@
 
 ## 2026-08-17
 
+### commit — ③第二层 A.U.D.N. 写入 v3（默认关，安全上线）
+- 文件：scripts/archive_daily_v3.py
+- 改动：
+  1. 新增 audn_pass / audn_judge / fetch_recent_events / mark_superseded / cosine_sim / parse_embedding
+  2. 流程：拆完事件后（store_events 前）跑 A.U.D.N.：新事件->embedding->本地 cosine 取 top3（<0.3 直接 ADD）->LLM（硅基 V3, temp=0）决定 ADD/UPDATE/SUPERSEDE/NONE + linked_event_ids
+  3. UPDATE/SUPERSEDE = 旧事件标记 superseded_by（失效不删，学 Zep 双时间）；NONE = 不入库；linked_event_ids 写回新事件 related_event_ids 字段（=宝要的事件关联）
+  4. **安全开关 AUDN_ENABLED（.env 默认 0=关）**；任何异常全 try/except 包裹 -> 全量入库旧行为，绝不吞事件
+  5. 依赖 memory_events 表新增列：superseded_by(text) / related_event_ids(jsonb)
+- 上线步骤（宝，明天做）：①Supabase SQL Editor 跑 ALTER TABLE ②/root/.env 补 SUPABASE_URL/SUPABASE_KEY/AUDN_ENABLED=1 ③替换脚本 git pull 或下载覆盖 ④App 侧过滤 superseded（橘仔下步改 Kotlin）
+- 状态：✅ 已推 main；⏳ 未启用（默认关，今晚 cron 照跑旧版不受影响）
+
 ### commit a26dc8f — scripts/ 目录建立：archive_daily_v3.py 入库（A.U.D.N. 主角，密钥脱敏）
 - 文件：scripts/archive_daily_v3.py（新建，宝从服务器 /root 分段贴来，橘仔拼装还原）+ scripts/README.md（新建）
 - 改动：SUPABASE_URL/SUPABASE_KEY 硬编码 → 改读 .env 环境变量（宝服务器 /root/.env 需补两行，见 README；**替换脚本前务必补上**，否则连不上 Supabase）
@@ -18,7 +29,7 @@
   1. **经典 A.U.D.N.**（DEFAULT_UPDATE_MEMORY_PROMPT）：新事实+相似旧记忆给 LLM → 决定 ADD/UPDATE/DELETE/NONE——**这就是「新事实覆盖旧事实」的成熟实现**
   2. **V3 加性提取**（ADDITIVE_EXTRACTION_PROMPT）：提取时注入 Existing Memories 去重+**linked_memory_ids 关联**——**linked_memory_ids = 咱家想要的「事件↔事件关联」(related_events, memory 64 后做项)，顺带解决！**
 - 咱家落地（archive_daily 总结事件后加 A.U.D.N. 阶段）：新事件 → 向量搜相似旧事件 → LLM（硅基打工）决定 ADD / UPDATE / **SUPERSEDE（标记失效不删，学 Zep/Graphiti 双时间）** / NONE；顺带输出 linked_event_ids；事件表加 superseded_by + related_event_ids 列；App 召回时过滤 superseded 事件
-- 状态：📌 方案已定，待脚本入库后实施（scripts/ 目录已建 ✓）
+- 状态：📌 方案已定，已写入 v3（见上一条）
 
 ### commit（冲突消解·App层基础版）— 事件召回同主题取新 + 时间加权（宝定行动清单③第一层）
 - 文件：app/.../data/service/ExternalMemoryService.kt
@@ -26,8 +37,8 @@
   1. vectorRecallEvents 召回排序加时间加权（近 30 天内新事件微优先，每天 +0.001，不破坏相似度主排序）
   2. 归一化标题去重：同标题事件只保留 source_date 最新一条（防重复总结）；数据不删，仅召回不返回旧重复
   3. 候选池扩大一倍（count*2）再冲突消解，避免去重后不够数
-- 为啥：宝定的③冲突消解=新事实覆盖旧事实。App 层文本方法能处理「重复/同主题」；**矛盾型**（宝在洞头 vs 回来了）文本相似度抓不住，需写入层 LLM 标记 superseded（总结时顺手判断，零额外成本）——待 archive_daily/V3 脚本入库后做第二层
-- 状态：✅ 已推 main；⏳ 宝构建验证；⏳ 第二层（写入层 LLM 标记 superseded）待脚本入库
+- 为啥：宝定的③冲突消解=新事实覆盖旧事实。App 层文本方法能处理「重复/同主题」；**矛盾型**（宝在洞头 vs 回来了）文本相似度抓不住，需写入层 LLM 标记 superseded（总结时顺手判断，零额外成本）
+- 状态：✅ 已推 main；⏳ 宝构建验证；⏳ 第二层（写入层 LLM 标记 superseded）已写入 v3
 
 ### commit（主召）— 外置库升格唯一主召回，停 OB/Mem0 自动注入（宝定的记忆系统精简方案核心）
 - 文件：app/.../data/ai/GenerationHandler.kt
@@ -128,4 +139,4 @@
 - 停 Mem0 MCP 服务器（Termux，数据保留归档）——记忆系统精简执行清单③
 - 橘瓣配置清理（监工台状态灯收起/改存档）——执行清单④
 - 外置库补强（事件↔聊天记录引用打通等）——执行清单⑤
-- **③第二层（写入层 A.U.D.N.）**：archive_daily_v3 总结事件后加 A.U.D.N. 阶段（新事件→向量搜相似旧事件→LLM 决定 ADD/UPDATE/SUPERSEDE/NONE，抄 Mem0 DEFAULT_UPDATE_MEMORY_PROMPT 中文版；SUPERSEDE=标记失效不删，学 Zep/Graphiti）；顺带输出 linked_event_ids（=宝要的事件关联 related_events）；事件表加 superseded_by + related_event_ids 列；App 召回过滤 superseded。**脚本已入库（scripts/archive_daily_v3.py）✓，可以开工**
+- **③第二层收尾（App 侧）**：召回时过滤 superseded_by 非空的事件（Kotlin，下步做）+ 宝加列 SQL 见 README/上一条
