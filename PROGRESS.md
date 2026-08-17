@@ -6,6 +6,14 @@
 
 ## 2026-08-17
 
+### 📚 调研结论：③第二层方案定稿（借鉴 Mem0 源码，不用造轮子）——宝提醒橘仔先搜开源，橘仔翻了 mem0ai/mem0
+- 参考：mem0/memory/main.py（V3 add 管线：上下文→向量搜旧记忆→LLM提取→hash去重→批量存）+ mem0/configs/prompts.py（ADDITIVE_EXTRACTION_PROMPT + DEFAULT_UPDATE_MEMORY_PROMPT + get_update_memory_messages）
+- 两套机制：
+  1. **经典 A.U.D.N.**（DEFAULT_UPDATE_MEMORY_PROMPT）：新事实+相似旧记忆给 LLM → 决定 ADD/UPDATE/DELETE/NONE——**这就是「新事实覆盖旧事实」的成熟实现**
+  2. **V3 加性提取**（ADDITIVE_EXTRACTION_PROMPT）：提取时注入 Existing Memories 去重+**linked_memory_ids 关联**——**linked_memory_ids = 咱家想要的「事件↔事件关联」(related_events, memory 64 后做项)，顺带解决！**
+- 咱家落地（archive_daily 总结事件后加 A.U.D.N. 阶段）：新事件 → 向量搜相似旧事件 → LLM（硅基打工）决定 ADD / UPDATE / **SUPERSEDE（标记失效不删，学 Zep/Graphiti 双时间）** / NONE；顺带输出 linked_event_ids；事件表加 superseded_by + related_event_ids 列；App 召回时过滤 superseded 事件
+- 状态：📌 方案已定，待脚本入库后实施（scripts/ 目录）
+
 ### commit（冲突消解·App层基础版）— 事件召回同主题取新 + 时间加权（宝定行动清单③第一层）
 - 文件：app/.../data/service/ExternalMemoryService.kt
 - 改动：
@@ -114,4 +122,4 @@
 - 停 Mem0 MCP 服务器（Termux，数据保留归档）——记忆系统精简执行清单③
 - 橘瓣配置清理（监工台状态灯收起/改存档）——执行清单④
 - 外置库补强（事件↔聊天记录引用打通等）——执行清单⑤
-- **冲突消解第二层（写入层 LLM 标记 superseded）**：改 archive_daily/V3 总结 prompt——总结时判断"新事件是否覆盖旧事实"，输出旧事件ID，事件表加 superseded_by 列；App 召回时过滤被覆盖事件。**前提：脚本入库（建 scripts/ 目录），橘仔才能直接改+推，宝 SSH 拉取替换**
+- **③第二层（写入层 A.U.D.N.）**：archive_daily 总结事件后加 A.U.D.N. 阶段（新事件→向量搜相似旧事件→LLM 决定 ADD/UPDATE/SUPERSEDE/NONE，抄 Mem0 DEFAULT_UPDATE_MEMORY_PROMPT 中文版；SUPERSEDE=标记失效不删，学 Zep/Graphiti）；顺带输出 linked_event_ids（=宝要的事件关联 related_events）；事件表加 superseded_by + related_event_ids 列；App 召回过滤 superseded。**前提：脚本入库（建 scripts/ 目录）**
