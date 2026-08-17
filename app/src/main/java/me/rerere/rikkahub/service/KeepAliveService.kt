@@ -1,4 +1,4 @@
-/*
+﻿/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -29,10 +29,13 @@ import me.rerere.rikkahub.RouteActivity
  * - 兼容 Android 8.0+ NotificationChannel 要求
  * - 国产 ROM 兼容：划掉任务后通过发送广播尝试自启动
  *
- * 类型说明：使用 FOREGROUND_SERVICE_TYPE_SPECIAL_USE（specialUse）。
- * Android 14+ 对 dataSync 等类型前台服务有“每 24 小时累计 6 小时”的配额，
- * 超时未停止会抛 ForegroundServiceDidNotStopInTimeException 导致整个进程崩溃；
- * specialUse 类型无此时长限制，适合常驻保活场景（Manifest 中已声明 SPECIAL_USE 权限与 subtype）。
+ * 崩溃修复（2026-08-17）：
+ * 原实现使用 dataSync 前台服务类型，但 Android 15+ 对 dataSync 有每天累计 6 小时的
+ * 时长配额，保活服务 24 小时常驻必然耗尽配额；配额耗尽后 startForeground 抛异常，
+ * 旧代码 catch 后直接 stopSelf，但系统仍认为该服务"调用了 startForegroundService
+ * 却没调用 startForeground"，5 秒后抛 ForegroundServiceDidNotStartInTimeException
+ * 炸掉整个进程。现改用 specialUse 类型（无配额限制，与项目内其他保活服务一致），
+ * 并增加不带类型的兜底重试，尽量避免触发该崩溃。
  */
 class KeepAliveService : Service() {
 
@@ -46,10 +49,15 @@ class KeepAliveService : Service() {
         // 自启动广播 Action
         const val ACTION_RESTART_KEEP_ALIVE = "me.rerere.orangechat.RESTART_KEEP_ALIVE"
 
+        // 进程内运行标志位，避免每次启动都走 getRunningServices（部分 ROM 上较慢，冷启动时可能拖慢主线程）
+        @Volatile
+        private var runningFlag = false
+
         /**
-         * 检查服务是否正在运行（高版本系统 getRunningServices 可能受限，仅作参考）
+         * 检查服务是否正在运行（进程内标志位优先，高版本系统 getRunningServices 可能受限，仅作参考）
          */
         fun isRunning(context: Context): Boolean {
+            if (runningFlag) return true
             return try {
                 val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
                 manager.getRunningServices(Integer.MAX_VALUE)
@@ -122,9 +130,12 @@ class KeepAliveService : Service() {
             .setSilent(true)
             .build()
 
-        // 启动前台服务
-        // Android 14+ 使用 specialUse 类型（无 dataSync 的 6 小时配额限制），
-        // 避免 ForegroundServiceDidNotStopInTimeException 崩溃。
+        // 启动前台服务。
+        // 使用 specialUse 类型（无配额限制），避免 Android 15+ 对 dataSync 类型的
+        // 每日 6 小时配额限制导致 startForeground 抛异常。
+        // 注意：startForegroundService 被调用后，系统强制要求本服务在 5 秒内调用
+        // startForeground()，否则抛 ForegroundServiceDidNotStartInTimeException 直接
+        // 炸掉进程（应用层 catch 不住）。因此这里绝不能 catch 后不调用 startForeground 就退出。
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 startForeground(
@@ -136,15 +147,22 @@ class KeepAliveService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            Log.e(
-                TAG,
-                "startForeground 失败，停止保活服务避免崩溃",
-                e
-            )
-            stopSelf()
-            return START_NOT_STICKY
+            // 带类型启动失败（极少数系统限制），兜底再试一次不指定类型（回落到 Manifest 声明的类型）
+            Log.w(TAG, "带类型 startForeground 失败，尝试兜底重试", e)
+            try {
+                startForeground(NOTIFICATION_ID, notification)
+                Log.d(TAG, "兜底 startForeground 成功")
+            } catch (e2: Exception) {
+                // 两种方式都失败：停止服务自保。此时系统仍可能在 5 秒后抛
+                // ForegroundServiceDidNotStartInTimeException，但这是系统级限制，
+                // 应用层已尽力（理论上 specialUse 类型不会走到这里）。
+                Log.e(TAG, "startForeground 全部失败，停止保活服务", e2)
+                stopSelf()
+                return START_NOT_STICKY
+            }
         }
 
+        runningFlag = true
         return START_STICKY
     }
 
@@ -152,6 +170,7 @@ class KeepAliveService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        runningFlag = false
         Log.d(TAG, "onDestroy")
     }
 

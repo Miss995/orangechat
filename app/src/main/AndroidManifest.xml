@@ -225,16 +225,6 @@
         android:value="floating bubble notification" />
     </service>
 
-    <!-- Floating Pet Service (透明GIF悬浮桌宠) -->
-    <service
-      android:name=".data.service.FloatingPetService"
-      android:exported="false"
-      android:foregroundServiceType="specialUse">
-      <property
-        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-        android:value="floating gif desktop pet" />
-    </service>
-
     <!-- Supabase Sync Service -->
     <service
       android:name=".data.service.SupabaseSyncService"
@@ -350,8 +340,12 @@
       android:name=".service.KeepAliveService"
       android:enabled="true"
       android:exported="false"
-      android:foregroundServiceType="dataSync"
-      android:stopWithTask="false" />
+      android:foregroundServiceType="specialUse"
+      android:stopWithTask="false">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="keep-alive foreground service for chat reliability" />
+    </service>
 
     <!-- 微信 Bot (iLink 协议): 长轮询收微信消息, 转给关联助手处理, 回复发回微信 -->
     <service
