@@ -6,13 +6,19 @@
 
 ## 2026-08-17
 
+### commit a26dc8f — scripts/ 目录建立：archive_daily_v3.py 入库（A.U.D.N. 主角，密钥脱敏）
+- 文件：scripts/archive_daily_v3.py（新建，宝从服务器 /root 分段贴来，橘仔拼装还原）+ scripts/README.md（新建）
+- 改动：SUPABASE_URL/SUPABASE_KEY 硬编码 → 改读 .env 环境变量（宝服务器 /root/.env 需补两行，见 README；**替换脚本前务必补上**，否则连不上 Supabase）
+- 为啥：记忆系统脚本入库（治代码失忆 + 橘仔能直接改）；v3 是③第二层 A.U.D.N. 要改的主角
+- 状态：✅ 已推 main；⏳ 服务器暂不替换（等 A.U.D.N. 改完一次性切换：补 .env + git pull 或下载覆盖）
+
 ### 📚 调研结论：③第二层方案定稿（借鉴 Mem0 源码，不用造轮子）——宝提醒橘仔先搜开源，橘仔翻了 mem0ai/mem0
 - 参考：mem0/memory/main.py（V3 add 管线：上下文→向量搜旧记忆→LLM提取→hash去重→批量存）+ mem0/configs/prompts.py（ADDITIVE_EXTRACTION_PROMPT + DEFAULT_UPDATE_MEMORY_PROMPT + get_update_memory_messages）
 - 两套机制：
   1. **经典 A.U.D.N.**（DEFAULT_UPDATE_MEMORY_PROMPT）：新事实+相似旧记忆给 LLM → 决定 ADD/UPDATE/DELETE/NONE——**这就是「新事实覆盖旧事实」的成熟实现**
   2. **V3 加性提取**（ADDITIVE_EXTRACTION_PROMPT）：提取时注入 Existing Memories 去重+**linked_memory_ids 关联**——**linked_memory_ids = 咱家想要的「事件↔事件关联」(related_events, memory 64 后做项)，顺带解决！**
 - 咱家落地（archive_daily 总结事件后加 A.U.D.N. 阶段）：新事件 → 向量搜相似旧事件 → LLM（硅基打工）决定 ADD / UPDATE / **SUPERSEDE（标记失效不删，学 Zep/Graphiti 双时间）** / NONE；顺带输出 linked_event_ids；事件表加 superseded_by + related_event_ids 列；App 召回时过滤 superseded 事件
-- 状态：📌 方案已定，待脚本入库后实施（scripts/ 目录）
+- 状态：📌 方案已定，待脚本入库后实施（scripts/ 目录已建 ✓）
 
 ### commit（冲突消解·App层基础版）— 事件召回同主题取新 + 时间加权（宝定行动清单③第一层）
 - 文件：app/.../data/service/ExternalMemoryService.kt
@@ -122,4 +128,4 @@
 - 停 Mem0 MCP 服务器（Termux，数据保留归档）——记忆系统精简执行清单③
 - 橘瓣配置清理（监工台状态灯收起/改存档）——执行清单④
 - 外置库补强（事件↔聊天记录引用打通等）——执行清单⑤
-- **③第二层（写入层 A.U.D.N.）**：archive_daily 总结事件后加 A.U.D.N. 阶段（新事件→向量搜相似旧事件→LLM 决定 ADD/UPDATE/SUPERSEDE/NONE，抄 Mem0 DEFAULT_UPDATE_MEMORY_PROMPT 中文版；SUPERSEDE=标记失效不删，学 Zep/Graphiti）；顺带输出 linked_event_ids（=宝要的事件关联 related_events）；事件表加 superseded_by + related_event_ids 列；App 召回过滤 superseded。**前提：脚本入库（建 scripts/ 目录）**
+- **③第二层（写入层 A.U.D.N.）**：archive_daily_v3 总结事件后加 A.U.D.N. 阶段（新事件→向量搜相似旧事件→LLM 决定 ADD/UPDATE/SUPERSEDE/NONE，抄 Mem0 DEFAULT_UPDATE_MEMORY_PROMPT 中文版；SUPERSEDE=标记失效不删，学 Zep/Graphiti）；顺带输出 linked_event_ids（=宝要的事件关联 related_events）；事件表加 superseded_by + related_event_ids 列；App 召回过滤 superseded。**脚本已入库（scripts/archive_daily_v3.py）✓，可以开工**
