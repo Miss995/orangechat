@@ -496,6 +496,8 @@ class GenerationHandler(
                         val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
                         if (!recallGate && hasSearchIntent(queryText)) {
                             onRecallGatePassed()
+                            // 时间定位：从用户消息解析时间范围（date_from/date_to），传给事件召回/OB 搜索
+                            val timeRange = TimeRangeParser.parse(queryText)
                             // 并发检索所有外置记忆库配置，每个配置最多 15 秒超时
                             val allRecalled = coroutineScope {
                                 externalMemoryConfigs.map { config ->
@@ -525,6 +527,8 @@ class GenerationHandler(
                                                     queryEmbedding = queryEmbedding,
                                                     assistantId = assistant.id.toString(),
                                                     count = config.recallCount,
+                                                    dateFrom = timeRange.dateFrom,
+                                                    dateTo = timeRange.dateTo,
                                                 ).getOrDefault(emptyList())
                                                 val seenMsg = mutableSetOf<String>()
                                                 recalledEvents.forEach { event ->
@@ -540,7 +544,7 @@ class GenerationHandler(
                                                     }
                                                     recalled.add(sb.toString())
                                                 }
-                                                Log.d(TAG, "Event recall ${recalledEvents.size} events from ${config.name}")
+                                                Log.d(TAG, "Event recall ${recalledEvents.size} events from ${config.name} (timeRange: ${timeRange.dateFrom}~${timeRange.dateTo})")
                                             }
                                         }.onFailure {
                                             Log.w(TAG, "Event recall failed for ${config.name}", it)
@@ -581,8 +585,12 @@ class GenerationHandler(
                         onRecallGatePassed()
                         val searchTool = tools.find { it.name.endsWith("_breath_search") }
                         if (searchTool != null) {
+                            // 时间定位：把解析出的时间范围传给 OB breath_search（date_from/date_to）
+                            val timeRange = TimeRangeParser.parse(queryText)
                             val args = buildJsonObject {
                                 put("query", JsonPrimitive(queryText))
+                                if (timeRange.dateFrom != null) put("date_from", JsonPrimitive(timeRange.dateFrom))
+                                if (timeRange.dateTo != null) put("date_to", JsonPrimitive(timeRange.dateTo))
                             }
                             val result = searchTool.execute(json.parseToJsonElement(args.toString()).jsonObject)
                             val recalledText = result.filterIsInstance<UIMessagePart.Text>()
@@ -591,7 +599,7 @@ class GenerationHandler(
                                 appendLine()
                                 appendLine("## 记忆浮现")
                                 append(recalledText.take(OB_BREATH_MAX_CHARS))
-                                Log.i(TAG, "OB search injected ${recalledText.length} chars")
+                                Log.i(TAG, "OB search injected ${recalledText.length} chars (timeRange: ${timeRange.dateFrom}~${timeRange.dateTo})")
                             }
                         }
                     }

@@ -679,15 +679,28 @@ class ExternalMemoryService(
 
     /**
      * 事件级向量召回：问题向量 -> 全量事件本地余弦 -> 取最相关 count 条
+     * 支持时间定位：dateFrom/dateTo（yyyy-MM-dd）按事件 source_date 过滤（字典序比较=日期比较，与橘瓣同口径）。
+     * 没来源日期的事件放行（保守不拦，避免误杀重要记忆）。
      */
     suspend fun vectorRecallEvents(
         queryEmbedding: List<Float>,
         assistantId: String,
         count: Int = 5,
+        dateFrom: String? = null,
+        dateTo: String? = null,
     ): Result<List<ExternalMemoryEvent>> = withContext(Dispatchers.IO) {
         runCatching {
             val allEvents = queryAllEvents(assistantId).getOrDefault(emptyList())
                 .filter { it.embedding.isNotEmpty() }
+                .filter { event ->
+                    if (dateFrom.isNullOrBlank() && dateTo.isNullOrBlank()) true
+                    else {
+                        val d = event.sourceDate
+                        d.isBlank() ||
+                            (dateFrom.isNullOrBlank() || d >= dateFrom) &&
+                            (dateTo.isNullOrBlank() || d <= dateTo)
+                    }
+                }
 
             val scored = allEvents.mapNotNull { event ->
                 val similarity = cosineSimilarity(queryEmbedding, event.embedding)
