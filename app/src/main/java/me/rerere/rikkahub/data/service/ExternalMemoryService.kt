@@ -678,9 +678,15 @@ class ExternalMemoryService(
     }
 
     /**
-     * 事件级向量召回：问题向量 -> 全量事件本地余弦 -> 取最相关 count 条
+     * 事件级向量召回：问题向量 -> 全量事件本地余弦 -> 冲突消解（同主题取新） -> 取最相关 count 条
      * 支持时间定位：dateFrom/dateTo（yyyy-MM-dd）按事件 source_date 过滤（字典序比较=日期比较，与橘瓣同口径）。
      * 没来源日期的事件放行（保守不拦，避免误杀重要记忆）。
+     *
+     * 冲突消解（宝定的行动清单③，App 层基础版）：
+     * - 时间加权：相似度相近时 source_date 更新的事件优先（新事实优先于旧事实）
+     * - 同标题去重：归一化标题相同的事件只保留最新一条（防重复总结）
+     * - 说明：矛盾型冲突（如「宝在洞头」vs「宝回来了」）文本相似度抓不住，需写入层 LLM 标记
+     *   superseded（总结时顺手判断，零额外成本）——待 archive_daily/V3 脚本入库后再做第二层。
      */
     suspend fun vectorRecallEvents(
         queryEmbedding: List<Float>,
@@ -704,14 +710,48 @@ class ExternalMemoryService(
 
             val scored = allEvents.mapNotNull { event ->
                 val similarity = cosineSimilarity(queryEmbedding, event.embedding)
-                event to similarity
+                // 时间加权：近 30 天内的新事件微优先（每天 +0.001，不影响相似度主排序，只做同分段内打破平局）
+                val timeBonus = event.sourceDate.takeIf { it.isNotBlank() }?.let { d ->
+                    runCatching {
+                        val days = java.time.temporal.ChronoUnit.DAYS.between(
+                            java.time.LocalDate.parse(d),
+                            java.time.LocalDate.now()
+                        )
+                        if (days in 0..30) (30 - days) * 0.001f else 0f
+                    }.getOrDefault(0f)
+                } ?: 0f
+                event to (similarity + timeBonus)
             }
 
             scored.sortedByDescending { it.second }
-                .take(count)
+                .take(count * 2) // 扩大候选池，给冲突消解留空间
                 .map { it.first }
+                .let { dedupeByTitle(it) } // 同标题取新（冲突消解基础版）
+                .take(count)
         }
     }
+
+    /**
+     * 同标题去重（冲突消解基础版）：归一化标题相同的事件只保留 source_date 最新一条。
+     * 事件按 source_date 倒序处理，先到的（最新）先占位，重复的跳过——数据不删，仅召回时不返回旧重复。
+     */
+    private fun dedupeByTitle(events: List<ExternalMemoryEvent>): List<ExternalMemoryEvent> {
+        val best = LinkedHashMap<String, ExternalMemoryEvent>()
+        events.sortedByDescending { it.sourceDate }.forEach { e ->
+            val key = normalizeTitle(e.title)
+            if (key.isNotBlank()) {
+                best.putIfAbsent(key, e)
+            } else {
+                best.putIfAbsent("__id_${e.id}", e)
+            }
+        }
+        return best.values.toList()
+    }
+
+    /** 标题归一化：去空白/标点/引号，统一小写（用于同主题检测） */
+    private fun normalizeTitle(t: String): String = t
+        .replace(Regex("[\\s，。！？、；：,.!?;:（）()\\[\\]【】\"'']+"), "")
+        .lowercase()
 
     /**
      * 展开事件原文证据：按事件的 source_date 拉当天消息，用 source_ids（当天 1-based 序号）取对应消息。
