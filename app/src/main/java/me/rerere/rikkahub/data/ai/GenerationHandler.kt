@@ -75,9 +75,6 @@ private const val TAG = "GenerationHandler"
 // 这里把推送频率限制在这个间隔以内，肉眼完全感知不到延迟，但能大幅降低重组频率。
 private const val STREAM_UI_THROTTLE_MS = 50L
 
-// OB 记忆按需搜索（搜索型）：单次注入上限
-private const val OB_BREATH_MAX_CHARS = 3000
-
 // 外置库召回单次超时（Supabase 响应慢时放宽到 15 秒，减少超时空手）
 private const val EXTERNAL_RECALL_TIMEOUT_MS = 15_000L
  
@@ -486,7 +483,9 @@ class GenerationHandler(
                     Log.w(TAG, "Diary summary load failed", e)
                 }
  
-                // 外置记忆库事件召回（动态——门控：仅搜索意图时触发；日记摘要已独立为稳定前缀）
+                // 外置记忆库事件召回（主召方案：唯一自动召回通道——门控：仅搜索意图时触发；日记摘要已独立为稳定前缀）
+                // 主召说明（2026-08-17）：OB breath_search / Mem0 search_memory 自动注入已停用（数据保留归档），
+                // 外置库事件召回升格为主召回。如需恢复 OB/Mem0 自动注入，见 git 历史 9b7a6ce8 之前的代码。
                 try {
                     val externalMemoryConfigs = settings.externalMemories.filter {
                         it.enabled && it.id in assistant.externalMemoryIds
@@ -575,62 +574,6 @@ class GenerationHandler(
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "External memory recall failed", e)
-                }
-
-                // OB 记忆按需搜索（门控：仅搜索意图时触发，正常闲聊不注入以保持前缀稳定）
-                try {
-                    val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
-                    val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
-                    if (!recallGate && hasSearchIntent(queryText)) {
-                        onRecallGatePassed()
-                        val searchTool = tools.find { it.name.endsWith("_breath_search") }
-                        if (searchTool != null) {
-                            // 时间定位：把解析出的时间范围传给 OB breath_search（date_from/date_to）
-                            val timeRange = TimeRangeParser.parse(queryText)
-                            val args = buildJsonObject {
-                                put("query", JsonPrimitive(queryText))
-                                if (timeRange.dateFrom != null) put("date_from", JsonPrimitive(timeRange.dateFrom))
-                                if (timeRange.dateTo != null) put("date_to", JsonPrimitive(timeRange.dateTo))
-                            }
-                            val result = searchTool.execute(json.parseToJsonElement(args.toString()).jsonObject)
-                            val recalledText = result.filterIsInstance<UIMessagePart.Text>()
-                                .joinToString("\n") { it.text }
-                            if (recalledText.isNotBlank()) {
-                                appendLine()
-                                appendLine("## 记忆浮现")
-                                append(recalledText.take(OB_BREATH_MAX_CHARS))
-                                Log.i(TAG, "OB search injected ${recalledText.length} chars (timeRange: ${timeRange.dateFrom}~${timeRange.dateTo})")
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "OB search auto-recall failed", e)
-                }
-
-                // Mem0 第三大脑自动召回（门控：仅搜索意图时触发，正常闲聊不注入以保持前缀稳定）
-                try {
-                    val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
-                    val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
-                    if (!recallGate && hasSearchIntent(queryText)) {
-                        onRecallGatePassed()
-                        val mem0Tool = tools.find { it.name.endsWith("_search_memory") }
-                        if (mem0Tool != null) {
-                            val args = buildJsonObject {
-                                put("query", JsonPrimitive(queryText))
-                            }
-                            val result = mem0Tool.execute(json.parseToJsonElement(args.toString()).jsonObject)
-                            val recalledText = result.filterIsInstance<UIMessagePart.Text>()
-                                .joinToString("\n") { it.text }
-                            if (recalledText.isNotBlank()) {
-                                appendLine()
-                                appendLine("## Mem0 记忆（第三大脑语义召回）")
-                                append(recalledText.take(OB_BREATH_MAX_CHARS))
-                                Log.i(TAG, "Mem0 recall injected ${recalledText.length} chars")
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Mem0 recall failed", e)
                 }
  
                 // 插件提示词注入（动态）
@@ -895,7 +838,7 @@ private fun buildCodeBlockPrompt(): String = buildString {
 
 /**
  * 判断用户消息是否含"搜索记忆"意图——自动召回门控：
- * 含意图词才触发 OB/Mem0/外置库事件召回（正常闲聊不触发，保持前缀稳定）。
+ * 含意图词才触发外置库事件召回（正常闲聊不触发，保持前缀稳定）。
  * 配合 recallGate：一次生成流程只判断/触发一次，二次请求不重复召回。
  */
 private fun hasSearchIntent(text: String): Boolean {

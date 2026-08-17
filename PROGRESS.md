@@ -6,6 +6,16 @@
 
 ## 2026-08-17
 
+### commit（主召）— 外置库升格唯一主召回，停 OB/Mem0 自动注入（宝定的记忆系统精简方案核心）
+- 文件：app/.../data/ai/GenerationHandler.kt
+- 改动：
+  1. 删除 OB breath_search 自动召回块（## 记忆浮现）
+  2. 删除 Mem0 search_memory 自动召回块（## Mem0 记忆）
+  3. 删除 OB_BREATH_MAX_CHARS 常量（不再使用）
+  4. 外置库事件召回保留并标注「主召方案」注释（数据保留归档，OB/Mem0 工具本身未删，配置清理见执行清单④）
+- 为啥：宝拍板的记忆系统精简——外置库事件化=唯一档案馆（主库），OB/Mem0 停用（数据保留归档不删）；只留一条召回通道，减少噪声/省 token/前缀更稳
+- 状态：✅ 已推 main；⏳ 宝构建验证（搜记忆只剩 ## 外置记忆库 段，不再有 ## 记忆浮现 / ## Mem0 记忆）
+
 ### commit 5a63c756 — 修复 KeepAliveService 崩溃（ForegroundServiceDidNotStartInTimeException）
 - 文件：app/.../service/KeepAliveService.kt + app/src/main/AndroidManifest.xml
 - 原因：Android 15+ 对 dataSync 类型前台服务有每天累计 6 小时配额，保活服务 24h 常驻必耗尽；配额耗尽后 startForeground 抛异常，旧代码 catch 后 stopSelf，但系统仍认为「调用了 startForegroundService 却没调 startForeground」→ 5 秒后 ForegroundServiceDidNotStartInTimeException 炸整个进程（表现=宝打开 App 秒崩，一开就崩）
@@ -19,7 +29,7 @@
   2. ExternalMemoryService.vectorRecallEvents 加 dateFrom/dateTo 参数：按事件 source_date（yyyy-MM-dd 字典序=日期比较，与橘瓣同口径）本地过滤；无 source_date 的事件放行（保守不拦）
   3. GenerationHandler：外置库事件召回传时间范围；OB breath_search 调用带 date_from/date_to（工具原生支持）；日志带 timeRange
 - 为啥：搜"上周说的那个事"只召回该时间范围的记忆，不整库乱捞（提升整体精确度）
-- 状态：✅ 已推 main；⏳ 宝构建验证（搜"上周/昨天/X月X号"看召回是否限时；已实测「上周我们聊了什么」「前天Claude的事」双限定命中 ✅）
+- 状态：✅ 已推 main；⏳ 宝构建验证（已实测「上周我们聊了什么」「前天Claude的事」双限定命中 ✅）
 
 ## 2026-08-16
 
@@ -92,3 +102,6 @@
 - OB/外置库全量召回（愿望清单 id68-④）
 - 外置库直召降级保底（愿望清单 id68-⑤）
 - 按组裁剪验证（build 后对比缓存命中率，不行回滚成按条）
+- 停 Mem0 MCP 服务器（Termux，数据保留归档）——记忆系统精简执行清单③
+- 橘瓣配置清理（监工台状态灯收起/改存档）——执行清单④
+- 外置库补强（事件↔聊天记录引用打通等）——执行清单⑤
