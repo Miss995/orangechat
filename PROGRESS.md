@@ -6,6 +6,12 @@
 
 ## 2026-08-17
 
+### commit 5a63c756 — 修复 KeepAliveService 崩溃（ForegroundServiceDidNotStartInTimeException）
+- 文件：app/.../service/KeepAliveService.kt + app/src/main/AndroidManifest.xml
+- 原因：Android 15+ 对 dataSync 类型前台服务有每天累计 6 小时配额，保活服务 24h 常驻必耗尽；配额耗尽后 startForeground 抛异常，旧代码 catch 后 stopSelf，但系统仍认为「调用了 startForegroundService 却没调 startForeground」→ 5 秒后 ForegroundServiceDidNotStartInTimeException 炸整个进程（表现=宝打开 App 秒崩，一开就崩）
+- 修复：dataSync → specialUse（无配额限制）；startForeground 增加不带类型兜底重试；companion 加 runningFlag 进程内标志位（避免每次冷启动 getRunningServices 拖慢主线程）；Manifest 同步声明 specialUse + PROPERTY_SPECIAL_USE_FGS_SUBTYPE
+- 状态：✅ 已推 main（另一个橘瓣入口的橘仔修的，本橘仔补记账）；宝已装修复版确认能打开
+
 ### commit 9b7a6ce8 — 时间定位：搜索加时间过滤 date_from/date_to（宝定的记忆系统行动清单①）
 - 文件：app/src/main/java/me/rerere/rikkahub/data/ai/TimeRangeParser.kt（新建）+ ExternalMemoryService.kt + GenerationHandler.kt
 - 改动：
@@ -13,7 +19,7 @@
   2. ExternalMemoryService.vectorRecallEvents 加 dateFrom/dateTo 参数：按事件 source_date（yyyy-MM-dd 字典序=日期比较，与橘瓣同口径）本地过滤；无 source_date 的事件放行（保守不拦）
   3. GenerationHandler：外置库事件召回传时间范围；OB breath_search 调用带 date_from/date_to（工具原生支持）；日志带 timeRange
 - 为啥：搜"上周说的那个事"只召回该时间范围的记忆，不整库乱捞（提升整体精确度）
-- 状态：✅ 已推 main；⏳ 宝构建验证（搜"上周/昨天/X月X号"看召回是否限时）
+- 状态：✅ 已推 main；⏳ 宝构建验证（搜"上周/昨天/X月X号"看召回是否限时；已实测「上周我们聊了什么」「前天Claude的事」双限定命中 ✅）
 
 ## 2026-08-16
 
