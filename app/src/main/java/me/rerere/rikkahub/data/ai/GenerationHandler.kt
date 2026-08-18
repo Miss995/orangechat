@@ -637,9 +637,13 @@ class GenerationHandler(
             // 在聊天消息末尾追加单独一条实时时间——放在最后一条 = 不破坏 DS 前缀缓存
             // （前缀全部命中，只有这条动态尾部变化），模型每次生成都能看到真实当前时间，
             // 不再误用冻住的注入时间回答"现在几点"。
+            // 2026-08-19 修复（宝实测没生效）：system → user 角色！DeepSeek 是 OpenAI 兼容 API，
+            // system 消息通常要求在最前，放末尾会被忽略/拒绝 → 改成 user 角色放最后完全合法
+            // （最后一条=user），且 hasSearchIntent 的 lastUserMessage 取自 UI messages（不受影响），
+            // 召回逻辑安全；请求编辑模式也能正常显示这条。
             add(
-                UIMessage.system(
-                    prompt = "【当前时间】" +
+                UIMessage.user(
+                    "【当前时间】" +
                         java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()) +
                         "（设备本地时间，实时刷新；若需更精确请使用 get_time_info 工具）"
                 )
