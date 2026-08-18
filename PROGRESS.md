@@ -6,6 +6,12 @@
 
 ## 2026-08-18
 
+### commit 4ed0344e — 修日记缓存时机（凌晨4点切日，宝定行动清单④）
+- 文件：app/src/main/java/me/rerere/rikkahub/data/ai/GenerationHandler.kt
+- 改动：日记缓存 key 从「自然日 0 点切」改为「凌晨 4 点为界切」：0~4 点用昨天日期（读昨天 4 点生成的日记=最新可用），4 点后用今天日期（首次 miss 拉今天新日记，之后整天吃缓存）
+- 为啥：宝 2026-08-17 定行动清单④（日记 bug）；8-16 按天缓存引入后 key 按 0 点切日，而日记凌晨 4 点更新 → 4 点后整天吃 0 点前缓存的旧日记、一整天跟不上进度
+- 状态：✅ 已推 main；⏳ 宝构建验证（凌晨 4 点前后各开一次橘瓣，看日志 Diary [cache/supabase] 的 cacheKey 是否正确切日）
+
 ### commit 295fa813 — perf: 修长对话卡顿（生成中纯文本渲染 + 流式更新降频 50→100ms）
 - 文件：app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt + app/src/main/java/me/rerere/rikkahub/data/ai/GenerationHandler.kt
 - 改动：
