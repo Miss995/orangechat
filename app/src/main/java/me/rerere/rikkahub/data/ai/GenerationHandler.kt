@@ -73,7 +73,9 @@ private const val TAG = "GenerationHandler"
 // 会导致 Compose 高频重组（Markdown 全量重解析、代码高亮重新分词、
 // animateContentSize 的尺寸补间动画被不断打断重启），表现为打字机效果的"抖动/掉帧"。
 // 这里把推送频率限制在这个间隔以内，肉眼完全感知不到延迟，但能大幅降低重组频率。
-private const val STREAM_UI_THROTTLE_MS = 50L
+// 2026-08-18 性能优化：50ms -> 100ms（重组频率减半，配合 ChatMessage 生成中纯文本渲染，
+// 修复长对话 + 超长回复时流式更新全量重解析导致的主线程卡顿/整页滑动掉帧）。
+private const val STREAM_UI_THROTTLE_MS = 100L
 
 // 外置库召回单次超时（Supabase 响应慢时放宽到 15 秒，减少超时空手）
 private const val EXTERNAL_RECALL_TIMEOUT_MS = 15_000L

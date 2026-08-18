@@ -394,7 +394,12 @@ private fun MessagePartsBlock(
                         
                         SelectionContainer {
                             Column {
-                                if (role == MessageRole.USER) {
+                                // 生成中（loading=true 且是 AI 消息）：用纯文本渲染，跳过 Markdown 解析/代码高亮/正则替换，
+                                // 避免流式更新时（100ms 一次）对超长消息全量重解析导致主线程卡顿（整页滑动掉帧）。
+                                // 生成完成 loading=false 后自动切回 MarkdownBlock 富文本，最终显示效果不变。
+                                if (role == MessageRole.ASSISTANT && loading) {
+                                    Text(text = displayText)
+                                } else if (role == MessageRole.USER) {
                                     if (assistant?.splitUserBubbleByLine == true) {
                                         // 分气泡: 按用户输入的换行 (\n) 拆成多个独立气泡,
                                         // 拆分逻辑见 splitIntoBubbleSegments (会保护代码块/表格内部的换行)
