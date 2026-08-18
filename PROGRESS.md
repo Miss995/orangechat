@@ -6,6 +6,15 @@
 
 ## 2026-08-18
 
+### commit 0cca8eaa — App侧过滤 superseded 事件（A.U.D.N. 冲突消解闭环，宝定行动清单③收尾）
+- 文件：app/src/main/java/me/rerere/rikkahub/data/service/ExternalMemoryService.kt
+- 改动：
+  1. ExternalMemoryEvent 加 supersededBy 字段（解析 memory_events.superseded_by 列）
+  2. vectorRecallEvents 召回时过滤 superseded_by 非空的事件（已失效旧事件不喂给模型）
+  3. KDoc 更新：第二层（写入层 A.U.D.N.）闭环说明
+- 为啥：服务器端 A.U.D.N.（archive_daily_v3.py，8-18 已上线）会把被新事实覆盖的旧事件标记 superseded_by（失效不删）；App 这半边一接上，新旧事实就不会再打架——冲突消解完整闭环
+- 状态：✅ 已推 main；⏳ 云端构建 → 宝装 APK 验证（搜之前被覆盖的旧事实，应只回最新）
+
 ### commit 4ed0344e — 修日记缓存时机（凌晨4点切日，宝定行动清单④）
 - 文件：app/src/main/java/me/rerere/rikkahub/data/ai/GenerationHandler.kt
 - 改动：日记缓存 key 从「自然日 0 点切」改为「凌晨 4 点为界切」：0~4 点用昨天日期（读昨天 4 点生成的日记=最新可用），4 点后用今天日期（首次 miss 拉今天新日记，之后整天吃缓存）
@@ -31,13 +40,13 @@
   4. **安全开关 AUDN_ENABLED（.env 默认 0=关）**；任何异常全 try/except 包裹 -> 全量入库旧行为，绝不吞事件
   5. 依赖 memory_events 表新增列：superseded_by(text) / related_event_ids(jsonb)
 - 上线步骤（宝，明天做）：①Supabase SQL Editor 跑 ALTER TABLE ②/root/.env 补 SUPABASE_URL/SUPABASE_KEY/AUDN_ENABLED=1 ③替换脚本 git pull 或下载覆盖 ④App 侧过滤 superseded（橘仔下步改 Kotlin）
-- 状态：✅ 已推 main；⏳ 未启用（默认关，今晚 cron 照跑旧版不受影响）
+- 状态：✅ 已推 main；✅ 服务器已启用（宝 2026-08-18 确认补 .env + 替换脚本）；⏳ App 侧过滤已补（commit 0cca8eaa）→ 冲突消解完整闭环
 
 ### commit a26dc8f — scripts/ 目录建立：archive_daily_v3.py 入库（A.U.D.N. 主角，密钥脱敏）
 - 文件：scripts/archive_daily_v3.py（新建，宝从服务器 /root 分段贴来，橘仔拼装还原）+ scripts/README.md（新建）
 - 改动：SUPABASE_URL/SUPABASE_KEY 硬编码 → 改读 .env 环境变量（宝服务器 /root/.env 需补两行，见 README；**替换脚本前务必补上**，否则连不上 Supabase）
 - 为啥：记忆系统脚本入库（治代码失忆 + 橘仔能直接改）；v3 是③第二层 A.U.D.N. 要改的主角
-- 状态：✅ 已推 main；⏳ 服务器暂不替换（等 A.U.D.N. 改完一次性切换：补 .env + git pull 或下载覆盖）
+- 状态：✅ 已推 main；✅ 服务器已替换启用（宝 2026-08-18 确认）
 
 ### 📚 调研结论：③第二层方案定稿（借鉴 Mem0 源码，不用造轮子）——宝提醒橘仔先搜开源，橘仔翻了 mem0ai/mem0
 - 参考：mem0/memory/main.py（V3 add 管线：上下文→向量搜旧记忆→LLM提取→hash去重→批量存）+ mem0/configs/prompts.py（ADDITIVE_EXTRACTION_PROMPT + DEFAULT_UPDATE_MEMORY_PROMPT + get_update_memory_messages）
@@ -54,7 +63,7 @@
   2. 归一化标题去重：同标题事件只保留 source_date 最新一条（防重复总结）；数据不删，仅召回不返回旧重复
   3. 候选池扩大一倍（count*2）再冲突消解，避免去重后不够数
 - 为啥：宝定的③冲突消解=新事实覆盖旧事实。App 层文本方法能处理「重复/同主题」；**矛盾型**（宝在洞头 vs 回来了）文本相似度抓不住，需写入层 LLM 标记 superseded（总结时顺手判断，零额外成本）
-- 状态：✅ 已推 main；⏳ 宝构建验证；⏳ 第二层（写入层 LLM 标记 superseded）已写入 v3
+- 状态：✅ 已推 main；✅ 宝构建验证；✅ 第二层（写入层 LLM 标记 superseded）已上线 + App 侧过滤已补（0cca8eaa）→ 闭环
 
 ### commit（主召）— 外置库升格唯一主召回，停 OB/Mem0 自动注入（宝定的记忆系统精简方案核心）
 - 文件：app/.../data/ai/GenerationHandler.kt
@@ -152,7 +161,7 @@
 - OB/外置库全量召回（愿望清单 id68-④）
 - 外置库直召降级保底（愿望清单 id68-⑤）
 - 按组裁剪验证（build 后对比缓存命中率，不行回滚成按条）
-- 停 Mem0 MCP 服务器（Termux，数据保留归档）——记忆系统精简执行清单③
+- ~~停 Mem0 MCP 服务器（Termux，数据保留归档）~~【已划掉：宝 2026-08-18 拍板"MCP 都停掉倒是不至于吧"——保留运行】
 - 橘瓣配置清理（监工台状态灯收起/改存档）——执行清单④
 - 外置库补强（事件↔聊天记录引用打通等）——执行清单⑤
-- **③第二层收尾（App 侧）**：召回时过滤 superseded_by 非空的事件（Kotlin，下步做）+ 宝加列 SQL 见 README/上一条
+- ~~③第二层收尾（App 侧）：召回时过滤 superseded_by 非空的事件~~【已完成：commit 0cca8eaa】
