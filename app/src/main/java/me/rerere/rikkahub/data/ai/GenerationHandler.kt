@@ -267,7 +267,7 @@ class GenerationHandler(
                     }
                 }
  
-                // If any tools were updated to Pending, update the message and break
+                // If any tools were updated to Pending, break and wait for user
                 if (updatedTools != tools) {
                     val lastMessage = messages.last()
                     val updatedParts = lastMessage.parts.map { part ->
@@ -505,7 +505,8 @@ class GenerationHandler(
                     }
                     if (externalMemoryConfigs.isNotEmpty()) {
                         val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
-                        val queryText = lastUserMessage?.toText()?.take(200)?.trim() ?: ""
+                        // 2026-08-18 大修：长句截断 200 -> 500（搜索意图词藏在长句后半段时不再被切掉）
+                        val queryText = lastUserMessage?.toText()?.take(500)?.trim() ?: ""
                         if (!recallGate && hasSearchIntent(queryText)) {
                             onRecallGatePassed()
                             // 时间定位：从用户消息解析时间范围（date_from/date_to），传给事件召回/OB 搜索
@@ -853,14 +854,33 @@ private fun buildCodeBlockPrompt(): String = buildString {
  * 判断用户消息是否含"搜索记忆"意图——自动召回门控：
  * 含意图词才触发外置库事件召回（正常闲聊不触发，保持前缀稳定）。
  * 配合 recallGate：一次生成流程只判断/触发一次，二次请求不重复召回。
+ *
+ * 2026-08-18 大修特修（宝发现：长句/带时间的句子识别不了搜索意图）：
+ * - 词表扩充：补时间词（昨天/前天/上周/上个月…）+ 口语回忆问句（聊了什么/说了什么/发生了什么…）
+ * - 组合判断兜底：时间词 + 疑问词 同时出现 -> 大概率是回忆性提问（如"我们上周聊的那个是啥来着"）
+ * - 修之前脱节：TimeRangeParser（9b7a6ce8）能解析时间，但门控词表没时间词
+ *   -> 带时间的句子进不了门控、到不了解析器（宝实测："昨天咱俩互发文案"不触发搜索）
  */
 private fun hasSearchIntent(text: String): Boolean {
     if (text.isBlank()) return false
     val intentKeywords = listOf(
-        "记得", "忘了", "忘记", "上次", "之前", "以前", "说过", "提到", "提过",
-        "聊过", "讲过", "什么时候", "哪一天", "哪天", "搜", "搜索", "找找",
-        "查一下", "查查", "回忆", "回想", "回顾", "叫什么", "来着", "想起来了",
+        // 记忆/搜索/回忆直接词
+        "记得", "记不记得", "还记得", "忘了", "忘记", "没印象", "有印象", "想起来了",
+        "上次", "之前", "以前", "说过", "提到", "提过", "聊过", "讲过",
+        "什么时候", "哪一天", "哪天", "搜", "搜索", "找找", "查一下", "查查",
+        "回忆", "回想", "回顾", "叫什么", "来着",
+        // 口语回忆式问句（8-18 补）
+        "聊了什么", "说了什么", "讲了什么", "发生了什么", "发生什么", "怎么回事",
+        "怎么说的", "怎么聊的", "说过啥", "聊过啥", "啥来着", "啥事",
+        // 时间词（8-18 补：配合 TimeRangeParser；单独出现也大概率是回忆性提问）
+        "昨天", "前天", "昨晚", "今早", "今天早上", "上周", "上上周", "上个月", "今年", "去年",
+        "前几天", "前段时间", "最近", "这几天", "那天", "当时", "那时候", "几点", "几号", "几月",
+        "周一", "周二", "周三", "周四", "周五", "周六", "周日", "周天", "星期天", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六",
     )
-    return intentKeywords.any { text.contains(it) }
+    if (intentKeywords.any { text.contains(it) }) return true
+    // 组合判断兜底：时间词 + 疑问词 同时出现 -> 大概率回忆性提问
+    val timeWords = listOf("昨天", "前天", "昨晚", "上周", "上个月", "之前", "以前", "上次", "那天", "当时", "最近", "前几天", "刚刚", "刚才")
+    val questionWords = listOf("什么", "怎么", "哪里", "哪儿", "哪个", "哪些", "谁", "吗", "呢", "啥", "回事", "为什么")
+    return timeWords.any { text.contains(it) } && questionWords.any { text.contains(it) }
 }
  
