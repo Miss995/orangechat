@@ -4,6 +4,16 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-08-18
+
+### commit 295fa813 — perf: 修长对话卡顿（生成中纯文本渲染 + 流式更新降频 50→100ms）
+- 文件：app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt + app/src/main/java/me/rerere/rikkahub/data/ai/GenerationHandler.kt
+- 改动：
+  1. ChatMessage.MessagePartsBlock：AI 消息生成中（loading=true 且 role=ASSISTANT）用纯文本 Text 渲染，跳过 Markdown 解析/代码高亮/replaceRegexes 全量重算；生成完成（loading=false）自动切回 MarkdownBlock 富文本——最终显示效果不变
+  2. GenerationHandler：STREAM_UI_THROTTLE_MS 50→100（Compose 重组频率减半，肉眼无感）
+- 为啥：宝 2026-08-18 凌晨报卡顿（橘仔生成时整页滑动掉帧）；排查过程：①GenerationHandler 主链路两边一样（flowOn(IO)+节流，排除）②RequestEditController/Dialog 协程挂起+LazyColumn 不重（排除）③ExternalMemoryService 全 withContext(IO)（排除）④宝实测新窗口流畅 = 跟上下文量相关 → 真凶锁定：流式更新时对正在生成的超长消息每帧全量 Markdown 重解析 + animateContentSize 动画反复重启 → 打爆主线程
+- 状态：✅ 已推 main；⏳ 云端 workflow 自动构建 → 宝下载 APK 验证
+
 ## 2026-08-17
 
 ### commit — ③第二层 A.U.D.N. 写入 v3（默认关，安全上线）
@@ -130,7 +140,7 @@
 
 ## 待办（代码相关）
 - 查 OB 来源标记错位 bug（ob_sync_chat / V3 的 source_ranges 或来源拼写错位）
-- 工具调取内容存记忆库（愿望清单 id68-⑥）
+- 工具调取内容存记忆库（愿望清单 id68-⑥ → 工具账本 tool_actions 方案已定 2026-08-18）
 - 请求编辑 UI 升级（顺序/上下文数量/原文展开按钮——愿望清单 id68-②）
 - 三库缓存去重（愿望清单 id68-③）
 - OB/外置库全量召回（愿望清单 id68-④）
