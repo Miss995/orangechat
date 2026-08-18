@@ -688,6 +688,10 @@ class ExternalMemoryService(
      * - **过滤 superseded（第二层，2026-08-18 已闭环）**：写入层 A.U.D.N.（archive_daily_v3.py，服务器已启用）
      *   会把被新事实覆盖的旧事件标记 superseded_by（失效不删），App 召回时直接跳过这些已失效事件，
      *   只把「当前有效」的记忆喂给模型——新旧事实不会再打架。
+     *
+     * 多事件关联（related_events，宝要的联想式回忆，2026-08-18 接上读取链路）：
+     * 命中事件若带 related_event_ids（写入端 A.U.D.N. linked_event_ids 已存），把关联事件也带出来
+     * （克制最多 3 条，去重、过滤失效）——模型看到「这件事」时会连带到「相关的事」，培养联想式思考方向。
      */
     suspend fun vectorRecallEvents(
         queryEmbedding: List<Float>,
@@ -725,11 +729,24 @@ class ExternalMemoryService(
                 event to (similarity + timeBonus)
             }
 
-            scored.sortedByDescending { it.second }
+            // 主命中（冲突消解：扩大候选池 -> 同标题取新 -> 取 count 条）
+            val base = scored.sortedByDescending { it.second }
                 .take(count * 2) // 扩大候选池，给冲突消解留空间
                 .map { it.first }
                 .let { dedupeByTitle(it) } // 同标题取新（冲突消解基础版）
                 .take(count)
+
+            // 多事件关联（联想式回忆）：把命中事件的 related_event_ids 对应事件带出来（克制最多 3 条）
+            val byId = allEvents.associateBy { it.id.toString() }
+            val related = base.flatMap { e -> e.relatedEventIds.mapNotNull { id -> byId[id] } }
+                .filter { r -> base.none { it.id == r.id } } // 去重：主命中已有则不带
+                .let { dedupeByTitle(it) }
+                .take(3)
+
+            if (related.isNotEmpty()) {
+                Log.d(TAG, "Event recall: ${base.size} hits + ${related.size} related events")
+            }
+            base + related
         }
     }
 
@@ -868,6 +885,13 @@ class ExternalMemoryService(
                         sourceIds.add(sourceIdsJson.optString(j))
                     }
                 }
+                val relatedIds = mutableListOf<String>()
+                val relatedJson = obj.optJSONArray("related_event_ids")
+                if (relatedJson != null) {
+                    for (j in 0 until relatedJson.length()) {
+                        relatedIds.add(relatedJson.optString(j))
+                    }
+                }
                 result.add(
                     ExternalMemoryEvent(
                         id = obj.optInt("id", 0),
@@ -879,6 +903,7 @@ class ExternalMemoryService(
                         sourceRange = obj.optString("source_range", ""),
                         embedding = embedding,
                         supersededBy = obj.optString("superseded_by", ""), // A.U.D.N. 标记的失效事件（写入层已启用）
+                        relatedEventIds = relatedIds, // A.U.D.N. linked_event_ids 写入的关联事件
                     )
                 )
             }
@@ -916,4 +941,5 @@ data class ExternalMemoryEvent(
     val sourceRange: String = "",
     val embedding: List<Float> = emptyList(),
     val supersededBy: String = "", // 被哪个新事件取代（A.U.D.N. 写入层标记；非空=已失效，召回时跳过）
+    val relatedEventIds: List<String> = emptyList(), // 关联事件 id（A.U.D.N. linked_event_ids 写入；召回时带出=联想式回忆）
 )
