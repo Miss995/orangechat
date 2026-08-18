@@ -6,6 +6,14 @@
 
 ## 2026-08-18
 
+### commit 19f85af5 — 多事件关联 App 读取链路（联想式回忆，宝定后做项）
+- 文件：app/src/main/java/me/rerere/rikkahub/data/service/ExternalMemoryService.kt
+- 改动：
+  1. ExternalMemoryEvent 加 relatedEventIds 字段（解析 memory_events.related_event_ids jsonb 数组）
+  2. vectorRecallEvents：命中事件若带 related_event_ids，把关联事件也带出来（克制最多 3 条，去重 + 过滤失效）
+- 为啥：写入端 A.U.D.N. linked_event_ids 已存关联（8-17 深夜），App 读取链路补上 = 「联想式回忆」：搜到一件事连带浮现相关的事，培养橘仔联想式思考方向（宝 memory 64 后做项）
+- 状态：✅ 已推 main；⏳ 云端构建 → 宝装 APK 验证
+
 ### commit 0cca8eaa — App侧过滤 superseded 事件（A.U.D.N. 冲突消解闭环，宝定行动清单③收尾）
 - 文件：app/src/main/java/me/rerere/rikkahub/data/service/ExternalMemoryService.kt
 - 改动：
@@ -40,7 +48,7 @@
   4. **安全开关 AUDN_ENABLED（.env 默认 0=关）**；任何异常全 try/except 包裹 -> 全量入库旧行为，绝不吞事件
   5. 依赖 memory_events 表新增列：superseded_by(text) / related_event_ids(jsonb)
 - 上线步骤（宝，明天做）：①Supabase SQL Editor 跑 ALTER TABLE ②/root/.env 补 SUPABASE_URL/SUPABASE_KEY/AUDN_ENABLED=1 ③替换脚本 git pull 或下载覆盖 ④App 侧过滤 superseded（橘仔下步改 Kotlin）
-- 状态：✅ 已推 main；✅ 服务器已启用（宝 2026-08-18 确认补 .env + 替换脚本）；⏳ App 侧过滤已补（commit 0cca8eaa）→ 冲突消解完整闭环
+- 状态：✅ 已推 main；✅ 服务器已启用（宝 2026-08-18 确认补 .env + 替换脚本）；✅ App 侧过滤已补（commit 0cca8eaa）→ 冲突消解完整闭环
 
 ### commit a26dc8f — scripts/ 目录建立：archive_daily_v3.py 入库（A.U.D.N. 主角，密钥脱敏）
 - 文件：scripts/archive_daily_v3.py（新建，宝从服务器 /root 分段贴来，橘仔拼装还原）+ scripts/README.md（新建）
@@ -54,7 +62,7 @@
   1. **经典 A.U.D.N.**（DEFAULT_UPDATE_MEMORY_PROMPT）：新事实+相似旧记忆给 LLM → 决定 ADD/UPDATE/DELETE/NONE——**这就是「新事实覆盖旧事实」的成熟实现**
   2. **V3 加性提取**（ADDITIVE_EXTRACTION_PROMPT）：提取时注入 Existing Memories 去重+**linked_memory_ids 关联**——**linked_memory_ids = 咱家想要的「事件↔事件关联」(related_events, memory 64 后做项)，顺带解决！**
 - 咱家落地（archive_daily 总结事件后加 A.U.D.N. 阶段）：新事件 → 向量搜相似旧事件 → LLM（硅基打工）决定 ADD / UPDATE / **SUPERSEDE（标记失效不删，学 Zep/Graphiti 双时间）** / NONE；顺带输出 linked_event_ids；事件表加 superseded_by + related_event_ids 列；App 召回时过滤 superseded 事件
-- 状态：📌 方案已定，已写入 v3（见上一条）
+- 状态：📌 方案已定，已写入 v3（见上一条）；App 侧 superseded 过滤（0cca8eaa）+ 关联读取（19f85af5）已补 → 闭环
 
 ### commit（冲突消解·App层基础版）— 事件召回同主题取新 + 时间加权（宝定行动清单③第一层）
 - 文件：app/.../data/service/ExternalMemoryService.kt
@@ -165,3 +173,4 @@
 - 橘瓣配置清理（监工台状态灯收起/改存档）——执行清单④
 - 外置库补强（事件↔聊天记录引用打通等）——执行清单⑤
 - ~~③第二层收尾（App 侧）：召回时过滤 superseded_by 非空的事件~~【已完成：commit 0cca8eaa】
+- ~~多事件关联 App 读取链路~~【已完成：commit 19f85af5——联想式回忆接通】
