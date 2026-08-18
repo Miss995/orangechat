@@ -452,7 +452,18 @@ class GenerationHandler(
                     }
                     if (diaryConfigs.isNotEmpty()) {
                         val prefs = context.getSharedPreferences("diary_cache", Context.MODE_PRIVATE)
-                        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+                        // 日记凌晨 4 点更新，缓存 key 按「凌晨 4 点为界」切日：
+                        // 0~4 点用昨天日期（读昨天 4 点生成的日记=最新可用），4 点后用今天日期（首次 miss 拉今天新日记）→ 一整天跟上进度
+                        val now = java.util.Date()
+                        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(
+                            if (java.util.Calendar.getInstance().apply { time = now }
+                                    .get(java.util.Calendar.HOUR_OF_DAY) < 4
+                            ) {
+                                java.util.Calendar.getInstance().apply { time = now; add(java.util.Calendar.DAY_OF_YEAR, -1) }.time
+                            } else {
+                                now
+                            }
+                        )
                         val cacheKey = "diary_${assistant.id}_$today"
                         var diaryText = prefs.getString(cacheKey, null)
                         var source = "cache"
