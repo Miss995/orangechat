@@ -6,6 +6,15 @@
 
 ## 2026-08-18
 
+### commit 373dc0fd — 搜索意图门控大修（宝发现：带时间的长句触发不了搜索）
+- 文件：app/src/main/java/me/rerere/rikkahub/data/ai/GenerationHandler.kt
+- 改动：
+  1. hasSearchIntent 词表大扩充：时间词（昨天/前天/上周/上个月/周X…）+ 口语回忆问句（聊了什么/说了什么/发生了什么/怎么回事…）
+  2. 组合判断兜底：时间词 + 疑问词 同时出现 → 判定为回忆性提问（如"我们上周聊的那个是啥来着"）
+  3. 长句截断 take(200) → take(500)（搜索意图词藏在长句后半段不再被切掉）
+- 为啥：宝实测"昨天咱俩互发文案"触发不了搜索——TimeRangeParser（9b7a6ce8）能解析时间，但门控 hasSearchIntent 词表没时间词 → 带时间的句子进不了门控、到不了解析器（两个部件脱节）；口语"聊了什么"≠ 词表"聊过"也匹配不上
+- 状态：✅ 已推 main；⏳ 云端构建 → 宝装 APK 验证（问"昨天咱俩互发文案"应能触发召回 + 时间定位）
+
 ### commit 19f85af5 — 多事件关联 App 读取链路（联想式回忆，宝定后做项）
 - 文件：app/src/main/java/me/rerere/rikkahub/data/service/ExternalMemoryService.kt
 - 改动：
@@ -96,7 +105,7 @@
   2. ExternalMemoryService.vectorRecallEvents 加 dateFrom/dateTo 参数：按事件 source_date（yyyy-MM-dd 字典序=日期比较，与橘瓣同口径）本地过滤；无 source_date 的事件放行（保守不拦）
   3. GenerationHandler：外置库事件召回传时间范围；OB breath_search 调用带 date_from/date_to（工具原生支持）；日志带 timeRange
 - 为啥：搜"上周说的那个事"只召回该时间范围的记忆，不整库乱捞（提升整体精确度）
-- 状态：✅ 已推 main；⏳ 宝构建验证（已实测「上周我们聊了什么」「前天Claude的事」双限定命中 ✅）
+- 状态：✅ 已推 main；⏳ 宝构建验证（已实测「上周我们聊了什么」「前天Claude的事」双限定命中 ✅）；⚠️ 8-18 发现门控词表没时间词导致带时间的句子进不了门控（已修 373dc0fd）
 
 ## 2026-08-16
 
@@ -124,7 +133,7 @@
   3. 外置库事件召回 / OB / Mem0 全部加「搜索意图门控」（hasSearchIntent：记得/上次/说过/搜/查查/回忆等）
   4. 删除最近聊天引用段（引用的是窗口名不是聊天记录）
   5. recallGate 状态：一次生成流程只召回一次，二次请求不重复判断
-- 状态：✅ 已推 main；宝验证：门控触发正常；⏳ 缓存命中率对比 + 日记独立段待确认
+- 状态：✅ 已推 main；宝验证：门控触发正常；⏳ 8-18 发现门控词表不全（无时间词/口语问句）→ 已大修 373dc0fd
 
 ### commit 7571ebf6 — 工具 name+description 强制注入稳定前缀
 - 状态：✅ 已推（后被 7d4e36cc 撤销——证明大概率冗余，工具 schemas 本来就在 DS 前缀缓存里）
@@ -174,3 +183,4 @@
 - 外置库补强（事件↔聊天记录引用打通等）——执行清单⑤
 - ~~③第二层收尾（App 侧）：召回时过滤 superseded_by 非空的事件~~【已完成：commit 0cca8eaa】
 - ~~多事件关联 App 读取链路~~【已完成：commit 19f85af5——联想式回忆接通】
+- ~~搜索意图门控大修（时间词+口语问句+截断500）~~【已完成：commit 373dc0fd】
