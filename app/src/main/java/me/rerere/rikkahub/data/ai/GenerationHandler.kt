@@ -633,6 +633,17 @@ class GenerationHandler(
             }
             if (system.isNotBlank()) add(UIMessage.system(prompt = system))
             addAll(messages.limitContext(assistant.contextMessageSize, assistant.contextGroupSize))
+            // 实时时间戳（宝的方案 2026-08-18）：不动原机制（长时间离开才注入一次的时间注入保留），
+            // 在聊天消息末尾追加单独一条实时时间——放在最后一条 = 不破坏 DS 前缀缓存
+            // （前缀全部命中，只有这条动态尾部变化），模型每次生成都能看到真实当前时间，
+            // 不再误用冻住的注入时间回答"现在几点"。
+            add(
+                UIMessage.system(
+                    prompt = "【当前时间】" +
+                        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()) +
+                        "（设备本地时间，实时刷新；若需更精确请使用 get_time_info 工具）"
+                )
+            )
         }.transforms(
             transformers = transformers,
             context = context,
