@@ -678,15 +678,16 @@ class ExternalMemoryService(
     }
 
     /**
-     * 事件级向量召回：问题向量 -> 全量事件本地余弦 -> 冲突消解（同主题取新） -> 取最相关 count 条
+     * 事件级向量召回：问题向量 -> 全量事件本地余弦 -> 冲突消解（同主题取新 + 过滤 superseded） -> 取最相关 count 条
      * 支持时间定位：dateFrom/dateTo（yyyy-MM-dd）按事件 source_date 过滤（字典序比较=日期比较，与橘瓣同口径）。
      * 没来源日期的事件放行（保守不拦，避免误杀重要记忆）。
      *
-     * 冲突消解（宝定的行动清单③，App 层基础版）：
+     * 冲突消解（宝定的行动清单③，App 层）：
      * - 时间加权：相似度相近时 source_date 更新的事件优先（新事实优先于旧事实）
      * - 同标题去重：归一化标题相同的事件只保留最新一条（防重复总结）
-     * - 说明：矛盾型冲突（如「宝在洞头」vs「宝回来了」）文本相似度抓不住，需写入层 LLM 标记
-     *   superseded（总结时顺手判断，零额外成本）——待 archive_daily/V3 脚本入库后再做第二层。
+     * - **过滤 superseded（第二层，2026-08-18 已闭环）**：写入层 A.U.D.N.（archive_daily_v3.py，服务器已启用）
+     *   会把被新事实覆盖的旧事件标记 superseded_by（失效不删），App 召回时直接跳过这些已失效事件，
+     *   只把「当前有效」的记忆喂给模型——新旧事实不会再打架。
      */
     suspend fun vectorRecallEvents(
         queryEmbedding: List<Float>,
@@ -698,6 +699,7 @@ class ExternalMemoryService(
         runCatching {
             val allEvents = queryAllEvents(assistantId).getOrDefault(emptyList())
                 .filter { it.embedding.isNotEmpty() }
+                .filter { it.supersededBy.isBlank() } // 过滤已失效事件（A.U.D.N. 写入层标记 superseded，失效不删只标记）
                 .filter { event ->
                     if (dateFrom.isNullOrBlank() && dateTo.isNullOrBlank()) true
                     else {
@@ -876,6 +878,7 @@ class ExternalMemoryService(
                         sourceIds = sourceIds,
                         sourceRange = obj.optString("source_range", ""),
                         embedding = embedding,
+                        supersededBy = obj.optString("superseded_by", ""), // A.U.D.N. 标记的失效事件（写入层已启用）
                     )
                 )
             }
@@ -912,4 +915,5 @@ data class ExternalMemoryEvent(
     val sourceIds: List<String> = emptyList(),
     val sourceRange: String = "",
     val embedding: List<Float> = emptyList(),
+    val supersededBy: String = "", // 被哪个新事件取代（A.U.D.N. 写入层标记；非空=已失效，召回时跳过）
 )
