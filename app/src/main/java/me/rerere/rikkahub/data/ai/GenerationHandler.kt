@@ -507,7 +507,13 @@ class GenerationHandler(
                         val lastUserMessage = messages.lastOrNull { it.role == MessageRole.USER }
                         // 2026-08-18 大修：长句截断 200 -> 500（搜索意图词藏在长句后半段时不再被切掉）
                         val queryText = lastUserMessage?.toText()?.take(500)?.trim() ?: ""
-                        if (!recallGate && hasSearchIntent(queryText)) {
+                        // 【门控升级 2026-08-19】词表预筛 + 硅基免费 LLM 判断（MemoryIntentJudge.needsRecall，替代纯词表 hasSearchIntent）
+                        // 强回忆词直接过（省延迟）；其余调硅基免费模型（Qwen/Qwen2-7B-Instruct，零成本）判断"需不需要召回记忆"；
+                        // LLM 不可用时回退旧词表（不哑火）。judgeProvider 取外置库 embedding provider（硅基）。
+                        val judgeProvider = externalMemoryConfigs.firstNotNullOfOrNull { config ->
+                            config.embeddingModelId?.let { settings.findModelById(it) }?.findProvider(settings.providers)
+                        }
+                        if (!recallGate && MemoryIntentJudge.needsRecall(queryText, judgeProvider)) {
                             onRecallGatePassed()
                             // 时间定位：从用户消息解析时间范围（date_from/date_to），传给事件召回/OB 搜索
                             val timeRange = TimeRangeParser.parse(queryText)
@@ -854,7 +860,6 @@ private fun buildCodeBlockPrompt(): String = buildString {
     appendLine("   - ✅ Correct: ```styles.css instead of ```css")
     appendLine("   - ✅ Correct: ```package.json instead of ```json")
     appendLine("   - ✅ Correct: ```main.py instead of ```python")
-    appendLine("   - ✅ Correct: ```App.vue instead of ```vue")
     appendLine("   - ❌ Wrong: ```kotlin, ```python, ```javascript (these don't provide filenames)")
     appendLine("   - For code without a specific filename, use a descriptive name like ```example.ts, ```helper.py")
     appendLine()
@@ -875,6 +880,9 @@ private fun buildCodeBlockPrompt(): String = buildString {
  * - 组合判断兜底：时间词 + 疑问词 同时出现 -> 大概率是回忆性提问（如"我们上周聊的那个是啥来着"）
  * - 修之前脱节：TimeRangeParser（9b7a6ce8）能解析时间，但门控词表没时间词
  *   -> 带时间的句子进不了门控、到不了解析器（宝实测："昨天咱俩互发文案"不触发搜索）
+ *
+ * 2026-08-19 门控升级：主判断已迁移到 MemoryIntentJudge（词表预筛 + 硅基免费 LLM 判断），
+ * 本函数保留作为 MemoryIntentJudge 的回退参考/旧行为兜底（不再被主链路直接调用）。
  */
 private fun hasSearchIntent(text: String): Boolean {
     if (text.isBlank()) return false
