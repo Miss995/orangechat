@@ -11,23 +11,50 @@
 #            ADD/UPDATE/SUPERSEDE/NONE + linked_event_ids（抄 Mem0 DEFAULT_UPDATE_MEMORY_PROMPT；
 #            SUPERSEDE=标记失效不删学 Zep/Graphiti 双时间）。默认关（AUDN_ENABLED=0），
 #            失败全量入库（旧行为）。依赖 memory_events 表新增列 superseded_by(text)/related_event_ids(jsonb)。
-import os, sys, json, time, datetime as dt, requests
+# 2026-08-20 · PGRST102 修复：store_events 固定键集（embedding 缺=null、related_event_ids 缺=[]），
+#            批量 INSERT 不再因键不一致报 "All object keys must match"。
+# 2026-08-21 · 增量支持（宝的记忆实时化方案定稿）：
+#            - 日期动态化（cur_today()，不再模块级固定——跨午夜/backfill 都对）
+#            - get_progress()：当天已总结到的最大消息编号（从 memory_events source_ids 反推）
+#            - summarize_range()：总结任意一段消息（增量/补剩余共用；带 A.U.D.N. + Mem0 分流）
+#            - merge_adjacent_events()：两步收尾② 编号相邻合并（宝的方案：相邻 source_range +
+#              边界原文 -> LLM 判断同一件事 -> 拼接，旧事件标 superseded 不删；链式可拼回 2-3 段）
+#            - 锁：/tmp/orange_summary.lock（非阻塞 flock，与 incremental_listener.py 共用防双写）
+import os, sys, json, time, datetime as dt, requests, fcntl
 from dotenv import load_dotenv
 
 load_dotenv("/root/.env")
 SF_KEY = os.getenv("SILICONFLOW_KEY", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-ai/DeepSeek-V3")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-m3")
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")  # 脱敏：原为硬编码 https://rttzjckjbelsbuvnhpkn.supabase.co
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")  # 脱敏：原为硬编码 sb_publishable_...(从 Supabase 控制台复制)
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")  # 脱敏：读 /root/.env
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")  # 脱敏：读 /root/.env
 ASSISTANT_ID = "0950e2dc-9bd5-4801-afa3-aa887aa36b4e"
 USER_ID = "orange-bao"
 BATCH = 25  # 每批最多多少条消息给 LLM 拆事件
 AUDN_ENABLED = os.getenv("AUDN_ENABLED", "0") == "1"  # ③第二层开关（需 memory_events 表已加列才开）
 
 BJ = dt.timezone(dt.timedelta(hours=8))
-now_bj = dt.datetime.now(BJ)
-today = now_bj.date()
+LOCK_FILE = "/tmp/orange_summary.lock"
+
+
+def cur_today():
+    """北京时间当天日期（动态，跨午夜自动更新）"""
+    return dt.datetime.now(BJ).date()
+
+
+def cur_now():
+    return dt.datetime.now(BJ)
+
+
+def try_lock():
+    """非阻塞拿锁；拿不到返回 None（另一个归档进程在跑）"""
+    try:
+        fp = open(LOCK_FILE, "w")
+        fcntl.flock(fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return fp
+    except Exception:
+        return None
 
 
 # ============ ③第二层 A.U.D.N.（冲突消解 + 事件关联）============
@@ -125,7 +152,7 @@ def mark_superseded(target_id, note=""):
     """标记旧事件失效（学 Zep：失效不删，保留证据链）；失败只告警不影响主流程"""
     if not target_id:
         return
-    payload = {"superseded_by": f"audn-{today}{(' ' + note) if note else ''}"}
+    payload = {"superseded_by": f"audn-{cur_today()}{(' ' + note) if note else ''}"}
     r = requests.patch(f"{SUPABASE_URL}/rest/v1/memory_events?id=eq.{target_id}", json=payload,
                        headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
                                 "Content-Type": "application/json", "Prefer": "return=minimal"})
@@ -196,7 +223,7 @@ def call_with_retry(fn, tries=3):
         except Exception as e:
             if "429" in str(e) and i < tries - 1:
                 wait = 30 * (i + 1)
-                print(f"[{now_bj:%H:%M:%S}] 撞限流了，{wait} 秒后重试（{i+1}/{tries}）")
+                print(f"[{cur_now():%H:%M:%S}] 撞限流了，{wait} 秒后重试（{i+1}/{tries}）")
                 time.sleep(wait)
             else:
                 raise
@@ -222,10 +249,11 @@ def vec_str(v):
     return "[" + ",".join(str(x) for x in v) + "]"
 
 
-def fetch_msgs():
-    """拉当天消息（Supabase REST，按北京时间）"""
-    start_local = f"{today} 00:00:00"
-    end_local = f"{today} 23:59:59"
+def fetch_msgs(date=None):
+    """拉指定日期消息（默认今天；Supabase REST，按北京时间口径）"""
+    d = date or cur_today()
+    start_local = f"{d} 00:00:00"
+    end_local = f"{d} 23:59:59"
     r = requests.get(f"{SUPABASE_URL}/rest/v1/chat_messages", params={
         "select": "role,content,created_at",
         "created_at": [f"gte.{start_local}", f"lte.{end_local}"],
@@ -233,7 +261,7 @@ def fetch_msgs():
     }, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"})
     r.raise_for_status()
     msgs = r.json()
-    print(f"[{now_bj:%H:%M:%S}] fetch_msgs 拉到 {len(msgs)} 条消息（{today} 北京时间口径）")
+    print(f"[{cur_now():%H:%M:%S}] fetch_msgs 拉到 {len(msgs)} 条消息（{d} 北京时间口径）")
     return msgs
 
 
@@ -290,8 +318,11 @@ def split_events(text_chunk, start_idx, batch_len):
     return out
 
 
-def store_events(events):
-    """全量先存外置库 memory_events（主存储，必须成功），事件向量一起算好存进去"""
+def store_events(events, date=None):
+    """全量先存外置库 memory_events（主存储，必须成功），事件向量一起算好存进去。
+    PGRST102 修复（2026-08-20）：固定键集——embedding 缺=null、related_event_ids 缺=[]，
+    批量 INSERT 不再因键不一致报 'All object keys must match'。"""
+    d = date or cur_today()
     texts = [f"{e['title']}：{e['content']}" for e in events]
     try:
         embs = call_with_retry(lambda: embed_batch(texts), tries=2)
@@ -305,15 +336,13 @@ def store_events(events):
             "title": e["title"],
             "content": e["content"],
             "event_type": e["event_type"],
-            "source_date": str(today),
+            "source_date": str(d),
             "source_ids": e["source_ids"],
             "source_range": e["source_range"],
             "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "embedding": vec_str(embs[i]) if i < len(embs) else None,   # 固定键：缺=null
+            "related_event_ids": e.get("related_event_ids") or [],      # 固定键：缺=[]
         }
-        if i < len(embs):
-            row["embedding"] = vec_str(embs[i])
-        if e.get("related_event_ids"):
-            row["related_event_ids"] = e["related_event_ids"]
         rows.append(row)
     r = requests.post(f"{SUPABASE_URL}/rest/v1/memory_events", json=rows, headers={
         "apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -323,13 +352,169 @@ def store_events(events):
     return len(rows)
 
 
-def already_done():
-    """当天是否已有事件（防同日重复跑）"""
+def get_progress(date=None):
+    """当天已总结到的最大消息编号（memory_events 当天所有事件 source_ids 的最大值；
+    含 superseded 的（失效事件也是已总结的证据）；无事件返回 0）"""
+    d = date or cur_today()
     r = requests.get(f"{SUPABASE_URL}/rest/v1/memory_events", params={
-        "select": "id", "source_date": f"eq.{today}",
+        "select": "source_ids", "source_date": f"eq.{d}", "limit": 500,
     }, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"})
     r.raise_for_status()
-    return len(r.json()) > 0
+    maxid = 0
+    for x in r.json():
+        for sid in (x.get("source_ids") or []):
+            try:
+                maxid = max(maxid, int(sid))
+            except Exception:
+                pass
+    return maxid
+
+
+def summarize_range(msgs, start_idx, end_idx, date=None):
+    """总结一段消息（start_idx..end_idx，1-based 闭区间）：拆事件 -> A.U.D.N. -> 入库 -> Mem0 分流。
+    增量脚本与晚上补剩余共用。返回入库条数。"""
+    d = date or cur_today()
+    chunk = msgs[start_idx - 1:end_idx]
+    if not chunk:
+        return 0
+    lines = []
+    for j, m in enumerate(chunk):
+        who = "用户" if m.get("role") == "user" else "橘仔"
+        lines.append(f"[{start_idx + j}] {who}：{m.get('content', '')}")
+    text = "\n".join(lines)[-30000:]
+    evs = call_with_retry(lambda: split_events(text, start_idx, len(chunk)))
+    print(f"[{cur_now():%H:%M:%S}] 总结 {start_idx}..{end_idx} 拆出 {len(evs)} 条事件")
+    if not evs:
+        return 0
+    # ③第二层 A.U.D.N.（冲突消解+事件关联；默认关，失败全量入库）
+    if AUDN_ENABLED:
+        try:
+            evs, superseded_ids = audn_pass(evs)
+            for tid in superseded_ids:
+                try:
+                    mark_superseded(tid)
+                except Exception as e:
+                    print(f"  A.U.D.N. 标记失效失败（不影响入库）: {e}")
+        except Exception as e:
+            print(f"  A.U.D.N. 阶段失败，全量入库（旧行为）: {e}")
+    if not evs:
+        print(f"[{cur_now():%H:%M:%S}] A.U.D.N. 后没有需要入库的事件")
+        return 0
+    n = call_with_retry(lambda: store_events(evs, d))
+    print(f"[{cur_now():%H:%M:%S}] memory_events 入库 {n} 条 ✓")
+    # 分流：code -> Mem0（失败不阻断，外置库已是主存储）
+    try:
+        m = call_with_retry(lambda: sync_mem0(evs), tries=2)
+        if m:
+            print(f"[{cur_now():%H:%M:%S}] Mem0 同步 {m} 条 code 事件 ✓")
+    except Exception as e:
+        print(f"[{cur_now():%H:%M:%S}] Mem0 同步失败（不影响外置库）: {e}")
+    return n
+
+
+def llm_same_event(A, B, boundary_text):
+    """让 LLM 判断两条相邻事件是不是同一件事的延续（编号合并用）；失败=不合并（保守）"""
+    system = (
+        "你是橘仔的记忆整理员。下面有同一天编号紧挨着的【事件A】和【事件B】"
+        "（它们是同一段聊天里相邻两批总结出来的），还有边界处的聊天原文。\n"
+        "判断：事件A和事件B是不是【同一件事的延续】？\n"
+        "例：A='讨论桌面宠物方案'，B='定下桌面宠物明天一起看' → same=true（同一件事被切开）\n"
+        "例：A='聊桌面宠物'，B='聊晚上吃什么' → same=false（两件不同的事）\n"
+        "只输出 JSON：{\"same\": true或false, \"reason\": \"一句话理由\"}"
+    )
+    user = f"【事件A】{A['title']}：{A['content']}\n【事件B】{B['title']}：{B['content']}\n【边界原文】\n{boundary_text}"
+    resp = requests.post("https://api.siliconflow.cn/v1/chat/completions", headers={
+        "Authorization": f"Bearer {SF_KEY}", "Content-Type": "application/json",
+    }, json={
+        "model": LLM_MODEL, "temperature": 0.0,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "max_tokens": 200,
+    }, timeout=60)
+    if resp.status_code == 429:
+        raise Exception("429 Too Many Requests")
+    resp.raise_for_status()
+    raw = resp.json()["choices"][0]["message"]["content"].strip()
+    try:
+        d = json.loads(raw)
+    except Exception:
+        s = raw[raw.find("{"):raw.rfind("}") + 1]
+        d = json.loads(s)
+    return bool(d.get("same"))
+
+
+def merge_adjacent_events(date=None):
+    """两步收尾②：编号相邻的事件合并（宝的方案：A 结尾号+1==B 开头号 -> 拉边界原文
+    -> LLM 判断同一件事 -> 拼接 content/source_ids，B 标 superseded 不删）。
+    链式：合并完继续与下一个相邻事件检查（可拼回被切 2-3 段的话题）。返回合并对数。"""
+    d = date or cur_today()
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/memory_events", params={
+        "select": "id,title,content,source_ids,source_range",
+        "source_date": f"eq.{d}", "superseded_by": "is.null", "limit": 500,
+    }, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"})
+    r.raise_for_status()
+    events = r.json()
+    if len(events) < 2:
+        return 0
+
+    def min_id(e):
+        return min(int(x) for x in e["source_ids"]) if e.get("source_ids") else 0
+
+    def max_id(e):
+        return max(int(x) for x in e["source_ids"]) if e.get("source_ids") else 0
+
+    events.sort(key=min_id)
+    msgs = fetch_msgs(d)
+    if not msgs:
+        return 0
+    merged = 0
+    changed = True
+    while changed:
+        changed = False
+        i = 0
+        while i < len(events) - 1:
+            A, B = events[i], events[i + 1]
+            if max_id(A) + 1 == min_id(B):
+                # 边界原文：A 最后 3 条 + B 前 3 条（1-based 编号）
+                boundary = []
+                for idx in [max_id(A) - 2, max_id(A) - 1, max_id(A), min_id(B), min_id(B) + 1, min_id(B) + 2]:
+                    if 1 <= idx <= len(msgs):
+                        m = msgs[idx - 1]
+                        who = "用户" if m.get("role") == "user" else "橘仔"
+                        boundary.append(f"[{idx}] {who}：{m.get('content', '')}")
+                try:
+                    same = llm_same_event(A, B, "\n".join(boundary))
+                except Exception as e:
+                    print(f"  merge 判断失败（不合并）: {e}")
+                    same = False
+                if same:
+                    new_ids = sorted(set(A["source_ids"] + B["source_ids"]), key=int)
+                    sep = "；" if A["content"] and B["content"] else ""
+                    new_content = (A["content"] + sep + B["content"]).strip()
+                    new_range = f"{min_id(A)}-{max_id(B)}"
+                    # PATCH A：内容拼接 + 来源合并
+                    requests.patch(f"{SUPABASE_URL}/rest/v1/memory_events?id=eq.{A['id']}", json={
+                        "content": new_content, "source_ids": new_ids, "source_range": new_range,
+                    }, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
+                                "Content-Type": "application/json", "Prefer": "return=minimal"}).raise_for_status()
+                    # PATCH B：标失效（不删，留证据链）
+                    requests.patch(f"{SUPABASE_URL}/rest/v1/memory_events?id=eq.{B['id']}", json={
+                        "superseded_by": f"merged-{A['id']}",
+                    }, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
+                                "Content-Type": "application/json", "Prefer": "return=minimal"}).raise_for_status()
+                    print(f"  merge ✓ {A['title']} ← 合并 {B['title']}（{new_range}）")
+                    A["content"] = new_content
+                    A["source_ids"] = new_ids
+                    A["source_range"] = new_range
+                    del events[i + 1]
+                    merged += 1
+                    changed = True
+                    continue  # 同 i 继续（A 可能还与下一个相邻）
+            i += 1
+    return merged
 
 
 def backfill_missing_embeddings():
@@ -357,7 +542,6 @@ def sync_mem0(events):
     """分流：code 类事件 -> Mem0（V1 的 SDK 直连方式，绕过 MCP 8005）"""
     code_evs = [e for e in events if e["event_type"] == "code"]
     if not code_evs:
-        print("  没有 code 类事件，跳过 Mem0 同步")
         return 0
     from mem0 import Memory
     m = Memory.from_config({
@@ -367,71 +551,60 @@ def sync_mem0(events):
     })
     n = 0
     for e in code_evs:
-        text = f"（{today} 代码事件）{e['title']}：{e['content']}"
+        text = f"（{cur_today()} 代码事件）{e['title']}：{e['content']}"
         m.add(text, user_id=USER_ID)
         n += 1
         print(f"  Mem0 ✓ {e['title']}")
     return n
 
 
-def main():
-    # 先补存量事件向量（幂等，日常兜底）
+def main(date_str=None):
+    """晚上收尾（cron 23:50）：①补剩余 M+1..N（<60 也总结）②编号合并。
+    增量由 incremental_listener.py 负责（每满 60 条总结 30 条）。"""
+    d = cur_today() if not date_str else dt.date.fromisoformat(date_str)
+    lock = try_lock()
+    if lock is None:
+        print(f"[{cur_now():%Y-%m-%d %H:%M}] 另一个归档进程在跑（监听/归档），跳过")
+        return
     try:
-        n = backfill_missing_embeddings()
-        if n:
-            print(f"[{now_bj:%Y-%m-%d %H:%M}] 回填 {n} 条存量事件向量 ✓")
-    except Exception as e:
-        print(f"[{now_bj:%Y-%m-%d %H:%M}] 回填向量失败（不阻断主流程）: {e}")
-    msgs = fetch_msgs()
-    if not msgs:
-        print(f"[{now_bj:%Y-%m-%d %H:%M}] 今天没有新消息，跳过")
-        return
-    if already_done():
-        print(f"[{now_bj:%Y-%m-%d %H:%M}] {today} 已有事件记录（防重复跑），跳过。要重跑请先删掉 memory_events 里 source_date={today} 的行")
-        return
-    print(f"[{now_bj:%Y-%m-%d %H:%M}] 拉取 {len(msgs)} 条消息，开始拆事件…")
-    all_events = []
-    start_idx = 1
-    for i in range(0, len(msgs), BATCH):
-        chunk = msgs[i:i + BATCH]
-        lines = []
-        for j, m in enumerate(chunk):
-            who = "用户" if m.get("role") == "user" else "橘仔"
-            lines.append(f"[{start_idx + j}] {who}：{m.get('content', '')}")
-        text = "\n".join(lines)[-30000:]
-        evs = call_with_retry(lambda: split_events(text, start_idx, len(chunk)))
-        all_events.extend(evs)
-        print(f"  批 {i // BATCH + 1}：拆出 {len(evs)} 条事件")
-        start_idx += len(chunk)
-    if not all_events:
-        print(f"[{now_bj:%Y-%m-%d %H:%M}] 今天没有值得归档的事件")
-        return
-    # ③第二层 A.U.D.N.（冲突消解+事件关联；默认关，失败全量入库）
-    if AUDN_ENABLED:
+        # 先补存量事件向量（幂等，日常兜底）
         try:
-            all_events, superseded_ids = audn_pass(all_events)
-            for tid in superseded_ids:
-                try:
-                    mark_superseded(tid)
-                except Exception as e:
-                    print(f"  A.U.D.N. 标记失效失败（不影响入库）: {e}")
+            n = backfill_missing_embeddings()
+            if n:
+                print(f"[{cur_now():%Y-%m-%d %H:%M}] 回填 {n} 条存量事件向量 ✓")
         except Exception as e:
-            print(f"  A.U.D.N. 阶段失败，全量入库（旧行为）: {e}")
-    if not all_events:
-        print(f"[{now_bj:%Y-%m-%d %H:%M}] A.U.D.N. 后没有需要入库的事件")
-        return
-    call_with_retry(lambda: store_events(all_events))
-    print(f"[{now_bj:%Y-%m-%d %H:%M}] 外置库 memory_events 入库 {len(all_events)} 条 ✓")
-    # 分流：code -> Mem0（失败不阻断，外置库已是主存储）
-    try:
-        n = call_with_retry(lambda: sync_mem0(all_events), tries=2)
-        print(f"[{now_bj:%Y-%m-%d %H:%M}] Mem0 同步 {n} 条 code 事件 ✓")
-    except Exception as e:
-        print(f"[{now_bj:%Y-%m-%d %H:%M}] Mem0 同步失败（不影响外置库）: {e}")
+            print(f"[{cur_now():%Y-%m-%d %H:%M}] 回填向量失败（不阻断主流程）: {e}")
+        msgs = fetch_msgs(d)
+        if not msgs:
+            print(f"[{cur_now():%Y-%m-%d %H:%M}] {d} 没有消息，跳过")
+            return
+        M = get_progress(d)
+        N = len(msgs)
+        if N > M:
+            print(f"[{cur_now():%Y-%m-%d %H:%M}] 补剩余 {M+1}..{N}（共 {N-M} 条，进度 M={M}）")
+            try:
+                summarize_range(msgs, M + 1, N, d)
+            except Exception as e:
+                print(f"[{cur_now():%Y-%m-%d %H:%M}] 补剩余失败: {e}")
+        else:
+            print(f"[{cur_now():%Y-%m-%d %H:%M}] 已全部总结（进度 M={M}=N={N}），无需补")
+        # 两步收尾②：编号相邻合并（把增量切碎的同一事件拼回来）
+        try:
+            m = merge_adjacent_events(d)
+            if m:
+                print(f"[{cur_now():%Y-%m-%d %H:%M}] 编号合并 {m} 对事件 ✓")
+            else:
+                print(f"[{cur_now():%Y-%m-%d %H:%M}] 编号合并：无相邻同主题事件")
+        except Exception as e:
+            print(f"[{cur_now():%Y-%m-%d %H:%M}] 编号合并失败: {e}")
+    finally:
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        lock.close()
 
 
 if __name__ == "__main__":
     try:
-        main()
+        date_arg = sys.argv[1] if len(sys.argv) > 1 else None
+        main(date_arg)
     except Exception as e:
-        print(f"[{now_bj:%Y-%m-%d %H:%M}] 归档失败: {e}")
+        print(f"[{cur_now():%Y-%m-%d %H:%M}] 归档失败: {e}")
