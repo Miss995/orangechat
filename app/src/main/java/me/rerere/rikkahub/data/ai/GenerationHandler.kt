@@ -53,6 +53,7 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.buildFetchChatSourcesTool
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
+import me.rerere.rikkahub.data.ai.tools.buildReadAppLogsTool
 import me.rerere.rikkahub.data.ai.tools.buildWriteFilesTool
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.service.MemoryBankService
@@ -128,6 +129,8 @@ class GenerationHandler(
  
             val toolsInternal = buildList {
                 Log.i(TAG, "generateInternal: build tools($assistant)")
+                // 查日志工具（2026-08-21：宝 8-19 待办落地——排查静默失败用，如 fetchRecentEvents 不注入；始终注入，排查随时可用）
+                add(buildReadAppLogsTool())
                 if (assistant?.enableMemory == true) {
                     val memoryAssistantId = if (assistant.useGlobalMemory) {
                         MemoryRepository.GLOBAL_MEMORY_ID
@@ -455,14 +458,17 @@ class GenerationHandler(
                         recentEventsText = sb.toString()
                         prefs.edit().putString(cacheKey, recentEventsText).putLong("${cacheKey}_ts", nowMs).apply()
                         Log.i(TAG, "Recent events [supabase] refreshed (${events.size} events, ${recentEventsText.length} chars)")
+                        AppLogBuffer.log(TAG, "Recent events refreshed: ${events.size} events, ${recentEventsText.length} chars")
                     } else {
                         // 拉不到：保留旧缓存（recentEventsText 已是缓存值）
                         Log.w(TAG, "Recent events fetch empty, keep cache")
+                        AppLogBuffer.log(TAG, "Recent events fetch EMPTY (assistantId=${assistant.id})")
                     }
                 }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Recent events load failed", e)
+            AppLogBuffer.log(TAG, "Recent events load failed: ${e.javaClass.simpleName}: ${e.message}")
         }
 
         val internalMessages = buildList {
