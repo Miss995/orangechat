@@ -41,7 +41,7 @@ class ExternalMemoryService(
             // 口语高频（宝实测："速速给自己点一个大鸡腿吃"拆出"速速"当关键词，纯噪声）
             "速速", "快快", "赶紧", "马上", "立刻", "快点", "顺便", "直接", "突然", "忽然", "居然", "竟然", "到底", "究竟", "难道", "莫非", "非常", "特别", "十分", "相当", "比较", "稍微", "略微", "简直", "实在", "的确", "确实", "明显", "显然", "当然", "自然", "毕竟", "终究",
             // 认知/感受（作为搜索词太泛）
-            "知道", "觉得", "感觉", "好像", "有点", "有点", "记得", "想问", "想到", "看到", "听到", "说到", "想到",
+            "知道", "觉得", "感觉", "好像", "有点", "记得", "想问", "想到", "看到", "听到", "说到",
             // 语气/拟声
             "哈哈", "嗯嗯", "嘿嘿", "嘻嘻", "呜呜", "啊啊", "哦哦", "好吧", "好的", "好了", "可以", "没有", "不是", "应该", "可能", "大概", "一个", "一下", "这么", "那么",
             // 专属称呼（作为搜索词无意义）
@@ -303,7 +303,7 @@ class ExternalMemoryService(
 
     /** 拆词：标点分段 + 2-3 字 ngram，去虚词/纯标点，最多取 8 个 */
     private fun buildSearchKeywords(query: String): List<String> {
-        val parts = query.split(Regex("[\\s，。！？、；：,.!?;:（）()\"'']+"))
+        val parts = query.split(Regex("[\\s，。！？、；：,.!?;:（）()\"']+"))
             .filter { it.isNotBlank() }
         val keywords = mutableListOf<String>()
         parts.forEach { part ->
@@ -678,6 +678,46 @@ class ExternalMemoryService(
     }
 
     /**
+     * 查询最近 N 天的事件（实时层注入用，2026-08-21 宝的记忆实时化方案定稿）：
+     * source_date >= 今天-(days-1)，按 source_date ASC + id ASC 稳定排序（前缀稳定=保 DS 缓存命中），
+     * 过滤 superseded_by 非空的失效事件（A.U.D.N. 已标记；顺手完成 App 侧过滤待办）。
+     */
+    suspend fun fetchRecentEvents(
+        assistantId: String,
+        days: Int = 3,
+    ): Result<List<ExternalMemoryEvent>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = config.supabaseUrl.trimEnd('/')
+            val dateFrom = java.time.LocalDate.now().minusDays((days - 1).toLong()).toString()
+            val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}" +
+                "&source_date=gte.$dateFrom" +
+                "&order=source_date.asc,id.asc" +
+                "&limit=500"
+            val endpoint = URL("$url/rest/v1/memory_events?$query")
+
+            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("apikey", config.supabaseKey)
+                setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                Log.e(TAG, "fetchRecentEvents HTTP $responseCode body=$errorBody")
+                throw Exception("Supabase API error ($responseCode): $errorBody")
+            }
+
+            val responseText = connection.inputStream.bufferedReader().readText()
+            parseEvents(responseText)
+                .filter { it.supersededBy.isBlank() } // 过滤已失效事件（A.U.D.N. 写入层标记）
+        }
+    }
+
+    /**
      * 事件级向量召回：问题向量 -> 全量事件本地余弦 -> 冲突消解（同主题取新 + 过滤 superseded） -> 取最相关 count 条
      * 支持时间定位：dateFrom/dateTo（yyyy-MM-dd）按事件 source_date 过滤（字典序比较=日期比较，与橘瓣同口径）。
      * 没来源日期的事件放行（保守不拦，避免误杀重要记忆）。
@@ -769,7 +809,7 @@ class ExternalMemoryService(
 
     /** 标题归一化：去空白/标点/引号，统一小写（用于同主题检测） */
     private fun normalizeTitle(t: String): String = t
-        .replace(Regex("[\\s，。！？、；：,.!?;:（）()\\[\\]【】\"'']+"), "")
+        .replace(Regex("[\\s，。！？、；：,.!?;:（）()\\[\\]【】\"']+"), "")
         .lowercase()
 
     /**
