@@ -434,7 +434,7 @@ class GenerationHandler(
                     val events = service.fetchRecentEvents(assistant.id.toString(), days = 3).getOrDefault(emptyList())
                     if (events.isNotEmpty()) {
                         val today = java.time.LocalDate.now().toString()
-                        val yesterday = today.minusDays(1)
+                        val yesterday = java.time.LocalDate.now().minusDays(1).toString()
                         val sb = StringBuilder()
                         // 分天注入：今天全文（≤50 条）、昨天（≤30 条）、前天及更早（≤20 条）只 title
                         events.groupBy { it.sourceDate }.toSortedMap().forEach { (date, list) ->
