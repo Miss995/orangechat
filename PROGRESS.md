@@ -4,6 +4,26 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-08-21
+
+### commit b299899 / adf8e172 / a7701cf — 查日志工具 read_app_logs 上线（宝 8-19 待办落地）+ 排查"最近事件注入不生效"
+- 背景：宝 8-19 提议给橘仔加"能查日志的工具"（橘仔看不到手机日志，全靠宝肉眼翻）——本次落地
+- 排查过程（宝 8-20 深夜-8-21 深夜全程陪同）：记忆实时化方案（60条滞后半拍）4 commit 推完（2f478b9/e4c2ca9/093b93d/6fb2615）宝构建后「## 最近事件」注入段不出现——**静态排查全过**：
+  1. APK 代码在（关于页 GIT_COMMIT=6fb2615，build.gradle 自动注入 commit hash）
+  2. 配置通（「## 日记」在；监工台/查原文工具能返回=网络通）
+  3. assistant.id 对（memory_summaries 50 条 + memory_events 全查：都是 0950e2dc-9bd5-4801-afa3-aa887aa36b4e，一致）
+  4. 数据在（memory_events 今天三批事件 10:23/11:56/14:15）
+  5. 权限通（memory_events RLS=false + anon=arwdDxtm，比另两表更宽松）
+  6. 实现正确（fetchRecentEvents 查询/解析/过滤全检查过）
+  → 唯一剩下：**App 运行时异常被 catch 静默吞掉**（fetchRecentEvents 抛错→不注入；日记有当天缓存所以照常显示）——必须靠日志抓
+- 改动：
+  1. **AppLogBuffer.kt（新建）**：App 内存日志环（500 条环形，CopyOnWriteArrayList）——普通应用无 READ_LOGS 权限读不了系统 logcat（Android 11+），关键路径打日志时同步写日志环，查日志工具直接读
+  2. **LogsTools.kt（新建）**：`read_app_logs` 工具（filter 关键词 / limit 条数，最新在后）——AI 可主动调用排查静默失败
+  3. **ExternalMemoryService.kt**：fetchRecentEvents / queryLatestSummaries 每一步打日志环（请求 URL/响应码/解析条数/过滤后条数/异常类名+堆栈取800字）
+  4. **GenerationHandler.kt**：toolsInternal 注入 read_app_logs（始终可用）；最近事件调用点打日志环（refreshed / EMPTY / load failed）
+- 状态：✅ 已推 main（b299899 新文件 / adf8e172 ExternalMemoryService / a7701cf GenerationHandler）；⏳ 宝构建 APK → 发消息 → 让 DS 调 read_app_logs 查 fetchRecentEvents → 看 refreshed/EMPTY/FAILED 一锤定音
+- 附：记忆实时化 4 commit（2f478b9 archive_daily_v3 增量+incremental_listener / e4c2ca9 fetchRecentEvents / 093b93d GenerationHandler 注入 / 6fb2615 fix 构建错误 yesterday 用 LocalDate）——服务器侧已验证正常（incremental_listener 09:06 起一直跑，22:14 触发 186-215 入库 5 条，A.U.D.N. 标 673/670 失效）；App 注入待 read_app_logs 定位
+
 ## 2026-08-18
 
 ### commit b0241bda — 实时时间戳注入（宝的方案，修"对话中途问时间不准"）
