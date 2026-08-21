@@ -267,7 +267,7 @@ class GenerationHandler(
                     }
                 }
  
-                // If any tools were updated to Pending, break and wait for user
+                // If any tools were updated to Pending, update the message and break
                 if (updatedTools != tools) {
                     val lastMessage = messages.last()
                     val updatedParts = lastMessage.parts.map { part ->
@@ -416,6 +416,55 @@ class GenerationHandler(
         recallGate: Boolean = false,
         onRecallGatePassed: () -> Unit = {},
     ) {
+        // ===== 最近事件（实时层，2026-08-21 宝的记忆实时化方案定稿）=====
+        // 服务器 incremental_listener.py（每满 60 条总结 30 条，滞后半拍）让今天的事件也实时入库——
+        // 这里注入最近 3 天事件：今天全文、昨天前天 title。固定位置 + 稳定排序（source_date ASC + id ASC）
+        // = 前缀稳定（保 DS 缓存命中）。本地 15 分钟缓存：同 15 分钟内前缀稳定 + 防 Supabase 慢/挂。
+        var recentEventsText: String? = null
+        try {
+            val recentConfigs = settings.externalMemories.filter { it.enabled && it.id in assistant.externalMemoryIds }
+            if (recentConfigs.isNotEmpty()) {
+                val prefs = context.getSharedPreferences("recent_events_cache", Context.MODE_PRIVATE)
+                val cacheKey = "recent_events_${assistant.id}"
+                val nowMs = System.currentTimeMillis()
+                recentEventsText = prefs.getString(cacheKey, null)
+                val cacheTs = prefs.getLong("${cacheKey}_ts", 0L)
+                if (recentEventsText == null || nowMs - cacheTs > 15 * 60 * 1000L) {
+                    val service = me.rerere.rikkahub.data.service.ExternalMemoryService(recentConfigs.first())
+                    val events = service.fetchRecentEvents(assistant.id.toString(), days = 3).getOrDefault(emptyList())
+                    if (events.isNotEmpty()) {
+                        val today = java.time.LocalDate.now().toString()
+                        val yesterday = today.minusDays(1)
+                        val sb = StringBuilder()
+                        // 分天注入：今天全文（≤50 条）、昨天（≤30 条）、前天及更早（≤20 条）只 title
+                        events.groupBy { it.sourceDate }.toSortedMap().forEach { (date, list) ->
+                            val cap = when (date) {
+                                today -> 50
+                                yesterday -> 30
+                                else -> 20
+                            }
+                            sb.appendLine("【$date】")
+                            list.take(cap).forEach { e ->
+                                if (date == today) {
+                                    sb.appendLine("${e.title}：${e.content}")
+                                } else {
+                                    sb.appendLine(e.title)
+                                }
+                            }
+                        }
+                        recentEventsText = sb.toString()
+                        prefs.edit().putString(cacheKey, recentEventsText).putLong("${cacheKey}_ts", nowMs).apply()
+                        Log.i(TAG, "Recent events [supabase] refreshed (${events.size} events, ${recentEventsText.length} chars)")
+                    } else {
+                        // 拉不到：保留旧缓存（recentEventsText 已是缓存值）
+                        Log.w(TAG, "Recent events fetch empty, keep cache")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Recent events load failed", e)
+        }
+
         val internalMessages = buildList {
             val system = buildString {
                 val effectiveSystemPrompt =
@@ -494,6 +543,14 @@ class GenerationHandler(
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Diary summary load failed", e)
+                }
+
+                // 最近事件（实时层，2026-08-21 宝的方案）：最近 3 天事件——增量总结后今天也实时有；
+                // 固定位置 + 稳定排序（source_date ASC + id ASC）= 前缀稳定（保 DS 缓存命中）
+                if (!recentEventsText.isNullOrBlank()) {
+                    appendLine()
+                    appendLine("## 最近事件（最近 3 天）")
+                    append(recentEventsText)
                 }
  
                 // 外置记忆库事件召回（主召方案：唯一自动召回通道——门控：仅搜索意图时触发；日记摘要已独立为稳定前缀）
@@ -860,6 +917,7 @@ private fun buildCodeBlockPrompt(): String = buildString {
     appendLine("   - ✅ Correct: ```styles.css instead of ```css")
     appendLine("   - ✅ Correct: ```package.json instead of ```json")
     appendLine("   - ✅ Correct: ```main.py instead of ```python")
+    appendLine("   - ✅ Correct: ```App.vue instead of ```vue")
     appendLine("   - ❌ Wrong: ```kotlin, ```python, ```javascript (these don't provide filenames)")
     appendLine("   - For code without a specific filename, use a descriptive name like ```example.ts, ```helper.py")
     appendLine()
