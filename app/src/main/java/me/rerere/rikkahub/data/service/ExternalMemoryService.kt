@@ -1,4 +1,5 @@
-/* 橘瓣 OrangeChat
+/*
+ * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
  */
@@ -11,6 +12,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.data.model.ExternalMemory
 import org.json.JSONArray
 import java.net.HttpURLConnection
@@ -568,6 +570,7 @@ class ExternalMemoryService(
             val url = config.supabaseUrl.trimEnd('/')
             val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}&order=created_at.desc&limit=$limit"
             val endpoint = URL("$url/rest/v1/${config.summariesTableName}?$query")
+            AppLogBuffer.log(TAG, "queryLatestSummaries: GET ${config.summariesTableName}?$query")
 
             val connection = (endpoint.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
@@ -579,14 +582,20 @@ class ExternalMemoryService(
             }
 
             val responseCode = connection.responseCode
+            AppLogBuffer.log(TAG, "queryLatestSummaries: HTTP $responseCode")
             if (responseCode !in 200..299) {
                 val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
                 Log.e(TAG, "queryLatestSummaries HTTP $responseCode body=$errorBody")
+                AppLogBuffer.log(TAG, "queryLatestSummaries HTTP $responseCode body=$errorBody")
                 throw Exception("Supabase API error ($responseCode): $errorBody")
             }
 
             val responseText = connection.inputStream.bufferedReader().readText()
-            parseSummaries(responseText)
+            val parsed = parseSummaries(responseText)
+            AppLogBuffer.log(TAG, "queryLatestSummaries: parsed ${parsed.size} summaries")
+            parsed
+        }.onFailure { e ->
+            AppLogBuffer.log(TAG, "queryLatestSummaries FAILED: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
@@ -694,6 +703,7 @@ class ExternalMemoryService(
                 "&order=source_date.asc,id.asc" +
                 "&limit=500"
             val endpoint = URL("$url/rest/v1/memory_events?$query")
+            AppLogBuffer.log(TAG, "fetchRecentEvents: GET memory_events?$query")
 
             val connection = (endpoint.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
@@ -705,15 +715,21 @@ class ExternalMemoryService(
             }
 
             val responseCode = connection.responseCode
+            AppLogBuffer.log(TAG, "fetchRecentEvents: HTTP $responseCode")
             if (responseCode !in 200..299) {
                 val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
                 Log.e(TAG, "fetchRecentEvents HTTP $responseCode body=$errorBody")
+                AppLogBuffer.log(TAG, "fetchRecentEvents HTTP $responseCode body=$errorBody")
                 throw Exception("Supabase API error ($responseCode): $errorBody")
             }
 
             val responseText = connection.inputStream.bufferedReader().readText()
-            parseEvents(responseText)
-                .filter { it.supersededBy.isBlank() } // 过滤已失效事件（A.U.D.N. 写入层标记）
+            val parsed = parseEvents(responseText)
+            val result = parsed.filter { it.supersededBy.isBlank() } // 过滤已失效事件（A.U.D.N. 写入层标记）
+            AppLogBuffer.log(TAG, "fetchRecentEvents: parsed ${parsed.size}, after filter ${result.size}, first=${result.firstOrNull()?.title ?: "-"}")
+            result
+        }.onFailure { e ->
+            AppLogBuffer.log(TAG, "fetchRecentEvents FAILED: ${e.javaClass.simpleName}: ${e.message}\n${e.stackTraceToString().take(800)}")
         }
     }
 
