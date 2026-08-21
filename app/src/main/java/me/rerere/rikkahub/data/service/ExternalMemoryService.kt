@@ -15,6 +15,7 @@ import kotlinx.serialization.json.buildJsonObject
 import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.data.model.ExternalMemory
 import org.json.JSONArray
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -951,14 +952,14 @@ class ExternalMemoryService(
                 result.add(
                     ExternalMemoryEvent(
                         id = obj.optInt("id", 0),
-                        title = obj.optString("title", ""),
-                        content = obj.optString("content", ""),
-                        eventType = obj.optString("event_type", ""),
-                        sourceDate = obj.optString("source_date", ""),
+                        title = obj.safeString("title"),
+                        content = obj.safeString("content"),
+                        eventType = obj.safeString("event_type"),
+                        sourceDate = obj.safeString("source_date"),
                         sourceIds = sourceIds,
-                        sourceRange = obj.optString("source_range", ""),
+                        sourceRange = obj.safeString("source_range"),
                         embedding = embedding,
-                        supersededBy = obj.optString("superseded_by", ""), // A.U.D.N. 标记的失效事件（写入层已启用）
+                        supersededBy = obj.safeString("superseded_by"), // A.U.D.N. 标记的失效事件（写入层已启用）
                         relatedEventIds = relatedIds, // A.U.D.N. linked_event_ids 写入的关联事件
                     )
                 )
@@ -967,6 +968,16 @@ class ExternalMemoryService(
             Log.w(TAG, "Failed to parse events", e)
         }
         return result
+    }
+
+    /**
+     * org.json 的 optString(key, fallback) 对 JSON null 值返回字符串 "null"（不是 fallback）——
+     * 导致 superseded_by 为 null 的事件被解析成 "null" 字符串，"null".isBlank()=false
+     * → 全部被当成已失效事件过滤掉（fetchRecentEvents parsed 112 after filter 0，2026-08-22 凌晨破案）。
+     * 统一：null 值转空串，只有真正的非空字符串才保留。
+     */
+    private fun JSONObject.safeString(key: String): String {
+        return if (isNull(key)) "" else optString(key, "")
     }
 }
 
