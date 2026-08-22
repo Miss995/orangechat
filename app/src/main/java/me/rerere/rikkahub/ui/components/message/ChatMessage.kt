@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -392,6 +392,10 @@ private fun MessagePartsBlock(
                             part.text.replace(Regex("\\[zip:[^\\]]+\\]", RegexOption.IGNORE_CASE), "")
                         }
                         
+                        // 【防正文被吃 2026-08-22】key(loading)：生成完成（loading true→false）时强制重建渲染子树，
+                        // 确保最后一批 parts（含正文）一定会被渲染——不依赖流式增量触发的最后一次重组
+                        // （思考链渲染间隙里完成的正文不再静默消失，memory 91 的渲染竞态修复）。
+                        key(loading) {
                         SelectionContainer {
                             Column {
                                 // 生成中（loading=true 且是 AI 消息）：用纯文本渲染，跳过 Markdown 解析/代码高亮/正则替换，
@@ -528,6 +532,7 @@ private fun MessagePartsBlock(
                                 
                             }
                         }
+                        } // key(loading)
                     }
  
                     is UIMessagePart.Video -> {
