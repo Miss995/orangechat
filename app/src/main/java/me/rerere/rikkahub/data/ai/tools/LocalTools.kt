@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -565,6 +565,9 @@ class LocalTools(
             tools.add(me.rerere.rikkahub.workflow.tools.workflowDeleteTool(workflowRepository))
             tools.add(me.rerere.rikkahub.workflow.tools.workflowSetEnabledTool(workflowRepository))
             tools.add(me.rerere.rikkahub.workflow.tools.workflowRunTool(workflowEngine, workflowRepository))
+            // 主动发消息 AI 接口 (2026-08-23 宝拍板): AI/workflow 都能触发主动发消息,
+            // 挂在 Workflows 组 = workflow 触发时工具面能找到它 + 开了 Workflows 的助手对话中也可用
+            tools.add(buildTriggerProactiveMessageTool(context))
         }
         return tools
     }
