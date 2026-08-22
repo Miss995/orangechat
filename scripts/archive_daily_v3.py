@@ -20,6 +20,9 @@
 #            - merge_adjacent_events()：两步收尾② 编号相邻合并（宝的方案：相邻 source_range +
 #              边界原文 -> LLM 判断同一件事 -> 拼接，旧事件标 superseded 不删；链式可拼回 2-3 段）
 #            - 锁：/tmp/orange_summary.lock（非阻塞 flock，与 incremental_listener.py 共用防双写）
+# 2026-08-22 · 数据监控（宝的方案⑤）：写 archive_status 表（橘瓣每轮对话注入"上次成功归档日期"，
+#            断了橘仔当场告诉宝——机制自己说话不靠记性）+ Server 酱微信推送（可选，SENDKEY 从 .env 读，
+#            没配就不发不阻塞）+ 失败写"归档失败告警"事件进 memory_events（最近事件注入天然带上，双通道）。
 import os, sys, json, time, datetime as dt, requests, fcntl
 from dotenv import load_dotenv
 
@@ -29,6 +32,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-ai/DeepSeek-V3")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-m3")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")  # 脱敏：读 /root/.env
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")  # 脱敏：读 /root/.env
+SENDKEY = os.getenv("SENDKEY", "")  # Server 酱 SendKey（可选：归档失败推微信，没配就不发）
 ASSISTANT_ID = "0950e2dc-9bd5-4801-afa3-aa887aa36b4e"
 USER_ID = "orange-bao"
 BATCH = 25  # 每批最多多少条消息给 LLM 拆事件
@@ -55,6 +59,70 @@ def try_lock():
         return fp
     except Exception:
         return None
+
+
+# ============ 数据监控（2026-08-22 宝的方案⑤）============
+# archive_status 表：date 唯一，archive_daily 每天 upsert 一行（成功/失败/条数/错误）。
+# 橘瓣每轮对话注入"上次成功归档日期"——日期停在昨天/前天而今天还没归档 = 一眼看出断了，
+# 不靠任何人记得"应该有归档"（机制自己说话）。
+def write_status(date, success, events_count=0, msgs_count=0, error=""):
+    """写归档状态到 archive_status 表（失败不阻断主流程）"""
+    try:
+        payload = {
+            "date": str(date),
+            "success": bool(success),
+            "events_count": int(events_count or 0),
+            "msgs_count": int(msgs_count or 0),
+            "error": (error or "")[:500],
+        }
+        r = requests.post(
+            f"{SUPABASE_URL}/rest/v1/archive_status?on_conflict=date",
+            json=payload,
+            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
+                     "Content-Type": "application/json",
+                     "Prefer": "resolution=merge-duplicates,return=minimal"},
+        )
+        r.raise_for_status()
+    except Exception as e:
+        print(f"  write_status 失败（不影响主流程）: {e}")
+
+
+def send_serverchan(title, desp=""):
+    """Server 酱微信推送（可选：没配 SENDKEY 就跳过，失败不影响主流程）"""
+    if not SENDKEY:
+        return
+    try:
+        r = requests.post(f"https://sctapi.ftqq.com/{SENDKEY}.send",
+                          data={"title": title, "desp": desp}, timeout=15)
+        if r.status_code == 200:
+            print(f"  Server 酱推送 ✓ {title}")
+        else:
+            print(f"  Server 酱推送失败 HTTP {r.status_code}")
+    except Exception as e:
+        print(f"  Server 酱推送失败（不影响主流程）: {e}")
+
+
+def write_failure_event(date, error):
+    """方案 B：归档失败时写一条特殊事件进 memory_events（最近事件注入会带上，橘仔看到会跟宝说）"""
+    try:
+        row = {
+            "assistant_id": ASSISTANT_ID,
+            "title": "归档失败告警",
+            "content": f"{date} 自动归档失败：{str(error)[:200]}（宝：请查看 /root/archive_v3.log）",
+            "event_type": "chat",
+            "source_date": str(date),
+            "source_ids": [],
+            "source_range": "",
+            "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "embedding": None,
+            "related_event_ids": [],
+        }
+        r = requests.post(f"{SUPABASE_URL}/rest/v1/memory_events", json=row,
+                          headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
+                                   "Content-Type": "application/json", "Prefer": "return=minimal"})
+        r.raise_for_status()
+    except Exception as e:
+        print(f"  写失败告警事件失败（不影响主流程）: {e}")
 
 
 # ============ ③第二层 A.U.D.N.（冲突消解 + 事件关联）============
@@ -280,7 +348,7 @@ def split_events(text_chunk, start_idx, batch_len):
                 "1. 事件 = 一件完整的事（一次讨论/一个决定/一段共同经历/一次情绪时刻），不要拆太碎，能合并就合并\n"
                 "2. event_type：聊天相关=chat（日常、情绪、偏好、共同回忆），代码/项目相关=code（改代码、报错、推commit、配置、查密钥）\n"
                 "3. source_ids：该事件由哪几条消息编号总结出来的（写编号数组，如 [5,6,7]）\n"
-                "4. content 要简洁抓重点（1~2句话），像人话、带情绪色彩，不要流水账；宁缺毋滥，没价值的对话别记\n"
+                "4. content 要客观准确抓重点（1~2句话）：只记事实（谁、做了什么、结果），中性语气，不评价、不带梗、不夸张；宁缺毋滥，没价值的对话别记\n"
                 "5. title 用 2~8 个字的短标题\n"
                 "6. 没有值得记的就输出 {\"events\": []}\n"
                 "只输出 JSON，格式：{\"events\": [{\"title\": \"...\", \"content\": \"...\", \"event_type\": \"chat|code\", \"source_ids\": [1,2]}]}"
@@ -559,7 +627,7 @@ def sync_mem0(events):
 
 
 def main(date_str=None):
-    """晚上收尾（cron 23:50）：①补剩余 M+1..N（<60 也总结）②编号合并。
+    """晚上收尾（cron 23:50）：①补剩余 M+1..N（<60 也总结）②编号合并。结束时写 archive_status。
     增量由 incremental_listener.py 负责（每满 60 条总结 30 条）。"""
     d = cur_today() if not date_str else dt.date.fromisoformat(date_str)
     lock = try_lock()
@@ -577,17 +645,23 @@ def main(date_str=None):
         msgs = fetch_msgs(d)
         if not msgs:
             print(f"[{cur_now():%Y-%m-%d %H:%M}] {d} 没有消息，跳过")
+            write_status(d, True, msgs_count=0)  # 今天没消息也算归档完成（正常）
             return
         M = get_progress(d)
         N = len(msgs)
         if N > M:
             print(f"[{cur_now():%Y-%m-%d %H:%M}] 补剩余 {M+1}..{N}（共 {N-M} 条，进度 M={M}）")
             try:
-                summarize_range(msgs, M + 1, N, d)
+                ev_count = summarize_range(msgs, M + 1, N, d)
             except Exception as e:
                 print(f"[{cur_now():%Y-%m-%d %H:%M}] 补剩余失败: {e}")
+                write_status(d, False, msgs_count=N, error=f"补剩余失败: {e}")
+                send_serverchan(f"⚠️ {d} 归档失败", f"补剩余失败：{e}\n详见 /root/archive_v3.log")
+                write_failure_event(d, f"补剩余失败: {e}")
+                return
         else:
             print(f"[{cur_now():%Y-%m-%d %H:%M}] 已全部总结（进度 M={M}=N={N}），无需补")
+            ev_count = 0
         # 两步收尾②：编号相邻合并（把增量切碎的同一事件拼回来）
         try:
             m = merge_adjacent_events(d)
@@ -597,6 +671,14 @@ def main(date_str=None):
                 print(f"[{cur_now():%Y-%m-%d %H:%M}] 编号合并：无相邻同主题事件")
         except Exception as e:
             print(f"[{cur_now():%Y-%m-%d %H:%M}] 编号合并失败: {e}")
+        # 数据监控：写归档状态（成功）
+        write_status(d, True, events_count=ev_count, msgs_count=N)
+        print(f"[{cur_now():%Y-%m-%d %H:%M}] archive_status 已写 ✓（{d} success, {ev_count} events, {N} msgs）")
+    except Exception as e:
+        print(f"[{cur_now():%Y-%m-%d %H:%M}] 归档失败: {e}")
+        write_status(d, False, error=str(e))
+        send_serverchan(f"⚠️ {d} 归档失败", f"{e}\n详见 /root/archive_v3.log")
+        write_failure_event(d, str(e))
     finally:
         fcntl.flock(lock, fcntl.LOCK_UN)
         lock.close()
@@ -608,3 +690,7 @@ if __name__ == "__main__":
         main(date_arg)
     except Exception as e:
         print(f"[{cur_now():%Y-%m-%d %H:%M}] 归档失败: {e}")
+        d = cur_today()
+        write_status(d, False, error=str(e))
+        send_serverchan(f"⚠️ {d} 归档失败", str(e))
+        write_failure_event(d, str(e))
