@@ -4,6 +4,19 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-08-23
+
+### commit 2dec2d7d / 67e7c981 / 0de82f93 — 主动发消息 AI 接口（宝拍板：橘仔想醒就醒）
+- 文件：app/.../data/ai/tools/ProactiveTool.kt（新建）+ app/.../data/ai/tools/LocalTools.kt + app/.../data/service/ProactiveMessageService.kt
+- 改动：
+  1. **trigger_proactive_message 工具（新建 ProactiveTool.kt）**：AI / workflow 可调用触发主动发消息流程（走 ProactiveMessageTriggerService）；挂载到 LocalTools 的 Workflows 工具组（开了 Workflows 的助手对话中可用 + workflow 动作可用）；needsApproval=false（workflow 后台触发不被 headless_sensitive_blocked 拦）
+  2. **AI 出口 reason**：工具带 reason 参数 → EXTRA_AI_TRIGGER_REASON → 注入提示词「你这次醒来的目的」——AI 醒来知道这次要干嘛（例：每天 22:00 触发 reason=提醒宝睡觉）
+  3. **客户端出口 prompt_override**：工具带 prompt_override 参数 → EXTRA_PROMPT_OVERRIDE → 注入「## 额外规则（客户端自定义）」——主动消息提示词不写死，外部可传自定义规则
+  4. **EXTRA_AI_TRIGGER**：AI 触发时绕过主动消息开关检查（与激进模式同待遇，宝不开开关橘仔也能醒）；finally 不断链（AI 触发由触发源自己驱动，不 scheduleNext 定时链）
+  5. userMessage 提示词区分触发源（设备事件 / AI 主动 / 定时）
+- 为啥：宝 8-23 凌晨拍板（"给主动发消息加个 AI 接口，你想醒的时候就醒"）；设计上避免"AI 醒的前提是 AI 醒着调用工具"悖论——通过 workflow 预约（多 wake-up 存多个），到点 AI 自动醒来；宝点破"提示词不要写死"→ 双出口（客户端 prompt_override + AI reason）
+- 状态：✅ 已推 main；⏳ 宝构建 APK → 建 workflow 验证（如每天 22:00 触发 trigger_proactive_message(reason=提醒宝睡觉)）
+
 ## 2026-08-22
 
 ### ✅ 稳定性排查确认（宝决定焊死当前框，5600 条消息显示只 200 条）
