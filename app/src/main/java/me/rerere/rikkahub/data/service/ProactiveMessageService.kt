@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -416,6 +416,12 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
         const val EXTRA_FORCE_TRIGGER = "force_trigger"
         // 激进模式设备事件上下文（由 DeviceEventAiTriggerService 传入）
         const val EXTRA_DEVICE_EVENT_CONTEXT = "device_event_context"
+        // AI 主动触发（trigger_proactive_message 工具，2026-08-23 宝拍板）——跳过主动消息开关检查（与激进模式同待遇）
+        const val EXTRA_AI_TRIGGER = "ai_trigger"
+        // AI 触发时附带的唤醒目的（注入提示词「你这次醒来的目的」，AI 醒来知道自己要干嘛）
+        const val EXTRA_AI_TRIGGER_REASON = "ai_trigger_reason"
+        // 客户端出口：自定义提示词规则（追加到主动消息上下文末尾，不写死）
+        const val EXTRA_PROMPT_OVERRIDE = "prompt_override"
 
         // 保护 last_triggered_time 的 check-then-act 竞态（防止 AlarmManager 与 WorkManager
         // 前后脚触发导致"最小间隔"被砍半）。纯同步 SharedPreferences 读写，无挂起点，用对象锁即可。
@@ -444,13 +450,18 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "=== TriggerService onStartCommand ===")
-        // 外部触发（网关轮询/激进模式设备事件）时跳过内部 minInterval 去重
+        // 外部触发（网关轮询/激进模式设备事件/AI 主动触发）时跳过内部 minInterval 去重
         val isForceTrigger = intent?.getBooleanExtra(EXTRA_FORCE_TRIGGER, false) ?: false
         // 激进模式设备事件上下文（由 DeviceEventAiTriggerService 传入）
         val deviceEventContext = intent?.getStringExtra(EXTRA_DEVICE_EVENT_CONTEXT)
         val isFromDeviceEvent = deviceEventContext != null
+        // AI 主动触发（trigger_proactive_message 工具，2026-08-23 宝拍板）
+        val aiTriggerReason = intent?.getStringExtra(EXTRA_AI_TRIGGER_REASON)
+        val isFromAiTrigger = intent?.getBooleanExtra(EXTRA_AI_TRIGGER, false) ?: false
+        // 客户端出口：自定义提示词规则
+        val promptOverride = intent?.getStringExtra(EXTRA_PROMPT_OVERRIDE)
         if (isForceTrigger) {
-            Log.d(TAG, "Force trigger${if (isFromDeviceEvent) " from device event" else " from gateway poll"}, will skip min interval check")
+            Log.d(TAG, "Force trigger${if (isFromDeviceEvent) " from device event" else if (isFromAiTrigger) " from AI trigger" else " from gateway poll"}, will skip min interval check")
         }
         val notification = androidx.core.app.NotificationCompat.Builder(this, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID)
             .setContentTitle("正在思考...")
@@ -465,8 +476,8 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 val settings = settingsStore.settingsFlow.first()
                 val proactiveSetting = settings.proactiveMessageSetting
 
-                // 激进模式设备事件触发时，不检查主动消息开关（可独立工作）
-                if (!proactiveSetting.enabled && !isFromDeviceEvent) {
+                // 激进模式设备事件 / AI 主动触发时不检查主动消息开关（可独立工作）
+                if (!proactiveSetting.enabled && !isFromDeviceEvent && !isFromAiTrigger) {
                     stopSelf()
                     return@launch
                 }
@@ -474,7 +485,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 val prefs = getSharedPreferences(ProactiveMessageService.PREFS_NAME, Context.MODE_PRIVATE)
 
                 // 去重判断：防止 AlarmManager 和 WorkManager 在同一窗口内重复触发。
-                // 外部触发（网关轮询/激进模式设备事件）跳过此检查，因为这是独立信号源，不受内部闹钟链约束。
+                // 外部触发（网关轮询/激进模式设备事件/AI 主动触发）跳过此检查，因为这是独立信号源，不受内部闹钟链约束。
                 // 注意：isForceTrigger 跳过的是"时间间隔节流"（两回事），不跳过后面 tryClaimGeneration 的并发安全检查。
                 // 把"读取 last_triggered_time -> 判断 -> 写入"整段放在同步块里，修复 check-then-act 竞态。
                 if (!isForceTrigger) {
@@ -533,7 +544,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 }
 
                 // 抢占生成权：尝试把当前协程的 Job 注册进 ConversationSession。
-                // 这一步对所有触发源（含 isForceTrigger / 激进模式设备事件）一视同仁，是并发安全的核心。
+                // 这一步对所有触发源（含 isForceTrigger / 激进模式设备事件 / AI 主动触发）一视同仁，是并发安全的核心。
                 // 如果当前已有生成在跑（正常聊天或另一路主动消息），直接放弃本次触发，不排队等待、不重试。
                 // 理由：等对方生成结束后，上下文（用户可能已在聊别的话题）大概率已过时，硬等没有意义。
                 val myJob = coroutineContext[Job]
@@ -553,10 +564,9 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 val idleMinutes = runCatching { val last = proactiveMessageService.getLastMessageTimeMs(); if (last > 0) ((System.currentTimeMillis() - last) / 60000L).toInt() else Int.MAX_VALUE }.getOrDefault(Int.MAX_VALUE)
 
                 // 如果有设备事件上下文（激进模式），使用它替代常规上下文；否则使用常规上下文
-                val contextStr = if (isFromDeviceEvent && deviceEventContext != null) {
-                    deviceEventContext
-                } else {
-                    proactiveMessageService.buildProactiveContext(
+                val contextStr = when {
+                    isFromDeviceEvent && deviceEventContext != null -> deviceEventContext
+                    else -> proactiveMessageService.buildProactiveContext(
                         this@ProactiveMessageTriggerService, settings
                     )
                 }
@@ -571,16 +581,26 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 )
 
                 // 构建系统提示词（包含记忆 + 上下文，都放在最后面避免被网关淹没）
-                val systemPrompt = buildSystemPrompt(assistant, settings, idleMinutes, proactiveSetting.jumpIdleThresholdMinutes, isFromDeviceEvent, if (isFromDeviceEvent) deviceEventContext else contextStr)
+                val systemPrompt = buildSystemPrompt(assistant, settings, idleMinutes, proactiveSetting.jumpIdleThresholdMinutes, isFromDeviceEvent, when {
+                    isFromDeviceEvent -> deviceEventContext
+                    isFromAiTrigger && !aiTriggerReason.isNullOrBlank() -> "[AI 主动想联系你]\n你这次醒来的目的：$aiTriggerReason\n\n$contextStr"
+                    else -> contextStr
+                }, if (isFromAiTrigger) aiTriggerReason else null)
 
                 // user message 只放简短指令（上下文已在系统提示词中）
                 val userMessage = UIMessage(
                     role = MessageRole.USER,
                     parts = listOf(UIMessagePart.Text(
-                        if (isFromDeviceEvent) {
-                            "请根据以上用户动向决定是否发消息。没什么好说的就回复 [PASS]。"
-                        } else {
-                            "请根据以上上下文决定是否发消息。没什么好说的就回复 [PASS] 即可，不要强行找话题。"
+                        when {
+                            isFromDeviceEvent -> {
+                                "请根据以上用户动向决定是否发消息。没什么好说的就回复 [PASS]。"
+                            }
+                            isFromAiTrigger -> {
+                                "这是你（AI）主动想联系用户而触发的唤醒。请根据上下文和你这次醒来的目的，自然地决定是否发一条消息；如果现在确实没什么好说的，就回复 [PASS] 即可。"
+                            }
+                            else -> {
+                                "请根据以上上下文决定是否发消息。没什么好说的就回复 [PASS] 即可，不要强行找话题。"
+                            }
                         }
                     ))
                 )
@@ -819,11 +839,11 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 }
             } finally {
                 // 确保无论成功/失败/取消都安排下一次，避免一次 API 错误或用户打断永久中断定时链。
-                // 激进模式设备事件触发时不需要安排下一次定时主动消息（由 DeviceEventAiTriggerService 自己驱动）。
+                // 激进模式设备事件 / AI 主动触发时不需要安排下一次定时主动消息（由各自触发源自己驱动）。
                 // 用 NonCancellable 包裹：协程被取消后处于已取消状态，finally 里的挂起点
                 // (settingsFlow.first()) 会立刻抛 CancellationException，导致 scheduleNext 被跳过、
                 // 定时链断裂。NonCancellable 保证这段收尾逻辑跑完。
-                if (!isFromDeviceEvent) {
+                if (!isFromDeviceEvent && !isFromAiTrigger) {
                     withContext(NonCancellable) {
                         try {
                             val currentSettings = settingsStore.settingsFlow.first()
@@ -848,7 +868,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
      * 构建系统提示词，包含记忆等内容
      * isFromDeviceEvent: 是否由激进模式设备事件触发
      */
-    private suspend fun buildSystemPrompt(assistant: Assistant, settings: Settings, idleMinutes: Int = 0, jumpThreshold: Int = 120, isFromDeviceEvent: Boolean = false, deviceEventContext: String? = null): String {
+    private suspend fun buildSystemPrompt(assistant: Assistant, settings: Settings, idleMinutes: Int = 0, jumpThreshold: Int = 120, isFromDeviceEvent: Boolean = false, deviceEventContext: String? = null, aiTriggerReason: String? = null): String {
         return buildString {
             // 基础系统提示词
             val effectiveSystemPrompt = if (assistant.allowConversationSystemPrompt) {
@@ -893,6 +913,29 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     appendLine()
                     appendLine(deviceEventContext)
                 }
+            } else if (!aiTriggerReason.isNullOrBlank()) {
+                // AI 主动触发（trigger_proactive_message 工具）：明确唤醒目的，其余走常规主动消息规则
+                appendLine()
+                appendLine()
+                appendLine("## ✨ 你这次是被 AI 主动唤醒的")
+                appendLine("你不是因为定时器或设备事件被触发，而是 AI 自己决定想联系用户。")
+                appendLine("你这次醒来的目的：$aiTriggerReason")
+                appendLine("距离用户上次回复已过去 $idleMinutes 分钟。")
+                appendLine("根据你的目的和当前上下文，自然地决定是否发一条消息；如果现在确实没什么好说的，就回复 [PASS] 即可。")
+                appendLine("绝对不要复述上一轮的对话内容，要发新的话题或新的关心。")
+                appendLine("不要提及任何数据来源、工具使用、传感器数据等技术细节，直接以朋友聊天的语气开口。")
+                appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
+                // 注入完整上下文（定位、前台app、app使用、通知、电量、健康等）
+                if (!deviceEventContext.isNullOrBlank()) {
+                    appendLine()
+                    appendLine(deviceEventContext)
+                }
+                // 客户端出口：自定义规则（追加在最后，不覆盖默认规则）
+                if (!promptOverride.isNullOrBlank()) {
+                    appendLine()
+                    appendLine("## 额外规则（客户端自定义）")
+                    appendLine(promptOverride)
+                }
             } else {
                 // 常规主动消息：上下文也注入系统提示词最后面（和激进模式一样）
                 appendLine()
@@ -907,6 +950,12 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 if (!deviceEventContext.isNullOrBlank()) {
                     appendLine()
                     appendLine(deviceEventContext)
+                }
+                // 客户端出口：自定义规则（追加在最后，不覆盖默认规则）
+                if (!promptOverride.isNullOrBlank()) {
+                    appendLine()
+                    appendLine("## 额外规则（客户端自定义）")
+                    appendLine(promptOverride)
                 }
             }
         }
