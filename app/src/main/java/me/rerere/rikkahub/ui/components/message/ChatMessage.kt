@@ -8,6 +8,7 @@ package me.rerere.rikkahub.ui.components.message
  
 import android.content.Intent
 import android.media.MediaPlayer
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
@@ -96,6 +97,7 @@ import me.rerere.hugeicons.stroke.PauseCircle
 import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
@@ -313,6 +315,17 @@ private fun MessagePartsBlock(
     val displaySettings = LocalDisplaySettings.current
     val bubbleAlpha = 1f - displaySettings.chatBubbleTransparency / 100f
     val partsState by rememberUpdatedState(parts)
+ 
+    // 【正文被吃排查 2026-08-22】loading 状态变化时打渲染日志（生成完成那一刻最关键）：
+    // 记录 parts 结构与正文/思考链长度——下次正文被吃时 read_app_logs 一锤定音：
+    // 「parts 里有正文但没渲染」 vs 「parts 里压根没正文」。
+    LaunchedEffect(loading) {
+        val textLen = parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
+        val reasoningLen = parts.filterIsInstance<UIMessagePart.Reasoning>().sumOf { it.reasoning.length }
+        val msg = "render loading=$loading parts=${parts.size} text=$textLen reasoning=$reasoningLen role=$role"
+        AppLogBuffer.log("MessagePartsRender", msg)
+        Log.d("MessagePartsRender", msg)
+    }
  
     val handleClickCitation: (String) -> Unit = remember {
         handler@{ citationId ->
