@@ -710,11 +710,52 @@ class GenerationHandler(
             // system 消息通常要求在最前，放末尾会被忽略/拒绝 → 改成 user 角色放最后完全合法
             // （最后一条=user），且 hasSearchIntent 的 lastUserMessage 取自 UI messages（不受影响），
             // 召回逻辑安全；请求编辑模式也能正常显示这条。
+            // 2026-08-22 归档状态条件注入（宝的方案⑤）：【当前时间】尾巴"（设备本地时间...）"去掉（宝说没啥用）；
+            // 归档状态平时不注入（零上下文开销），只有异常（上次成功归档 ≥2 天前 / 最近一次失败）才附加 ⚠️ 一行，
+            // 让橘仔每轮生成都看得到"归档断了"——机制自己说话，不靠记性。10 分钟缓存防 Supabase 慢/挂。
+            val archiveWarn = try {
+                val prefs = context.getSharedPreferences("archive_status_cache", Context.MODE_PRIVATE)
+                val nowMs = System.currentTimeMillis()
+                val cacheTs = prefs.getLong("archive_warn_ts", 0L)
+                if (nowMs - cacheTs > 10 * 60 * 1000L) {
+                    val warn = runCatching {
+                        val configs = settings.externalMemories.filter { it.enabled && it.id in assistant.externalMemoryIds }
+                        if (configs.isEmpty()) null
+                        else {
+                            val service = me.rerere.rikkahub.data.service.ExternalMemoryService(configs.first())
+                            val status = service.queryLatestArchiveStatus().getOrNull()
+                            if (status == null) null
+                            else {
+                                val today = java.time.LocalDate.now()
+                                val daysSince = runCatching {
+                                    java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.parse(status.date), today)
+                                }.getOrDefault(-1L)
+                                when {
+                                    !status.success -> "【归档状态】⚠️ ${status.date} 归档失败：${status.error.take(80)}"
+                                    daysSince >= 2 -> "【归档状态】⚠️ 归档中断：上次成功 = ${status.date}（${daysSince} 天前）"
+                                    else -> null
+                                }
+                            }
+                        }
+                    }.getOrNull()
+                    prefs.edit().putString("archive_warn", warn).putLong("archive_warn_ts", nowMs).apply()
+                    warn
+                } else {
+                    prefs.getString("archive_warn", null)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Archive status warn failed", e)
+                null
+            }
             add(
                 UIMessage.user(
-                    "【当前时间】" +
-                        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()) +
-                        "（设备本地时间，实时刷新；若需更精确请使用 get_time_info 工具）"
+                    buildString {
+                        append("【当前时间】")
+                        append(java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()))
+                        if (!archiveWarn.isNullOrBlank()) {
+                            append("\n").append(archiveWarn)
+                        }
+                    }
                 )
             )
         }.transforms(
