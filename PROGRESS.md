@@ -4,6 +4,22 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-08-22
+
+### ✅ 稳定性排查确认（宝决定焊死当前框，5600 条消息显示只 200 条）
+- ① 上下文长度：宝已设置 contextMessageSize=30（只发最近 30 条）；代码确认 GenerationHandler `messages.limitContext(assistant.contextMessageSize, assistant.contextGroupSize)`（ai/.../Message.kt 双参数版：size≤0=不裁剪=全量，size>0=截取最近 N 条 + groupSize 按组对齐 + tool 依赖回卷）——焊死稳，费用不会因 5600 条爆
+- ② 内存消息对象：ChatVM 持有整个 Conversation（5600 条全量在内存）；但 ChatList 渲染有兜底（displayNodes 过滤 [SKIP]/主动上下文标记 + takeLast(WINDOW_DISPLAY_SIZE) 只渲染最近 200 条左右，LazyColumn 懒加载）——渲染不卡，内存占用几十 MB 可接受
+
+### commit f707f807 — CrashHandler 升级：已知可恢复 UI 崩溃（长按复制跨布局）不再闪退
+- 文件：app/src/main/java/me/rerere/rikkahub/utils/CrashHandler.kt
+- 改动：install() 里对 `IllegalArgumentException: layouts are not part of the same hierarchy`（SelectionManager.convertToContainerCoordinates → NodeCoordinator.findCommonAncestor，长按复制偶发触发）→ 记录 + Toast「遇到一个小问题，已自动恢复」+ 不交给默认 handler（不闪退）；其余崩溃照旧
+- 为啥：宝 8-20 两次长按复制闪退（memory 87，请求日志界面复制请求内容）；原 CrashHandler 只记录仍闪退
+
+### commit 896e1ce3 — 正文被吃修复：key(loading) 强制最终渲染
+- 文件：app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt
+- 改动：MessagePartsBlock 文本渲染子树包 key(loading)——生成完成（loading true→false）时强制重建，最后一批 parts（含正文）必定重渲染
+- 为啥：宝 8-22 报正文被吃/只显示思考链（memory 91）；生成中纯文本渲染、完成切 MarkdownBlock 的竞态——思考链渲染间隙里正文输出完毕时，节流窗口内没等到新的流式触发、完成事件没兜底渲染 → 正文静默消失
+
 ## 2026-08-21
 
 ### commit b299899 / adf8e172 / a7701cf — 查日志工具 read_app_logs 上线（宝 8-19 待办落地）+ 排查"最近事件注入不生效"
