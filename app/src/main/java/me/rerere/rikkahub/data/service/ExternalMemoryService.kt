@@ -735,6 +735,56 @@ class ExternalMemoryService(
     }
 
     /**
+     * 查询最近一条归档状态（数据监控⑤，2026-08-22）：
+     * archive_daily 每天 upsert 一行 archive_status（date 唯一），这里拉最近一条给注入段用。
+     */
+    suspend fun queryLatestArchiveStatus(): Result<ArchiveStatus?> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = config.supabaseUrl.trimEnd('/')
+            val query = "order=date.desc&limit=1"
+            val endpoint = URL("$url/rest/v1/archive_status?$query")
+            AppLogBuffer.log(TAG, "queryArchiveStatus: GET archive_status?$query")
+
+            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("apikey", config.supabaseKey)
+                setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+
+            val responseCode = connection.responseCode
+            AppLogBuffer.log(TAG, "queryArchiveStatus: HTTP $responseCode")
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                AppLogBuffer.log(TAG, "queryArchiveStatus HTTP $responseCode body=$errorBody")
+                throw Exception("Supabase API error ($responseCode): $errorBody")
+            }
+
+            val responseText = connection.inputStream.bufferedReader().readText()
+            val parsed = JSONArray(responseText)
+            if (parsed.length() == 0) {
+                AppLogBuffer.log(TAG, "queryArchiveStatus: empty (表还没有记录)")
+                null
+            } else {
+                val obj = parsed.getJSONObject(0)
+                val status = ArchiveStatus(
+                    date = obj.safeString("date"),
+                    success = obj.optBoolean("success", false),
+                    eventsCount = obj.optInt("events_count", 0),
+                    msgsCount = obj.optInt("msgs_count", 0),
+                    error = obj.safeString("error"),
+                )
+                AppLogBuffer.log(TAG, "queryArchiveStatus: date=${status.date} success=${status.success} events=${status.eventsCount} msgs=${status.msgsCount}")
+                status
+            }
+        }.onFailure { e ->
+            AppLogBuffer.log(TAG, "queryArchiveStatus FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    /**
      * 事件级向量召回：问题向量 -> 全量事件本地余弦 -> 冲突消解（同主题取新 + 过滤 superseded） -> 取最相关 count 条
      * 支持时间定位：dateFrom/dateTo（yyyy-MM-dd）按事件 source_date 过滤（字典序比较=日期比较，与橘瓣同口径）。
      * 没来源日期的事件放行（保守不拦，避免误杀重要记忆）。
@@ -1009,4 +1059,16 @@ data class ExternalMemoryEvent(
     val embedding: List<Float> = emptyList(),
     val supersededBy: String = "", // 被哪个新事件取代（A.U.D.N. 写入层标记；非空=已失效，召回时跳过）
     val relatedEventIds: List<String> = emptyList(), // 关联事件 id（A.U.D.N. linked_event_ids 写入；召回时带出=联想式回忆）
+)
+
+/**
+ * 归档状态（数据监控⑤，2026-08-22）：
+ * archive_daily 每天 upsert 一行，橘瓣查最近一条注入上下文，归档断了橘仔每轮都看得到。
+ */
+data class ArchiveStatus(
+    val date: String = "",
+    val success: Boolean = false,
+    val eventsCount: Int = 0,
+    val msgsCount: Int = 0,
+    val error: String = "",
 )
