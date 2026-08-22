@@ -585,7 +585,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     isFromDeviceEvent -> deviceEventContext
                     isFromAiTrigger && !aiTriggerReason.isNullOrBlank() -> "[AI 主动想联系你]\n你这次醒来的目的：$aiTriggerReason\n\n$contextStr"
                     else -> contextStr
-                }, if (isFromAiTrigger) aiTriggerReason else null)
+                }, if (isFromAiTrigger) aiTriggerReason else null, promptOverride)
 
                 // user message 只放简短指令（上下文已在系统提示词中）
                 val userMessage = UIMessage(
@@ -868,7 +868,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
      * 构建系统提示词，包含记忆等内容
      * isFromDeviceEvent: 是否由激进模式设备事件触发
      */
-    private suspend fun buildSystemPrompt(assistant: Assistant, settings: Settings, idleMinutes: Int = 0, jumpThreshold: Int = 120, isFromDeviceEvent: Boolean = false, deviceEventContext: String? = null, aiTriggerReason: String? = null): String {
+    private suspend fun buildSystemPrompt(assistant: Assistant, settings: Settings, idleMinutes: Int = 0, jumpThreshold: Int = 120, isFromDeviceEvent: Boolean = false, deviceEventContext: String? = null, aiTriggerReason: String? = null, promptOverride: String? = null): String {
         return buildString {
             // 基础系统提示词
             val effectiveSystemPrompt = if (assistant.allowConversationSystemPrompt) {
@@ -912,6 +912,12 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 if (!deviceEventContext.isNullOrBlank()) {
                     appendLine()
                     appendLine(deviceEventContext)
+                }
+                // 客户端出口：自定义规则（追加在最后，不覆盖默认规则）
+                if (!promptOverride.isNullOrBlank()) {
+                    appendLine()
+                    appendLine("## 额外规则（客户端自定义）")
+                    appendLine(promptOverride)
                 }
             } else if (!aiTriggerReason.isNullOrBlank()) {
                 // AI 主动触发（trigger_proactive_message 工具）：明确唤醒目的，其余走常规主动消息规则
