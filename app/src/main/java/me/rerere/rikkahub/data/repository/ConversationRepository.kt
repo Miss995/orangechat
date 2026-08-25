@@ -228,10 +228,16 @@ class ConversationRepository(
             }
         }
 
-    suspend fun getConversationById(uuid: Uuid): Conversation? {
+    /**
+     * 获取对话。
+     *
+     * @param loadLimit 非空时只加载最近 loadLimit 条消息节点（懒加载窗口，长对话打开不卡）。
+     *                  为 null 时全量加载（默认行为，供标题生成/建议生成等需要完整历史的场景使用）。
+     */
+    suspend fun getConversationById(uuid: Uuid, loadLimit: Int? = null): Conversation? {
         val entity = conversationDAO.getConversationById(uuid.toString())
         return if (entity != null) {
-            val nodes = loadMessageNodes(entity.id)
+            val nodes = loadMessageNodes(entity.id, loadLimit)
             conversationEntityToConversation(entity, nodes)
         } else null
     }
@@ -462,7 +468,44 @@ class ConversationRepository(
         )
     }
 
-    private suspend fun loadMessageNodes(conversationId: String): List<MessageNode> {
+    /**
+     * 读取某个对话的消息节点总数（懒加载窗口需要知道窗口外历史边界）。
+     */
+    suspend fun getMessageNodeCount(conversationId: String): Int {
+        return messageNodeDAO.getNodeCountOfConversation(conversationId)
+    }
+
+    /**
+     * 读取数据库里 nodeIndex 在 [0, endIndexExclusive) 区间的历史节点（窗口外老历史）。
+     * 懒加载窗口保存时，用它们把完整对话合并回来，避免部分加载覆盖丢老消息。
+     */
+    suspend fun getMessageNodesPrefix(conversationId: String, endIndexExclusive: Int): List<MessageNode> {
+        if (endIndexExclusive <= 0) return emptyList()
+        val totalCount = messageNodeDAO.getNodeCountOfConversation(conversationId)
+        return loadMessageNodesRange(conversationId, 0, minOf(endIndexExclusive, totalCount))
+    }
+
+    /**
+     * 加载消息节点。
+     *
+     * @param limit 非空时只加载最近 limit 条（懒加载窗口：从 totalCount - limit 开始读）。
+     *              为 null 时全量加载。
+     */
+    private suspend fun loadMessageNodes(conversationId: String, limit: Int? = null): List<MessageNode> {
+        val totalCount = messageNodeDAO.getNodeCountOfConversation(conversationId)
+        val startOffset = if (limit != null) (totalCount - limit).coerceAtLeast(0) else 0
+        return loadMessageNodesRange(conversationId, startOffset, totalCount)
+    }
+
+    /**
+     * 分页读取 [startOffset, endOffsetExclusive) 区间的消息节点，保留超大行逐行重试逻辑。
+     * 循环终止完全由 offset < endOffsetExclusive 控制，不依赖"空结果"判断（防止误判提前退出）。
+     */
+    private suspend fun loadMessageNodesRange(
+        conversationId: String,
+        startOffset: Int,
+        endOffsetExclusive: Int,
+    ): List<MessageNode> {
         val favoriteNodeIds = favoriteDAO
             .getFavoriteNodeIdsOfConversation(conversationId)
             .mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }
@@ -476,16 +519,17 @@ class ConversationRepository(
             // 也可能是真的没数据，两者无法区分，是之前会误判提前退出、丢消息的根因。
             val totalCount = messageNodeDAO.getNodeCountOfConversation(conversationId)
             if (totalCount == 0) return@withTransaction nodes
+            if (startOffset >= endOffsetExclusive) return@withTransaction nodes
 
             val pageSize = 64
-            var offset = 0
-            while (offset < totalCount) {
+            var offset = startOffset
+            while (offset < endOffsetExclusive) {
                 val page = try {
                     messageNodeDAO.getNodesOfConversationPaged(conversationId, pageSize, offset)
                 } catch (e: SQLiteBlobTooBigException) {
                     Log.w(
                         TAG,
-                        "loadMessageNodes: blob too big in page, conversationId=$conversationId, " +
+                        "loadMessageNodesRange: blob too big in page, conversationId=$conversationId, " +
                             "offset=$offset, retrying row by row to isolate the bad row",
                         e
                     )
@@ -493,7 +537,7 @@ class ConversationRepository(
                     // 避免同一页里其他正常的消息被连坐丢弃
                     // （这是之前 UI 显示数 < 数据库实际数的根因）
                     val recovered = mutableListOf<MessageNodeEntity>()
-                    val pageEnd = minOf(offset + pageSize, totalCount)
+                    val pageEnd = minOf(offset + pageSize, endOffsetExclusive)
                     for (rowOffset in offset until pageEnd) {
                         try {
                             val row = messageNodeDAO.getNodesOfConversationPaged(conversationId, 1, rowOffset)
@@ -501,7 +545,7 @@ class ConversationRepository(
                         } catch (rowError: SQLiteBlobTooBigException) {
                             Log.e(
                                 TAG,
-                                "loadMessageNodes: skipping single oversized row, " +
+                                "loadMessageNodesRange: skipping single oversized row, " +
                                     "conversationId=$conversationId, offset=$rowOffset",
                                 rowError
                             )
@@ -509,13 +553,13 @@ class ConversationRepository(
                     }
                     recovered
                 } catch (e: IllegalStateException) {
-                    Log.e(TAG, "loadMessageNodes failed, conversationId=$conversationId, offset=$offset", e)
+                    Log.e(TAG, "loadMessageNodesRange failed, conversationId=$conversationId, offset=$offset", e)
                     offset += pageSize
                     continue
                 }
 
                 // 注意：不能用 page.isEmpty() 来判断是否读完——逐行重试时如果整页全是超大行，
-                // recovered 会是空的，但后面可能还有正常数据。循环终止完全由 offset < totalCount 控制。
+                // recovered 会是空的，但后面可能还有正常数据。循环终止完全由 offset < endOffsetExclusive 控制。
                 page.forEach { entity ->
                     val messages = JsonInstant.decodeFromString<List<UIMessage>>(entity.messages)
                     val nodeId = Uuid.parse(entity.id)
