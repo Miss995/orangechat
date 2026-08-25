@@ -118,6 +118,13 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
 
+/**
+ * 【懒加载窗口 2026-08-25】打开对话时只加载最近 N 条消息节点到内存。
+ * 长对话（几千条）不再全量加载，流式更新/重组只碰窗口内的少量节点 → 大窗口不卡。
+ * 显示只取最后 200 条（ChatList.WINDOW_DISPLAY_SIZE），这里多留余量给 AI 上下文取用。
+ */
+private const val CONVERSATION_LOAD_WINDOW_SIZE = 300
+
 data class ChatError(
     val id: Uuid = Uuid.random(),
     val title: String? = null,
@@ -175,6 +182,13 @@ class ChatService(
     // 统一会话管理
     private val sessions = ConcurrentHashMap<Uuid, ConversationSession>()
     private val _sessionsVersion = MutableStateFlow(0L)
+
+    /**
+     * 懒加载窗口起点：conversationId -> 窗口第一条 node 在数据库中的 nodeIndex。
+     * 打开对话时只加载最近 CONVERSATION_LOAD_WINDOW_SIZE 条，nodeIndex < 该值的窗口外历史
+     * 在保存时会被合并回完整对话，避免部分加载的会话覆盖/删除老消息。
+     */
+    private val lazyWindowFirstIndex = ConcurrentHashMap<Uuid, Int>()
 
     // 错误状态
     private val _errors = MutableStateFlow<List<ChatError>>(emptyList())
@@ -372,8 +386,12 @@ class ChatService(
     suspend fun initializeConversation(conversationId: Uuid) {
         getOrCreateSession(conversationId) // 确保 session 存在
         // 总是从数据库重新加载最新数据，确保能显示主动消息等新内容
-        val conversation = conversationRepo.getConversationById(conversationId)
+        // 【懒加载窗口】只加载最近 CONVERSATION_LOAD_WINDOW_SIZE 条，长对话打开不再全量加载
+        val conversation = conversationRepo.getConversationById(conversationId, CONVERSATION_LOAD_WINDOW_SIZE)
         if (conversation != null) {
+            // 记录懒加载窗口边界：窗口第一条 node 在数据库中的 nodeIndex（保存时合并窗口外历史用）
+            val totalCount = conversationRepo.getMessageNodeCount(conversationId.toString())
+            lazyWindowFirstIndex[conversationId] = (totalCount - conversation.messageNodes.size).coerceAtLeast(0)
             updateConversation(conversationId, conversation)
             // 只有当前选中助手与该对话的助手不一致时才写 DataStore，
             // 避免每次打开/切换对话都无条件写入 SELECT_ASSISTANT 触发 settingsFlow 全量重组
@@ -1543,14 +1561,55 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             return // 新会话且为空时不保存
         }
 
-        val updatedConversation = conversation.copy()
-        updateConversation(conversationId, updatedConversation)
+        // 【懒加载窗口保护】把窗口外历史合并回来，避免部分加载的会话覆盖/删除窗口外的老消息
+        val mergedConversation = mergeWindowHistory(conversationId, conversation)
 
+        val updatedConversation = mergedConversation.copy()
         if (!exists) {
             conversationRepo.insertConversation(updatedConversation)
         } else {
             conversationRepo.updateConversation(updatedConversation)
         }
+
+        // 更新懒加载窗口边界：窗口第一条在数据库中的位置 = 合并后总条数 - 窗口大小
+        lazyWindowFirstIndex[conversationId] =
+            (updatedConversation.messageNodes.size - CONVERSATION_LOAD_WINDOW_SIZE).coerceAtLeast(0)
+
+        // 内存态保持窗口轻量：无论调用方传的是窗口版还是全量，都只保留最近 N 条，
+        // 后续流式更新/重组只碰窗口内节点 → 长对话不再每次更新都全量遍历
+        val windowState = if (conversation.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE) {
+            conversation.copy(messageNodes = conversation.messageNodes.takeLast(CONVERSATION_LOAD_WINDOW_SIZE))
+        } else {
+            conversation
+        }
+        updateConversation(conversationId, windowState)
+    }
+
+    /**
+     * 懒加载窗口：保存前把窗口外的老历史（nodeIndex < firstIndex）从数据库读回来合并，
+     * 保证"打开时只加载最近 300 条"不会导致保存时把更早的消息当成"消失"删掉。
+     * 合并完成后窗口记录即失效（数据库已存完整版），下次保存按新窗口边界继续保护。
+     */
+    private suspend fun mergeWindowHistory(conversationId: Uuid, conversation: Conversation): Conversation {
+        val firstIndex = lazyWindowFirstIndex[conversationId] ?: return conversation
+        if (firstIndex <= 0) {
+            // 对话很短（本身就在窗口内），无需合并
+            lazyWindowFirstIndex.remove(conversationId)
+            return conversation
+        }
+        // 传入已经是完整对话（条数 >= 窗口外历史 + 窗口大小）→ 直接用，不再合并
+        if (conversation.messageNodes.size >= firstIndex + CONVERSATION_LOAD_WINDOW_SIZE) {
+            lazyWindowFirstIndex.remove(conversationId)
+            return conversation
+        }
+        val prefixNodes = conversationRepo.getMessageNodesPrefix(conversationId.toString(), firstIndex)
+        if (prefixNodes.isEmpty()) {
+            // 数据库里已经没有前缀（可能已被其他流程清理），不再保护
+            lazyWindowFirstIndex.remove(conversationId)
+            return conversation
+        }
+        // 前缀 + 窗口 = 完整对话
+        return conversation.copy(messageNodes = prefixNodes + conversation.messageNodes)
     }
 
     // ---- 翻译消息 ----
