@@ -264,18 +264,12 @@ class ConversationRepository(
     /**
      * 更新对话。
      *
-     * 之前的实现是"删掉这个对话下全部消息节点，再把全部节点重新插入"，不管这一轮实际改了几条消息。
-     * 对话历史越长，这个开销越大，而且每次保存都要付出跟历史总长度成正比的代价。
-     *
-     * 现在改成按 MessageNode.id 做精确 diff：
-     * - 新出现的 id -> 插入
-     * - 消失的 id（比如重新生成时截断历史）-> 删除
-     * - 两边都有但内容不同（用 MessageNodeEntity 的 data class 结构相等判断）-> 更新
-     * - 完全没变的 -> 跳过，不碰数据库
-     *
-     * FTS 索引也同步降级为只处理这批发生变化的 node，而不是整个对话重建。
+     * @param windowFirstIndex 懒加载窗口保护：非空时视为"窗口版保存"——
+     *                         窗口内 node 从 windowFirstIndex 开始编号，
+     *                         且 nodeIndex < windowFirstIndex 的数据库记录（窗口外历史）受保护不被删除。
+     *                         为 null 时保持原行为（全量 diff，消失即删除）。
      */
-    suspend fun updateConversation(conversation: Conversation) {
+    suspend fun updateConversation(conversation: Conversation, windowFirstIndex: Int? = null) {
         try {
             database.withTransaction {
                 conversationDAO.update(
@@ -283,13 +277,21 @@ class ConversationRepository(
                 )
 
                 // 只查 id，不碰 messages 列，避免因个别行 blob 过大导致这里直接抛异常
-                val existingIds = messageNodeDAO.getNodeIdsOfConversation(conversation.id.toString()).toSet()
+                val existingIds = messageNodeDAO.getNodeIdsOfConversation(conversation.id.toString())
+                // existingIds 按 node_index ASC 排序 → 前 windowFirstIndex 个是窗口外历史（受保护）
+                val protectedCount = windowFirstIndex?.coerceAtLeast(0) ?: 0
+                val protectedIds = if (protectedCount > 0) {
+                    existingIds.take(protectedCount).toSet()
+                } else {
+                    emptySet()
+                }
 
+                val baseIndex = windowFirstIndex ?: 0
                 val newEntities = conversation.messageNodes.mapIndexed { index, node ->
                     MessageNodeEntity(
                         id = node.id.toString(),
                         conversationId = conversation.id.toString(),
-                        nodeIndex = index,
+                        nodeIndex = baseIndex + index,
                         messages = JsonInstant.encodeToString(node.messages),
                         selectIndex = node.selectIndex
                     )
@@ -320,7 +322,8 @@ class ConversationRepository(
                 val toUpsert = newEntities.filter { newEntity ->
                     existingById[newEntity.id] != newEntity
                 }
-                val toDeleteIds = existingIds - newById.keys
+                // 窗口版保存时，窗口外历史（protectedIds）即使不在传入列表中也不删除
+                val toDeleteIds = (existingIds - newById.keys) - protectedIds
 
                 if (toDeleteIds.isNotEmpty()) {
                     messageNodeDAO.deleteByIds(toDeleteIds.toList())
