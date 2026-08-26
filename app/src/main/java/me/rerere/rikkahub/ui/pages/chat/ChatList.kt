@@ -288,13 +288,14 @@ private fun ChatListNormal(
                     }
                 }
             }
-            // 生成中（loading）保持跟随：流式更新时平滑滚到底（animateScrollToItem 代替瞬移，避免画面跳变）
+            // 生成中（loading）保持跟随：流式更新时滚到底（瞬移。
+            // 2026-08-26 回滚：animateScrollToItem 会挂起 collect 导致列表被钉死不能滑动）
             LaunchedEffect(state) {
                 snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect { visibleItemsInfo ->
                     if (!state.isScrollInProgress && loadingState) {
                         if (visibleItemsInfo.isAtBottom()) {
                             val totalItems = state.layoutInfo.totalItemsCount
-                            state.animateScrollToItem(totalItems + 10)
+                            state.requestScrollToItem(totalItems + 10)
                         }
                     }
                 }
