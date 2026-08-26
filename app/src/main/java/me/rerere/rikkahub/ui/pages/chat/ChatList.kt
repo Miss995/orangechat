@@ -273,6 +273,20 @@ private fun ChatListNormal(
     ) {
         // 自动滚动到底部
         if (settings.displaySetting.enableAutoScroll) {
+            // 【发消息秒显 2026-08-26 第二版】消息数变化（新消息插入）时立即跟随滚动：
+            // 原逻辑只在 visibleItemsInfo 变化时检查（视口不动时 snapshotFlow 不触发），
+            // 导致 USER 消息插入后要等 AI 占位出现列表才滚动 → 宝的消息几秒后才"冒出来"。
+            // 现在消息插入（或删除）时立刻检查视口位置，原本在底部附近就直接滚到底。
+            LaunchedEffect(conversation.messageNodes.size) {
+                if (!state.isScrollInProgress) {
+                    val lastIndex = conversation.messageNodes.lastIndex
+                    val lastVisible = state.layoutInfo.visibleItemsInfo.lastOrNull()
+                    if (lastVisible != null && lastVisible.index >= lastIndex - 3) {
+                        state.requestScrollToItem(lastIndex + 10)
+                    }
+                }
+            }
+            // 生成中（loading）保持跟随：流式更新时滚到底
             LaunchedEffect(state) {
                 snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect { visibleItemsInfo ->
                     // println("is bottom = ${visibleItemsInfo.isAtBottom()}, scroll = ${state.isScrollInProgress}, loading = $loading")
