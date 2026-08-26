@@ -274,28 +274,27 @@ private fun ChatListNormal(
     ) {
         // 自动滚动到底部
         if (settings.displaySetting.enableAutoScroll) {
-            // 【发消息秒显 2026-08-26 第二版】消息数变化（新消息插入）时立即跟随滚动：
-            // 原逻辑只在 visibleItemsInfo 变化时检查（视口不动时 snapshotFlow 不触发），
-            // 导致 USER 消息插入后要等 AI 占位出现列表才滚动 → 宝的消息几秒后才"冒出来"。
-            // 现在消息插入（或删除）时立刻检查视口位置，原本在底部附近就直接滚到底。
+            // 【发消息秒显 2026-08-26 第三版】消息数变化（新消息插入）时立即跟随滚动：
+            // 原逻辑用 conversation.messageNodes.lastIndex（全量 300）判断，但 LazyColumn
+            // 只显示窗口内 200 条（index ≤199），条件永不成立 → USER 消息插入后不滚动。
+            // 改用 state.layoutInfo.totalItemsCount（列表真实 item 数）。
             LaunchedEffect(conversation.messageNodes.size) {
                 if (!state.isScrollInProgress) {
-                    val lastIndex = conversation.messageNodes.lastIndex
+                    val totalItems = state.layoutInfo.totalItemsCount
                     val lastVisible = state.layoutInfo.visibleItemsInfo.lastOrNull()
-                    if (lastVisible != null && lastVisible.index >= lastIndex - 3) {
-                        AppLogBuffer.log(TAG, "scrollToItem: size=${conversation.messageNodes.size} lastVisibleIdx=${lastVisible.index} -> ${lastIndex + 10}")
-                        state.requestScrollToItem(lastIndex + 10)
+                    if (lastVisible != null && lastVisible.index >= totalItems - 3) {
+                        AppLogBuffer.log(TAG, "scrollToItem: size=${conversation.messageNodes.size} lastVisibleIdx=${lastVisible.index} -> ${totalItems + 10}")
+                        state.requestScrollToItem(totalItems + 10)
                     }
                 }
             }
-            // 生成中（loading）保持跟随：流式更新时滚到底
+            // 生成中（loading）保持跟随：流式更新时平滑滚到底（animateScrollToItem 代替瞬移，避免画面跳变）
             LaunchedEffect(state) {
                 snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect { visibleItemsInfo ->
-                    // println("is bottom = ${visibleItemsInfo.isAtBottom()}, scroll = ${state.isScrollInProgress}, loading = $loading")
                     if (!state.isScrollInProgress && loadingState) {
                         if (visibleItemsInfo.isAtBottom()) {
-                            state.requestScrollToItem(conversationUpdated.messageNodes.lastIndex + 10)
-                            // Log.i(TAG, "ChatList: scroll to ${conversationUpdated.messageNodes.lastIndex}")
+                            val totalItems = state.layoutInfo.totalItemsCount
+                            state.animateScrollToItem(totalItems + 10)
                         }
                     }
                 }
