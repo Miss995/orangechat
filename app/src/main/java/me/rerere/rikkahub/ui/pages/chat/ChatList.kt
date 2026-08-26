@@ -275,7 +275,7 @@ private fun ChatListNormal(
         if (settings.displaySetting.enableAutoScroll) {
             LaunchedEffect(state) {
                 snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect { visibleItemsInfo ->
-                    // println("is bottom = ${visibleItemsInfo.isAtBottom()}, scroll = ${state.isScrollInProgress}, can_scroll = ${state.canScrollForward}, loading = $loading")
+                    // println("is bottom = ${visibleItemsInfo.isAtBottom()}, scroll = ${state.isScrollInProgress}, loading = $loading")
                     if (!state.isScrollInProgress && loadingState) {
                         if (visibleItemsInfo.isAtBottom()) {
                             state.requestScrollToItem(conversationUpdated.messageNodes.lastIndex + 10)
@@ -341,7 +341,9 @@ private fun ChatListNormal(
                             node = node,
                             model = node.currentMessage.modelId?.let { settings.findModelById(it) },
                             assistant = settings.getAssistantById(conversation.assistantId),
-                            loading = loading && index == displayNodes.lastIndex,
+                            // 【发消息秒显 2026-08-26】loading 只对 AI 消息生效：USER 消息发送瞬间就正常显示，
+                            // 不用等 AI 占位气泡出现（占位要等记忆注入/门控等前置逻辑，2-10 秒）才"转正"。
+                            loading = loading && index == displayNodes.lastIndex && node.currentMessage.role == MessageRole.ASSISTANT,
                             onRegenerate = {
                                 onRegenerate(node.currentMessage)
                             },
