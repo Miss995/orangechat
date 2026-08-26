@@ -128,11 +128,10 @@ private const val TAG = "ChatService"
 private const val CONVERSATION_LOAD_WINDOW_SIZE = 300
 
 /**
- * 【缓存对齐 2026-08-26】窗口裁剪组大小：攒够一组才裁一组（窗口大小 300~304 浮动），
- * 配合 limitContext 按消息总量对齐 → 裁剪前后起点指向同一条消息，前缀稳定缓存命中率高。
- * 注意：需与 assistant.contextGroupSize（宝设置的"多少条一组"）保持一致（默认 4）。
+ * 【缓存对齐 2026-08-26】窗口裁剪组大小兜底值：正常取对话关联 assistant 的 contextGroupSize
+ * （设置里"多少条一组"，与 limitContext 组对齐同步）；读不到时才用这个兜底。
  */
-private const val CONVERSATION_WINDOW_GROUP_SIZE = 4
+private const val DEFAULT_WINDOW_GROUP_SIZE = 4
 
 data class ChatError(
     val id: Uuid = Uuid.random(),
@@ -1583,11 +1582,19 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             return // 新会话且为空时不保存
         }
 
+        // 【缓存对齐 2026-08-26】窗口裁剪组大小 = 对话关联 assistant 的 contextGroupSize（设置里"多少条一组"），
+        // 与 limitContext 组对齐保持同步；读不到/异常回退默认 4
+        val windowGroupSize = runCatching {
+            settingsStore.settingsFlow.first().assistants
+                .firstOrNull { it.id == conversation.assistantId }?.contextGroupSize
+                ?: DEFAULT_WINDOW_GROUP_SIZE
+        }.getOrDefault(DEFAULT_WINDOW_GROUP_SIZE).coerceAtLeast(1)
+
         // 【懒加载窗口】窗口版保存：只写窗口内变化，窗口外历史受保护（不读全量、不删除）。
         // 判定：存在窗口边界 且 传入条数 < 窗口外+窗口大小 → 窗口版（nodeIndex 从 firstIndex 偏移，不删窗口外）
         val windowFirstIndex = lazyWindowFirstIndex[conversationId]
         val isWindowState = windowFirstIndex != null &&
-            conversation.messageNodes.size < windowFirstIndex + CONVERSATION_LOAD_WINDOW_SIZE + CONVERSATION_WINDOW_GROUP_SIZE
+            conversation.messageNodes.size < windowFirstIndex + CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize
         val effectiveFirstIndex = if (isWindowState) windowFirstIndex else null
 
         val updatedConversation = conversation.copy()
@@ -1600,11 +1607,14 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 更新懒加载窗口边界
         if (isWindowState) {
             // 窗口版：内存窗口前移了 dropped 条（takeLast 丢弃的），窗口起点跟着前移
-            // 【缓存对齐 2026-08-26】攒一组裁一组：overflow≤4 不裁（窗口 300~304 浮动），
-            // overflow>4 只裁 4 的倍数条 → 配合 limitContext 总量对齐，裁剪前后起点同一条消息
+            // 【缓存对齐 2026-08-26】攒一组裁一组：overflow≤groupSize 不裁（窗口 300~300+groupSize 浮动），
+            // overflow>groupSize 只裁 groupSize 的倍数条 → 配合 limitContext 总量对齐，裁剪前后起点同一条消息；
+            // groupSize≤1 = 按条裁剪（旧行为）
             val overflow = (conversation.messageNodes.size - CONVERSATION_LOAD_WINDOW_SIZE).coerceAtLeast(0)
-            val dropped = if (overflow > CONVERSATION_WINDOW_GROUP_SIZE) {
-                overflow - (overflow % CONVERSATION_WINDOW_GROUP_SIZE)
+            val dropped = if (windowGroupSize <= 1) {
+                overflow
+            } else if (overflow > windowGroupSize) {
+                overflow - (overflow % windowGroupSize)
             } else {
                 0
             }
@@ -1617,10 +1627,16 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
 
         // 内存态保持窗口轻量：无论调用方传的是窗口版还是全量，都只保留最近 N 条，
         // 后续流式更新/重组只碰窗口内节点 → 长对话不再每次更新都全量遍历
-        // 【缓存对齐 2026-08-26】攒一组裁一组：只有 overflow>4 才裁，且裁 4 的倍数条（窗口 300~304 浮动）
-        val windowState = if (conversation.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE + CONVERSATION_WINDOW_GROUP_SIZE) {
+        // 【缓存对齐 2026-08-26】攒一组裁一组：只有 overflow>groupSize 才裁，且裁 groupSize 的倍数条（窗口 300~300+groupSize 浮动）
+        val windowState = if (windowGroupSize <= 1) {
+            if (conversation.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE) {
+                conversation.copy(messageNodes = conversation.messageNodes.takeLast(CONVERSATION_LOAD_WINDOW_SIZE))
+            } else {
+                conversation
+            }
+        } else if (conversation.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize) {
             val overflow = conversation.messageNodes.size - CONVERSATION_LOAD_WINDOW_SIZE
-            conversation.copy(messageNodes = conversation.messageNodes.takeLast(CONVERSATION_LOAD_WINDOW_SIZE + (overflow % CONVERSATION_WINDOW_GROUP_SIZE)))
+            conversation.copy(messageNodes = conversation.messageNodes.takeLast(CONVERSATION_LOAD_WINDOW_SIZE + (overflow % windowGroupSize)))
         } else {
             conversation
         }
