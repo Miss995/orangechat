@@ -101,6 +101,7 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.message.ChatMessage
 import me.rerere.rikkahub.ui.components.ui.ErrorCardsDisplay
@@ -282,6 +283,7 @@ private fun ChatListNormal(
                     val lastIndex = conversation.messageNodes.lastIndex
                     val lastVisible = state.layoutInfo.visibleItemsInfo.lastOrNull()
                     if (lastVisible != null && lastVisible.index >= lastIndex - 3) {
+                        AppLogBuffer.log(TAG, "scrollToItem: size=${conversation.messageNodes.size} lastVisibleIdx=${lastVisible.index} -> ${lastIndex + 10}")
                         state.requestScrollToItem(lastIndex + 10)
                     }
                 }
@@ -313,7 +315,9 @@ private fun ChatListNormal(
         }
 
         // Filter out [SKIP] messages and proactive message context markers
+        // 【诊断 2026-08-26】记录全量 filter 耗时（5600 条 toText 每次消息变化都重跑，在主线程组合阶段）
         val displayNodes = remember(conversation.messageNodes) {
+            val t0 = System.currentTimeMillis()
             val filtered = conversation.messageNodes.filter { node ->
                 val msg = node.currentMessage
                 val text = msg.toText().trim()
@@ -321,7 +325,9 @@ private fun ChatListNormal(
                 !(msg.role == MessageRole.USER && text.contains("[主动消息上下文]"))
             }
             // 【转轴窗口】只显示最近 N 条，旧消息从窗口消失（数据仍完整保留，全量在 Supabase）
-            if (filtered.size > WINDOW_DISPLAY_SIZE) filtered.takeLast(WINDOW_DISPLAY_SIZE) else filtered
+            val result = if (filtered.size > WINDOW_DISPLAY_SIZE) filtered.takeLast(WINDOW_DISPLAY_SIZE) else filtered
+            AppLogBuffer.log(TAG, "displayNodes: total=${conversation.messageNodes.size} shown=${result.size} took=${System.currentTimeMillis() - t0}ms")
+            result
         }
 
         LazyColumn(
