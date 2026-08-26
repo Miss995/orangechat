@@ -54,6 +54,7 @@ import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
 import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
 import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.tools.SystemTools
@@ -1089,6 +1090,12 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
         conversationId: Uuid,
         aiMessage: UIMessage
     ) {
+        AppLogBuffer.log(
+            TAG,
+            "updateOrAppend msgId=${aiMessage.id} parts=${aiMessage.parts.size} " +
+                "text=${aiMessage.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }} " +
+                "reasoning=${aiMessage.parts.filterIsInstance<UIMessagePart.Reasoning>().sumOf { it.reasoning.length }}"
+        )
         val session = chatService.getOrCreateSession(conversationId)
         session.saveMutex.withLock {
             val conv = chatService.getConversationFlow(conversationId).value
@@ -1182,6 +1189,9 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
             messages = mergeAdjacentSameRoleMessages(messages).toMutableList()
 
             // 流式调用 AI（替代非流式 generateText，兼容 thinking 模型）
+            // 【主动消息渲染 2026-08-26】强制非流式渲染（宝拍板）：流式期间不更新 session/UI，
+            // 等完整输出（含 finishedAt）再一次性写入 —— 修"思考链只显示十几个字/思考计时器空转"（memory 94）。
+            // 日志：流式结束时打 parts/reasoning 长度，供 read_app_logs 排查数据是否完整。
             var streamMessages = messages.toList()
             providerImpl.streamText(
                 providerSetting = providerSetting,
@@ -1189,13 +1199,14 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 params = params
             ).collect { chunk ->
                 streamMessages = streamMessages.handleMessageChunk(chunk = chunk, model = model)
-
-                // 实时更新 session 状态，让打开的聊天界面能看到消息生成
-                val currentAiMessage = streamMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
-                if (currentAiMessage != null) {
-                    // 用 id 匹配就地更新（保留 node id，避免思考链闪烁 / 覆盖上一条 assistant）
-                    updateOrAppendAiMessage(conversationId, currentAiMessage)
-                }
+            }
+            // 流式结束：记录本次流式的最终状态（数据是否完整、reasoning 是否已 finish）
+            val streamedAi = streamMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+            if (streamedAi != null) {
+                val sTextLen = streamedAi.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
+                val sReasoningLen = streamedAi.parts.filterIsInstance<UIMessagePart.Reasoning>().sumOf { it.reasoning.length }
+                val sFinished = streamedAi.parts.filterIsInstance<UIMessagePart.Reasoning>().all { it.finishedAt != null }
+                AppLogBuffer.log(TAG, "proactiveStreamDone msgId=${streamedAi.id} parts=${streamedAi.parts.size} text=$sTextLen reasoning=$sReasoningLen reasoningFinished=$sFinished")
             }
 
             // 流式结束，更新 messages
@@ -1241,6 +1252,12 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 messages[messages.lastIndex] = finalMessage
                 // 最终更新 session 状态（用 id 匹配就地更新）
                 updateOrAppendAiMessage(conversationId, finalMessage)
+                AppLogBuffer.log(
+                    TAG,
+                    "proactiveFinal noTool parts=${finalMessage.parts.size} " +
+                        "reasoning=${finalMessage.parts.filterIsInstance<UIMessagePart.Reasoning>().sumOf { it.reasoning.length }} " +
+                        "finishedAtSet=true msgId=${finalMessage.id}"
+                )
                 break
             }
 
@@ -1299,9 +1316,23 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 }
             }
             val updatedMessage = processedMessage.copy(parts = updatedParts)
-            messages[messages.lastIndex] = updatedMessage
+            // 工具步骤结束也补 Reasoning.finishedAt（防止"思考中"计时器挂起空转）
+            val toolStepFinal = updatedMessage.copy(
+                parts = updatedMessage.parts.map { part ->
+                    if (part is UIMessagePart.Reasoning && part.finishedAt == null) {
+                        part.copy(finishedAt = kotlin.time.Clock.System.now())
+                    } else {
+                        part
+                    }
+                }
+            )
+            messages[messages.lastIndex] = toolStepFinal
             // 更新 session 状态（带工具结果的消息，用 id 匹配就地更新）
-            updateOrAppendAiMessage(conversationId, updatedMessage)
+            updateOrAppendAiMessage(conversationId, toolStepFinal)
+            AppLogBuffer.log(
+                TAG,
+                "proactiveToolStepDone parts=${toolStepFinal.parts.size} tools=${toolStepFinal.getTools().size} msgId=${toolStepFinal.id}"
+            )
         }
 
         return Triple(messages, hasToolCalls, hasJumpFlag)

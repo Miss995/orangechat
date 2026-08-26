@@ -230,6 +230,15 @@
 - 发消息秒显 v2（消息插入时立即滚动跟随：LaunchedEffect(messageNodes.size) 视口在底部附近就滚到底；原逻辑只在 visibleItemsInfo 变化时检查，视口不动不触发→要等 AI 占位出现才滚，延迟几秒）——commit efb2535——真相=滚动跟随延迟
 - 备注：git 直连 GitHub 443 不稳定（clone/ls-remote 通、push/fetch 超时），推代码优先 MCP push_files；本次 git push 成功（网络恢复）
 
+### commit（本次待推）— 主动发消息强制非流式渲染 + 链路日志（宝拍板，修 memory 94）
+- 文件：app/.../data/service/ProactiveMessageService.kt
+- 改动：
+  1. **强制非流式渲染**：流式 collect 期间不再每 chunk updateOrAppendAiMessage（不再实时更新 session/UI），等完整输出（含 Reasoning.finishedAt）再一次性写入 —— 修"思考链只显示十几个字 + 思考计时器空转 1027 秒"（memory 94）
+  2. **工具步骤结束也补 Reasoning.finishedAt**（原只有无工具分支设置，工具分支会挂起"思考中"计时器）
+  3. **链路日志（AppLogBuffer）**：updateOrAppend / proactiveStreamDone（parts/text/reasoning 长度 + reasoningFinished）/ proactiveFinal / proactiveToolStepDone —— 下次复现 read_app_logs 一锤定音（数据缺 vs 渲染缺）
+- 为啥：宝 8-25 日志实锤"reasoning=5619 完整但 UI 展开只有十几个字"（memory 94）；宝 8-26 拍板"强制非流式渲染"（修法方向①）+ 加日志双保险（万一还有其他原因，日志可查）
+- 状态：⏳ 推 main → 宝构建 APK 验证（激进模式/主动消息触发后 UI 显示完整思考链 + read_app_logs 看 proactiveStreamDone reasoning 长度）
+
 ## 待办（代码相关）
 - 查 OB 来源标记错位 bug（ob_sync_chat / V3 的 source_ranges 或来源拼写错位）
 - 工具调取内容存记忆库（愿望清单 id68-⑥ → 工具账本 tool_actions 方案已定 2026-08-18）
