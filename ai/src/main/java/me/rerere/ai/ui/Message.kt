@@ -280,7 +280,7 @@ fun List<UIMessagePart>.isEmptyUIMessage(): Boolean {
  * 裁剪上下文消息列表
  *
  * @param size 保留的消息条数（<=0 表示不裁剪）
- * @param groupSize 按组分批裁剪：以 groupSize 条消息为最小丢弃单位，起点向前对齐到组边界。
+ * @param groupSize 按组分批裁剪：以 groupSize 条消息为最小丢弃单位，起点按【消息总量】对齐。
  *        这样新增消息不足一整组时前缀保持不变，有利于 API 缓存命中（如 DeepSeek 缓存）。
  *        0 或 1 表示按条裁剪（旧行为）。
  */
@@ -290,11 +290,14 @@ fun List<UIMessage>.limitContext(size: Int, groupSize: Int = 0): List<UIMessage>
     val startIndex = this.size - size
     var adjustedStartIndex = startIndex
 
-    // 按组裁剪（缓存优化）：起点向前对齐到最近的组边界（向下取整到 groupSize 的倍数）。
-    // 例：size=20, groupSize=4, 消息 91 条 -> startIndex=71 -> 对齐到 68（保留 68..91 = 6 组）。
-    // 新增 1~4 条时起点不变（前缀稳定），第 5 条起推掉最旧一组。
+    // 按组裁剪（缓存优化）：起点按【消息总量】对齐（宝 2026-08-26 方案）。
+    // 旧实现按起点对齐 (startIndex/groupSize)*groupSize：跳变间隔取决于 (N-size) 的余数
+    // （0~3 条都可能触发推组）→ 前缀断、缓存跌。
+    // 新实现按总量对齐：起点 = (N-size) - (N%groupSize)，跳变间隔恒等于 groupSize 条，
+    // 新增不足一组时起点不动 → 前缀稳定、缓存命中率高。
+    // 例：size=30, groupSize=4, N=300 -> 起点 270；N=301/302/303 -> 仍 270；N=304 -> 274（推掉最旧一组）。
     if (groupSize > 1) {
-        adjustedStartIndex = (startIndex / groupSize) * groupSize
+        adjustedStartIndex = startIndex - (this.size % groupSize)
     }
 
     // 循环往前查找，直到满足所有依赖条件
