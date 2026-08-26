@@ -249,3 +249,4 @@
 - 发消息秒显·二次调整修复（宝反馈：消息第一次显示位置不准→AI 占位出现又滚一次）：滚动前 withFrameNanos 等一帧让新消息完成布局（totalItemsCount 更新）再滚，第一次就滚到底
 - 缓存命中·窗口裁剪对齐（宝 2026-08-26 洞察"数字要对齐信息"）：saveConversation 窗口裁剪改"攒一组裁一组"——overflow≤4 不裁（窗口 300~304 浮动），>4 只裁 4 的倍数条；配合 limitContext 总量对齐 → 裁剪前后起点指向同一条消息，前缀内容稳定（不是数字稳定）
 - 缓存命中·窗口裁剪组大小同步（宝问"组和组对上了吗"）：窗口裁剪组大小从写死 4 改为读对话关联 assistant 的 contextGroupSize（设置里"多少条一组"，与 limitContext 组对齐同源同步）；读不到回退默认 4；groupSize≤1 = 按条裁剪旧行为
+- 显示bug·二次调整修复（宝 2026-08-26 "改了好多次，这次要确定"）：日志实锤滚动在插入后 3.5s 才发生→根因=USER 插入时 isScrollInProgress=true 被跳过滚动，等 AI 占位插入才滚=二次调整；修法=最后一条是 USER（发送消息）时无视滚动中状态直接滚到底+scrollCheck 诊断日志（userSend/scrollInProgress/atBottom）双保险

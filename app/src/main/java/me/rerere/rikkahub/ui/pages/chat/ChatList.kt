@@ -280,16 +280,20 @@ private fun ChatListNormal(
             // 只显示窗口内 200 条（index ≤199），条件永不成立 → USER 消息插入后不滚动。
             // 改用 state.layoutInfo.totalItemsCount（列表真实 item 数）。
             LaunchedEffect(conversation.messageNodes.size) {
-                if (!state.isScrollInProgress) {
-                    // 【2026-08-26 二次调整修复】等一帧让新消息完成布局（totalItemsCount 更新）再滚，
-                    // 避免滚到旧底部（位置不准→AI 占位出现时又滚一次=视觉上的二次调整）
-                    withFrameNanos { }
-                    val totalItems = state.layoutInfo.totalItemsCount
-                    val lastVisible = state.layoutInfo.visibleItemsInfo.lastOrNull()
-                    if (lastVisible != null && lastVisible.index >= totalItems - 3) {
-                        AppLogBuffer.log(TAG, "scrollToItem: size=${conversation.messageNodes.size} lastVisibleIdx=${lastVisible.index} -> ${totalItems + 10}")
-                        state.requestScrollToItem(totalItems + 10)
-                    }
+                // 【2026-08-26 二次调整修复】等一帧让新消息完成布局（totalItemsCount 更新）再滚，
+                // 避免滚到旧底部（位置不准→AI 占位出现时又滚一次=视觉上的二次调整）
+                withFrameNanos { }
+                val totalItems = state.layoutInfo.totalItemsCount
+                val lastVisible = state.layoutInfo.visibleItemsInfo.lastOrNull()
+                // 【2026-08-26 显示bug修复】发送消息（最后一条=USER）= 用户主动要看底部 →
+                // 无视滚动中状态直接滚到底（isScrollInProgress 挡掉会等 AI 占位插入才滚=二次调整）；
+                // 翻历史时视口不在底部（atBottom=false）自然不滚；其他场景（AI 插入等）仍受滚动中保护
+                val userSend = conversation.messageNodes.lastOrNull()?.currentMessage?.role == MessageRole.USER
+                val atBottom = lastVisible != null && lastVisible.index >= totalItems - 3
+                AppLogBuffer.log(TAG, "scrollCheck: userSend=$userSend scrollInProgress=${state.isScrollInProgress} atBottom=$atBottom lastVisibleIdx=${lastVisible?.index} total=$totalItems")
+                if (userSend || (atBottom && !state.isScrollInProgress)) {
+                    AppLogBuffer.log(TAG, "scrollToItem: size=${conversation.messageNodes.size} lastVisibleIdx=${lastVisible?.index} -> ${totalItems + 10}")
+                    state.requestScrollToItem(totalItems + 10)
                 }
             }
             // 生成中（loading）保持跟随：流式更新时滚到底（瞬移。
