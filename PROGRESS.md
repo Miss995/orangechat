@@ -225,6 +225,10 @@
 - 虚词表扩充（速速/快快/赶紧/马上/立刻/刚才/反正/突然…+语气+称呼）——commit 08b6e387
 - 召回升级·向量优先 + AI 拆词兜底（QueryKeywordExtractor 调 SiliconFlow Qwen2.5-7B-Instruct 拆 2-5 关键词）——commit f894b9f3 / 4d5df6ab
 
+## 2026-08-26
+- 发消息秒显（USER 消息不吃 loading 状态，发送瞬间正常显示，不用等 AI 占位气泡——占位要等记忆注入/门控等前置逻辑 2-10s 才创建）——commit 7174b9d（MCP 推；git 直连 GitHub 网络抖，MCP 通道稳）
+- 备注：git 直连 GitHub 443 不稳定（clone/ls-remote 通、push/fetch 超时），推代码优先 MCP push_files
+
 ## 待办（代码相关）
 - 查 OB 来源标记错位 bug（ob_sync_chat / V3 的 source_ranges 或来源拼写错位）
 - 工具调取内容存记忆库（愿望清单 id68-⑥ → 工具账本 tool_actions 方案已定 2026-08-18）
