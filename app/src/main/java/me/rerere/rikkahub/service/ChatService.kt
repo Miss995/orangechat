@@ -21,6 +21,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -439,22 +440,24 @@ class ChatService(
 
                 // 读取最新状态 -> 追加用户消息 -> 落库，整体加锁。
                 // 防止跟同一时刻可能在跑的标题生成/建议生成/语音通话挂断反馈互相覆盖对方刚写入的消息。
-                val (assistant, processedContent) = session.saveMutex.withLock {
-                    val t0 = System.currentTimeMillis()
-                    val latestConversation = session.state.value
-                    val assistant = settings.getAssistantById(latestConversation.assistantId)
-                        ?: settings.getCurrentAssistant()
-                    val processedContent = preprocessUserInputParts(content, assistant)
+                val (assistant, processedContent) = withContext(Dispatchers.IO) {
+                    session.saveMutex.withLock {
+                        val t0 = System.currentTimeMillis()
+                        val latestConversation = session.state.value
+                        val assistant = settings.getAssistantById(latestConversation.assistantId)
+                            ?: settings.getCurrentAssistant()
+                        val processedContent = preprocessUserInputParts(content, assistant)
 
-                    val newConversation = latestConversation.copy(
-                        messageNodes = latestConversation.messageNodes + UIMessage(
-                            role = MessageRole.USER,
-                            parts = processedContent,
-                        ).toMessageNode(),
-                    )
-                    saveConversation(conversationId, newConversation)
-                    AppLogBuffer.log(TAG, "sendMessage: in-lock insert+save took=${System.currentTimeMillis() - t0}ms (size=${newConversation.messageNodes.size})")
-                    assistant to processedContent
+                        val newConversation = latestConversation.copy(
+                            messageNodes = latestConversation.messageNodes + UIMessage(
+                                role = MessageRole.USER,
+                                parts = processedContent,
+                            ).toMessageNode(),
+                        )
+                        saveConversation(conversationId, newConversation)
+                        AppLogBuffer.log(TAG, "sendMessage: in-lock insert+save took=${System.currentTimeMillis() - t0}ms (size=${newConversation.messageNodes.size})")
+                        assistant to processedContent
+                    }
                 }
                 AppLogBuffer.log(TAG, "sendMessage: lock released at ${System.currentTimeMillis() - tSend}ms")
 
