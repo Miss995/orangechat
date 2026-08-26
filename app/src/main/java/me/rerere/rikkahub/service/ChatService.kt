@@ -127,6 +127,13 @@ private const val TAG = "ChatService"
  */
 private const val CONVERSATION_LOAD_WINDOW_SIZE = 300
 
+/**
+ * 【缓存对齐 2026-08-26】窗口裁剪组大小：攒够一组才裁一组（窗口大小 300~304 浮动），
+ * 配合 limitContext 按消息总量对齐 → 裁剪前后起点指向同一条消息，前缀稳定缓存命中率高。
+ * 注意：需与 assistant.contextGroupSize（宝设置的"多少条一组"）保持一致（默认 4）。
+ */
+private const val CONVERSATION_WINDOW_GROUP_SIZE = 4
+
 data class ChatError(
     val id: Uuid = Uuid.random(),
     val title: String? = null,
@@ -1580,7 +1587,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 判定：存在窗口边界 且 传入条数 < 窗口外+窗口大小 → 窗口版（nodeIndex 从 firstIndex 偏移，不删窗口外）
         val windowFirstIndex = lazyWindowFirstIndex[conversationId]
         val isWindowState = windowFirstIndex != null &&
-            conversation.messageNodes.size < windowFirstIndex + CONVERSATION_LOAD_WINDOW_SIZE
+            conversation.messageNodes.size < windowFirstIndex + CONVERSATION_LOAD_WINDOW_SIZE + CONVERSATION_WINDOW_GROUP_SIZE
         val effectiveFirstIndex = if (isWindowState) windowFirstIndex else null
 
         val updatedConversation = conversation.copy()
@@ -1593,7 +1600,14 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 更新懒加载窗口边界
         if (isWindowState) {
             // 窗口版：内存窗口前移了 dropped 条（takeLast 丢弃的），窗口起点跟着前移
-            val dropped = (conversation.messageNodes.size - CONVERSATION_LOAD_WINDOW_SIZE).coerceAtLeast(0)
+            // 【缓存对齐 2026-08-26】攒一组裁一组：overflow≤4 不裁（窗口 300~304 浮动），
+            // overflow>4 只裁 4 的倍数条 → 配合 limitContext 总量对齐，裁剪前后起点同一条消息
+            val overflow = (conversation.messageNodes.size - CONVERSATION_LOAD_WINDOW_SIZE).coerceAtLeast(0)
+            val dropped = if (overflow > CONVERSATION_WINDOW_GROUP_SIZE) {
+                overflow - (overflow % CONVERSATION_WINDOW_GROUP_SIZE)
+            } else {
+                0
+            }
             lazyWindowFirstIndex[conversationId] = (windowFirstIndex ?: 0) + dropped
         } else {
             // 全量版/新对话：窗口起点 = 总条数 - 窗口大小
@@ -1603,8 +1617,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
 
         // 内存态保持窗口轻量：无论调用方传的是窗口版还是全量，都只保留最近 N 条，
         // 后续流式更新/重组只碰窗口内节点 → 长对话不再每次更新都全量遍历
-        val windowState = if (conversation.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE) {
-            conversation.copy(messageNodes = conversation.messageNodes.takeLast(CONVERSATION_LOAD_WINDOW_SIZE))
+        // 【缓存对齐 2026-08-26】攒一组裁一组：只有 overflow>4 才裁，且裁 4 的倍数条（窗口 300~304 浮动）
+        val windowState = if (conversation.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE + CONVERSATION_WINDOW_GROUP_SIZE) {
+            val overflow = conversation.messageNodes.size - CONVERSATION_LOAD_WINDOW_SIZE
+            conversation.copy(messageNodes = conversation.messageNodes.takeLast(CONVERSATION_LOAD_WINDOW_SIZE + (overflow % CONVERSATION_WINDOW_GROUP_SIZE)))
         } else {
             conversation
         }
