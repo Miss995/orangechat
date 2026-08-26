@@ -371,7 +371,10 @@ private fun ChatListNormal(
                             assistant = settings.getAssistantById(conversation.assistantId),
                             // 【发消息秒显 2026-08-26】loading 只对 AI 消息生效：USER 消息发送瞬间就正常显示，
                             // 不用等 AI 占位气泡出现（占位要等记忆注入/门控等前置逻辑，2-10 秒）才"转正"。
-                            loading = loading && index == displayNodes.lastIndex && node.currentMessage.role == MessageRole.ASSISTANT,
+                            // 【主动消息渲染 2026-08-26】再加 finishedAt 兜底：主动消息写入时消息级 finishedAt 已设置，
+                            // 即使 loadingJob 因故没清（job 卡住），消息自身已完成 → 按完成渲染（Markdown），不停在纯文本。
+                            loading = loading && index == displayNodes.lastIndex && node.currentMessage.role == MessageRole.ASSISTANT &&
+                                node.currentMessage.finishedAt == null,
                             onRegenerate = {
                                 onRegenerate(node.currentMessage)
                             },

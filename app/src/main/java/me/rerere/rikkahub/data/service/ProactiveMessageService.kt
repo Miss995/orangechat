@@ -1241,6 +1241,9 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 // 设置 Reasoning 的 finishedAt，否则UI会一直显示"思考中"
                 val now = kotlin.time.Clock.System.now()
                 val finalMessage = processedMessage.copy(
+                    // 【主动消息渲染 2026-08-26】消息级 finishedAt：主动消息一次性写入即完成，
+                    // UI 用 finishedAt != null 判断"消息已完成"（不依赖 loadingJob，防 job 卡住导致停在纯文本）
+                    finishedAt = kotlinx.datetime.LocalDateTime.now(),
                     parts = processedMessage.parts.map { part ->
                         if (part is UIMessagePart.Reasoning && part.finishedAt == null) {
                             part.copy(finishedAt = now)
@@ -1318,6 +1321,8 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
             val updatedMessage = processedMessage.copy(parts = updatedParts)
             // 工具步骤结束也补 Reasoning.finishedAt（防止"思考中"计时器挂起空转）
             val toolStepFinal = updatedMessage.copy(
+                // 消息级 finishedAt（一次性写入即完成，UI 判断用）
+                finishedAt = kotlinx.datetime.LocalDateTime.now(),
                 parts = updatedMessage.parts.map { part ->
                     if (part is UIMessagePart.Reasoning && part.finishedAt == null) {
                         part.copy(finishedAt = kotlin.time.Clock.System.now())

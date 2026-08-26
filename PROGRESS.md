@@ -239,6 +239,16 @@
 - 为啥：宝 8-25 日志实锤"reasoning=5619 完整但 UI 展开只有十几个字"（memory 94）；宝 8-26 拍板"强制非流式渲染"（修法方向①）+ 加日志双保险（万一还有其他原因，日志可查）
 - 状态：⏳ 推 main → 宝构建 APK 验证（激进模式/主动消息触发后 UI 显示完整思考链 + read_app_logs 看 proactiveStreamDone reasoning 长度）
 
+### commit（本次待推）— 主动消息"停在纯文本"修复：消息级 finishedAt + ChatList loading 兜底（宝 8-26 晚实测反馈）
+- 文件：app/.../data/service/ProactiveMessageService.kt + app/.../ui/pages/chat/ChatList.kt
+- 背景：3472f35 后宝实测——主动消息**能生成了**（完整显示）但"一直停在纯文本，没有最后的渲染"（= loading 一直 true）
+- 排查：ChatList `loading = loadingJob != null`（ChatPage `loading = loadingJob != null`，loadingJob 来自 session.generationJob）；普通消息 UIMessage.finishedAt 从不在生成链路设置（只有 finishPendingTools 设置）→ 主动消息 tryClaimGeneration 注册的 job 若没被 invokeOnCompletion 清掉，loading 永远 true → 消息永远"生成中"纯文本渲染
+- 改动：
+  1. ProactiveMessageService：finalMessage / toolStepFinal 写入时设置**消息级 finishedAt**（UIMessage.finishedAt = LocalDateTime.now()）——主动消息一次性写入即完成，给 UI 一个"完成"信号
+  2. ChatList loading 条件加 `node.currentMessage.finishedAt == null`：消息自身已完成（finishedAt 非 null）就不进"生成中"纯文本渲染，直接 Markdown——即使 loadingJob 卡住也不影响（兜底）
+- 为啥：主动消息 job 卡住（原因待日志确认，可能是 finally 里 settingsFlow.first()/外置库保存挂起）导致 loadingJob 永远非 null；UI 兜底保证渲染正确，job 卡住的残余影响（占用生成状态）由下次 setJob cancel 清理
+- 状态：⏳ 推 main → 宝构建 APK 验证（主动消息应直接显示 Markdown 富文本，不再停纯文本）
+
 ## 待办（代码相关）
 - 查 OB 来源标记错位 bug（ob_sync_chat / V3 的 source_ranges 或来源拼写错位）
 - 工具调取内容存记忆库（愿望清单 id68-⑥ → 工具账本 tool_actions 方案已定 2026-08-18）
