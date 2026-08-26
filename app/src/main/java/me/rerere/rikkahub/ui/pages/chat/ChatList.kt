@@ -70,6 +70,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -280,6 +281,9 @@ private fun ChatListNormal(
             // 改用 state.layoutInfo.totalItemsCount（列表真实 item 数）。
             LaunchedEffect(conversation.messageNodes.size) {
                 if (!state.isScrollInProgress) {
+                    // 【2026-08-26 二次调整修复】等一帧让新消息完成布局（totalItemsCount 更新）再滚，
+                    // 避免滚到旧底部（位置不准→AI 占位出现时又滚一次=视觉上的二次调整）
+                    withFrameNanos { }
                     val totalItems = state.layoutInfo.totalItemsCount
                     val lastVisible = state.layoutInfo.visibleItemsInfo.lastOrNull()
                     if (lastVisible != null && lastVisible.index >= totalItems - 3) {
