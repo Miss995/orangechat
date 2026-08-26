@@ -226,8 +226,9 @@
 - 召回升级·向量优先 + AI 拆词兜底（QueryKeywordExtractor 调 SiliconFlow Qwen2.5-7B-Instruct 拆 2-5 关键词）——commit f894b9f3 / 4d5df6ab
 
 ## 2026-08-26
-- 发消息秒显（USER 消息不吃 loading 状态，发送瞬间正常显示，不用等 AI 占位气泡——占位要等记忆注入/门控等前置逻辑 2-10s 才创建）——commit 7174b9d（MCP 推；git 直连 GitHub 网络抖，MCP 通道稳）
-- 备注：git 直连 GitHub 443 不稳定（clone/ls-remote 通、push/fetch 超时），推代码优先 MCP push_files
+- 发消息秒显 v1（USER 消息不吃 loading 状态）——commit 7174b9d——宝测无效（不是 loading 问题）
+- 发消息秒显 v2（消息插入时立即滚动跟随：LaunchedEffect(messageNodes.size) 视口在底部附近就滚到底；原逻辑只在 visibleItemsInfo 变化时检查，视口不动不触发→要等 AI 占位出现才滚，延迟几秒）——commit efb2535——真相=滚动跟随延迟
+- 备注：git 直连 GitHub 443 不稳定（clone/ls-remote 通、push/fetch 超时），推代码优先 MCP push_files；本次 git push 成功（网络恢复）
 
 ## 待办（代码相关）
 - 查 OB 来源标记错位 bug（ob_sync_chat / V3 的 source_ranges 或来源拼写错位）
