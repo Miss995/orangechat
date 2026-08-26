@@ -43,6 +43,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.MessageRole
@@ -416,6 +417,7 @@ class ChatService(
 
     fun sendMessage(conversationId: Uuid, content: List<UIMessagePart>, answer: Boolean = true) {
         if (content.isEmptyInputMessage()) return
+        val tSend = System.currentTimeMillis()
 
         val session = getOrCreateSession(conversationId)
         session.getJob()?.cancel()
@@ -423,6 +425,7 @@ class ChatService(
         val job = appScope.launch {
             try {
                 val settings = settingsStore.settingsFlow.first()
+                AppLogBuffer.log(TAG, "sendMessage: dispatch took=${System.currentTimeMillis() - tSend}ms")
 
                 // 用户发送消息时重置主动消息计时器（异步执行，不阻塞发消息主流程）
                 try {
@@ -437,6 +440,7 @@ class ChatService(
                 // 读取最新状态 -> 追加用户消息 -> 落库，整体加锁。
                 // 防止跟同一时刻可能在跑的标题生成/建议生成/语音通话挂断反馈互相覆盖对方刚写入的消息。
                 val (assistant, processedContent) = session.saveMutex.withLock {
+                    val t0 = System.currentTimeMillis()
                     val latestConversation = session.state.value
                     val assistant = settings.getAssistantById(latestConversation.assistantId)
                         ?: settings.getCurrentAssistant()
@@ -449,8 +453,10 @@ class ChatService(
                         ).toMessageNode(),
                     )
                     saveConversation(conversationId, newConversation)
+                    AppLogBuffer.log(TAG, "sendMessage: in-lock insert+save took=${System.currentTimeMillis() - t0}ms (size=${newConversation.messageNodes.size})")
                     assistant to processedContent
                 }
+                AppLogBuffer.log(TAG, "sendMessage: lock released at ${System.currentTimeMillis() - tSend}ms")
 
                 // 触发 message_sent 事件钩子
                 // 关键: 这里用 appScope.launch 提交独立协程, 而不是直接 await callEvent。
@@ -514,6 +520,7 @@ class ChatService(
                 }
 
                 // 开始补全
+                AppLogBuffer.log(TAG, "sendMessage: about to generate at ${System.currentTimeMillis() - tSend}ms")
                 if (answer) {
                     handleMessageComplete(conversationId)
                 }
