@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import me.rerere.common.android.appTempFolder
 import com.whl.quickjs.android.QuickJSLoader
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.di.appModule
 import me.rerere.rikkahub.di.dataSourceModule
 import me.rerere.rikkahub.di.repositoryModule
@@ -70,6 +71,7 @@ class RikkaHubApp : Application() {
     override fun onCreate() {
         super.onCreate()
         INSTANCE = this
+        AppLogBuffer.init(this) // 2026-08-27：日志环落盘初始化（正文被吃排查关键日志不丢）
         startKoin {
             androidLogger()
             androidContext(this@RikkaHubApp)

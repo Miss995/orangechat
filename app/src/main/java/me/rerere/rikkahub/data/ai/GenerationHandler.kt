@@ -241,6 +241,23 @@ class GenerationHandler(
                 )
                 emit(GenerationChunk.Messages(messages))
  
+                // 【生成完成自记 2026-08-27】每次生成结束强制记录最后一条消息的 parts 结构（不依赖渲染层），
+                // 正文被吃时 read_app_logs filter "GEN_RESULT" 必能看到——日志环被刷也不怕（配合 AppLogBuffer 落盘）
+                runCatching {
+                    val lastMsg = messages.last()
+                    val partTypes = lastMsg.parts.joinToString(",") { part ->
+                        when (part) {
+                            is UIMessagePart.Text -> "T${part.text.length}"
+                            is UIMessagePart.Reasoning -> "R${part.reasoning.length}"
+                            is UIMessagePart.Tool -> "Tool"
+                            else -> "?"
+                        }
+                    }
+                    val textLen = lastMsg.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
+                    val reasoningLen = lastMsg.parts.filterIsInstance<UIMessagePart.Reasoning>().sumOf { it.reasoning.length }
+                    AppLogBuffer.log("GEN_RESULT", "parts=${lastMsg.parts.size} [$partTypes] text=$textLen reasoning=$reasoningLen role=${lastMsg.role}")
+                }
+ 
                 val tools = messages.last().getTools().filter { !it.isExecuted }
                 if (tools.isEmpty()) {
                     // no tool calls, break
