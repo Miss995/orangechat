@@ -400,8 +400,13 @@ class ChatService(
             // 记录懒加载窗口边界：窗口第一条 node 在数据库中的 nodeIndex（保存时合并窗口外历史用）
             val totalCount = conversationRepo.getMessageNodeCount(conversationId.toString())
             lazyWindowFirstIndex[conversationId] = (totalCount - conversation.messageNodes.size).coerceAtLeast(0)
-            // 2026-08-27：删掉这里的裸 updateConversation——刚加载的对话写回无意义，
-            // 且 null 窗口会把窗口 300 条 nodeIndex 压平成 0..299，污染排序导致显示倒退
+            // 【2026-08-27 15:06 恢复——5cadb1de 误删导致所有窗口空白！】
+            // 注意：这里的 updateConversation 是 ChatService 内部方法（只更新内存态 session.state.value，
+            // 不落库、不重写 nodeIndex），它负责把数据库加载的对话写回 session 内存，是 UI 显示的唯一来源！
+            // 之前误删（以为是"裸落库压平 nodeIndex"）→ session 永远是空对话 → 所有窗口变空白新对话。
+            // 窗口倒退的真凶是 ConversationRepository.updateConversation 的窗口版重写 nodeIndex（已在
+            // 5cadb1de 里改为保持原值），跟这一行无关——这行必须保留！
+            updateConversation(conversationId, conversation)
             // 只有当前选中助手与该对话的助手不一致时才写 DataStore，
             // 避免每次打开/切换对话都无条件写入 SELECT_ASSISTANT 触发 settingsFlow 全量重组
             val currentSettings = settingsStore.settingsFlow.value
@@ -1582,6 +1587,34 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         val exists = conversationRepo.existsConversationById(conversation.id)
         if (!exists && conversation.title.isBlank() && conversation.messageNodes.isEmpty()) {
             return // 新会话且为空时不保存
+        }
+
+        // 【防误删护栏 2026-08-27】窗口版路径下，如果传入节点数远小于窗口大小（内存态异常/空对话，
+        // 例如 session 未初始化就被保存），先从数据库全量加载合并（数据库节点为准 + 追加传入的新节点），
+        // 再走窗口版保存——防止窗口版 diff 把窗口外历史当成"消失"删掉。
+        val windowFirstIndex = lazyWindowFirstIndex[conversationId]
+        if (exists && windowFirstIndex != null && conversation.messageNodes.size < CONVERSATION_LOAD_WINDOW_SIZE / 2) {
+            val dbConversation = conversationRepo.getConversationById(conversationId)
+            if (dbConversation != null) {
+                val dbIds = dbConversation.messageNodes.map { it.id }.toSet()
+                val newNodes = conversation.messageNodes.filter { it.id !in dbIds }
+                val merged = if (newNodes.isEmpty()) {
+                    dbConversation.copy(
+                        title = conversation.title.ifBlank { dbConversation.title },
+                        chatSuggestions = conversation.chatSuggestions,
+                    )
+                } else {
+                    dbConversation.copy(
+                        messageNodes = dbConversation.messageNodes + newNodes,
+                        title = conversation.title.ifBlank { dbConversation.title },
+                        chatSuggestions = conversation.chatSuggestions,
+                        updateAt = conversation.updateAt,
+                    )
+                }
+                // 递归：merged 是完整对话（size≈dbCount），不会再触发护栏
+                saveConversation(conversationId, merged)
+                return
+            }
         }
 
         // 【缓存对齐 2026-08-26】窗口裁剪组大小 = 对话关联 assistant 的 contextGroupSize（设置里"多少条一组"），
