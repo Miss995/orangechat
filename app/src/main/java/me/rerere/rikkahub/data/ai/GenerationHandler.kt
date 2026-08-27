@@ -827,36 +827,49 @@ class GenerationHandler(
                     stream = true
                 )
             )
-            providerImpl.streamText(
-                providerSetting = provider,
-                messages = finalMessages,
-                params = params
-            ).collect {
-                // 流式诊断（2026-08-27：正文被吃 text=0 实锤生成侧——记录每个 chunk 的 content/reasoning 长度，
-                // 下次正文被吃时 read_app_logs filter "StreamChunk" 看最后一条：
-                // 若 reasoning 结尾且 content 一直为 0 → 流在 reasoning→content 切换时被掐断（服务端/网络）
-                runCatching {
-                    val delta = it.choices.getOrNull(0)?.delta
-                    val contentLen = delta?.parts?.filterIsInstance<UIMessagePart.Text>()?.sumOf { p -> p.text.length } ?: 0
-                    val reasoningLen = delta?.parts?.filterIsInstance<UIMessagePart.Reasoning>()?.sumOf { p -> p.reasoning.length } ?: 0
-                    val finish = it.choices.getOrNull(0)?.finishReason ?: ""
-                    // 只打有内容/有结束标记的 chunk——空 delta（content=0 reasoning=0 finish=unknown）不打，
-                    // 否则每次生成几百条把 MessagePartsRender（渲染诊断）刷出 500 条日志环
-                    if (contentLen > 0 || reasoningLen > 0 || (finish.isNotBlank() && finish != "unknown")) {
-                        AppLogBuffer.log("StreamChunk", "content=$contentLen reasoning=$reasoningLen finish=$finish")
-                    }
-                }
-                messages = messages.handleMessageChunk(chunk = it, model = model)
-                it.usage?.let { usage ->
-                    messages = messages.mapIndexed { index, message ->
-                        if (index == messages.lastIndex) {
-                            message.copy(usage = message.usage.merge(usage))
-                        } else {
-                            message
+            // 【流结束统计 2026-08-27】累加本次流式收到的 content 总字符数 + 记录 finish_reason，
+            // 正文被吃（text=0）时 read_app_logs filter "StreamDone" 看流到底发没发正文——
+            // contentTotal=0 = 服务端没发正文（流在 reasoning 后断了/没发）；>0 = 发了但 append 丢了
+            var streamContentTotal = 0
+            var streamFinishReason = "unknown"
+            try {
+                providerImpl.streamText(
+                    providerSetting = provider,
+                    messages = finalMessages,
+                    params = params
+                ).collect {
+                    // 流式诊断（2026-08-27：正文被吃 text=0 实锤生成侧——记录每个 chunk 的 content/reasoning 长度，
+                    // 下次正文被吃时 read_app_logs filter "StreamChunk" 看最后一条：
+                    // 若 reasoning 结尾且 content 一直为 0 → 流在 reasoning→content 切换时被掐断（服务端/网络）
+                    runCatching {
+                        val delta = it.choices.getOrNull(0)?.delta
+                        val contentLen = delta?.parts?.filterIsInstance<UIMessagePart.Text>()?.sumOf { p -> p.text.length } ?: 0
+                        val reasoningLen = delta?.parts?.filterIsInstance<UIMessagePart.Reasoning>()?.sumOf { p -> p.reasoning.length } ?: 0
+                        val finish = it.choices.getOrNull(0)?.finishReason ?: ""
+                        streamContentTotal += contentLen
+                        if (finish.isNotBlank() && finish != "unknown") streamFinishReason = finish
+                        // 只打有内容/有结束标记的 chunk——空 delta（content=0 reasoning=0 finish=unknown）不打，
+                        // 否则每次生成几百条把 MessagePartsRender（渲染诊断）刷出 500 条日志环
+                        if (contentLen > 0 || reasoningLen > 0 || (finish.isNotBlank() && finish != "unknown")) {
+                            AppLogBuffer.log("StreamChunk", "content=$contentLen reasoning=$reasoningLen finish=$finish")
                         }
                     }
+                    messages = messages.handleMessageChunk(chunk = it, model = model)
+                    it.usage?.let { usage ->
+                        messages = messages.mapIndexed { index, message ->
+                            if (index == messages.lastIndex) {
+                                message.copy(usage = message.usage.merge(usage))
+                            } else {
+                                message
+                            }
+                        }
+                    }
+                    onUpdateMessages(messages)
                 }
-                onUpdateMessages(messages)
+            } finally {
+                runCatching {
+                    AppLogBuffer.log("StreamDone", "contentTotal=$streamContentTotal finish=$streamFinishReason")
+                }
             }
         } else {
             aiLoggingManager.addLog(
