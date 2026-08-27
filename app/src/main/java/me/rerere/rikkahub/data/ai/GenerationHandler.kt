@@ -822,7 +822,12 @@ class GenerationHandler(
                     val delta = it.choices.getOrNull(0)?.delta
                     val contentLen = delta?.parts?.filterIsInstance<UIMessagePart.Text>()?.sumOf { p -> p.text.length } ?: 0
                     val reasoningLen = delta?.parts?.filterIsInstance<UIMessagePart.Reasoning>()?.sumOf { p -> p.reasoning.length } ?: 0
-                    AppLogBuffer.log("StreamChunk", "content=$contentLen reasoning=$reasoningLen finish=${it.choices.getOrNull(0)?.finishReason}")
+                    val finish = it.choices.getOrNull(0)?.finishReason ?: ""
+                    // 只打有内容/有结束标记的 chunk——空 delta（content=0 reasoning=0 finish=unknown）不打，
+                    // 否则每次生成几百条把 MessagePartsRender（渲染诊断）刷出 500 条日志环
+                    if (contentLen > 0 || reasoningLen > 0 || (finish.isNotBlank() && finish != "unknown")) {
+                        AppLogBuffer.log("StreamChunk", "content=$contentLen reasoning=$reasoningLen finish=$finish")
+                    }
                 }
                 messages = messages.handleMessageChunk(chunk = it, model = model)
                 it.usage?.let { usage ->
