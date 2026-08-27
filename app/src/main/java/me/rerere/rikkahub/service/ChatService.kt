@@ -1592,8 +1592,8 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 【防误删护栏 2026-08-27】窗口版路径下，如果传入节点数远小于窗口大小（内存态异常/空对话，
         // 例如 session 未初始化就被保存），先从数据库全量加载合并（数据库节点为准 + 追加传入的新节点），
         // 再走窗口版保存——防止窗口版 diff 把窗口外历史当成"消失"删掉。
-        val windowFirstIndex = lazyWindowFirstIndex[conversationId]
-        if (exists && windowFirstIndex != null && conversation.messageNodes.size < CONVERSATION_LOAD_WINDOW_SIZE / 2) {
+        val guardWindowFirstIndex = lazyWindowFirstIndex[conversationId]
+        if (exists && guardWindowFirstIndex != null && conversation.messageNodes.size < CONVERSATION_LOAD_WINDOW_SIZE / 2) {
             val dbConversation = conversationRepo.getConversationById(conversationId)
             if (dbConversation != null) {
                 val dbIds = dbConversation.messageNodes.map { it.id }.toSet()
