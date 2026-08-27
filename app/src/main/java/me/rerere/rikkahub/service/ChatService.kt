@@ -400,7 +400,8 @@ class ChatService(
             // 记录懒加载窗口边界：窗口第一条 node 在数据库中的 nodeIndex（保存时合并窗口外历史用）
             val totalCount = conversationRepo.getMessageNodeCount(conversationId.toString())
             lazyWindowFirstIndex[conversationId] = (totalCount - conversation.messageNodes.size).coerceAtLeast(0)
-            updateConversation(conversationId, conversation)
+            // 2026-08-27：删掉这里的裸 updateConversation——刚加载的对话写回无意义，
+            // 且 null 窗口会把窗口 300 条 nodeIndex 压平成 0..299，污染排序导致显示倒退
             // 只有当前选中助手与该对话的助手不一致时才写 DataStore，
             // 避免每次打开/切换对话都无条件写入 SELECT_ASSISTANT 触发 settingsFlow 全量重组
             val currentSettings = settingsStore.settingsFlow.value
@@ -587,7 +588,8 @@ class ChatService(
                 messageNodes = currentConversation.messageNodes + aiMessage.toMessageNode(),
                 updateAt = java.time.Instant.now()
             )
-            updateConversation(conversationId, updated)
+            // 2026-08-27：去掉裸 updateConversation——saveConversation 内部会以窗口版统一保存，
+            // 裸调（null）会走全量 diff，传入全量虽不删但会把 nodeIndex 重写，存在错位风险
             saveConversation(conversationId, updated)
         }
     }

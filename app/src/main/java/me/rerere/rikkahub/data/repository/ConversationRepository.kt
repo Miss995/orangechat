@@ -286,20 +286,11 @@ class ConversationRepository(
                     emptySet()
                 }
 
-                val baseIndex = windowFirstIndex ?: 0
-                val newEntities = conversation.messageNodes.mapIndexed { index, node ->
-                    MessageNodeEntity(
-                        id = node.id.toString(),
-                        conversationId = conversation.id.toString(),
-                        nodeIndex = baseIndex + index,
-                        messages = JsonInstant.encodeToString(node.messages),
-                        selectIndex = node.selectIndex
-                    )
-                }
-                val newById = newEntities.associateBy { it.id }
-
-                // 只对本轮涉及、且之前已存在的 id 去查内容做比较，缩小命中超大行的范围
-                val idsNeedCompare = newEntities.map { it.id }.filter { it in existingIds }
+                // 【nodeIndex 对齐 2026-08-27】窗口版保存不再重写 nodeIndex（baseIndex+index 依赖
+                // firstIndex 与数据库实际对齐，一旦对不齐就整体错位 → 窗口越加载越旧（宝实测重启倒退）。
+                // 窗口版：已存在节点保持数据库原 nodeIndex；新节点（主动消息等追加）从 max+1 往后排。
+                // 全量版（windowFirstIndex==null）：保持原行为 0..N-1 重写（压缩/重建等整表覆盖场景）。
+                val idsNeedCompare = conversation.messageNodes.map { it.id.toString() }.filter { it in existingIds }
                 val existingById = if (idsNeedCompare.isEmpty()) {
                     emptyMap()
                 } else {
@@ -316,6 +307,29 @@ class ConversationRepository(
                         emptyMap()
                     }
                 }
+                val existingNodeIndexById: Map<String, Int> = existingById.mapValues { it.value.nodeIndex }
+                val maxExistingNodeIndex = existingNodeIndexById.values.maxOrNull() ?: -1
+                val newEntities = conversation.messageNodes.mapIndexed { index, node ->
+                    val nid = node.id.toString()
+                    val preservedIndex = existingNodeIndexById[nid]
+                    MessageNodeEntity(
+                        id = nid,
+                        conversationId = conversation.id.toString(),
+                        nodeIndex = if (windowFirstIndex != null) {
+                            preservedIndex ?: if (existingNodeIndexById.isEmpty()) {
+                                // 读不出旧索引（blob 异常兜底）：按窗口起点偏移，至少不压平
+                                (windowFirstIndex ?: 0) + index
+                            } else {
+                                maxExistingNodeIndex + 1 + index
+                            }
+                        } else {
+                            index
+                        },
+                        messages = JsonInstant.encodeToString(node.messages),
+                        selectIndex = node.selectIndex
+                    )
+                }
+                val newById = newEntities.associateBy { it.id }
 
                 // 只处理真正发生变化的 node：内容/顺序(nodeIndex)/selectIndex 有任何不同才写库；
                 // 读不到旧内容的（existingById 里没有对应 id）也会被判定为"变化"，直接覆盖写入
