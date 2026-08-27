@@ -322,7 +322,18 @@ private fun MessagePartsBlock(
     LaunchedEffect(loading) {
         val textLen = parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
         val reasoningLen = parts.filterIsInstance<UIMessagePart.Reasoning>().sumOf { it.reasoning.length }
-        val msg = "render loading=$loading parts=${parts.size} text=$textLen reasoning=$reasoningLen role=$role"
+        // 【2026-08-27 升级】parts 结构打出来（每个 part 类型+长度）：
+        // 下次正文被吃时 read_app_logs filter "MessagePartsRender" 一锤定音——
+        // [R1000,T200,T191] = 两个 Text（渲染问题）；[R1000,T391] = 单个 Text（MarkdownBlock 吞渲染）
+        val partTypes = parts.joinToString(",") { part ->
+            when (part) {
+                is UIMessagePart.Text -> "T${part.text.length}"
+                is UIMessagePart.Reasoning -> "R${part.reasoning.length}"
+                is UIMessagePart.Tool -> "Tool"
+                else -> "?"
+            }
+        }
+        val msg = "render loading=$loading parts=${parts.size} [$partTypes] text=$textLen reasoning=$reasoningLen role=$role"
         AppLogBuffer.log("MessagePartsRender", msg)
         Log.d("MessagePartsRender", msg)
     }

@@ -815,6 +815,15 @@ class GenerationHandler(
                 messages = finalMessages,
                 params = params
             ).collect {
+                // 流式诊断（2026-08-27：正文被吃 text=0 实锤生成侧——记录每个 chunk 的 content/reasoning 长度，
+                // 下次正文被吃时 read_app_logs filter "StreamChunk" 看最后一条：
+                // 若 reasoning 结尾且 content 一直为 0 → 流在 reasoning→content 切换时被掐断（服务端/网络）
+                runCatching {
+                    val delta = it.choices.getOrNull(0)?.delta
+                    val contentLen = delta?.parts?.filterIsInstance<UIMessagePart.Text>()?.sumOf { p -> p.text.length } ?: 0
+                    val reasoningLen = delta?.parts?.filterIsInstance<UIMessagePart.Reasoning>()?.sumOf { p -> p.reasoning.length } ?: 0
+                    AppLogBuffer.log("StreamChunk", "content=$contentLen reasoning=$reasoningLen finish=${it.choices.getOrNull(0)?.finishReason}")
+                }
                 messages = messages.handleMessageChunk(chunk = it, model = model)
                 it.usage?.let { usage ->
                     messages = messages.mapIndexed { index, message ->
