@@ -38,6 +38,7 @@ import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.EmbeddingGenerationParams
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.providers.openai.ChatCompletionsAPI
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
@@ -848,10 +849,12 @@ class GenerationHandler(
                         val finish = it.choices.getOrNull(0)?.finishReason ?: ""
                         streamContentTotal += contentLen
                         if (finish.isNotBlank() && finish != "unknown") streamFinishReason = finish
+                        // 原始响应诊断：raw=解析前原始 content 长度（区分服务端没发 raw=0 vs 解析丢了 raw>0）
+                        val rawContentLen = runCatching { ChatCompletionsAPI.lastRawContentLen }.getOrDefault(-1)
                         // 只打有内容/有结束标记的 chunk——空 delta（content=0 reasoning=0 finish=unknown）不打，
                         // 否则每次生成几百条把 MessagePartsRender（渲染诊断）刷出 500 条日志环
                         if (contentLen > 0 || reasoningLen > 0 || (finish.isNotBlank() && finish != "unknown")) {
-                            AppLogBuffer.log("StreamChunk", "content=$contentLen reasoning=$reasoningLen finish=$finish")
+                            AppLogBuffer.log("StreamChunk", "content=$contentLen reasoning=$reasoningLen raw=$rawContentLen finish=$finish")
                         }
                     }
                     messages = messages.handleMessageChunk(chunk = it, model = model)

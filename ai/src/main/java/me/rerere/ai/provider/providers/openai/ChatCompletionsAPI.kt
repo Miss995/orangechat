@@ -817,6 +817,13 @@ class ChatCompletionsAPI(
         })
     }
 
+    companion object {
+        // 【原始响应诊断 2026-08-27】记录最近一次解析的原始 content 字段长度——
+        // 正文被吃（text=0）时区分"服务端没发"（raw=0）vs"解析丢了"（raw>0）
+        @Volatile
+        var lastRawContentLen: Int = -1
+    }
+
     private fun parseMessage(jsonObject: JsonObject): UIMessage {
         val role = MessageRole.valueOf(
             jsonObject["role"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "ASSISTANT"
@@ -824,6 +831,8 @@ class ChatCompletionsAPI(
 
         // 也许支持其他模态的输出content?
         val content = jsonObject["content"]?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+        // 【原始响应诊断 2026-08-27】记录原始 content 字段长度（区分服务端没发 vs 解析丢了）
+        runCatching { lastRawContentLen = content.length }.onFailure { lastRawContentLen = -1 }
         val reasoning = jsonObject["reasoning_content"]?.jsonPrimitiveOrNull?.contentOrNull
             ?: jsonObject["reasoning"]?.jsonPrimitiveOrNull?.contentOrNull
             ?: jsonObject["content"]?.takeIf { it is JsonArray }?.let { arr ->
