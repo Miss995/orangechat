@@ -174,6 +174,7 @@ class ChatCompletionsAPI(
                 }
             }
 
+            val mergedMsg = parseMessage(mergedMessage)
             MessageChunk(
                 id = id,
                 model = model,
@@ -181,11 +182,12 @@ class ChatCompletionsAPI(
                     UIMessageChoice(
                         index = 0,
                         delta = null,
-                        message = parseMessage(mergedMessage),
+                        message = mergedMsg,
                         finishReason = finishReason
                     )
                 ),
-                usage = usage
+                usage = usage,
+                rawContentLen = lastRawContentLen
             )
         } else {
             // 普通 JSON 响应
@@ -337,7 +339,8 @@ class ChatCompletionsAPI(
                     id = id,
                     model = model,
                     choices = choiceList,
-                    usage = usage
+                    usage = usage,
+                    rawContentLen = lastRawContentLen,
                 )
                 trySend(messageChunk)
             }

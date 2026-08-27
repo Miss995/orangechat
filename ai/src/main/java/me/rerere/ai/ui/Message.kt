@@ -817,6 +817,8 @@ data class MessageChunk(
     val model: String,
     val choices: List<UIMessageChoice>,
     val usage: TokenUsage? = null,
+    // 【原始响应诊断 2026-08-27】解析前原始 content 字段长度（-1=未设置）——跟着流走避免跨线程读静态变量
+    val rawContentLen: Int = -1,
 )
 
 @Serializable
