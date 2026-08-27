@@ -256,6 +256,22 @@ class GenerationHandler(
                     val textLen = lastMsg.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
                     val reasoningLen = lastMsg.parts.filterIsInstance<UIMessagePart.Reasoning>().sumOf { it.reasoning.length }
                     AppLogBuffer.log("GEN_RESULT", "parts=${lastMsg.parts.size} [$partTypes] text=$textLen reasoning=$reasoningLen role=${lastMsg.role}")
+
+                    // 【正文兜底 2026-08-28 宝的方案】text=0（只有思考没正文）时，
+                    // 从 reasoning 最后一段提取像正文的内容当兜底——既让宝看到内容，
+                    // 也避免"只思考"消息存进历史继续污染上下文（配合 ChatCompletionsAPI 发送过滤双保险）
+                    if (textLen == 0 && reasoningLen > 0) {
+                        val fallback = lastMsg.parts.filterIsInstance<UIMessagePart.Reasoning>()
+                            .flatMap { it.reasoning.lines() }
+                            .lastOrNull { it.isNotBlank() && !it.trim().startsWith("（") && it.trim().length >= 2 }
+                            ?.trim()
+                        if (!fallback.isNullOrBlank()) {
+                            AppLogBuffer.log("GEN_RESULT", "text=0 fallback: $fallback")
+                            messages = messages.slice(0 until messages.lastIndex) + lastMsg.copy(
+                                parts = lastMsg.parts + UIMessagePart.Text(fallback)
+                            )
+                        }
+                    }
                 }
  
                 val tools = messages.last().getTools().filter { !it.isExecuted }
