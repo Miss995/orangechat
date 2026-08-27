@@ -1589,31 +1589,31 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             return // 新会话且为空时不保存
         }
 
-        // 【防误删护栏 2026-08-27】窗口版路径下，如果传入节点数远小于窗口大小（内存态异常/空对话，
-        // 例如 session 未初始化就被保存），先从数据库全量加载合并（数据库节点为准 + 追加传入的新节点），
+        // 【防误删护栏 2026-08-27 修复】窗口版路径下，如果传入节点数远小于窗口大小（内存态异常/空对话，
+        // 例如 session 未初始化就被保存），限量加载数据库窗口内容合并（数据库节点为准 + 追加传入的新节点），
         // 再走窗口版保存——防止窗口版 diff 把窗口外历史当成"消失"删掉。
+        // 修复点①：getConversationById 带 loadLimit(300)，不再全量加载——大对话不再 OOM
+        // 修复点②：合并结果继续走下方正常保存流程（不递归）——db 历史 <150 条时不再无限递归栈溢出
+        var toSave = conversation
         val guardWindowFirstIndex = lazyWindowFirstIndex[conversationId]
-        if (exists && guardWindowFirstIndex != null && conversation.messageNodes.size < CONVERSATION_LOAD_WINDOW_SIZE / 2) {
-            val dbConversation = conversationRepo.getConversationById(conversationId)
+        if (exists && guardWindowFirstIndex != null && toSave.messageNodes.size < CONVERSATION_LOAD_WINDOW_SIZE / 2) {
+            val dbConversation = conversationRepo.getConversationById(conversationId, CONVERSATION_LOAD_WINDOW_SIZE)
             if (dbConversation != null) {
                 val dbIds = dbConversation.messageNodes.map { it.id }.toSet()
-                val newNodes = conversation.messageNodes.filter { it.id !in dbIds }
-                val merged = if (newNodes.isEmpty()) {
+                val newNodes = toSave.messageNodes.filter { it.id !in dbIds }
+                toSave = if (newNodes.isEmpty()) {
                     dbConversation.copy(
-                        title = conversation.title.ifBlank { dbConversation.title },
-                        chatSuggestions = conversation.chatSuggestions,
+                        title = toSave.title.ifBlank { dbConversation.title },
+                        chatSuggestions = toSave.chatSuggestions,
                     )
                 } else {
                     dbConversation.copy(
                         messageNodes = dbConversation.messageNodes + newNodes,
-                        title = conversation.title.ifBlank { dbConversation.title },
-                        chatSuggestions = conversation.chatSuggestions,
-                        updateAt = conversation.updateAt,
+                        title = toSave.title.ifBlank { dbConversation.title },
+                        chatSuggestions = toSave.chatSuggestions,
+                        updateAt = toSave.updateAt,
                     )
                 }
-                // 递归：merged 是完整对话（size≈dbCount），不会再触发护栏
-                saveConversation(conversationId, merged)
-                return
             }
         }
 
@@ -1621,7 +1621,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 与 limitContext 组对齐保持同步；读不到/异常回退默认 4
         val windowGroupSize = runCatching {
             settingsStore.settingsFlow.first().assistants
-                .firstOrNull { it.id == conversation.assistantId }?.contextGroupSize
+                .firstOrNull { it.id == toSave.assistantId }?.contextGroupSize
                 ?: DEFAULT_WINDOW_GROUP_SIZE
         }.getOrDefault(DEFAULT_WINDOW_GROUP_SIZE).coerceAtLeast(1)
 
@@ -1629,10 +1629,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 判定：存在窗口边界 且 传入条数 < 窗口外+窗口大小 → 窗口版（nodeIndex 从 firstIndex 偏移，不删窗口外）
         val windowFirstIndex = lazyWindowFirstIndex[conversationId]
         val isWindowState = windowFirstIndex != null &&
-            conversation.messageNodes.size < windowFirstIndex + CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize
+            toSave.messageNodes.size < windowFirstIndex + CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize
         val effectiveFirstIndex = if (isWindowState) windowFirstIndex else null
 
-        val updatedConversation = conversation.copy()
+        val updatedConversation = toSave.copy()
         if (!exists) {
             conversationRepo.insertConversation(updatedConversation)
         } else {
@@ -1645,7 +1645,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             // 【缓存对齐 2026-08-26】攒一组裁一组：overflow≤groupSize 不裁（窗口 300~300+groupSize 浮动），
             // overflow>groupSize 只裁 groupSize 的倍数条 → 配合 limitContext 总量对齐，裁剪前后起点同一条消息；
             // groupSize≤1 = 按条裁剪（旧行为）
-            val overflow = (conversation.messageNodes.size - CONVERSATION_LOAD_WINDOW_SIZE).coerceAtLeast(0)
+            val overflow = (toSave.messageNodes.size - CONVERSATION_LOAD_WINDOW_SIZE).coerceAtLeast(0)
             val dropped = if (windowGroupSize <= 1) {
                 overflow
             } else if (overflow > windowGroupSize) {
@@ -1664,16 +1664,16 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 后续流式更新/重组只碰窗口内节点 → 长对话不再每次更新都全量遍历
         // 【缓存对齐 2026-08-26】攒一组裁一组：只有 overflow>groupSize 才裁，且裁 groupSize 的倍数条（窗口 300~300+groupSize 浮动）
         val windowState = if (windowGroupSize <= 1) {
-            if (conversation.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE) {
-                conversation.copy(messageNodes = conversation.messageNodes.takeLast(CONVERSATION_LOAD_WINDOW_SIZE))
+            if (toSave.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE) {
+                toSave.copy(messageNodes = toSave.messageNodes.takeLast(CONVERSATION_LOAD_WINDOW_SIZE))
             } else {
-                conversation
+                toSave
             }
-        } else if (conversation.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize) {
-            val overflow = conversation.messageNodes.size - CONVERSATION_LOAD_WINDOW_SIZE
-            conversation.copy(messageNodes = conversation.messageNodes.takeLast(CONVERSATION_LOAD_WINDOW_SIZE + (overflow % windowGroupSize)))
+        } else if (toSave.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize) {
+            val overflow = toSave.messageNodes.size - CONVERSATION_LOAD_WINDOW_SIZE
+            toSave.copy(messageNodes = toSave.messageNodes.takeLast(CONVERSATION_LOAD_WINDOW_SIZE + (overflow % windowGroupSize)))
         } else {
-            conversation
+            toSave
         }
         updateConversation(conversationId, windowState)
     }
