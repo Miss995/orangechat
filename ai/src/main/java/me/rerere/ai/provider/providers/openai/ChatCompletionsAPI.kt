@@ -708,7 +708,10 @@ class ChatCompletionsAPI(
             }
         }
         val hasReasoning = !reasoningPart?.reasoning.isNullOrBlank()
-        if (!hasUsableContent && !hasReasoning && tools.isEmpty()) {
+        // 2026-08-28 正文被吃·传播机制：只思考没正文（且无工具调用）的 assistant 消息
+        // 不要发回给模型——否则会成为"上一条只思考"的先例，污染上下文导致后续短消息持续只思考。
+        // （有 tool_calls 的消息必须保留发回；有正文的照常发）
+        if (!hasUsableContent && tools.isEmpty()) {
             return null
         }
 
