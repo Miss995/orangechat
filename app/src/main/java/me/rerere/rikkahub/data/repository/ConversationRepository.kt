@@ -33,6 +33,7 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
 import java.time.Instant
+import kotlinx.datetime.LocalDateTime
 import kotlin.uuid.Uuid
 
 private const val TAG = "ConversationRepository"
@@ -386,6 +387,47 @@ class ConversationRepository(
     }
 
     suspend fun searchMessages(keyword: String) = messageFtsManager.search(keyword)
+
+    /**
+     * 【一键修复 nodeIndex · 2026-08-27】按消息真实时间重排所有对话的 nodeIndex。
+     *
+     * 背景：之前窗口版保存用 baseIndex+index 重写 nodeIndex，一旦 firstIndex 与数据库实际对不齐，
+     * 每次保存都会把窗口内节点整体偏移 → nodeIndex 与真实时间顺序脱节 → 窗口加载（按 nodeIndex
+     * 排序取最近 300 条）取到的是错误位置的旧内容（宝实测窗口回溯 22→20→18）。5cadb1de 已阻止
+     * 继续写乱，但已经错位的 nodeIndex 需要本工具一次性掰正（数据本身完好，只是索引错位）。
+     *
+     * 做法：对每个对话全量加载节点 → 按节点内最早消息的 createdAt 排序 → 重写 nodeIndex=0..N-1。
+     * 用 insertAll(REPLACE) 按 id 覆盖，不动 FTS（内容没变，搜索不受影响）。
+     */
+    suspend fun repairAllNodeIndexes(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
+        try {
+            val allIds = conversationDAO.getAllIds()
+            val total = allIds.size
+            allIds.forEachIndexed { index, id ->
+                val entity = conversationDAO.getConversationById(id) ?: return@forEachIndexed
+                val nodes = loadMessageNodes(entity.id)
+                // 按节点内最早消息的 createdAt 排序（LocalDateTime 实现了 Comparable）
+                val sortedNodes = nodes.sortedBy { node ->
+                    node.messages.minOfOrNull { it.createdAt } ?: LocalDateTime(1970, 1, 1, 0, 0)
+                }
+                // 重写 nodeIndex（REPLACE 按 id 覆盖，FTS 不动）
+                val entities = sortedNodes.mapIndexed { i, node ->
+                    MessageNodeEntity(
+                        id = node.id.toString(),
+                        conversationId = id,
+                        nodeIndex = i,
+                        messages = JsonInstant.encodeToString(node.messages),
+                        selectIndex = node.selectIndex
+                    )
+                }
+                messageNodeDAO.insertAll(entities)
+                onProgress(index + 1, total)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "repairAllNodeIndexes failed", e)
+            throw e
+        }
+    }
 
     suspend fun rebuildAllIndexes(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
         try {

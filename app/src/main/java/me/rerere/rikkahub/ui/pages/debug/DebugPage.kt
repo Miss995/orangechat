@@ -236,6 +236,19 @@ private fun MainPage(vm: DebugVM) {
 
         HorizontalDivider()
 
+        Text("数据修复", style = MaterialTheme.typography.labelMedium)
+
+        Button(
+            onClick = {
+                vm.repairAllNodeIndexes()
+                toaster.show("正在按消息时间重排 nodeIndex...")
+            }
+        ) {
+            Text("一键修复 nodeIndex（按时间重排）")
+        }
+
+        HorizontalDivider()
+
         Text("Launch Stats", style = MaterialTheme.typography.labelMedium)
 
         var launchCountInput by remember(settings.launchCount) {

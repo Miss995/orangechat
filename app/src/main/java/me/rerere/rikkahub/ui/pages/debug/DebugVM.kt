@@ -120,6 +120,20 @@ class DebugVM(
         }
     }
 
+    /**
+     * 【一键修复 nodeIndex · 2026-08-27】按消息真实时间重排所有对话的 nodeIndex。
+     * 用于修复窗口版保存重写索引导致的顺序错位（窗口回溯）。
+     */
+    fun repairAllNodeIndexes() {
+        viewModelScope.launch {
+            runCatching {
+                conversationRepository.repairAllNodeIndexes()
+            }.onFailure {
+                it.printStackTrace()
+            }
+        }
+    }
+
     private fun randomMessageText(index: Int, role: MessageRole): String {
         val fragments = listOf(
             "快速", "随机", "消息", "样例", "用于", "测试", "列表", "渲染", "滚动", "性能",
