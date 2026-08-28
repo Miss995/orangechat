@@ -466,6 +466,10 @@ class ChatService(
                                 parts = processedContent,
                             ).toMessageNode(),
                         )
+                        // 【先显示再落库 2026-08-28】用户消息先进内存态 → UI 立刻显示（秒显）；
+                        // 落库（窗口 diff 读全量比较）可能慢（几百 ms~几秒），放后台感知不到。
+                        // saveConversation 内部最后会再 updateConversation 一次（裁剪成窗口态），最终状态一致。
+                        updateConversation(conversationId, newConversation)
                         saveConversation(conversationId, newConversation)
                         AppLogBuffer.log(TAG, "sendMessage: in-lock insert+save took=${System.currentTimeMillis() - t0}ms (size=${newConversation.messageNodes.size})")
                         assistant to processedContent

@@ -6,6 +6,12 @@
 
 ## 2026-08-28
 
+### commit（本次待推）— 发消息秒显：先更新内存态再落库（治"发消息卡几秒才显示"）
+- 文件：app/.../service/ChatService.kt（sendMessage）
+- 改动：锁内 saveConversation 之前加 `updateConversation(conversationId, newConversation)`（内存态）——用户消息先进 session.state.value → UI 立刻显示；落库（窗口 diff 读全量比较，几百 ms~几秒）放后台感知不到；saveConversation 内部最后会再 updateConversation 一次（裁剪成窗口态），最终状态一致
+- 为啥：宝 8-28 反馈发消息"卡几秒才显示"；排查——滚动正常（scrollCheck userSend=true 直接滚到底）、渲染正常（displayNodes 2-7ms）、sendMessage 插入+保存是在锁里同步做的，session.state.value 更新在落库（含 getNodesByIds 读 300 条完整内容比较差异）之后 → 落库慢 = 显示慢
+- 状态：⏳ 推 main → 宝构建 APK 验证（发消息应秒显，落库在后台）
+
 ### commit（本次待推）— 输入框字体跟随聊天字体设置（素颜也全妆）
 - 文件：app/.../ui/components/ai/ChatInput.kt
 - 改动：TextField 加 textStyle 参数，fontFamily 跟随 displaySettings.chatFontFamily（DEFAULT/SERIF/MONOSPACE/CUSTOM，与 ChatMessage.kt 消息气泡同逻辑）；新增 import（LocalTextStyle/Font/FontFamily/ChatFontFamily）
