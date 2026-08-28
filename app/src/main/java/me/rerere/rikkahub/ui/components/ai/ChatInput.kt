@@ -48,6 +48,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
@@ -59,6 +60,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -123,6 +126,7 @@ import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
 import me.rerere.rikkahub.ui.context.LocalASRState
 import me.rerere.rikkahub.ui.context.LocalCurrentAssistant
 import me.rerere.rikkahub.ui.context.LocalCurrentChatModel
+import me.rerere.rikkahub.data.datastore.ChatFontFamily
 import me.rerere.rikkahub.ui.context.LocalDisplaySettings
 import me.rerere.rikkahub.ui.context.LocalProviders
 import me.rerere.rikkahub.ui.context.LocalQuickMessages
@@ -866,6 +870,21 @@ private fun TextInputRow(
         }
         TextField(
             state = state.textContent,
+            textStyle = LocalTextStyle.current.copy(
+                fontFamily = when (displaySettings.chatFontFamily) {
+                    ChatFontFamily.DEFAULT -> FontFamily.Default
+                    ChatFontFamily.SERIF -> FontFamily.Serif
+                    ChatFontFamily.MONOSPACE -> FontFamily.Monospace
+                    ChatFontFamily.CUSTOM -> {
+                        val fontPath = displaySettings.customFontPath
+                        if (fontPath.isNotBlank() && java.io.File(fontPath).exists()) {
+                            FontFamily(Font(java.io.File(fontPath)))
+                        } else {
+                            FontFamily.Default
+                        }
+                    }
+                }
+            ),
             modifier = Modifier
                 .fillMaxWidth()
                 .contentReceiver(receiveContentListener)

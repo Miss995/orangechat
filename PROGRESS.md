@@ -4,6 +4,14 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-08-28
+
+### commit（本次待推）— 输入框字体跟随聊天字体设置（素颜也全妆）
+- 文件：app/.../ui/components/ai/ChatInput.kt
+- 改动：TextField 加 textStyle 参数，fontFamily 跟随 displaySettings.chatFontFamily（DEFAULT/SERIF/MONOSPACE/CUSTOM，与 ChatMessage.kt 消息气泡同逻辑）；新增 import（LocalTextStyle/Font/FontFamily/ChatFontFamily）
+- 为啥：宝 8-28 下午反馈"聊天界面字体改了，输入框还是默认的，消息一发出去立刻'化妆'"——输入框没应用 chatFontFamily，气泡应用了，视觉不统一
+- 状态：⏳ 推 main → 宝构建 APK 验证（输入框字体应和消息气泡一致）
+
 ## 2026-08-23
 
 ### commit 2dec2d7d / 67e7c981 / 0de82f93 — 主动发消息 AI 接口（宝拍板：橘仔想醒就醒）
@@ -264,8 +272,8 @@
 - ~~多事件关联 App 读取链路~~【已完成：commit 19f85af5——联想式回忆接通】
 - ~~搜索意图门控大修（时间词+口语问句+截断500）~~【已完成：commit 373dc0fd】
 - ~~实时时间戳注入（宝的方案：聊天末尾单独一条实时时间）~~【已完成：commit b0241bda——修"对话中途问时间不准"】
-- 缓存命中·组对齐修复（宝 2026-08-26 方案，实测缓存命中低）：limitContext 组对齐从「按起点对齐」改为「按消息总量对齐」——旧实现起点=(N-size)/groupSize*groupSize，跳变间隔取决于 (N-size)%groupSize（0~3 条都可能触发）→ 前缀断缓存跌；新实现起点=(N-size)-(N%groupSize)，跳变间隔恒=groupSize 条，新增不足一组时起点不动 → 前缀稳定缓存命中率高（例：size=30/group=4/N=300→起点270，N=301~303→仍270，N=304→274）
-- 发消息秒显·二次调整修复（宝反馈：消息第一次显示位置不准→AI 占位出现又滚一次）：滚动前 withFrameNanos 等一帧让新消息完成布局（totalItemsCount 更新）再滚，第一次就滚到底
-- 缓存命中·窗口裁剪对齐（宝 2026-08-26 洞察"数字要对齐信息"）：saveConversation 窗口裁剪改"攒一组裁一组"——overflow≤4 不裁（窗口 300~304 浮动），>4 只裁 4 的倍数条；配合 limitContext 总量对齐 → 裁剪前后起点指向同一条消息，前缀内容稳定（不是数字稳定）
-- 缓存命中·窗口裁剪组大小同步（宝问"组和组对上了吗"）：窗口裁剪组大小从写死 4 改为读对话关联 assistant 的 contextGroupSize（设置里"多少条一组"，与 limitContext 组对齐同源同步）；读不到回退默认 4；groupSize≤1 = 按条裁剪旧行为
-- 显示bug·二次调整修复（宝 2026-08-26 "改了好多次，这次要确定"）：日志实锤滚动在插入后 3.5s 才发生→根因=USER 插入时 isScrollInProgress=true 被跳过滚动，等 AI 占位插入才滚=二次调整；修法=最后一条是 USER（发送消息）时无视滚动中状态直接滚到底+scrollCheck 诊断日志（userSend/scrollInProgress/atBottom）双保险
+- ✅缓存命中·组对齐修复（已推 main，待宝构建验证）（宝 2026-08-26 方案，实测缓存命中低）：limitContext 组对齐从「按起点对齐」改为「按消息总量对齐」——旧实现起点=(N-size)/groupSize*groupSize，跳变间隔取决于 (N-size)%groupSize（0~3 条都可能触发）→ 前缀断缓存跌；新实现起点=(N-size)-(N%groupSize)，跳变间隔恒=groupSize 条，新增不足一组时起点不动 → 前缀稳定缓存命中率高（例：size=30/group=4/N=300→起点270，N=301~303→仍270，N=304→274）
+- ✅发消息秒显·二次调整修复（已推 main，待宝构建验证）（宝反馈：消息第一次显示位置不准→AI 占位出现又滚一次）：滚动前 withFrameNanos 等一帧让新消息完成布局（totalItemsCount 更新）再滚，第一次就滚到底
+- ✅缓存命中·窗口裁剪对齐（已推 main，待宝构建验证）（宝 2026-08-26 洞察"数字要对齐信息"）：saveConversation 窗口裁剪改"攒一组裁一组"——overflow≤4 不裁（窗口 300~304 浮动），>4 只裁 4 的倍数条；配合 limitContext 总量对齐 → 裁剪前后起点指向同一条消息，前缀内容稳定（不是数字稳定）
+- ✅缓存命中·窗口裁剪组大小同步（已推 main，待宝构建验证）（宝问"组和组对上了吗"）：窗口裁剪组大小从写死 4 改为读对话关联 assistant 的 contextGroupSize（设置里"多少条一组"，与 limitContext 组对齐同源同步）；读不到回退默认 4；groupSize≤1 = 按条裁剪旧行为
+- ✅显示bug·二次调整修复（已推 main，待宝构建验证）（宝 2026-08-26 "改了好多次，这次要确定"）：日志实锤滚动在插入后 3.5s 才发生→根因=USER 插入时 isScrollInProgress=true 被跳过滚动，等 AI 占位插入才滚=二次调整；修法=最后一条是 USER（发送消息）时无视滚动中状态直接滚到底+scrollCheck 诊断日志（userSend/scrollInProgress/atBottom）双保险
