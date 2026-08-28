@@ -54,6 +54,8 @@ fun RequestEditDialog(
     var history by remember(data) { mutableStateOf(data.history) }
     var tools by remember(data) { mutableStateOf(data.tools) }
     var editing by remember { mutableStateOf<Pair<Int, RequestEditController.EditSection>?>(null) }
+    // 历史消息展开原文：按 index 记录哪些条展开了
+    var expandedIds by remember { mutableStateOf(setOf<Int>()) }
 
     Dialog(onDismissRequest = onCancel) {
         Surface(
@@ -109,13 +111,57 @@ fun RequestEditDialog(
                         }
                     }
                     item {
-                        Text(
-                            "历史消息（勾选 = 这轮带上）",
-                            style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        )
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                            Text(
+                                "历史消息（勾选 = 这轮带上）",
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.padding(top = 4.dp),
+                            ) {
+                                Text("快捷:", style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    "10条", style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable {
+                                        history = history.mapIndexed { i, it -> it.copy(enabled = i >= history.size - 10) }
+                                    },
+                                )
+                                Text(
+                                    "20条", style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable {
+                                        history = history.mapIndexed { i, it -> it.copy(enabled = i >= history.size - 20) }
+                                    },
+                                )
+                                Text(
+                                    "50条", style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable {
+                                        history = history.mapIndexed { i, it -> it.copy(enabled = i >= history.size - 50) }
+                                    },
+                                )
+                                Text(
+                                    "全部", style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable {
+                                        history = history.map { it.copy(enabled = true) }
+                                    },
+                                )
+                                Text(
+                                    "清空", style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.clickable {
+                                        history = history.map { it.copy(enabled = false) }
+                                    },
+                                )
+                            }
+                        }
                     }
                     itemsIndexed(history) { index, item ->
+                        val expanded = index in expandedIds
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
@@ -133,9 +179,19 @@ fun RequestEditDialog(
                             Text(
                                 "[${item.role}] ${item.text}",
                                 style = MaterialTheme.typography.bodySmall,
-                                maxLines = 1,
+                                maxLines = if (expanded) Int.MAX_VALUE else 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                if (expanded) "收起" else "展开",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .padding(start = 4.dp)
+                                    .clickable {
+                                        expandedIds = if (expanded) expandedIds - index else expandedIds + index
+                                    },
                             )
                         }
                     }

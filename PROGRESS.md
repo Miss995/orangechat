@@ -6,6 +6,14 @@
 
 ## 2026-08-28
 
+### commit（本次待推）— 请求编辑 UI 升级：历史消息展开原文 + 上下文条数快捷选择（愿望清单②）
+- 文件：app/.../ui/pages/chat/RequestEditDialog.kt
+- 改动：
+  1. **历史消息展开按钮**：每条历史消息右侧加"展开/收起"——展开显示完整原文（maxLines 无限），收起回到单行省略；按 index 记录 expandedIds（Set<Int>）
+  2. **上下文条数快捷选择**："历史消息"标题下加快捷行：10条/20条/50条/全部/清空——一键勾选最近 N 条或全选/全不选
+- 为啥：宝 2026-08-14 列的愿望清单②（请求编辑 UI 升级：上下文数量可调、原文展开按钮）；宝 8-28 拍板"三（顺序可改）不用了，就一二吧"
+- 状态：⏳ 推 main → 宝构建 APK 验证（请求编辑弹窗历史消息可展开原文、快捷选条数）
+
 ### commit（本次待推）— 发消息秒显：先更新内存态再落库（治"发消息卡几秒才显示"）
 - 文件：app/.../service/ChatService.kt（sendMessage）
 - 改动：锁内 saveConversation 之前加 `updateConversation(conversationId, newConversation)`（内存态）——用户消息先进 session.state.value → UI 立刻显示；落库（窗口 diff 读全量比较，几百 ms~几秒）放后台感知不到；saveConversation 内部最后会再 updateConversation 一次（裁剪成窗口态），最终状态一致
