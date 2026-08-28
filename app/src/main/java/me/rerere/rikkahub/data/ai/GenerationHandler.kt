@@ -53,6 +53,7 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.buildFetchChatSourcesTool
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
+import me.rerere.rikkahub.data.ai.tools.buildQueryToolActionsTool
 import me.rerere.rikkahub.data.ai.tools.buildReadAppLogsTool
 import me.rerere.rikkahub.data.ai.tools.buildWriteFilesTool
 import me.rerere.rikkahub.data.datastore.Settings
@@ -131,6 +132,8 @@ class GenerationHandler(
                 Log.i(TAG, "generateInternal: build tools($assistant)")
                 // 查日志工具（2026-08-21：宝 8-19 待办落地——排查静默失败用，如 fetchRecentEvents 不注入；始终注入，排查随时可用）
                 add(buildReadAppLogsTool())
+                // 工具账本（2026-08-28：愿望清单 id68-⑥ 落地——查工具调用记录防失忆，直接查数据库不额外存储）
+                add(buildQueryToolActionsTool(conversationRepo))
                 if (assistant?.enableMemory == true) {
                     val memoryAssistantId = if (assistant.useGlobalMemory) {
                         MemoryRepository.GLOBAL_MEMORY_ID

@@ -53,6 +53,10 @@ interface MessageNodeDAO {
         offset: Int
     ): List<MessageNodeEntity>
 
+    /** 工具账本：按插入顺序倒序查最近节点（rowid ≈ 插入顺序，窗口裁剪删除旧节点不影响"最近"判断） */
+    @Query("SELECT * FROM message_node ORDER BY rowid DESC LIMIT :limit")
+    suspend fun getRecentNodes(limit: Int): List<MessageNodeEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(nodes: List<MessageNodeEntity>)
 

@@ -480,6 +480,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_request_logs)) },
                     )
                     item(
+                        onClick = { navController.navigate(Screen.ToolActions) },
+                        leadingContent = { Icon(HugeIcons.Alert01, null) },
+                        supportingContent = { Text("查看工具调用记录（参数/结果/状态），橘仔查工具账本用") },
+                        headlineContent = { Text("工具账本") },
+                    )
+                    item(
                         onClick = { navController.navigate(Screen.SecurityAudit) },
                         leadingContent = { Icon(HugeIcons.Alert01, null) },
                         supportingContent = { Text("查看插件安装、工作流拦截、敏感操作等安全事件记录") },

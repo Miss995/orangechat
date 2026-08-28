@@ -130,6 +130,7 @@ import me.rerere.rikkahub.ui.pages.health.HealthPage
 import me.rerere.rikkahub.ui.pages.history.HistoryPage
 import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.log.LogPage
+import me.rerere.rikkahub.ui.pages.log.ToolActionsPage
 import me.rerere.rikkahub.ui.pages.security.SecurityAuditPage
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppEditPage
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppManagerPage
@@ -632,6 +633,11 @@ entry<Screen.Log> {
     LogPage()
 }
 
+entry<Screen.ToolActions> {
+    val conversationRepo = koinInject<ConversationRepository>()
+    ToolActionsPage(conversationRepo)
+}
+
 entry<Screen.SecurityAudit> {
     SecurityAuditPage()
 }
@@ -1034,6 +1040,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Log : Screen
+
+    @Serializable
+    data object ToolActions : Screen
 
     @Serializable
     data object SecurityAudit : Screen

@@ -530,6 +530,24 @@ class ConversationRepository(
     /**
      * 读取某个对话的消息节点总数（懒加载窗口需要知道窗口外历史边界）。
      */
+    /** 工具账本（2026-08-28）：查最近节点的工具调用记录（参数/结果/状态），供 query_tool_actions 工具和 UI 用 */
+    suspend fun getRecentToolActions(limit: Int, filter: String? = null): List<String> {
+        val lines = mutableListOf<String>()
+        val nodes = messageNodeDAO.getRecentNodes(limit.coerceIn(1, 100))
+        for (node in nodes) {
+            val messages = runCatching { JsonInstant.decodeFromString<List<UIMessage>>(node.messages) }.getOrNull() ?: continue
+            for (msg in messages) {
+                val tool = msg.parts.filterIsInstance<UIMessagePart.Tool>().lastOrNull() ?: continue
+                if (filter != null && !tool.toolName.contains(filter, ignoreCase = true)) continue
+                val argText = tool.input.ifBlank { "{}" }
+                val resultText = tool.output.filterIsInstance<UIMessagePart.Text>().joinToString(" ").take(200)
+                val status = if (resultText.contains("\"error\"") || resultText.contains("Exception") || resultText.contains("denied")) "FAIL" else "OK"
+                lines += "[${node.id.take(8)}] ${tool.toolName} | args=$argText | $status | $resultText"
+            }
+        }
+        return lines
+    }
+
     suspend fun getMessageNodeCount(conversationId: String): Int {
         return messageNodeDAO.getNodeCountOfConversation(conversationId)
     }

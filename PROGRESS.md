@@ -6,6 +6,13 @@
 
 ## 2026-08-28
 
+### commit（本次待推）— 工具账本：query_tool_actions 工具 + 设置入口页面（愿望清单 id68-⑥ 落地）
+- 文件：
+  - 改：MessageNodeDAO.kt（getRecentNodes：rowid 倒序查最近节点）、ConversationRepository.kt（getRecentToolActions 提取工具调用记录）、GenerationHandler.kt（注入 buildQueryToolActionsTool）、RouteActivity.kt（Screen.ToolActions 路由）、SettingPage.kt（设置→工具账本入口）
+  - 新：data/ai/tools/ToolActionsTools.kt（query_tool_actions 工具：limit/filter 参数，返回最近工具调用）、ui/pages/log/ToolActionsPage.kt（工具账本列表页）
+- 设计：**不额外存储**——工具结果本来就是聊天内容（消息里 Tool 部分，存在 message_node.messages JSON）；查询工具直接从数据库最近节点里提取工具名/参数/结果/状态。宝 8-28 拍板：不存记忆库、本地展示即可、重要的是橘仔能查（UI 顺手做给宝看）
+- 状态：⏳ 推 main → 宝构建 APK 验证（①橘仔可调 query_tool_actions 查自己用过啥工具 ②设置→工具账本可看最近 100 条）
+
 ### commit（本次待推）— 请求编辑 UI 升级：历史消息展开原文 + 上下文条数快捷选择（愿望清单②）
 - 文件：app/.../ui/pages/chat/RequestEditDialog.kt
 - 改动：
