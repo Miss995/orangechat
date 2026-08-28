@@ -6,6 +6,12 @@
 
 ## 2026-08-28
 
+### commit（本次待推）— write_files 缓存原子写 + persist 失败打日志（memory 60 待办④落地）
+- 文件：app/.../data/ai/tools/ZipFilesTool.kt（WriteFilesCache.persist）
+- 改动：persist 从直接 `f.writeText(...)` 改成原子写——先写 `.tmp` 临时文件再 rename（同一目录 rename 原子），写一半崩溃不会留半个坏缓存文件；persist 失败时 Log.w 打日志（不再静默吞异常）
+- 落盘时机确认：put/updateAll/clear 每次修改都立即 persist（即时落盘已有）
+- 状态：⏳ 推 main → 宝构建 APK（write_files 缓存更抗崩溃）
+
 ### commit（本次待推）— 工具账本：query_tool_actions 工具 + 设置入口页面（愿望清单 id68-⑥ 落地）
 - 文件：
   - 改：MessageNodeDAO.kt（getRecentNodes：rowid 倒序查最近节点）、ConversationRepository.kt（getRecentToolActions 提取工具调用记录）、GenerationHandler.kt（注入 buildQueryToolActionsTool）、RouteActivity.kt（Screen.ToolActions 路由）、SettingPage.kt（设置→工具账本入口）

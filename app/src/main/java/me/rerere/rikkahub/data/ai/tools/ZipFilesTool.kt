@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.data.ai.tools
 
 import android.content.Context
+import android.util.Log
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -61,7 +62,7 @@ object WriteFilesCache {
 
     private fun fileFor(convId: String): File? = baseDir?.let { File(it, "$convId.json") }
 
-    /** 把某个会话的缓存写回磁盘 */
+    /** 把某个会话的缓存写回磁盘（原子写：先写临时文件再 rename，避免写一半崩溃损坏缓存） */
     private fun persist(convId: String) {
         val map = caches[convId] ?: return
         val f = fileFor(convId) ?: return
@@ -70,7 +71,13 @@ object WriteFilesCache {
                 val obj = buildJsonObject {
                     map.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
                 }
-                f.writeText(obj.toString())
+                // 原子写：先写 .tmp 再 rename（同一目录 rename 是原子的），进程中途崩溃不会留半个坏文件
+                val tmp = File(f.parentFile, "${f.name}.tmp")
+                tmp.writeText(obj.toString())
+                if (f.exists()) f.delete()
+                tmp.renameTo(f)
+            }.onFailure {
+                Log.w("WriteFilesCache", "persist failed for conv=$convId", it)
             }
         }
     }
