@@ -806,6 +806,7 @@ class ExternalMemoryService(
         count: Int = 5,
         dateFrom: String? = null,
         dateTo: String? = null,
+        queryText: String? = null, // 原始查询文本（2026-08-29 三变量评分：关键词分用）
     ): Result<List<ExternalMemoryEvent>> = withContext(Dispatchers.IO) {
         runCatching {
             val allEvents = queryAllEvents(assistantId).getOrDefault(emptyList())
@@ -821,19 +822,31 @@ class ExternalMemoryService(
                     }
                 }
 
+            // 2026-08-29 三变量召回评分（方案A：0.5×向量 + 0.3×关键词 + 0.2×时间，宝定）
+            val queryKeywords = if (queryText.isNullOrBlank()) emptyList() else buildSearchKeywords(queryText)
+            val hasTimeRange = !dateFrom.isNullOrBlank() || !dateTo.isNullOrBlank()
             val scored = allEvents.mapNotNull { event ->
-                val similarity = cosineSimilarity(queryEmbedding, event.embedding)
-                // 时间加权：近 30 天内的新事件微优先（每天 +0.001，不影响相似度主排序，只做同分段内打破平局）
-                val timeBonus = event.sourceDate.takeIf { it.isNotBlank() }?.let { d ->
+                val vecScore = cosineSimilarity(queryEmbedding, event.embedding)
+                // 关键词分：查询拆词命中事件 keywords（二筛索引）/标题/内容的比例（0~1）
+                val kwScore = if (queryKeywords.isEmpty()) 0f else {
+                    val matched = queryKeywords.count { kw ->
+                        event.keywords.any { e -> e.contains(kw, ignoreCase = true) || kw.contains(e, ignoreCase = true) } ||
+                            event.title.contains(kw, ignoreCase = true) ||
+                            event.content.contains(kw, ignoreCase = true)
+                    }
+                    matched.toFloat() / queryKeywords.size
+                }
+                // 时间分：查询带时间范围 → 范围内=1（范围外已被上方 filter 排除）；不带时间 → 近因衰减 e^(-天数/30)
+                val timeScore = if (hasTimeRange) 1f else event.sourceDate.takeIf { it.isNotBlank() }?.let { d ->
                     runCatching {
                         val days = java.time.temporal.ChronoUnit.DAYS.between(
                             java.time.LocalDate.parse(d),
                             java.time.LocalDate.now()
                         )
-                        if (days in 0..30) (30 - days) * 0.001f else 0f
+                        if (days < 0) 1f else kotlin.math.exp(-days / 30f).toFloat()
                     }.getOrDefault(0f)
                 } ?: 0f
-                event to (similarity + timeBonus)
+                event to (0.5f * vecScore + 0.3f * kwScore + 0.2f * timeScore)
             }
 
             // 主命中（冲突消解：扩大候选池 -> 同标题取新 -> 取 count 条）
@@ -999,6 +1012,13 @@ class ExternalMemoryService(
                         relatedIds.add(relatedJson.optString(j))
                     }
                 }
+                val keywords = mutableListOf<String>()
+                val kwJson = obj.optJSONArray("keywords")
+                if (kwJson != null) {
+                    for (j in 0 until kwJson.length()) {
+                        keywords.add(kwJson.optString(j))
+                    }
+                }
                 result.add(
                     ExternalMemoryEvent(
                         id = obj.optInt("id", 0),
@@ -1011,6 +1031,9 @@ class ExternalMemoryService(
                         embedding = embedding,
                         supersededBy = obj.safeString("superseded_by"), // A.U.D.N. 标记的失效事件（写入层已启用）
                         relatedEventIds = relatedIds, // A.U.D.N. linked_event_ids 写入的关联事件
+                        keywords = keywords, // 二筛关键词索引
+                        timeLabel = obj.safeString("time_label"), // 一筛时间标
+                        category = obj.safeString("category"), // 二筛事件分类
                     )
                 )
             }
@@ -1059,6 +1082,9 @@ data class ExternalMemoryEvent(
     val embedding: List<Float> = emptyList(),
     val supersededBy: String = "", // 被哪个新事件取代（A.U.D.N. 写入层标记；非空=已失效，召回时跳过）
     val relatedEventIds: List<String> = emptyList(), // 关联事件 id（A.U.D.N. linked_event_ids 写入；召回时带出=联想式回忆）
+    val keywords: List<String> = emptyList(), // 二筛关键词索引（2026-08-29 记忆系统分层）
+    val timeLabel: String = "", // 一筛时间标（上午/下午/晚上/深夜）
+    val category: String = "", // 二筛事件分类（fact/decision/plan/procedure/daily）
 )
 
 /**

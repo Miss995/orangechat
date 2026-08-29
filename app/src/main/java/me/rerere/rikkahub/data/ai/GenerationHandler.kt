@@ -647,6 +647,7 @@ class GenerationHandler(
                                                     count = config.recallCount,
                                                     dateFrom = timeRange.dateFrom,
                                                     dateTo = timeRange.dateTo,
+                                                    queryText = queryText,
                                                 ).getOrDefault(emptyList())
                                                 val seenMsg = mutableSetOf<String>()
                                                 recalledEvents.forEach { event ->
