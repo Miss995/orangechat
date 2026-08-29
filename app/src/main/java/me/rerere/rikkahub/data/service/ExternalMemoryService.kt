@@ -50,6 +50,15 @@ class ExternalMemoryService(
             // 专属称呼（作为搜索词无意义）
             "宝贝", "小宝", "橘仔", "宝和", "年糕", "猫猫", "喵喵"
         )
+
+        // 宽泛主题词（2026-08-29 宝指出："记忆系统"这种宽泛词命中一堆不相关事件——
+        // 拆词时剔除，关键词分只算实义词命中；向量分仍保留语义匹配，不误伤真查询）
+        internal val BROAD_WORDS = setOf(
+            "记忆", "记忆系统", "系统", "问题", "事情", "东西", "内容", "记录", "帖子",
+            "消息", "聊天", "对话", "上面", "下面", "一个", "时候", "时间",
+            "今天", "刚才", "本来", "结果", "最后", "第一", "第二", "第三",
+            "上次", "之前", "以后", "那天", "当时", "最近", "这条", "那条", "这句",
+        )
     }
 
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
@@ -323,7 +332,7 @@ class ExternalMemoryService(
         }
         return keywords
             .distinct()
-            .filter { it.length >= 2 && it !in STOP_WORDS && it.any { c -> c.isLetterOrDigit() } }
+            .filter { it.length >= 2 && it !in STOP_WORDS && it !in BROAD_WORDS && it.any { c -> c.isLetterOrDigit() } }
             .take(8)
     }
 
