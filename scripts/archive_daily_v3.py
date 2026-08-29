@@ -87,6 +87,25 @@ def write_status(date, success, events_count=0, msgs_count=0, error=""):
         print(f"  write_status 失败（不影响主流程）: {e}")
 
 
+def count_events_by_date(d):
+    """统计 memory_events 里 source_date=指定日期的事件总数（archive_status 真实口径）。
+    2026-08-29 宝摸库发现：原 events_count 只统计 cron 主流程\"补剩余\"新建数，
+    白天 incremental_listener 建的没算 → 显示 0 误导。改为直接查当天真实事件数。
+    一天事件数远小于 PostgREST 默认 1000 行上限，len(rows) 够用。"""
+    try:
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/memory_events?select=id&source_date=eq.{d.isoformat()}",
+            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"},
+            timeout=15,
+        )
+        r.raise_for_status()
+        rows = r.json()
+        return len(rows) if isinstance(rows, list) else 0
+    except Exception as e:
+        print(f"[{cur_now():%Y-%m-%d %H:%M}] 统计当天事件数失败（不影响主流程）: {e}")
+        return 0
+
+
 def send_serverchan(title, desp=""):
     """Server 酱微信推送（可选：没配 SENDKEY 就跳过，失败不影响主流程）"""
     if not SENDKEY:
@@ -671,9 +690,12 @@ def main(date_str=None):
                 print(f"[{cur_now():%Y-%m-%d %H:%M}] 编号合并：无相邻同主题事件")
         except Exception as e:
             print(f"[{cur_now():%Y-%m-%d %H:%M}] 编号合并失败: {e}")
-        # 数据监控：写归档状态（成功）
-        write_status(d, True, events_count=ev_count, msgs_count=N)
-        print(f"[{cur_now():%Y-%m-%d %H:%M}] archive_status 已写 ✓（{d} success, {ev_count} events, {N} msgs）")
+        # 数据监控：写归档状态（成功）——events_count 口径改为当天真实事件数（2026-08-29 宝摸库修正）
+        ev_total = count_events_by_date(d)
+        if ev_total == 0:
+            ev_total = ev_count  # 统计失败时退回补剩余新建数，不误报 0
+        write_status(d, True, events_count=ev_total, msgs_count=N)
+        print(f"[{cur_now():%Y-%m-%d %H:%M}] archive_status 已写 ✓（{d} success, {ev_total} events, {N} msgs）")
     except Exception as e:
         print(f"[{cur_now():%Y-%m-%d %H:%M}] 归档失败: {e}")
         write_status(d, False, error=str(e))
