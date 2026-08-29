@@ -364,13 +364,14 @@ def split_events(text_chunk, start_idx, batch_len):
                 "你是橘仔的记忆归档助手。下面是橘仔和主人今天的聊天记录片段，"
                 "每行开头是 [编号]（编号全局连续，从 1 开始，本批从 " + str(start_idx) + " 开始）。\n"
                 "请提炼值得长期记住的事件。要求：\n"
-                "1. 事件 = 一件完整的事（一次讨论/一个决定/一段共同经历/一次情绪时刻），不要拆太碎，能合并就合并\n"
+                "1. 事件 = 一件完整的事（一次讨论/一个决定/一段共同经历/一次情绪时刻/日常小片段），不要拆太碎，能合并就合并\n"
                 "2. event_type：聊天相关=chat（日常、情绪、偏好、共同回忆），代码/项目相关=code（改代码、报错、推commit、配置、查密钥）\n"
                 "3. source_ids：该事件由哪几条消息编号总结出来的（写编号数组，如 [5,6,7]）\n"
-                "4. content 要客观准确抓重点（1~2句话）：只记事实（谁、做了什么、结果），中性语气，不评价、不带梗、不夸张；宁缺毋滥，没价值的对话别记\n"
+                "4. content 要客观准确抓重点（1~2句话）：只记事实（谁、做了什么、结果），中性语气，不评价、不带梗、不夸张；日常聊天也要记（连续性），所有有信息量的对话都提炼成事件，宁多勿漏\n"
                 "5. title 用 2~8 个字的短标题\n"
-                "6. 没有值得记的就输出 {\"events\": []}\n"
-                "只输出 JSON，格式：{\"events\": [{\"title\": \"...\", \"content\": \"...\", \"event_type\": \"chat|code\", \"source_ids\": [1,2]}]}"
+                "6. time_label：事件发生的时段（如 上午/下午/晚上/深夜；能从上下文推断就写，推断不出写 白天）\n"
+                "7. 完全没有内容的片段才输出 {\"events\": []}\n"
+                "只输出 JSON，格式：{\"events\": [{\"title\": \"...\", \"content\": \"...\", \"event_type\": \"chat|code\", \"source_ids\": [1,2], \"time_label\": \"...\"}]}"
             )},
             {"role": "user", "content": text_chunk},
         ],
@@ -401,8 +402,67 @@ def split_events(text_chunk, start_idx, batch_len):
             "event_type": "code" if e.get("event_type") == "code" else "chat",
             "source_ids": [str(x) for x in raw_ids],
             "source_range": f"{min(raw_ids)}-{max(raw_ids)}",
+            "time_label": (e.get("time_label") or "").strip()[:20],
         })
     return out
+
+
+def second_pass_events(events):
+    """二筛（独立层）：对全量事件批量提取关键词 + 确定事件分类（标注索引，不筛选丢弃）。
+    失败不影响入库（保持全量）。分类：fact事实/decision决定/plan计划意向/procedure流程方法/daily日常。"""
+    if not events:
+        return events
+    items = "\n".join(f"{i + 1}. {e['title']}：{e['content']}" for i, e in enumerate(events))
+    try:
+        resp = requests.post("https://api.siliconflow.cn/v1/chat/completions", headers={
+            "Authorization": f"Bearer {SF_KEY}", "Content-Type": "application/json",
+        }, json={
+            "model": LLM_MODEL, "temperature": 0.1,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": (
+                    "你是橘仔记忆库的二筛索引助手。下面是当天提炼出的事件列表（编号. 标题：内容）。\n"
+                    "请为每条事件输出：\n"
+                    "1. keywords：3~6 个关键词（事件的核心词，方便以后检索回忆，如人名/地点/事物/主题）\n"
+                    "2. category：事件分类，只能是以下之一：\n"
+                    "   - fact：事实（去了哪、做了什么、结果如何）\n"
+                    "   - decision：决定（定下的方案、选择、约定）\n"
+                    "   - plan：计划意向（想找/好奇/打算做/惦记的事）\n"
+                    "   - procedure：流程方法（怎么做的、学到的东西）\n"
+                    "   - daily：日常闲聊（没什么特别但属于共同日常）\n"
+                    "只输出 JSON，格式：{\"items\": [{\"index\": 1, \"keywords\": [\"...\"], \"category\": \"fact\"}]}"
+                )},
+                {"role": "user", "content": items},
+            ],
+            "max_tokens": 1500,
+        }, timeout=90)
+        if resp.status_code == 429:
+            raise Exception("429 Too Many Requests")
+        resp.raise_for_status()
+        raw = resp.json()["choices"][0]["message"]["content"].strip()
+        try:
+            data = json.loads(raw)
+        except Exception:
+            s = raw[raw.find("{"):raw.rfind("}") + 1]
+            data = json.loads(s)
+        by_idx = {}
+        for it in (data.get("items") or []):
+            try:
+                by_idx[int(it.get("index"))] = it
+            except Exception:
+                pass
+        valid_cats = ("fact", "decision", "plan", "procedure", "daily")
+        for i, e in enumerate(events):
+            it = by_idx.get(i + 1)
+            if it:
+                e["keywords"] = (it.get("keywords") or [])[:8]
+                e["category"] = it.get("category") if it.get("category") in valid_cats else "daily"
+    except Exception as e:
+        print(f"  二筛失败（不影响入库）: {e}")
+        for e in events:
+            e.setdefault("keywords", [])
+            e.setdefault("category", "daily")
+    return events
 
 
 def store_events(events, date=None):
@@ -429,6 +489,9 @@ def store_events(events, date=None):
             "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
             "embedding": vec_str(embs[i]) if i < len(embs) else None,   # 固定键：缺=null
             "related_event_ids": e.get("related_event_ids") or [],      # 固定键：缺=[]
+            "time_label": e.get("time_label") or "",                    # 一筛：时间标
+            "keywords": e.get("keywords") or [],                        # 二筛：关键词（jsonb）
+            "category": e.get("category") or "daily",                   # 二筛：事件分类
         }
         rows.append(row)
     r = requests.post(f"{SUPABASE_URL}/rest/v1/memory_events", json=rows, headers={
@@ -487,6 +550,8 @@ def summarize_range(msgs, start_idx, end_idx, date=None):
     if not evs:
         print(f"[{cur_now():%H:%M:%S}] A.U.D.N. 后没有需要入库的事件")
         return 0
+    # ②二筛（独立层）：关键词+分类标注（失败不影响入库，保持全量）
+    evs = second_pass_events(evs)
     n = call_with_retry(lambda: store_events(evs, d))
     print(f"[{cur_now():%H:%M:%S}] memory_events 入库 {n} 条 ✓")
     # 分流：code -> Mem0（失败不阻断，外置库已是主存储）
