@@ -823,29 +823,22 @@ class ExternalMemoryService(
                 }
 
             // 2026-08-29 三变量召回评分（方案A：0.5×向量 + 0.3×关键词 + 0.2×时间，宝定）
+            // 08-29 修正：①无时间词查询时间分=0（"上次/之前"是回溯查询，近因衰减抬最近事件帮倒忙）
+            // ②关键词分只匹配 title+keywords（"提到"不算命中，"主题就是"才算；content 由向量分覆盖语义）
             val queryKeywords = if (queryText.isNullOrBlank()) emptyList() else buildSearchKeywords(queryText)
             val hasTimeRange = !dateFrom.isNullOrBlank() || !dateTo.isNullOrBlank()
             val scored = allEvents.mapNotNull { event ->
                 val vecScore = cosineSimilarity(queryEmbedding, event.embedding)
-                // 关键词分：查询拆词命中事件 keywords（二筛索引）/标题/内容的比例（0~1）
+                // 关键词分：查询拆词命中事件 title / keywords（二筛索引）的比例（0~1），不匹配 content
                 val kwScore = if (queryKeywords.isEmpty()) 0f else {
                     val matched = queryKeywords.count { kw ->
                         event.keywords.any { e -> e.contains(kw, ignoreCase = true) || kw.contains(e, ignoreCase = true) } ||
-                            event.title.contains(kw, ignoreCase = true) ||
-                            event.content.contains(kw, ignoreCase = true)
+                            event.title.contains(kw, ignoreCase = true)
                     }
                     matched.toFloat() / queryKeywords.size
                 }
-                // 时间分：查询带时间范围 → 范围内=1（范围外已被上方 filter 排除）；不带时间 → 近因衰减 e^(-天数/30)
-                val timeScore = if (hasTimeRange) 1f else event.sourceDate.takeIf { it.isNotBlank() }?.let { d ->
-                    runCatching {
-                        val days = java.time.temporal.ChronoUnit.DAYS.between(
-                            java.time.LocalDate.parse(d),
-                            java.time.LocalDate.now()
-                        )
-                        if (days < 0) 1f else kotlin.math.exp(-days / 30f).toFloat()
-                    }.getOrDefault(0f)
-                } ?: 0f
+                // 时间分：带时间范围 → 范围内=1（范围外已被上方 filter 排除）；不带时间 → 0（不偏爱最近）
+                val timeScore = if (hasTimeRange) 1f else 0f
                 event to (0.5f * vecScore + 0.3f * kwScore + 0.2f * timeScore)
             }
 
