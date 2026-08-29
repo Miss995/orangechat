@@ -842,8 +842,10 @@ class ExternalMemoryService(
                 event to (0.5f * vecScore + 0.3f * kwScore + 0.2f * timeScore)
             }
 
-            // 主命中（冲突消解：扩大候选池 -> 同标题取新 -> 取 count 条）
+            // 主命中（2026-08-29 宝定：加置信度阈值——总分低于 0.3 不召回，宁缺毋滥治低分噪声；
+            // 然后扩大候选池 -> 同标题取新 -> 取 count 条）
             val base = scored.sortedByDescending { it.second }
+                .filter { it.second >= 0.3f }
                 .take(count * 2) // 扩大候选池，给冲突消解留空间
                 .map { it.first }
                 .let { dedupeByTitle(it) } // 同标题取新（冲突消解基础版）
