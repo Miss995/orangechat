@@ -715,7 +715,7 @@ private fun ChatListPreview(
                     horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
                 ) {
                     Surface(
-                        shape = MaterialTheme.shapes.medium,
+                        shape = if (isUser && settings.themeId == "claude") RoundedCornerShape(22.dp) else MaterialTheme.shapes.medium,
                         color = if (isUser) {
                             MaterialTheme.colorScheme.secondaryContainer
                         } else {
