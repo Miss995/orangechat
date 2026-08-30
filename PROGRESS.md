@@ -14,6 +14,13 @@
 - 注意：ChatService.updateConversation 保留原逻辑（if 检查 → checkFilesDelete → 赋值），只加注释
 - 状态：✅ 已推 main（c2808e89，GitHub API 推送——git 443 不通）→ 宝构建 APK 验证（①搜索老消息能跳到 ②橘仔回答时区分确认事实/回忆线索）
 
+### commit 0bd963df — Claude 主题皮：AI 气泡白底块（仿官方界面）（宝拍板"搞个主题皮玩玩看"）
+- 文件：app/.../ui/pages/chat/ChatList.kt
+- 背景：橘瓣本有原作者做的 Claude 配色主题（presets/ClaudeTheme.kt，id=claude，coral 橙+米白），但 AI 气泡用 tertiaryContainer（浅绿 #CDEBC8）不像官方；且 tertiaryContainer 兼作搜索高亮色，直接改主题色会让高亮失效
+- 改动：ChatList 气泡 color 加分支——themeId=="claude" 时 AI 气泡用 surfaceContainerLowest（Light=#FFFFFF 纯白，仿官方白底消息块）；用户气泡（secondaryContainer 米色 #E9E6DC）不动；其他主题不变；搜索高亮仍用 tertiaryContainer 不受影响。气泡文字色由 Surface contentColor 自动匹配（白底自动深字）
+- 状态：✅ 已推 main（0bd963df）→ 宝构建 APK 后：设置→主题→选 Claude，看 AI 气泡是否白底块、用户气泡米色
+- 备注：后续可继续调（输入框样式/背景/气泡圆角更像官方；shapes 需扩展 PresetTheme 结构才支持按主题定制）
+
 ## 2026-08-28
 
 ### commit（本次待推）— write_files 缓存原子写 + persist 失败打日志（memory 60 待办④落地）
