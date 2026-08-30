@@ -716,7 +716,17 @@ private fun ChatListPreview(
                 ) {
                     Surface(
                         shape = MaterialTheme.shapes.medium,
-                        color = if (isUser) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.tertiaryContainer,
+                        color = if (isUser) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            // Claude 主题皮（2026-08-30）：AI 气泡用最浅容器色（白/暖白），仿官方"白底消息块"；
+                            // 其他主题保持原 tertiaryContainer。搜索高亮仍用 tertiaryContainer，不受影响。
+                            if (settings.themeId == "claude") {
+                                MaterialTheme.colorScheme.surfaceContainerLowest
+                            } else {
+                                MaterialTheme.colorScheme.tertiaryContainer
+                            }
+                        },
                     ) {
                         Row(
                             modifier = Modifier
