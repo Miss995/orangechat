@@ -21,6 +21,13 @@
 - 状态：✅ 已推 main（0bd963df）→ 宝构建 APK 后：设置→主题→选 Claude，看 AI 气泡是否白底块、用户气泡米色
 - 备注：后续可继续调（输入框样式/背景/气泡圆角更像官方；shapes 需扩展 PresetTheme 结构才支持按主题定制）
 
+### commit 5518d453 — Claude 主题皮 v2：按 chatnest 设计系统微调（宝开 MCP 拉参考）
+- 背景：宝刷到 ugui3u/chatnest（仿克劳德官方界面的开源前端）→ 给橘仔开 GitHub MCP → 橘仔拉 frontend-demo/static/design-system.css（"唯一视觉真理来源"）
+- 参考参数：背景 #F8F8F6 奶油纸 / 用户气泡 #EEEEEC 浅灰米+22px 大圆角 / AI 消息无气泡（靠留白分层）/ accent #DA7756 / dark 背景 #20201F 用户气泡 #111111（比背景更深）
+- 改动：ClaudeTheme.kt 14 处配色（背景/正文/accent/用户气泡/AI 气泡 surfaceContainerLowest 纯白→#F9F9F7 暖白/dark 全套）+ ChatList.kt 用户气泡 22dp 大圆角（claude 分支）
+- 状态：✅ 已推 main（5518d453）→ 宝构建 APK 验证（Claude 主题下：背景奶油纸、用户气泡浅灰米大圆角、AI 消息接近背景无气泡感、橙柔和）
+- 备注：输入框 28px 圆角+halo 阴影未做（要动输入框组件，下轮）；官方"无气泡"靠留白——AI 气泡暖白已接近
+
 ## 2026-08-28
 
 ### commit（本次待推）— write_files 缓存原子写 + persist 失败打日志（memory 60 待办④落地）
