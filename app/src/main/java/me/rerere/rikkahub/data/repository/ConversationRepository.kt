@@ -563,6 +563,29 @@ class ConversationRepository(
     }
 
     /**
+     * 老消息跳转（2026-08-30）：查目标消息节点在数据库中的 node_index。
+     */
+    suspend fun getNodeIndexById(conversationId: String, nodeId: String): Int? {
+        return messageNodeDAO.getNodeIndexById(conversationId, nodeId)
+    }
+
+    /**
+     * 老消息跳转（2026-08-30）：以 centerIndex 为中心加载一段窗口（默认前后各 150 条），
+     * 让目标消息落在加载段内。区间 clamp 到 [0, totalCount]。
+     */
+    suspend fun loadMessageNodesWindow(
+        conversationId: String,
+        centerIndex: Int,
+        halfSize: Int = 150,
+    ): List<MessageNode> {
+        val totalCount = messageNodeDAO.getNodeCountOfConversation(conversationId)
+        if (totalCount == 0) return emptyList()
+        val start = (centerIndex - halfSize).coerceIn(0, totalCount)
+        val end = (centerIndex + halfSize + 1).coerceIn(start + 1, totalCount)
+        return loadMessageNodesRange(conversationId, start, end)
+    }
+
+    /**
      * 加载消息节点。
      *
      * @param limit 非空时只加载最近 limit 条（懒加载窗口：从 totalCount - limit 开始读）。

@@ -1528,9 +1528,28 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
 
     internal fun updateConversation(conversationId: Uuid, conversation: Conversation) {
         if (conversation.id != conversationId) return
+        // 只更新内存态 session.state.value，不落库、不重写 nodeIndex（落库走 ConversationRepository.updateConversation）
         val session = getOrCreateSession(conversationId)
         checkFilesDelete(conversation, session.state.value)
         session.state.value = conversation
+    }
+
+    /**
+     * 老消息跳转（2026-08-30）：目标消息不在当前懒加载窗口内时，把窗口移动到目标附近。
+     * 查 nodeIndex → 加载目标段（前后各 150 条）→ 替换 session 内存态 + 更新窗口边界（保存保护按新窗口算）。
+     * 返回目标消息在加载段内的 index（供 UI 滚动）；找不到返回 null。
+     */
+    suspend fun jumpToNode(conversationId: Uuid, nodeId: Uuid): Int? {
+        val nodeIndex = conversationRepo.getNodeIndexById(conversationId.toString(), nodeId.toString()) ?: return null
+        val segment = conversationRepo.loadMessageNodesWindow(conversationId.toString(), nodeIndex)
+        if (segment.isEmpty()) return null
+        val session = getOrCreateSession(conversationId)
+        val base = session.state.value
+        val startIndex = (nodeIndex - 150).coerceAtLeast(0)
+        updateConversation(conversationId, base.copy(messageNodes = segment))
+        lazyWindowFirstIndex[conversationId] = startIndex
+        Log.i(TAG, "jumpToNode: nodeId=$nodeId nodeIndex=$nodeIndex windowStart=$startIndex segment=${segment.size}")
+        return nodeIndex - startIndex
     }
 
     fun updateConversationState(conversationId: Uuid, update: (Conversation) -> Conversation) {

@@ -580,6 +580,7 @@ class GenerationHandler(
                             Log.i(TAG, "Diary [$source] injected ($cacheKey)")
                             appendLine()
                             appendLine("## 日记")
+                            appendLine("（权威层级：【确认事实】——当日日记摘要，为已发生事实与感受的记录。）")
                             append(diaryText)
                         }
                     }
@@ -592,6 +593,7 @@ class GenerationHandler(
                 if (!recentEventsText.isNullOrBlank()) {
                     appendLine()
                     appendLine("## 最近事件（最近 3 天）")
+                    appendLine("（权威层级：【确认事实】——最近事件的归档总结，为已发生事实，可直接参考。）")
                     append(recentEventsText)
                 }
  
@@ -647,7 +649,6 @@ class GenerationHandler(
                                                     count = config.recallCount,
                                                     dateFrom = timeRange.dateFrom,
                                                     dateTo = timeRange.dateTo,
-                                                    queryText = queryText,
                                                 ).getOrDefault(emptyList())
                                                 val seenMsg = mutableSetOf<String>()
                                                 recalledEvents.forEach { event ->
@@ -686,6 +687,7 @@ class GenerationHandler(
                             if (allRecalled.isNotEmpty()) {
                                 appendLine()
                                 appendLine("## 外置记忆库")
+                                appendLine("（权威层级：【回忆线索】——向量检索命中的候选材料，可能与当前话题相关但不一定是事实，仅作回忆线索，需谨慎采用。）")
                                 allRecalled.reversed().forEachIndexed { index, memory ->
                                     appendLine("${index + 1}. ${memory}")
                                 }

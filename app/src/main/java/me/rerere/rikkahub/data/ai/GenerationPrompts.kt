@@ -22,6 +22,8 @@ internal fun buildMemoryPrompt(memories: List<AssistantMemory>) =
         appendLine()
         append("These are memories stored via the memory_tool that you can reference in future conversations.")
         appendLine()
+        append("权威层级：【确认事实】——以下为已确认的稳定事实与偏好，可直接采用。")
+        appendLine()
         val json = buildJsonArray {
             memories.forEach { memory ->
                 add(buildJsonObject {

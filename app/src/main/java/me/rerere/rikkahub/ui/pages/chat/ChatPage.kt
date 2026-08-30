@@ -163,6 +163,12 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
                     // 窗口剪切后，历史消息 index 需映射到窗口内；超出窗口则停在窗口开头
                     val start = (conversation.messageNodes.size - WINDOW_DISPLAY_SIZE).coerceAtLeast(0)
                     chatListState.scrollToItem(if (index >= start) index - start else 0)
+                } else {
+                    // 目标消息不在当前懒加载窗口（老消息跳转）→ 动态加载目标段再滚动（2026-08-30）
+                    val jumpIndex = vm.jumpToNode(nodeId)
+                    if (jumpIndex != null) {
+                        chatListState.scrollToItem(jumpIndex)
+                    }
                 }
             } else {
                 chatListState.requestScrollToItem(conversation.messageNodes.size.coerceAtMost(WINDOW_DISPLAY_SIZE) + 5)

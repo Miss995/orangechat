@@ -349,4 +349,10 @@ class ChatVM(
         }
     }
 
+    /**
+     * 老消息跳转（2026-08-30）：目标消息不在当前懒加载窗口内时，动态加载目标段。
+     * 返回目标消息在加载段内的 index（供 UI 滚动）；找不到返回 null。
+     */
+    suspend fun jumpToNode(nodeId: Uuid): Int? = chatService.jumpToNode(_conversationId, nodeId)
+
 }

@@ -43,6 +43,13 @@ interface MessageNodeDAO {
     @Query("SELECT COUNT(*) FROM message_node WHERE conversation_id = :conversationId")
     suspend fun getNodeCountOfConversation(conversationId: String): Int
 
+    /**
+     * 老消息跳转（2026-08-30）：按 nodeId 查它在对话里的 node_index（数据库真实位置）。
+     * 窗口化后目标消息可能在懒加载窗口外，用 node_index 定位后动态加载目标段。
+     */
+    @Query("SELECT node_index FROM message_node WHERE id = :nodeId AND conversation_id = :conversationId LIMIT 1")
+    suspend fun getNodeIndexById(conversationId: String, nodeId: String): Int?
+
     @Query(
         "SELECT * FROM message_node WHERE conversation_id = :conversationId " +
             "ORDER BY node_index ASC LIMIT :limit OFFSET :offset"
