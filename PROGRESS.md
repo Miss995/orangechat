@@ -4,6 +4,16 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-08-30
+
+### commit c2808e89 — 老消息跳转窗口移动 + 记忆权威标注（polaris 分层）（宝拍板 ①②，晚间空闲时段实施）
+- 文件：
+  - ② 老消息跳转（memory 68-⑩）：MessageNodeDAO.kt（getNodeIndexById 按 nodeId 查 node_index）、ConversationRepository.kt（getNodeIndexById + loadMessageNodesWindow 中心窗口加载 clamp 到总量）、ChatService.kt（jumpToNode：查索引→加载前后各150条→替换 session + 更新 lazyWindowFirstIndex 窗口边界→返回段内 index）、ChatVM.kt（jumpToNode 包装）、ChatPage.kt（LaunchedEffect 目标不在窗口时调 jumpToNode 再滚动）
+  - ① 记忆权威标注（memory 68-⑨）：GenerationPrompts.kt（buildMemoryPrompt 加【确认事实】说明行）、GenerationHandler.kt（日记/最近事件 加【确认事实】说明行；外置记忆库向量召回 加【回忆线索】说明行——固定文本在前缀稳定区，不影响 DS 缓存命中）
+- 设计：② 原理=窗口"移动"到目标消息附近（不是全量加载）——SearchPage 点击老消息结果 → nodeIndex 定位 → 目标段替换 session + 窗口边界更新（保存保护按新窗口算）→ 滚动到目标；① 权威层级=memory_tool 长期记忆/日记/最近事件 =【确认事实】（可直接采用），外置库向量召回 =【回忆线索】（候选材料不可当真，仅作线索）
+- 注意：ChatService.updateConversation 保留原逻辑（if 检查 → checkFilesDelete → 赋值），只加注释
+- 状态：✅ 已推 main（c2808e89，GitHub API 推送——git 443 不通）→ 宝构建 APK 验证（①搜索老消息能跳到 ②橘仔回答时区分确认事实/回忆线索）
+
 ## 2026-08-28
 
 ### commit（本次待推）— write_files 缓存原子写 + persist 失败打日志（memory 60 待办④落地）
