@@ -567,6 +567,61 @@ class ConversationRepository(
     }
 
     /**
+     * 按 nodeId 查它在数据库里的 nodeIndex（ChatService.jumpToNode 用，参数为 String）。
+     */
+    suspend fun getNodeIndexById(conversationId: String, nodeId: String): Int? {
+        val nodeIds = messageNodeDAO.getNodeIdsOfConversation(conversationId)
+        val index = nodeIds.indexOf(nodeId)
+        return if (index >= 0) index else null
+    }
+
+    /**
+     * 加载目标 nodeIndex 附近一段（前后各 150 条），供老消息跳转把窗口移动到目标附近。
+     */
+    suspend fun loadMessageNodesWindow(conversationId: String, nodeIndex: Int): List<MessageNode> {
+        val totalCount = messageNodeDAO.getNodeCountOfConversation(conversationId)
+        val start = (nodeIndex - 150).coerceAtLeast(0)
+        val end = (nodeIndex + 150).coerceAtMost(totalCount)
+        if (start >= end) return emptyList()
+        return loadMessageNodesRange(conversationId, start, end)
+    }
+
+    /**
+     * 工具账本（2026-08-28，愿望清单 id68-⑥ 落地）：从本地数据库最近消息里提取工具调用记录。
+     * 数据直接来自聊天记录里的 Tool 部分，不额外存储。跨对话按写入顺序取最近 N 条。
+     * @param limit 返回条数上限
+     * @param filter 工具名关键词过滤（可选）
+     */
+    suspend fun getRecentToolActions(limit: Int, filter: String? = null): List<String> {
+        if (limit <= 0) return emptyList()
+        // 多取一些节点（大部分消息没有工具调用），解析出 Tool 部分后按 limit 截断
+        val nodes = messageNodeDAO.getRecentNodesAcrossConversations((limit * 4).coerceAtMost(200))
+        val lines = mutableListOf<String>()
+        for (node in nodes) {
+            val messages = runCatching {
+                JsonInstant.decodeFromString<List<UIMessage>>(node.messages)
+            }.getOrElse { continue }
+            for (msg in messages) {
+                for (part in msg.parts) {
+                    if (part is UIMessagePart.Tool) {
+                        val name = part.toolName.ifBlank { "?" }
+                        if (filter != null && !name.contains(filter, ignoreCase = true)) continue
+                        val status = when {
+                            part.isExecuted -> "✅"
+                            part.isPending -> "⏳"
+                            else -> "⏸"
+                        }
+                        val input = part.input.take(120)
+                        lines.add("$status $name | $input")
+                        if (lines.size >= limit) return lines
+                    }
+                }
+            }
+        }
+        return lines
+    }
+
+    /**
      * 加载消息节点。
      *
      * @param limit 非空时只加载最近 limit 条（懒加载窗口：从 totalCount - limit 开始读）。

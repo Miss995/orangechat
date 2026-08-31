@@ -43,13 +43,6 @@ interface MessageNodeDAO {
     @Query("SELECT COUNT(*) FROM message_node WHERE conversation_id = :conversationId")
     suspend fun getNodeCountOfConversation(conversationId: String): Int
 
-    /**
-     * 老消息跳转（2026-08-30）：按 nodeId 查它在对话里的 node_index（数据库真实位置）。
-     * 窗口化后目标消息可能在懒加载窗口外，用 node_index 定位后动态加载目标段。
-     */
-    @Query("SELECT node_index FROM message_node WHERE id = :nodeId AND conversation_id = :conversationId LIMIT 1")
-    suspend fun getNodeIndexById(conversationId: String, nodeId: String): Int?
-
     @Query(
         "SELECT * FROM message_node WHERE conversation_id = :conversationId " +
             "ORDER BY node_index ASC LIMIT :limit OFFSET :offset"
@@ -60,9 +53,12 @@ interface MessageNodeDAO {
         offset: Int
     ): List<MessageNodeEntity>
 
-    /** 工具账本：按插入顺序倒序查最近节点（rowid ≈ 插入顺序，窗口裁剪删除旧节点不影响"最近"判断） */
+    /**
+     * 跨对话取最近写入的 N 个节点（按 SQLite rowid 倒序，≈写入顺序）。
+     * 用于工具账本（getRecentToolActions）从最近聊天记录里提取工具调用。
+     */
     @Query("SELECT * FROM message_node ORDER BY rowid DESC LIMIT :limit")
-    suspend fun getRecentNodes(limit: Int): List<MessageNodeEntity>
+    suspend fun getRecentNodesAcrossConversations(limit: Int): List<MessageNodeEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(nodes: List<MessageNodeEntity>)

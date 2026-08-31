@@ -96,6 +96,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
         }
     )
     val filesManager: FilesManager = koinInject()
+    val conversationRepo: ConversationRepository = koinInject()
     val navController = LocalNavController.current
     val scope = rememberCoroutineScope()
 
@@ -173,13 +174,12 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
                 } else {
                     // 【老消息跳转 2026-08-31】目标在懒加载窗口外：从数据库定位并加载目标段临时显示
                     runCatching {
-                        val repo: ConversationRepository = koinInject()
-                        val dbIndex = repo.getMessageNodeIndex(conversation.id.toString(), nodeId)
+                        val dbIndex = conversationRepo.getMessageNodeIndex(conversation.id.toString(), nodeId)
                         if (dbIndex != null) {
-                            val count = repo.getMessageNodeCount(conversation.id.toString())
+                            val count = conversationRepo.getMessageNodeCount(conversation.id.toString())
                             val segStart = (dbIndex - 30).coerceAtLeast(0)
                             val segEnd = (dbIndex + 30).coerceAtMost(count)
-                            val nodes = repo.getMessageNodesRange(conversation.id.toString(), segStart, segEnd)
+                            val nodes = conversationRepo.getMessageNodesRange(conversation.id.toString(), segStart, segEnd)
                             if (nodes.isNotEmpty()) {
                                 jumpNodes = nodes
                                 jumpTargetIndex = dbIndex - segStart
