@@ -230,6 +230,12 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
                     errors = errors,
                     onDismissError = { vm.dismissError(it) },
                     onClearAllErrors = { vm.clearAllErrors() },
+                    jumpNodes = jumpNodes,
+                    jumpTargetIndex = jumpTargetIndex,
+                    onExitJump = {
+                        jumpNodes = null
+                        jumpTargetIndex = null
+                    },
                 )
             }
         }
@@ -263,6 +269,12 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
                     errors = errors,
                     onDismissError = { vm.dismissError(it) },
                     onClearAllErrors = { vm.clearAllErrors() },
+                    jumpNodes = jumpNodes,
+                    jumpTargetIndex = jumpTargetIndex,
+                    onExitJump = {
+                        jumpNodes = null
+                        jumpTargetIndex = null
+                    },
                 )
             }
             BackHandler(drawerState.isOpen) {
@@ -290,6 +302,9 @@ private fun ChatPageContent(
     errors: List<ChatError>,
     onDismissError: (Uuid) -> Unit,
     onClearAllErrors: () -> Unit,
+    jumpNodes: List<MessageNode>? = null,
+    jumpTargetIndex: Int? = null,
+    onExitJump: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
