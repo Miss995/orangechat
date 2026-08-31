@@ -527,10 +527,7 @@ private fun ChatPageContent(
                 },
                 jumpNodes = jumpNodes,
                 jumpTargetIndex = jumpTargetIndex,
-                onExitJump = {
-                    jumpNodes = null
-                    jumpTargetIndex = null
-                },
+                onExitJump = onExitJump,
                 onToolApproval = { toolCallId, approved, reason ->
                     vm.handleToolApproval(toolCallId, approved, reason)
                 },
