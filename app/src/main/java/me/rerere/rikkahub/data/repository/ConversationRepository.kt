@@ -530,24 +530,6 @@ class ConversationRepository(
     /**
      * 读取某个对话的消息节点总数（懒加载窗口需要知道窗口外历史边界）。
      */
-    /** 工具账本（2026-08-28）：查最近节点的工具调用记录（参数/结果/状态），供 query_tool_actions 工具和 UI 用 */
-    suspend fun getRecentToolActions(limit: Int, filter: String? = null): List<String> {
-        val lines = mutableListOf<String>()
-        val nodes = messageNodeDAO.getRecentNodes(limit.coerceIn(1, 100))
-        for (node in nodes) {
-            val messages = runCatching { JsonInstant.decodeFromString<List<UIMessage>>(node.messages) }.getOrNull() ?: continue
-            for (msg in messages) {
-                val tool = msg.parts.filterIsInstance<UIMessagePart.Tool>().lastOrNull() ?: continue
-                if (filter != null && !tool.toolName.contains(filter, ignoreCase = true)) continue
-                val argText = tool.input.ifBlank { "{}" }
-                val resultText = tool.output.filterIsInstance<UIMessagePart.Text>().joinToString(" ").take(200)
-                val status = if (resultText.contains("\"error\"") || resultText.contains("Exception") || resultText.contains("denied")) "FAIL" else "OK"
-                lines += "[${node.id.take(8)}] ${tool.toolName} | args=$argText | $status | $resultText"
-            }
-        }
-        return lines
-    }
-
     suspend fun getMessageNodeCount(conversationId: String): Int {
         return messageNodeDAO.getNodeCountOfConversation(conversationId)
     }
@@ -563,26 +545,25 @@ class ConversationRepository(
     }
 
     /**
-     * 老消息跳转（2026-08-30）：查目标消息节点在数据库中的 node_index。
+     * 按 nodeId 查它在数据库里的 nodeIndex（老消息跳转定位用）。
+     * 懒加载窗口只加载最近 N 条，nodeId 在窗口外时用数据库里的真实位置加载目标段。
+     * @return nodeIndex；找不到返回 null
      */
-    suspend fun getNodeIndexById(conversationId: String, nodeId: String): Int? {
-        return messageNodeDAO.getNodeIndexById(conversationId, nodeId)
+    suspend fun getMessageNodeIndex(conversationId: String, nodeId: Uuid): Int? {
+        val nodeIds = messageNodeDAO.getNodeIdsOfConversation(conversationId)
+        val index = nodeIds.indexOf(nodeId.toString())
+        return if (index >= 0) index else null
     }
 
     /**
-     * 老消息跳转（2026-08-30）：以 centerIndex 为中心加载一段窗口（默认前后各 150 条），
-     * 让目标消息落在加载段内。区间 clamp 到 [0, totalCount]。
+     * 按 [startIndex, endIndexExclusive) 范围加载消息节点（老消息跳转时加载目标附近一段）。
      */
-    suspend fun loadMessageNodesWindow(
-        conversationId: String,
-        centerIndex: Int,
-        halfSize: Int = 150,
-    ): List<MessageNode> {
+    suspend fun getMessageNodesRange(conversationId: String, startIndex: Int, endIndexExclusive: Int): List<MessageNode> {
+        if (startIndex < 0) return emptyList()
         val totalCount = messageNodeDAO.getNodeCountOfConversation(conversationId)
-        if (totalCount == 0) return emptyList()
-        val start = (centerIndex - halfSize).coerceIn(0, totalCount)
-        val end = (centerIndex + halfSize + 1).coerceIn(start + 1, totalCount)
-        return loadMessageNodesRange(conversationId, start, end)
+        val end = minOf(endIndexExclusive, totalCount)
+        if (startIndex >= end) return emptyList()
+        return loadMessageNodesRange(conversationId, startIndex, end)
     }
 
     /**

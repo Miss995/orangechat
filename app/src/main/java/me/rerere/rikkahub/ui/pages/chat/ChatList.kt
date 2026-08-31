@@ -140,6 +140,9 @@ fun ChatList(
     onTranslate: ((UIMessage, java.util.Locale) -> Unit)? = null,
     onClearTranslation: (UIMessage) -> Unit = {},
     onJumpToMessage: (Int) -> Unit = {},
+    jumpNodes: List<MessageNode>? = null,
+    jumpTargetIndex: Int? = null,
+    onExitJump: () -> Unit = {},
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
@@ -186,6 +189,9 @@ fun ChatList(
                 onToolAnswer = onToolAnswer,
                 onToggleFavorite = onToggleFavorite,
                 onConversationSystemPromptChange = onConversationSystemPromptChange,
+                jumpNodes = jumpNodes,
+                jumpTargetIndex = jumpTargetIndex,
+                onExitJump = onExitJump,
             )
         }
     }
@@ -216,6 +222,9 @@ private fun ChatListNormal(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
+    jumpNodes: List<MessageNode>? = null,
+    jumpTargetIndex: Int? = null,
+    onExitJump: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
@@ -223,6 +232,16 @@ private fun ChatListNormal(
     val conversationUpdated by rememberUpdatedState(conversation)
     val density = LocalDensity.current
     val activity = LocalContext.current as? me.rerere.rikkahub.RouteActivity
+
+    // 【老消息跳转 2026-08-31】跳转模式下滚动到目标消息（jumpNodes 加载完成后）
+    LaunchedEffect(jumpNodes, jumpTargetIndex) {
+        val nodes = jumpNodes ?: return@LaunchedEffect
+        val target = jumpTargetIndex ?: return@LaunchedEffect
+        if (nodes.isNotEmpty()) {
+            state.scrollToItem(target.coerceIn(0, nodes.size - 1))
+            AppLogBuffer.log(TAG, "jumpMode: scrollToItem target=$target size=${nodes.size}")
+        }
+    }
 
     DisposableEffect(Unit) {
         val listener: (Boolean) -> Boolean = { isVolumeUp ->
@@ -324,17 +343,19 @@ private fun ChatListNormal(
 
         // Filter out [SKIP] messages and proactive message context markers
         // 【诊断 2026-08-26】记录全量 filter 耗时（5600 条 toText 每次消息变化都重跑，在主线程组合阶段）
-        val displayNodes = remember(conversation.messageNodes) {
+        // 【老消息跳转 2026-08-31】跳转模式（jumpNodes 非空）用数据库加载的目标段显示，不裁剪窗口
+        val displayNodes = remember(conversation.messageNodes, jumpNodes) {
             val t0 = System.currentTimeMillis()
-            val filtered = conversation.messageNodes.filter { node ->
+            val source = jumpNodes ?: conversation.messageNodes
+            val filtered = source.filter { node ->
                 val msg = node.currentMessage
                 val text = msg.toText().trim()
                 !(msg.role == MessageRole.ASSISTANT && text == "[SKIP]") &&
                 !(msg.role == MessageRole.USER && text.contains("[主动消息上下文]"))
             }
             // 【转轴窗口】只显示最近 N 条，旧消息从窗口消失（数据仍完整保留，全量在 Supabase）
-            val result = if (filtered.size > WINDOW_DISPLAY_SIZE) filtered.takeLast(WINDOW_DISPLAY_SIZE) else filtered
-            AppLogBuffer.log(TAG, "displayNodes: total=${conversation.messageNodes.size} shown=${result.size} took=${System.currentTimeMillis() - t0}ms")
+            val result = if (jumpNodes == null && filtered.size > WINDOW_DISPLAY_SIZE) filtered.takeLast(WINDOW_DISPLAY_SIZE) else filtered
+            AppLogBuffer.log(TAG, "displayNodes: total=${source.size} shown=${result.size} took=${System.currentTimeMillis() - t0}ms jump=${jumpNodes != null}")
             result
         }
 
@@ -467,6 +488,33 @@ private fun ChatListNormal(
                     .align(Alignment.BottomCenter)
                     .zIndex(5f)
             )
+
+            // 【老消息跳转 2026-08-31】跳转模式：显示"回到最新"浮标
+            AnimatedVisibility(
+                visible = jumpNodes != null,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = -(88).dp)
+                    .zIndex(6f),
+                enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+                exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
+            ) {
+                Surface(
+                    onClick = {
+                        onExitJump()
+                        scope.launch { state.scrollToItem(Int.MAX_VALUE) }
+                    },
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shadowElevation = 4.dp,
+                ) {
+                    Text(
+                        text = "回到最新 ↓",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
 
             // 完成选择
             AnimatedVisibility(
@@ -715,18 +763,8 @@ private fun ChatListPreview(
                     horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
                 ) {
                     Surface(
-                        shape = if (isUser && settings.themeId == "claude") RoundedCornerShape(22.dp) else MaterialTheme.shapes.medium,
-                        color = if (isUser) {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        } else {
-                            // Claude 主题皮（2026-08-30）：AI 气泡用最浅容器色（白/暖白），仿官方"白底消息块"；
-                            // 其他主题保持原 tertiaryContainer。搜索高亮仍用 tertiaryContainer，不受影响。
-                            if (settings.themeId == "claude") {
-                                MaterialTheme.colorScheme.surfaceContainerLowest
-                            } else {
-                                MaterialTheme.colorScheme.tertiaryContainer
-                            }
-                        },
+                        shape = MaterialTheme.shapes.medium,
+                        color = if (isUser) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.tertiaryContainer,
                     ) {
                         Row(
                             modifier = Modifier

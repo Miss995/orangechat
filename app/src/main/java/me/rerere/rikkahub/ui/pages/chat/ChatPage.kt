@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -60,6 +61,7 @@ import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.hugeicons.stroke.Voice
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.data.ai.RequestEditController
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getAssistantById
@@ -68,6 +70,8 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.service.VoiceCallService
 import me.rerere.rikkahub.ui.components.ai.ChatInput
@@ -97,6 +101,9 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
 
     val setting by vm.settings.collectAsStateWithLifecycle()
     val conversation by vm.conversation.collectAsStateWithLifecycle()
+    // 【老消息跳转 2026-08-31】目标在懒加载窗口外时，临时加载目标段显示（配合 ChatList 跳转模式）
+    var jumpNodes by remember { mutableStateOf<List<MessageNode>?>(null) }
+    var jumpTargetIndex by remember { mutableStateOf<Int?>(null) }
     val loadingJob by vm.conversationJob.collectAsStateWithLifecycle()
     val processingStatus by vm.processingStatus.collectAsStateWithLifecycle()
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
@@ -164,10 +171,27 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
                     val start = (conversation.messageNodes.size - WINDOW_DISPLAY_SIZE).coerceAtLeast(0)
                     chatListState.scrollToItem(if (index >= start) index - start else 0)
                 } else {
-                    // 目标消息不在当前懒加载窗口（老消息跳转）→ 动态加载目标段再滚动（2026-08-30）
-                    val jumpIndex = vm.jumpToNode(nodeId)
-                    if (jumpIndex != null) {
-                        chatListState.scrollToItem(jumpIndex)
+                    // 【老消息跳转 2026-08-31】目标在懒加载窗口外：从数据库定位并加载目标段临时显示
+                    runCatching {
+                        val repo: ConversationRepository = koinInject()
+                        val dbIndex = repo.getMessageNodeIndex(conversation.id.toString(), nodeId)
+                        if (dbIndex != null) {
+                            val count = repo.getMessageNodeCount(conversation.id.toString())
+                            val segStart = (dbIndex - 30).coerceAtLeast(0)
+                            val segEnd = (dbIndex + 30).coerceAtMost(count)
+                            val nodes = repo.getMessageNodesRange(conversation.id.toString(), segStart, segEnd)
+                            if (nodes.isNotEmpty()) {
+                                jumpNodes = nodes
+                                jumpTargetIndex = dbIndex - segStart
+                                AppLogBuffer.log("ChatPage", "jumpToNode: 窗口外定位成功 dbIndex=$dbIndex seg=[$segStart,$segEnd) target=${jumpTargetIndex}")
+                            } else {
+                                AppLogBuffer.log("ChatPage", "jumpToNode: 目标段为空 dbIndex=$dbIndex count=$count")
+                            }
+                        } else {
+                            AppLogBuffer.log("ChatPage", "jumpToNode: 数据库找不到 nodeId=$nodeId")
+                        }
+                    }.onFailure {
+                        AppLogBuffer.log("ChatPage", "jumpToNode: 老消息跳转失败 ${it.message}")
                     }
                 }
             } else {
@@ -485,6 +509,12 @@ private fun ChatPageContent(
                         val target = if (index >= start) index - start else 0
                         chatListState.animateScrollToItem(target)
                     }
+                },
+                jumpNodes = jumpNodes,
+                jumpTargetIndex = jumpTargetIndex,
+                onExitJump = {
+                    jumpNodes = null
+                    jumpTargetIndex = null
                 },
                 onToolApproval = { toolCallId, approved, reason ->
                     vm.handleToolApproval(toolCallId, approved, reason)
