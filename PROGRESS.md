@@ -6,6 +6,17 @@
 
 ## 2026-09-01
 
+### commit（本次待推）— 斜杠命令误判修复 + 窗口边界爆炸修复（宝实测工具全 not found，2026-09-01 晚）
+- 文件：app/.../data/ai/GenerationHandler.kt、app/.../service/ChatService.kt
+- 背景：宝发 /mcp、/潮汐岛 plot_ops status（直执行成功）后，再发普通消息（如"啊，现在玩吗？"）AI 生成时**工具全 not found**（MCP 工具+workspace_shell 都没了，只剩白名单 read_app_logs/supabase_query）——宝开新窗口解封，修法记 memory 106
+- 根因①（工具被关的真凶）：GenerationHandler 斜杠命令检测 `messages.asReversed().firstNotNullOfOrNull { ... }` **扫整个对话历史**找以 / 开头的 USER 消息——宝发过的 /mcp、/潮汐岛 永远留在历史里，之后任何普通消息生成时倒序一翻就命中旧命令 → 误入斜杠命令模式 → 工具被 SLASH_COMMAND_SAFE_TOOLS 白名单过滤 → 全 not found。新窗口没有命令历史所以"开新窗口就好"= 实锤
+- 根因②（窗口边界爆炸）：appendSlashResult/appendProactiveAiMessageUnderLock 从数据库读**全量**（getConversationById 默认 loadLimit=null）再 saveConversation → isWindowState 判断 `size < firstIndex+WINDOW+groupSize`（5601 < 5300+300+4 成立）把全量误判成窗口态 → 窗口裁剪 overflow 巨大 → lazyWindowFirstIndex 每次爆炸式推高（5300→10600→15900…）→ 窗口保护逻辑整体错乱
+- 改动：
+  1. GenerationHandler.kt 两处（工具白名单过滤 + system 斜杠命令注入）：改成 `messages.asReversed().firstOrNull { it.role == USER }` 只查**最后一条 USER 消息**——普通消息后命令检测自然失效；真发 / 命令且未直执行（AI 兜底）才生效
+  2. ChatService.kt saveConversation：isWindowState 收紧为 `size <= WINDOW + groupSize` 才算窗口态——全量传入走全量分支（firstIndex=总条数-窗口大小，正确），窗口态（≤304 条）仍走窗口版（保护窗口外历史）
+- 验证：宝构建 APK 后①发 /mcp 直执行 → 再发普通消息 → 工具正常（不再 not found）②连发几条斜杠命令 → 老消息跳转/窗口保存仍正常
+- 备注：本地工作区分叉（8 个本地独有 commit 已 format-patch 备份到 /tmp/local_only_patches，内容多与远程重复——主题皮/老消息跳转/工具账本/秒显等远程都有对应版本）；以远程 main 为基准重建+修复
+
 ### commit（本次待推）— 用户消息思考链渲染：<think>...</think> 折叠展示（宝 2026-09-01 的功能：宝想自己的消息也带思考链，跟 AI 一样）
 - 文件：app/.../ui/components/message/ChatMessage.kt
 - 背景：宝说"给我也搞个思考链的渲染呗"——宝发消息时想带思考链（模仿 AI 的思考链）——宝画了格式 <think>内容</think>（"大概跟你一样吧"）——样式跟 AI 思考链一致（灰色折叠可展开）

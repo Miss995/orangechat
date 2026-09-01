@@ -1806,8 +1806,13 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 【懒加载窗口】窗口版保存：只写窗口内变化，窗口外历史受保护（不读全量、不删除）。
         // 判定：存在窗口边界 且 传入条数 < 窗口外+窗口大小 → 窗口版（nodeIndex 从 firstIndex 偏移，不删窗口外）
         val windowFirstIndex = lazyWindowFirstIndex[conversationId]
+        // 修复（2026-09-01 晚）：原来 < windowFirstIndex + WINDOW + groupSize 会把「全量传入」
+        // （appendSlashResult/appendProactiveAiMessageUnderLock 从数据库读全量再 saveConversation，
+        // 5601 < 5300+300+4 也成立）误判成窗口态 → 窗口裁剪 overflow 巨大 → lazyWindowFirstIndex
+        // 爆炸式推高（5300→10600→15900…，宝玩一次桌游窗口保护逻辑就错乱一次）。
+        // 收紧为「传入条数 ≤ 窗口+一组」才视为窗口态；全量传入走全量分支（firstIndex=总条数-窗口大小，正确）。
         val isWindowState = windowFirstIndex != null &&
-            toSave.messageNodes.size < windowFirstIndex + CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize
+            toSave.messageNodes.size <= CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize
         val effectiveFirstIndex = if (isWindowState) windowFirstIndex else null
 
         val updatedConversation = toSave.copy()

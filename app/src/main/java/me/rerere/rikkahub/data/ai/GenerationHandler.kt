@@ -144,12 +144,15 @@ class GenerationHandler(
 
         // 斜杠命令检测（2026-09-01 宝拍板：用户消息以 / 开头 = 直接执行工具）：复用给 toolsInternal 白名单过滤
         // 在循环外基于初始 messages 计算一次：工具步骤后 messages 会更新，但命令检测应看用户最近一条消息
-        val slashCommandText = messages.asReversed().firstNotNullOfOrNull { msg ->
-            if (msg.role == MessageRole.USER) {
-                val text = msg.parts.filterIsInstance<UIMessagePart.Text>()
-                    .joinToString("") { it.text }.trim()
-                if (text.startsWith("/") && text.length > 1) text else null
-            } else null
+        // 修复（2026-09-01 晚·宝实测全 not found）：原来用 firstNotNullOfOrNull 扫全历史，
+        // 历史里任何一条斜杠命令（如 /mcp、/潮汐岛）都会让之后所有普通消息生成误入斜杠命令模式
+        // → 工具被 SLASH_COMMAND_SAFE_TOOLS 白名单关掉（宝：直执行成功但 AI 生成时工具全 not found）。
+        // 改成只查「最后一条 USER 消息」：普通消息后命令检测自然失效；真发 / 命令且未直执行（AI 兜底）才生效。
+        val lastUserMessage = messages.asReversed().firstOrNull { it.role == MessageRole.USER }
+        val slashCommandText = lastUserMessage?.let { msg ->
+            val text = msg.parts.filterIsInstance<UIMessagePart.Text>()
+                .joinToString("") { it.text }.trim()
+            if (text.startsWith("/") && text.length > 1) text else null
         }
 
         // 召回门控状态：一次生成流程（多步 agent 循环）只触发一次记忆召回，
@@ -494,12 +497,15 @@ class GenerationHandler(
         // ===== 斜杠命令模式（2026-09-01 宝拍板：用户消息以 / 开头 = 直接执行工具，复用 AI 工具链路不做 UI）=====
         // 检测最后一条用户消息是否以 "/" 开头：是则进入命令模式，AI 解析命令调对应工具执行，结果直接展示。
         // 支持安全命令：截图/时间/搜索/闹钟/记事等；危险工具（GitHub 推送/写文件/系统修改）收着不让用户玩。
-        val slashCommandText = messages.asReversed().firstNotNullOfOrNull { msg ->
-            if (msg.role == MessageRole.USER) {
-                val text = msg.parts.filterIsInstance<UIMessagePart.Text>()
-                    .joinToString("") { it.text }.trim()
-                if (text.startsWith("/") && text.length > 1) text else null
-            } else null
+        // 修复（2026-09-01 晚·宝实测全 not found）：原来用 firstNotNullOfOrNull 扫全历史，
+        // 历史里任何一条斜杠命令（如 /mcp、/潮汐岛）都会让之后所有普通消息生成误入斜杠命令模式
+        // → 工具被 SLASH_COMMAND_SAFE_TOOLS 白名单关掉（宝：直执行成功但 AI 生成时工具全 not found）。
+        // 改成只查「最后一条 USER 消息」：普通消息后命令检测自然失效；真发 / 命令且未直执行（AI 兜底）才生效。
+        val lastUserMessage = messages.asReversed().firstOrNull { it.role == MessageRole.USER }
+        val slashCommandText = lastUserMessage?.let { msg ->
+            val text = msg.parts.filterIsInstance<UIMessagePart.Text>()
+                .joinToString("") { it.text }.trim()
+            if (text.startsWith("/") && text.length > 1) text else null
         }
 
         // ===== 最近事件（实时层，2026-08-21 宝的记忆实时化方案定稿）=====
