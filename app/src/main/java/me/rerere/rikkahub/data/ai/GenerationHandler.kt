@@ -81,6 +81,27 @@ private const val STREAM_UI_THROTTLE_MS = 100L
 
 // 外置库召回单次超时（Supabase 响应慢时放宽到 15 秒，减少超时空手）
 private const val EXTERNAL_RECALL_TIMEOUT_MS = 15_000L
+
+// 斜杠命令模式安全工具白名单（2026-09-01 宝拍板：用户消息以 / 开头 = 直接执行工具；
+// 只暴露安全工具给用户玩，危险工具（写文件/GitHub/SSH/锁应用/短信等）收着）
+private val SLASH_COMMAND_SAFE_TOOLS = setOf(
+    // 查日志 / 工具账本（排查用，只读）
+    "read_app_logs", "query_tool_actions",
+    // 记事 / 查原文（记忆相关，只读或写记忆）
+    "memory_tool", "fetch_chat_sources",
+    // 截图 / 时间 / 搜索（宝想玩的核心命令）
+    "take_screenshot", "get_time_info", "search_web", "scrape_web", "web_fetch",
+    // 闹钟 / 计时器
+    "set_alarm", "timer",
+    // 只读系统信息
+    "get_location", "get_notifications", "supabase_query",
+    "battery", "wifi_info", "storage_info",
+    // 低风险控制
+    "toast", "vibrate", "wake_screen", "app_switch",
+    "get_volume", "set_volume", "get_brightness", "set_brightness",
+    "text_to_speech", "request_voice_call", "ask_user",
+    "media_scanner", "notification_post", "share", "music",
+)
  
 @Serializable
 sealed interface GenerationChunk {
@@ -120,6 +141,16 @@ class GenerationHandler(
         val providerImpl = providerManager.getProviderByType(provider)
  
         var messages: List<UIMessage> = messages
+
+        // 斜杠命令检测（2026-09-01 宝拍板：用户消息以 / 开头 = 直接执行工具）：复用给 toolsInternal 白名单过滤
+        // 在循环外基于初始 messages 计算一次：工具步骤后 messages 会更新，但命令检测应看用户最近一条消息
+        val slashCommandText = messages.asReversed().firstNotNullOfOrNull { msg ->
+            if (msg.role == MessageRole.USER) {
+                val text = msg.parts.filterIsInstance<UIMessagePart.Text>()
+                    .joinToString("") { it.text }.trim()
+                if (text.startsWith("/") && text.length > 1) text else null
+            } else null
+        }
 
         // 召回门控状态：一次生成流程（多步 agent 循环）只触发一次记忆召回，
         // 二次请求不再重复判断/注入，避免工具步骤反复召回破坏前缀稳定。
@@ -175,6 +206,11 @@ class GenerationHandler(
                     })
                 }
                 addAll(tools)
+            }.let { built ->
+                // 斜杠命令模式：只暴露安全工具（危险工具收着，宝 2026-09-01 拍板"危险的橘仔收着"）
+                if (slashCommandText != null) {
+                    built.filter { it.name in SLASH_COMMAND_SAFE_TOOLS }
+                } else built
             }
  
             // Check if we have tool calls ready to continue after user interaction.
@@ -455,6 +491,17 @@ class GenerationHandler(
         recallGate: Boolean = false,
         onRecallGatePassed: () -> Unit = {},
     ) {
+        // ===== 斜杠命令模式（2026-09-01 宝拍板：用户消息以 / 开头 = 直接执行工具，复用 AI 工具链路不做 UI）=====
+        // 检测最后一条用户消息是否以 "/" 开头：是则进入命令模式，AI 解析命令调对应工具执行，结果直接展示。
+        // 支持安全命令：截图/时间/搜索/闹钟/记事等；危险工具（GitHub 推送/写文件/系统修改）收着不让用户玩。
+        val slashCommandText = messages.asReversed().firstNotNullOfOrNull { msg ->
+            if (msg.role == MessageRole.USER) {
+                val text = msg.parts.filterIsInstance<UIMessagePart.Text>()
+                    .joinToString("") { it.text }.trim()
+                if (text.startsWith("/") && text.length > 1) text else null
+            } else null
+        }
+
         // ===== 最近事件（实时层，2026-08-21 宝的记忆实时化方案定稿）=====
         // 服务器 incremental_listener.py（每满 60 条总结 30 条，滞后半拍）让今天的事件也实时入库——
         // 这里注入最近 3 天事件：今天全文、昨天前天 title。固定位置 + 稳定排序（source_date ASC + id ASC）
@@ -580,7 +627,6 @@ class GenerationHandler(
                             Log.i(TAG, "Diary [$source] injected ($cacheKey)")
                             appendLine()
                             appendLine("## 日记")
-                            appendLine("（权威层级：【确认事实】——当日日记摘要，为已发生事实与感受的记录。）")
                             append(diaryText)
                         }
                     }
@@ -593,7 +639,6 @@ class GenerationHandler(
                 if (!recentEventsText.isNullOrBlank()) {
                     appendLine()
                     appendLine("## 最近事件（最近 3 天）")
-                    appendLine("（权威层级：【确认事实】——最近事件的归档总结，为已发生事实，可直接参考。）")
                     append(recentEventsText)
                 }
  
@@ -649,6 +694,7 @@ class GenerationHandler(
                                                     count = config.recallCount,
                                                     dateFrom = timeRange.dateFrom,
                                                     dateTo = timeRange.dateTo,
+                                                    queryText = queryText,
                                                 ).getOrDefault(emptyList())
                                                 val seenMsg = mutableSetOf<String>()
                                                 recalledEvents.forEach { event ->
@@ -687,7 +733,6 @@ class GenerationHandler(
                             if (allRecalled.isNotEmpty()) {
                                 appendLine()
                                 appendLine("## 外置记忆库")
-                                appendLine("（权威层级：【回忆线索】——向量检索命中的候选材料，可能与当前话题相关但不一定是事实，仅作回忆线索，需谨慎采用。）")
                                 allRecalled.reversed().forEachIndexed { index, memory ->
                                     appendLine("${index + 1}. ${memory}")
                                 }
@@ -736,6 +781,24 @@ class GenerationHandler(
                     appendLine()
                     appendLine("## Message Bubbles")
                     appendLine("Your reply will be automatically split into separate chat bubbles at every line break (\\n) you write, similar to how a person sends several short texts in a row instead of one long message. You are fully in control of this: write a line break whenever you want the previous thought/sentence to appear as its own bubble, and keep things on the same line when they belong together. Do not insert blank lines purely for spacing — every line break becomes a new bubble, so use them intentionally. Exception: line breaks inside fenced code blocks (```) and Markdown tables are preserved as-is and will NOT create new bubbles, since those must stay intact as a single block.")
+                }
+
+                // 斜杠命令模式：用户输入 /xxx = 直接执行工具（宝 2026-09-01 拍板，复用 AI 工具链路不做 UI）
+                if (slashCommandText != null) {
+                    appendLine()
+                    appendLine()
+                    appendLine("## 斜杠命令模式（当前生效）")
+                    appendLine("用户刚刚输入了一条斜杠命令：`$slashCommandText`")
+                    appendLine("这不是普通聊天！请把这条命令当作指令，直接调用对应工具执行，执行完把结果简洁地告诉用户：")
+                    appendLine("- `/截图` → 调用 take_screenshot 截当前屏幕")
+                    appendLine("- `/时间` 或 `/几点` → 调用 get_time_info 查当前时间")
+                    appendLine("- `/搜索 关键词` → 调用 search_web 搜索")
+                    appendLine("- `/闹钟 7:00 起床` → 调用 set_alarm 设闹钟")
+                    appendLine("- `/记事 内容` → 用 memory 工具记录一条记忆")
+                    appendLine("执行完直接把结果告诉用户，不要闲聊、不要解释工具原理、不要问多余的问题。")
+                    appendLine("注意：只能执行安全工具（截图/时间/搜索/闹钟/记事/查日志/查工具账本等）；")
+                    appendLine("涉及写文件、GitHub 推送、系统修改等危险操作一律不执行，直接回复『这个命令橘仔收着，不给你玩』。")
+                    appendLine("如果命令无法识别，列出支持的命令让用户选。")
                 }
  
             }
