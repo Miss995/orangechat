@@ -45,11 +45,16 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import me.rerere.rikkahub.data.ai.AppLogBuffer
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
+import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
+import me.rerere.rikkahub.data.ai.mcp.McpTool
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.rikkahub.data.service.MemoryBankService
@@ -538,6 +543,19 @@ class ChatService(
                     Log.w(TAG, "Failed to save user message to external memory", e)
                 }
 
+                // 斜杠命令直执行（宝 2026-09-01：/开头 = 客户端直执行 MCP 工具，不经过 AI；宝要自己玩桌游/潮汐岛）
+                val slashText = processedContent.mapNotNull { part ->
+                    if (part is UIMessagePart.Text) part.text else null
+                }.joinToString(" ").trim()
+                if (slashText.startsWith("/") && slashText.length > 1) {
+                    val handled = handleSlashCommandDirect(conversationId, slashText)
+                    if (handled) {
+                        AppLogBuffer.log(TAG, "sendMessage: slash command handled directly, skip generation: $slashText")
+                        return@launch
+                    }
+                    // 未匹配到工具 → 继续走 AI 生成（AI 兜底解释支持的命令）
+                }
+
                 // 开始补全
                 AppLogBuffer.log(TAG, "sendMessage: about to generate at ${System.currentTimeMillis() - tSend}ms")
                 if (answer) {
@@ -599,6 +617,143 @@ class ChatService(
             )
             // 2026-08-27：去掉裸 updateConversation——saveConversation 内部会以窗口版统一保存，
             // 裸调（null）会走全量 diff，传入全量虽不删但会把 nodeIndex 重写，存在错位风险
+            saveConversation(conversationId, updated)
+        }
+    }
+
+    // ---- 斜杠命令直执行（宝 2026-09-01：/开头 = 客户端直执行 MCP 工具，不经过 AI）----
+
+    /**
+     * 斜杠命令直执行：/工具名 参数... 或 /服务器名 工具名 参数...
+     * 直接在客户端调 MCP 工具（不走 AI 生成链路），结果作为 AI 消息追加到对话。
+     * @return true = 已处理（结果已追加）；false = 未匹配到工具（调用方继续走 AI 兜底）
+     */
+    private suspend fun handleSlashCommandDirect(conversationId: Uuid, slashText: String): Boolean {
+        return try {
+            val settings = settingsStore.settingsFlow.first()
+            val assistant = settings.getCurrentAssistant()
+            val allMcpTools = mcpManager.getAllAvailableTools() // List<Pair<Uuid, McpTool>>
+            if (allMcpTools.isEmpty()) return false
+
+            // 解析命令
+            val trimmed = slashText.substring(1).trim()
+            val tokens = trimmed.split(Regex("\\s+"))
+            if (tokens.isEmpty() || tokens[0].isEmpty()) return false
+
+            // 特殊命令：/mcp 或 /工具 列出所有可用 MCP 工具
+            if (tokens[0] == "mcp" || tokens[0] == "工具") {
+                val sb = StringBuilder("可用 MCP 工具（服务器名 + 工具名）：\n")
+                val servers = settings.mcpServers.filter { it.commonOptions.enable && it.id in assistant.mcpServers }
+                servers.forEach { server ->
+                    sb.appendLine("【${server.commonOptions.name}】")
+                    allMcpTools.filter { it.first == server.id }.forEach { (_, tool) ->
+                        sb.appendLine("  /${server.commonOptions.name} ${tool.name}")
+                    }
+                }
+                appendSlashResult(conversationId, slashText, sb.toString())
+                return true
+            }
+
+            // 尝试匹配服务器名（第一个 token 是服务器名？）
+            val servers = settings.mcpServers.filter { it.commonOptions.enable && it.id in assistant.mcpServers }
+            val serverByName = servers.firstOrNull { it.commonOptions.name == tokens[0] }
+            val toolName: String
+            val argText: String
+            val serverFilter: Uuid?
+            if (serverByName != null) {
+                serverFilter = serverByName.id
+                if (tokens.size < 2) {
+                    // 只写了服务器名，没写工具名 → 列出该服务器工具
+                    val sb = StringBuilder("【${serverByName.commonOptions.name}】可用工具：\n")
+                    allMcpTools.filter { it.first == serverByName.id }.forEach { (_, tool) ->
+                        sb.appendLine("  /${serverByName.commonOptions.name} ${tool.name}")
+                    }
+                    appendSlashResult(conversationId, slashText, sb.toString())
+                    return true
+                }
+                toolName = tokens[1]
+                argText = tokens.drop(2).joinToString(" ")
+            } else {
+                serverFilter = null
+                toolName = tokens[0]
+                argText = tokens.drop(1).joinToString(" ")
+            }
+
+            // 匹配工具
+            val candidates = allMcpTools.filter { (sid, tool) ->
+                tool.name == toolName && (serverFilter == null || sid == serverFilter)
+            }
+            if (candidates.isEmpty()) return false // 未匹配，走 AI 兜底
+
+            // 同名工具多个候选（不同服务器）→ 提示用服务器名区分
+            if (candidates.size > 1 && serverFilter == null) {
+                val serverNames = candidates.mapNotNull { (sid, _) ->
+                    servers.firstOrNull { it.id == sid }?.commonOptions?.name
+                }.distinct()
+                appendSlashResult(
+                    conversationId, slashText,
+                    "「$toolName」在多个服务器都有，请指定服务器：\n" +
+                        serverNames.joinToString("\n") { "  /$it $toolName ..." }
+                )
+                return true
+            }
+
+            val (serverId, tool) = candidates.first()
+
+            // 解析参数
+            val args = parseSlashCommandArgs(tool, argText)
+
+            // 调用工具
+            val result = mcpManager.callTool(serverId, tool.name, args)
+            val resultText = result.mapNotNull { part ->
+                when (part) {
+                    is UIMessagePart.Text -> part.text
+                    is UIMessagePart.Image -> "[图片] ${part.url}"
+                    else -> part.toString()
+                }
+            }.joinToString("\n").ifBlank { "(无输出)" }
+
+            appendSlashResult(conversationId, slashText, resultText)
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "handleSlashCommandDirect failed", e)
+            appendSlashResult(conversationId, slashText, "❌ 执行失败：${e.message ?: e.javaClass.simpleName}")
+            true
+        }
+    }
+
+    /** 解析斜杠命令参数：JSON 优先，否则单参数塞进唯一属性，否则空参数 */
+    private fun parseSlashCommandArgs(tool: McpTool, argText: String): JsonObject {
+        val text = argText.trim()
+        if (text.isEmpty()) return JsonObject(emptyMap())
+        // JSON 参数（{...}）
+        if (text.startsWith("{")) {
+            return runCatching { Json.parseToJsonElement(text).jsonObject }
+                .getOrElse { JsonObject(emptyMap()) }
+        }
+        // 单参数工具（潮汐岛 command 风格）：塞进唯一属性
+        val schema = tool.inputSchema as? InputSchema.Obj
+        if (schema != null && schema.properties.size == 1) {
+            val key = schema.properties.keys.first()
+            return buildJsonObject { put(key, text) }
+        }
+        // 其他：空参数（工具自己会提示缺什么）
+        return JsonObject(emptyMap())
+    }
+
+    /** 把斜杠命令结果作为 AI 消息追加到对话（不加锁等待——当前就是 sendMessage 的 job） */
+    private suspend fun appendSlashResult(conversationId: Uuid, cmd: String, resultText: String) {
+        val session = getOrCreateSession(conversationId)
+        session.saveMutex.withLock {
+            val currentConversation = conversationRepo.getConversationById(conversationId)
+                ?: session.state.value
+            val updated = currentConversation.copy(
+                messageNodes = currentConversation.messageNodes + UIMessage(
+                    role = MessageRole.ASSISTANT,
+                    parts = listOf(UIMessagePart.Text("⚡ $cmd\n\n$resultText")),
+                ).toMessageNode(),
+                updateAt = java.time.Instant.now()
+            )
             saveConversation(conversationId, updated)
         }
     }
