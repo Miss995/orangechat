@@ -331,7 +331,20 @@
 - 为啥：宝 2026-09-01 拍板——"用户不能玩 AI 游戏"的问题（工具=AI 的游戏，现在宝也能玩=单人变双人）；宝 18 点后点名先做①
 - 状态：✅ 已推 main（ff997970）→ 待宝构建 APK 验证（发 /截图 试试）
 
+### commit c9747998 — 斜杠命令直执行（宝 2026-09-01 拍板：/开头 = 客户端直执行 MCP 工具，不经过 AI）
+- 文件：app/src/main/java/me/rerere/rikkahub/service/ChatService.kt（基于远程 main 版合并，保留 jumpToNode 等已有功能，只增不删）
+- 改动：
+  1. **sendMessage 拦截**：用户消息以 "/" 开头（长度>1）→ 先试客户端直执行（handleSlashCommandDirect），成功则跳过 AI 生成直接返回；未匹配到工具才走 AI 兜底
+  2. **handleSlashCommandDirect**：命令格式 `/服务器名 工具名 参数...` 或 `/工具名 参数...`；在 mcpManager.getAllAvailableTools() 里匹配工具；同名工具跨服务器 → 提示用服务器名区分；结果直接追加为 ASSISTANT 消息（⚡ 命令 + 结果）
+  3. **/mcp 或 /工具**：列出所有已启用 MCP 服务器及其工具
+  4. **parseSlashCommandArgs**：参数解析——JSON（{...}）优先；单属性工具（潮汐岛 command 风格）把文本塞进唯一属性；否则空参数
+  5. **appendSlashResult**：不加锁等待（当前就在 sendMessage 的 job 里，等自己会死锁），直接 saveMutex.withLock 追加落库
+- 为啥：宝要自己玩桌游/潮汐岛——"工具=AI 的游戏，现在宝也能玩=单人变双人"；宝吐槽"一定要经过一个AI吗？感觉有点那个"→ 直执行版：秒回、零模型调用、不走生成链路
+- 组合：GenerationHandler 的斜杠命令 AI 兜底版（ff997970）保留——直执行未匹配的命令走 AI 解释
+- 状态：✅ 已推 main（c9747998）→ 待宝构建 APK 验证（发 /mcp 看工具列表、/潮汐岛 plot_ops status 试直执行）
+
 ## 待办（代码相关）
+
 
 - 查 OB 来源标记错位 bug（ob_sync_chat / V3 的 source_ranges 或来源拼写错位）
 - 工具调取内容存记忆库（愿望清单 id68-⑥ → 工具账本 tool_actions 方案已定 2026-08-18）
