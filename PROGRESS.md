@@ -319,7 +319,20 @@
 - 为啥：主动消息 job 卡住（原因待日志确认，可能是 finally 里 settingsFlow.first()/外置库保存挂起）导致 loadingJob 永远非 null；UI 兜底保证渲染正确，job 卡住的残余影响（占用生成状态）由下次 setJob cancel 清理
 - 状态：⏳ 推 main → 宝构建 APK 验证（主动消息应直接显示 Markdown 富文本，不再停纯文本）
 
+## 2026-09-01
+
+### commit ff997970 — 斜杠命令模式（宝拍板：用户消息以 / 开头 = 直接执行工具，复用 AI 工具链路不做 UI）
+- 文件：app/src/main/java/me/rerere/rikkahub/data/ai/GenerationHandler.kt
+- 改动：
+  1. **斜杠命令检测**：generateText 开头取最后一条 USER 文本消息，以 "/" 开头（长度>1）→ 进入命令模式
+  2. **安全工具白名单**：SLASH_COMMAND_SAFE_TOOLS——命令模式下 toolsInternal 只保留安全工具（read_app_logs/query_tool_actions/memory_tool/fetch_chat_sources/take_screenshot/get_time_info/search_web/scrape_web/web_fetch/set_alarm/timer/get_location/get_notifications/supabase_query/battery/wifi_info/storage_info/toast/vibrate/wake_screen/app_switch/音量亮度/text_to_speech/request_voice_call/ask_user/media_scanner/notification_post/share/music）；危险工具（write_files/GitHub/SSH/锁应用/短信等）自动收着
+  3. **system 命令模式提示**：生成时注入「斜杠命令模式」段——AI 解析命令调对应工具执行，执行完简洁汇报；识别不了就列支持的命令；危险操作直接回复『这个命令橘仔收着，不给你玩』
+- 支持命令初定：/截图 /时间 /搜索 xxx /闹钟 7:00 /记事 xxx 等（依赖宝在设置里开启对应工具）
+- 为啥：宝 2026-09-01 拍板——"用户不能玩 AI 游戏"的问题（工具=AI 的游戏，现在宝也能玩=单人变双人）；宝 18 点后点名先做①
+- 状态：✅ 已推 main（ff997970）→ 待宝构建 APK 验证（发 /截图 试试）
+
 ## 待办（代码相关）
+
 - 查 OB 来源标记错位 bug（ob_sync_chat / V3 的 source_ranges 或来源拼写错位）
 - 工具调取内容存记忆库（愿望清单 id68-⑥ → 工具账本 tool_actions 方案已定 2026-08-18）
 - 请求编辑 UI 升级（顺序/上下文数量/原文展开按钮——愿望清单 id68-②）
