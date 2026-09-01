@@ -295,6 +295,35 @@ fun ChatMessage(
 }
  
 @OptIn(FlowPreview::class)
+/**
+ * 【用户消息思考链 2026-09-01 宝的功能】
+ * 把用户消息里的 <think>...</think>（兼容 </thinking> 结尾，宝的笔误版）识别为思考链段，
+ * 其余为正文段。渲染时思考链段折叠展示（跟 AI 思考链一致），正文段照常渲染。
+ */
+private sealed interface ThinkSegment {
+    data class Think(val content: String) : ThinkSegment
+    data class Text(val content: String) : ThinkSegment
+}
+
+private fun String.splitThinkSegments(): List<ThinkSegment> {
+    if (isBlank()) return listOf(ThinkSegment.Text(this))
+    val regex = Regex("<think>([\\s\\S]*?)<\\/think(?:ing)?>", RegexOption.IGNORE_CASE)
+    val segments = mutableListOf<ThinkSegment>()
+    var lastEnd = 0
+    for (match in regex.findAll(this)) {
+        if (match.range.first > lastEnd) {
+            segments.add(ThinkSegment.Text(substring(lastEnd, match.range.first)))
+        }
+        segments.add(ThinkSegment.Think(match.groupValues[1]))
+        lastEnd = match.range.last + 1
+    }
+    if (lastEnd < length) {
+        segments.add(ThinkSegment.Text(substring(lastEnd)))
+    }
+    if (segments.isEmpty()) segments.add(ThinkSegment.Text(this))
+    return segments
+}
+
 @Composable
 private fun MessagePartsBlock(
     assistant: Assistant?,
@@ -428,55 +457,84 @@ private fun MessagePartsBlock(
                                 if (role == MessageRole.ASSISTANT && loading) {
                                     Text(text = displayText)
                                 } else if (role == MessageRole.USER) {
-                                    if (assistant?.splitUserBubbleByLine == true) {
-                                        // 分气泡: 按用户输入的换行 (\n) 拆成多个独立气泡,
-                                        // 拆分逻辑见 splitIntoBubbleSegments (会保护代码块/表格内部的换行)
-                                        val bubbleSegments = remember(displayText) {
-                                            displayText.splitIntoBubbleSegments()
-                                        }
-                                        Column(
-                                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                                            horizontalAlignment = Alignment.End,
-                                        ) {
-                                            bubbleSegments.fastForEachIndexed { segIndex, segment ->
-                                                key(segIndex) {
-                                                    BubbleSurface(
-                                                        imagePath = displaySettings.userBubbleImagePath,
-                                                        cornerRadius = displaySettings.bubbleCornerRadius.dp,
-                                                        color = displaySettings.userBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.secondaryContainer,
-                                                        overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
-                                                        bubbleAlpha = bubbleAlpha,
-                                                        onClick = { onUserMessageClick?.invoke() },
-                                                    ) {
-                                                        MarkdownBlock(
-                                                            content = segment.replaceRegexes(
-                                                                assistant = assistant,
-                                                                scope = AssistantAffectScope.USER,
-                                                                visual = true,
-                                                            ),
-                                                            onClickCitation = handleClickCitation
+                                    // 【用户消息思考链 2026-09-01】<think>...</think> 段渲染成思考链卡片（跟 AI 一致灰色折叠），正文照常。
+                                    val thinkSegments = remember(displayText) { displayText.splitThinkSegments() }
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                        horizontalAlignment = Alignment.End,
+                                    ) {
+                                        thinkSegments.fastForEach { seg ->
+                                            when (seg) {
+                                                is ThinkSegment.Think -> {
+                                                    ChainOfThought(
+                                                        steps = listOf(
+                                                            ThinkingStep.ReasoningStep(
+                                                                UIMessagePart.Reasoning(reasoning = seg.content)
+                                                            )
+                                                        ),
+                                                        collapsedAdaptiveWidth = false,
+                                                    ) { step ->
+                                                        ChatMessageReasoningStep(
+                                                            reasoning = step.reasoning,
+                                                            model = null,
+                                                            assistant = assistant,
                                                         )
                                                     }
                                                 }
+                                                is ThinkSegment.Text -> {
+                                                    if (assistant?.splitUserBubbleByLine == true) {
+                                                        // 分气泡: 按用户输入的换行 (\n) 拆成多个独立气泡,
+                                                        // 拆分逻辑见 splitIntoBubbleSegments (会保护代码块/表格内部的换行)
+                                                        val bubbleSegments = remember(seg.content) {
+                                                            seg.content.splitIntoBubbleSegments()
+                                                        }
+                                                        Column(
+                                                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                                                            horizontalAlignment = Alignment.End,
+                                                        ) {
+                                                            bubbleSegments.fastForEachIndexed { segIndex, segment ->
+                                                                key(segIndex) {
+                                                                    BubbleSurface(
+                                                                        imagePath = displaySettings.userBubbleImagePath,
+                                                                        cornerRadius = displaySettings.bubbleCornerRadius.dp,
+                                                                        color = displaySettings.userBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.secondaryContainer,
+                                                                        overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
+                                                                        bubbleAlpha = bubbleAlpha,
+                                                                        onClick = { onUserMessageClick?.invoke() },
+                                                                    ) {
+                                                                        MarkdownBlock(
+                                                                            content = segment.replaceRegexes(
+                                                                                assistant = assistant,
+                                                                                scope = AssistantAffectScope.USER,
+                                                                                visual = true,
+                                                                            ),
+                                                                            onClickCitation = handleClickCitation
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    } else {
+                                                        BubbleSurface(
+                                                            imagePath = displaySettings.userBubbleImagePath,
+                                                            cornerRadius = displaySettings.bubbleCornerRadius.dp,
+                                                            color = displaySettings.userBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.secondaryContainer,
+                                                            overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
+                                                            bubbleAlpha = bubbleAlpha,
+                                                            onClick = { onUserMessageClick?.invoke() },
+                                                        ) {
+                                                            MarkdownBlock(
+                                                                content = seg.content.replaceRegexes(
+                                                                    assistant = assistant,
+                                                                    scope = AssistantAffectScope.USER,
+                                                                    visual = true,
+                                                                ),
+                                                                onClickCitation = handleClickCitation
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                             }
-                                        }
-                                    } else {
-                                        BubbleSurface(
-                                            imagePath = displaySettings.userBubbleImagePath,
-                                            cornerRadius = displaySettings.bubbleCornerRadius.dp,
-                                            color = displaySettings.userBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.secondaryContainer,
-                                            overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
-                                            bubbleAlpha = bubbleAlpha,
-                                            onClick = { onUserMessageClick?.invoke() },
-                                        ) {
-                                            MarkdownBlock(
-                                                content = displayText.replaceRegexes(
-                                                    assistant = assistant,
-                                                    scope = AssistantAffectScope.USER,
-                                                    visual = true,
-                                                ),
-                                                onClickCitation = handleClickCitation
-                                            )
                                         }
                                     }
                                 } else if (assistant?.splitBubbleByLine == true) {

@@ -4,6 +4,17 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-09-01
+
+### commit（本次待推）— 用户消息思考链渲染：<think>...</think> 折叠展示（宝 2026-09-01 的功能：宝想自己的消息也带思考链，跟 AI 一样）
+- 文件：app/.../ui/components/message/ChatMessage.kt
+- 背景：宝说"给我也搞个思考链的渲染呗"——宝发消息时想带思考链（模仿 AI 的思考链）——宝画了格式 <think>内容</think>（"大概跟你一样吧"）——样式跟 AI 思考链一致（灰色折叠可展开）
+- 改动：
+  1. 新增 ThinkSegment（Think/Text）+ String.splitThinkSegments()：正则 <think>...</think>（兼容 </thinking> 结尾，宝笔误版）拆成思考链段+正文段
+  2. MessagePartsBlock USER 分支改造：displayText 先拆段——Think 段用 ChainOfThought + ChatMessageReasoningStep 渲染成思考链卡片（model=null，跟 AI 一致灰色折叠）；Text 段走原有分气泡/单气泡 MarkdownBlock 逻辑（缩进进 when 分支，逻辑不变）
+- 注意：宝的消息原文（含 <think> 标签）原样发给模型（历史不加工）——模型能看到宝的思考链，可辅助理解意图
+- 状态：⏳ 推 main → 宝构建 APK 验证（宝发 <think>...</think>+正文 → 思考链折叠显示、正文气泡正常）
+
 ## 2026-08-30
 
 ### commit c2808e89 — 老消息跳转窗口移动 + 记忆权威标注（polaris 分层）（宝拍板 ①②，晚间空闲时段实施）
