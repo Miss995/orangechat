@@ -6,6 +6,14 @@
 
 ## 2026-09-01
 
+### commit（本次待推）— 第307条（换组）落库卡死修复（宝实测「到307就卡住只能刷新重开」，2026-09-01 22:11）
+- 文件：app/.../service/ChatService.kt（saveConversation isWindowState 判定）
+- 背景：宝实测每次消息到**第 307 条**（换组那一条）落库特别慢/卡死，只能刷新重开；宝推测跟换组有关（memory 97 缓存对齐那套窗口 300~304 浮动）
+- 根因：dc8c824 把 isWindowState 收紧为 `size <= WINDOW + groupSize`（=304/306）防斜杠命令全量误判——但正常发消息也会误伤：内存态窗口浮动上限=窗口+一组（300+groupSize），再追加 1 条新消息就超过上限 → 被误判成**全量传入** → 走全量保存分支（windowFirstIndex=null）→ updateConversation 里 protectedCount=0 → **窗口外几千条历史全部判为删除** + changedNodeIds 几千条 → `messageFtsManager.reindexNodes` 成百上千条 FTS 重建（withTransaction 同步执行）→ 落库卡死。groupSize=6 时 307 条恰好超限，与宝实测完全吻合
+- 改动：isWindowState 放宽为 `size <= WINDOW + groupSize * 2`——正常发消息最大=窗口上限+1 条新消息=301+groupSize ≤ 300+2*groupSize 恒成立（groupSize≥1）；真全量传入（几千条）仍远超窗口+两组 → 全量分支不受影响（斜杠命令修复 dc8c824 语义保留）
+- 验证：宝构建 APK 后聊过 307 条+，换组落库不再卡死、窗口外历史不丢
+- 备注：全量分支（真全量传入=压缩/修复/appendSlashResult）仍会整表覆盖+FTS 重建，属正常语义；正常发消息永不触达该分支
+
 ### commit（本次待推）— 斜杠命令误判修复 + 窗口边界爆炸修复（宝实测工具全 not found，2026-09-01 晚）
 - 文件：app/.../data/ai/GenerationHandler.kt、app/.../service/ChatService.kt
 - 背景：宝发 /mcp、/潮汐岛 plot_ops status（直执行成功）后，再发普通消息（如"啊，现在玩吗？"）AI 生成时**工具全 not found**（MCP 工具+workspace_shell 都没了，只剩白名单 read_app_logs/supabase_query）——宝开新窗口解封，修法记 memory 106

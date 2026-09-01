@@ -1806,13 +1806,20 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 【懒加载窗口】窗口版保存：只写窗口内变化，窗口外历史受保护（不读全量、不删除）。
         // 判定：存在窗口边界 且 传入条数 < 窗口外+窗口大小 → 窗口版（nodeIndex 从 firstIndex 偏移，不删窗口外）
         val windowFirstIndex = lazyWindowFirstIndex[conversationId]
-        // 修复（2026-09-01 晚）：原来 < windowFirstIndex + WINDOW + groupSize 会把「全量传入」
+        // 修复①（2026-09-01 晚）：原来 < windowFirstIndex + WINDOW + groupSize 会把「全量传入」
         // （appendSlashResult/appendProactiveAiMessageUnderLock 从数据库读全量再 saveConversation，
         // 5601 < 5300+300+4 也成立）误判成窗口态 → 窗口裁剪 overflow 巨大 → lazyWindowFirstIndex
         // 爆炸式推高（5300→10600→15900…，宝玩一次桌游窗口保护逻辑就错乱一次）。
         // 收紧为「传入条数 ≤ 窗口+一组」才视为窗口态；全量传入走全量分支（firstIndex=总条数-窗口大小，正确）。
+        // 修复②（2026-09-01 22:11 宝实测「第307条卡死」）：收紧后正常发消息也会误伤——
+        // 内存态窗口浮动上限=窗口+一组（300+groupSize），再追加 1 条新消息就超过「窗口+一组」上限
+        // → 被误判成全量传入 → 走全量保存分支（windowFirstIndex=null）→ updateConversation
+        // 把窗口外几千条历史全部判为删除 + FTS 重建成千条（withTransaction 同步执行）→ 落库卡死，
+        // 宝只能刷新重开（groupSize=6 时 307 条恰好超限，宝实测每局都卡）。
+        // 放宽为「窗口+两组」：正常发消息最大=窗口上限+1 条新消息=301+groupSize ≤ 300+2*groupSize
+        // 恒成立（groupSize≥1），真全量传入（几千条）仍远超窗口+两组 → 全量分支不受影响。
         val isWindowState = windowFirstIndex != null &&
-            toSave.messageNodes.size <= CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize
+            toSave.messageNodes.size <= CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize * 2
         val effectiveFirstIndex = if (isWindowState) windowFirstIndex else null
 
         val updatedConversation = toSave.copy()
