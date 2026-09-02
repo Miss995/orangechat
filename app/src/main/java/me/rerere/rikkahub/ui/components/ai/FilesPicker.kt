@@ -113,10 +113,12 @@ internal fun FilesPicker(
             ImagePickButton(onClick = onPickImage)
 
             if (provider != null && provider is ProviderSetting.Google) {
-                VideoPickButton(onClick = onPickVideo)
-
                 AudioPickButton(onClick = onPickAudio)
             }
+
+            // 视频按钮对所有 provider 显示：纯文本模型(DeepSeek 等)靠
+            // VideoNarrationTransformer 自动转述成文本，Google 等原生视频模型直接收
+            VideoPickButton(onClick = onPickVideo)
 
             FilePickButton(onClick = onPickFile)
         }

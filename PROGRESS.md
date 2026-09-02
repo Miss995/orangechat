@@ -4,6 +4,14 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-09-02
+
+### commit 4f57d12e — 视频转述 V1（宝 2026-09-02 拍板开干，从 19:55 到 20:13 一次推完）
+- 文件：ai/.../provider/Model.kt（Modality 新增 VIDEO）、ai/.../openai/ChatCompletionsAPI.kt（supportsVideo + video_url 序列化，原来 Video part 被静默丢弃）、app/.../transformers/VideoNarrationTransformer.kt（新建）、ChatService.kt + ProactiveMessageService.kt（注册转换链）、ModelList.kt + SettingProviderDetailPage.kt（when 穷尽补全）、strings.xml ×2（视频/Video 资源）
+- 方案：消息层 Video part 作者早留了（UIMessagePart.Video + FileEncoder Video.encodeBase64 + 输入框视频按钮）；缺的是①序列化（视频发出去被 else->{} 吞掉）②转述（纯文本主模型看不懂视频）。VideoNarrationTransformer 抄 OcrTransformer：模型不支持 VIDEO → 自动调 OCR 视觉模型（复用 ocrModelId，强制注入 IMAGE+VIDEO 模态）→ 视频 base64 data:video/mp4 走 video_url 发给模型 → 转述文本包 <video_file_narration> 替换 → 主模型基于叙述聊
+- 限制：视频 <7MB（上游 base64 限制，超了回提示文案）；只听画面不含音频；几秒~十几秒最佳
+- 状态：✅ 已推 main（4f57d12e，本 commit 原为误推 master 的 5e995b8，cherry-pick 搬回）；⚠️ master 分支被误推 5e995b8+2ec1b09（待恢复 19dfc61）；⏳ 宝构建 APK 验证（+ → 选视频 → 发 <7MB 短视频 → 应回视频叙述）
+
 ## 2026-09-01
 
 ### commit（本次待推）— 第307条（换组）落库卡死修复（宝实测「到307就卡住只能刷新重开」，2026-09-01 22:11）
