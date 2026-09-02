@@ -1077,6 +1077,7 @@ private fun ModelModalitySelector(
                             when (modality) {
                                 Modality.TEXT -> R.string.setting_provider_page_text
                                 Modality.IMAGE -> R.string.setting_provider_page_image
+                                Modality.VIDEO -> R.string.setting_provider_page_video
                             }
                         )
                     )
@@ -1108,6 +1109,7 @@ private fun ModelModalitySelector(
                             when (modality) {
                                 Modality.TEXT -> R.string.setting_provider_page_text
                                 Modality.IMAGE -> R.string.setting_provider_page_image
+                                Modality.VIDEO -> R.string.setting_provider_page_video
                             }
                         )
                     )

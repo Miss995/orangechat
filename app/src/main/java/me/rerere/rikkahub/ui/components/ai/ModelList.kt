@@ -702,6 +702,8 @@ fun ModelModalityTag(model: Model) {
                 imageVector = when (modality) {
                     Modality.TEXT -> HugeIcons.Text
                     Modality.IMAGE -> HugeIcons.Image03
+                    // VIDEO 等未来模态先兜底到图片图标（V1 模型不直接注册原生 VIDEO 模态）
+                    else -> HugeIcons.Image03
                 },
                 contentDescription = null,
                 modifier = Modifier
@@ -719,6 +721,8 @@ fun ModelModalityTag(model: Model) {
                 imageVector = when (modality) {
                     Modality.TEXT -> HugeIcons.Text
                     Modality.IMAGE -> HugeIcons.Image03
+                    // VIDEO 等未来模态先兜底到图片图标（V1 模型不直接注册原生 VIDEO 模态）
+                    else -> HugeIcons.Image03
                 },
                 contentDescription = null,
                 modifier = Modifier

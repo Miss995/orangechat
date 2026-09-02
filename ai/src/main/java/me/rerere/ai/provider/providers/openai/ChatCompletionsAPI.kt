@@ -591,19 +591,30 @@ class ChatCompletionsAPI(
         val filteredMessages = messages.filter { it.isValidToUpload() }
         // 纯文本模型 (如 GLM-5.2) 不接受 image_url, 收到会报 "Model only support text input"。
         // OcrTransformer 只覆盖 file: 图片, http/base64 图片会漏网; 这里在序列化层兜底,
-        // 模型不支持 IMAGE 时直接跳过 Image part, 不再发给 API。
+        // 模型不支持 IMAGE/VIDEO 时直接跳过对应 part, 不再发给 API。
         val supportsImage = model.inputModalities.contains(Modality.IMAGE)
+        val supportsVideo = model.inputModalities.contains(Modality.VIDEO)
 
         filteredMessages.forEach { message ->
             if (message.role == MessageRole.ASSISTANT) {
-                addAssistantMessages(message, includeReasoning = true, supportsImage = supportsImage)
+                addAssistantMessages(
+                    message,
+                    includeReasoning = true,
+                    supportsImage = supportsImage,
+                    supportsVideo = supportsVideo,
+                )
             } else {
-                addNonAssistantMessage(message, supportsImage = supportsImage)
+                addNonAssistantMessage(message, supportsImage = supportsImage, supportsVideo = supportsVideo)
             }
         }
     }
 
-    private fun JsonArrayBuilder.addAssistantMessages(message: UIMessage, includeReasoning: Boolean, supportsImage: Boolean = true) {
+    private fun JsonArrayBuilder.addAssistantMessages(
+        message: UIMessage,
+        includeReasoning: Boolean,
+        supportsImage: Boolean = true,
+        supportsVideo: Boolean = true,
+    ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
         var reasoningPart: UIMessagePart.Reasoning? = null
@@ -618,7 +629,11 @@ class ChatCompletionsAPI(
                         }
                     }
                     group.parts
-                        .filter { it is UIMessagePart.Text || (supportsImage && it is UIMessagePart.Image) }
+                        .filter {
+                            it is UIMessagePart.Text ||
+                                (supportsImage && it is UIMessagePart.Image) ||
+                                (supportsVideo && it is UIMessagePart.Video)
+                        }
                         .forEach { contentBuffer.add(it) }
                 }
 
@@ -629,6 +644,7 @@ class ChatCompletionsAPI(
                         tools = group.tools,
                         reasoningPart = reasoningPart,
                         supportsImage = supportsImage,
+                        supportsVideo = supportsVideo,
                     )?.let { assistantMessage ->
                         add(assistantMessage)
                     }
@@ -685,6 +701,7 @@ class ChatCompletionsAPI(
                 tools = emptyList(),
                 reasoningPart = reasoningPart,
                 supportsImage = supportsImage,
+                supportsVideo = supportsVideo,
             )?.let { assistantMessage ->
                 add(assistantMessage)
             }
@@ -696,11 +713,13 @@ class ChatCompletionsAPI(
         tools: List<UIMessagePart.Tool>,
         reasoningPart: UIMessagePart.Reasoning?,
         supportsImage: Boolean = true,
+        supportsVideo: Boolean = true,
     ): JsonObject? {
         val hasUsableContent = contentParts.any { part ->
             when (part) {
                 is UIMessagePart.Text -> part.text.isNotBlank()
                 is UIMessagePart.Image -> supportsImage && part.url.isNotBlank()
+                is UIMessagePart.Video -> supportsVideo && part.url.isNotBlank()
                 else -> false
             }
         }
@@ -751,6 +770,24 @@ class ChatCompletionsAPI(
                                 // 模型不支持图片时跳过, 不序列化 image_url
                             }
 
+                            is UIMessagePart.Video -> {
+                                if (supportsVideo) {
+                                    add(buildJsonObject {
+                                        part.encodeBase64().onSuccess { encodedVideo ->
+                                            put("type", "video_url")
+                                            put("video_url", buildJsonObject {
+                                                put("url", encodedVideo)
+                                            })
+                                        }.onFailure {
+                                            it.printStackTrace()
+                                            put("type", "text")
+                                            put("text", "")
+                                        }
+                                    })
+                                }
+                                // 模型不支持视频时跳过, 不序列化 video_url
+                            }
+
                             else -> {}
                         }
                     }
@@ -775,12 +812,23 @@ class ChatCompletionsAPI(
         }
     }
 
-    private fun JsonArrayBuilder.addNonAssistantMessage(message: UIMessage, supportsImage: Boolean = true) {
+    private fun JsonArrayBuilder.addNonAssistantMessage(
+        message: UIMessage,
+        supportsImage: Boolean = true,
+        supportsVideo: Boolean = true,
+    ) {
         add(buildJsonObject {
             put("role", JsonPrimitive(message.role.name.lowercase()))
 
-            // 模型不支持图片时, 先过滤掉 Image part, 避免发送 image_url 触发 "Model only support text input"
-            val parts = if (supportsImage) message.parts else message.parts.filter { it !is UIMessagePart.Image }
+            // 模型不支持图片/视频时, 先过滤掉对应 part, 避免发送 image_url/video_url
+            // 触发 "Model only support text input"
+            val parts = message.parts.filter { part ->
+                when (part) {
+                    is UIMessagePart.Image -> supportsImage
+                    is UIMessagePart.Video -> supportsVideo
+                    else -> true
+                }
+            }
             if (parts.isOnlyTextPart()) {
                 put("content", parts.filterIsInstance<UIMessagePart.Text>().first().text)
             } else {
@@ -800,6 +848,21 @@ class ChatCompletionsAPI(
                                         put("type", "image_url")
                                         put("image_url", buildJsonObject {
                                             put("url", encodedImage.base64)
+                                        })
+                                    }.onFailure {
+                                        it.printStackTrace()
+                                        put("type", "text")
+                                        put("text", "")
+                                    }
+                                })
+                            }
+
+                            is UIMessagePart.Video -> {
+                                add(buildJsonObject {
+                                    part.encodeBase64().onSuccess { encodedVideo ->
+                                        put("type", "video_url")
+                                        put("video_url", buildJsonObject {
+                                            put("url", encodedVideo)
                                         })
                                     }.onFailure {
                                         it.printStackTrace()
@@ -914,7 +977,8 @@ class ChatCompletionsAPI(
     }
 
     private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
-        val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
+        val gonnaSend =
+            filter { it is UIMessagePart.Text || it is UIMessagePart.Image || it is UIMessagePart.Video }.size
         val texts = filter { it is UIMessagePart.Text }.size
         return gonnaSend == texts && texts == 1
     }

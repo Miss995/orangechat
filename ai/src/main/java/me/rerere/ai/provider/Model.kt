@@ -36,6 +36,7 @@ enum class ModelType {
 enum class Modality {
     TEXT,
     IMAGE,
+    VIDEO,
 }
 
 @Serializable
