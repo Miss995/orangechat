@@ -987,6 +987,7 @@
   <string name="setting_provider_page_test">Test</string>
   <string name="setting_provider_page_test_connection">Test Connection</string>
   <string name="setting_provider_page_text">Text</string>
+  <string name="setting_provider_page_video">Video</string>
   <string name="setting_provider_page_title">Providers</string>
   <string name="setting_provider_page_tool">Tool</string>
   <string name="setting_provider_page_use_service_account">Use Service Account</string>
