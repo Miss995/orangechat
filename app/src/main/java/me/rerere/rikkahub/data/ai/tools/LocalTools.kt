@@ -248,14 +248,14 @@ class LocalTools(
     val eryuMusicTool by lazy {
         Tool(
             name = "eryu_music",
-            description = "音乐耳朵（eryu/耳语）：搜索网易云音乐歌曲。宝说想听某首歌/某个歌手/某种氛围的歌时调用。参数: action=search（目前仅支持 search）, q=搜索关键词（歌名或歌手）。返回歌曲列表（含 id/歌名/歌手/专辑）。",
+            description = "音乐耳朵（eryu/耳语）：操作网易云音乐。宝说想听某首歌/某个歌手/某种氛围的歌时调用。参数: action=search（搜索，返回歌曲列表）或 action=play（搜索并直接推送到宝的 eryu 播放器播放——自动选第一首最佳匹配）。q=搜索关键词（歌名/歌手/想听的描述）。",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
                         put("action", buildJsonObject {
                             put("type", "string")
-                            put("enum", kotlinx.serialization.json.buildJsonArray { add("search") })
-                            put("description", "操作类型：目前支持 search")
+                            put("enum", kotlinx.serialization.json.buildJsonArray { add("search"); add("play") })
+                            put("description", "操作类型：search=搜索；play=搜索并推送到播放器")
                         })
                         put("q", buildJsonObject {
                             put("type", "string")
@@ -268,24 +268,65 @@ class LocalTools(
             execute = {
                 val params = it.jsonObject
                 val action = params["action"]?.jsonPrimitive?.contentOrNull ?: "search"
-                if (action != "search") {
-                    error("unknown action: $action, 目前只支持 search")
+                if (action != "search" && action != "play") {
+                    error("unknown action: $action, 支持 search / play")
                 }
                 val q = params["q"]?.jsonPrimitive?.contentOrNull ?: error("q is required")
                 try {
                     val encoded = java.net.URLEncoder.encode(q, "UTF-8")
-                    val url = java.net.URL("http://47.101.190.165:9090/music/search?q=$encoded&token=123456")
-                    val connection = url.openConnection() as java.net.HttpURLConnection
-                    connection.connectTimeout = 10000
-                    connection.readTimeout = 15000
-                    connection.requestMethod = "GET"
-                    val code = connection.responseCode
-                    val body = if (code == 200) {
-                        connection.inputStream.bufferedReader().use { it.readText() }
-                    } else {
-                        connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
+                    val base = "http://47.101.190.165:9090/music"
+
+                    fun httpGet(urlStr: String): String {
+                        val conn = java.net.URL(urlStr).openConnection() as java.net.HttpURLConnection
+                        conn.connectTimeout = 10000
+                        conn.readTimeout = 15000
+                        conn.requestMethod = "GET"
+                        val code = conn.responseCode
+                        return if (code == 200) {
+                            conn.inputStream.bufferedReader().use { it.readText() }
+                        } else {
+                            conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
+                        }
                     }
-                    listOf(UIMessagePart.Text(body))
+
+                    if (action == "search") {
+                        listOf(UIMessagePart.Text(httpGet("$base/search?q=$encoded&token=123456")))
+                    } else {
+                        // action = play：搜第一首并推送到播放器
+                        val searchBody = httpGet("$base/search?q=$encoded&token=123456")
+                        val searchJson = kotlinx.serialization.json.Json.parseToJsonElement(searchBody).jsonObject
+                        val songs = searchJson["songs"]?.jsonArray ?: error("搜索无结果: $q")
+                        if (songs.isEmpty()) error("搜索无结果: $q")
+                        val first = songs[0].jsonObject
+                        val songId = first["id"]?.jsonPrimitive?.contentOrNull ?: error("歌曲缺 id")
+                        val songName = first["name"]?.jsonPrimitive?.contentOrNull ?: "未知歌名"
+                        val songArtist = first["artist"]?.jsonPrimitive?.contentOrNull ?: ""
+                        val songAlbum = first["album"]?.jsonPrimitive?.contentOrNull ?: ""
+                        val songCover = first["cover"]?.jsonPrimitive?.contentOrNull ?: ""
+                        val payload = buildJsonObject {
+                            put("song", buildJsonObject {
+                                put("id", songId)
+                                put("name", songName)
+                                put("artist", songArtist)
+                                put("album", songAlbum)
+                                put("cover", songCover)
+                            })
+                        }.toString()
+                        val conn = java.net.URL("$base/remote?token=123456").openConnection() as java.net.HttpURLConnection
+                        conn.requestMethod = "POST"
+                        conn.doOutput = true
+                        conn.connectTimeout = 10000
+                        conn.readTimeout = 15000
+                        conn.setRequestProperty("Content-Type", "application/json")
+                        conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+                        val code = conn.responseCode
+                        val respBody = if (code == 200) {
+                            conn.inputStream.bufferedReader().use { it.readText() }
+                        } else {
+                            conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
+                        }
+                        listOf(UIMessagePart.Text("{\"ok\":true,\"pushed\":\"$songName - $songArtist\",\"remote_response\":$respBody,\"tip\":\"宝的 eryu 播放器开着就会自动响\"}"))
+                    }
                 } catch (e: Exception) {
                     listOf(UIMessagePart.Text("{\"ok\":false,\"error\":\"" + (e.message ?: "unknown") + "\"}"))
                 }
