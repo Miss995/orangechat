@@ -361,7 +361,7 @@ def split_events(text_chunk, start_idx, batch_len):
         "response_format": {"type": "json_object"},
         "messages": [
             {"role": "system", "content": (
-                "你是橘仔的记忆归档助手。下面是橘仔和主人今天的聊天记录片段，"
+                "你是橘仔的记忆归档助手。下面是橘仔和宝今天的聊天记录片段，"
                 "每行开头是 [编号]（编号全局连续，从 1 开始，本批从 " + str(start_idx) + " 开始）。\n"
                 "请提炼值得长期记住的事件。要求：\n"
                 "1. 事件 = 一件完整的事（一次讨论/一个决定/一段共同经历/一次情绪时刻/日常小片段），不要拆太碎，能合并就合并\n"
@@ -529,7 +529,7 @@ def summarize_range(msgs, start_idx, end_idx, date=None):
         return 0
     lines = []
     for j, m in enumerate(chunk):
-        who = "用户" if m.get("role") == "user" else "橘仔"
+        who = "宝" if m.get("role") == "user" else "橘仔"
         lines.append(f"[{start_idx + j}] {who}：{m.get('content', '')}")
     text = "\n".join(lines)[-30000:]
     evs = call_with_retry(lambda: split_events(text, start_idx, len(chunk)))
@@ -635,7 +635,7 @@ def merge_adjacent_events(date=None):
                 for idx in [max_id(A) - 2, max_id(A) - 1, max_id(A), min_id(B), min_id(B) + 1, min_id(B) + 2]:
                     if 1 <= idx <= len(msgs):
                         m = msgs[idx - 1]
-                        who = "用户" if m.get("role") == "user" else "橘仔"
+                        who = "宝" if m.get("role") == "user" else "橘仔"
                         boundary.append(f"[{idx}] {who}：{m.get('content', '')}")
                 try:
                     same = llm_same_event(A, B, "\n".join(boundary))
