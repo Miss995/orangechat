@@ -124,6 +124,14 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("ssh")
     data object Ssh : LocalToolOption()
+
+    /**
+     * eryu 音乐耳朵（宝的服务器 47.101.190.165:9090 自托管网易云播放器）。开启后注册
+     * eryu_music 工具，AI 可搜索网易云歌曲（宝说想听什么歌就搜）。2026-09-03 宝拍板内置。
+     */
+    @Serializable
+    @SerialName("music")
+    data object Music : LocalToolOption()
 }
  
 class LocalTools(
@@ -232,6 +240,59 @@ class LocalTools(
         )
     }
  
+    /**
+     * eryu 音乐耳朵工具：搜索网易云音乐歌曲（宝的服务器自托管播放器 eryu / 耳语）。
+     * 调用: {"action":"search","q":"想听的歌/歌手/关键词"} → 返回歌曲 JSON 列表。
+     * V1 只做 search；remote 推歌/歌词等参数摸清后 V2 扩展（2026-09-03）。
+     */
+    val eryuMusicTool by lazy {
+        Tool(
+            name = "eryu_music",
+            description = "音乐耳朵（eryu/耳语）：搜索网易云音乐歌曲。宝说想听某首歌/某个歌手/某种氛围的歌时调用。参数: action=search（目前仅支持 search）, q=搜索关键词（歌名或歌手）。返回歌曲列表（含 id/歌名/歌手/专辑）。",
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("action", buildJsonObject {
+                            put("type", "string")
+                            put("enum", kotlinx.serialization.json.buildJsonArray { add("search") })
+                            put("description", "操作类型：目前支持 search")
+                        })
+                        put("q", buildJsonObject {
+                            put("type", "string")
+                            put("description", "搜索关键词（歌名/歌手/想听的描述）")
+                        })
+                    },
+                    required = listOf("action", "q")
+                )
+            },
+            execute = {
+                val params = it.jsonObject
+                val action = params["action"]?.jsonPrimitive?.contentOrNull ?: "search"
+                if (action != "search") {
+                    error("unknown action: $action, 目前只支持 search")
+                }
+                val q = params["q"]?.jsonPrimitive?.contentOrNull ?: error("q is required")
+                try {
+                    val encoded = java.net.URLEncoder.encode(q, "UTF-8")
+                    val url = java.net.URL("http://47.101.190.165:9090/music/search?q=$encoded&token=123456")
+                    val connection = url.openConnection() as java.net.HttpURLConnection
+                    connection.connectTimeout = 10000
+                    connection.readTimeout = 15000
+                    connection.requestMethod = "GET"
+                    val code = connection.responseCode
+                    val body = if (code == 200) {
+                        connection.inputStream.bufferedReader().use { it.readText() }
+                    } else {
+                        connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
+                    }
+                    listOf(UIMessagePart.Text(body))
+                } catch (e: Exception) {
+                    listOf(UIMessagePart.Text("{\"ok\":false,\"error\":\"" + (e.message ?: "unknown") + "\"}"))
+                }
+            }
+        )
+    }
+
     val clipboardTool by lazy {
         Tool(
             name = "clipboard_tool",
@@ -628,6 +689,9 @@ class LocalTools(
             tools.add(me.rerere.rikkahub.data.ai.tools.local.sshUploadTool(context, sshHostRepository))
             tools.add(me.rerere.rikkahub.data.ai.tools.local.sshDownloadTool(context, sshHostRepository))
             tools.add(me.rerere.rikkahub.data.ai.tools.local.forgetSshHostKeyTool(context))
+        }
+        if (options.contains(LocalToolOption.Music)) {
+            tools.add(eryuMusicTool)
         }
         return tools
     }

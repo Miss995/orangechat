@@ -253,6 +253,23 @@ private fun AssistantLocalToolContent(
                     )
                 }
             )
+            item(
+                headlineContent = { Text("音乐耳朵（eryu）") },
+                supportingContent = { Text("搜索网易云音乐歌曲——宝说想听啥，橘仔帮忙搜") },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.Music),
+                        onCheckedChange = {
+                            val newLocalTools = if (it) {
+                                assistant.localTools + LocalToolOption.Music
+                            } else {
+                                assistant.localTools - LocalToolOption.Music
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
         }
     }
 }
