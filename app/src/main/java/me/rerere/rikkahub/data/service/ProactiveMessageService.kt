@@ -927,13 +927,11 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 // AI 主动触发（trigger_proactive_message 工具）：明确唤醒目的，其余走常规主动消息规则
                 appendLine()
                 appendLine()
-                appendLine("## ✨ 你这次是被 AI 主动唤醒的")
-                appendLine("你不是因为定时器或设备事件被触发，而是 AI 自己决定想联系用户。")
-                appendLine("你这次醒来的目的：$aiTriggerReason")
-                appendLine("距离用户上次回复已过去 $idleMinutes 分钟。")
-                appendLine("根据你的目的和当前上下文，自然地决定是否发一条消息；如果现在确实没什么好说的，就回复 [PASS] 即可。")
-                appendLine("绝对不要复述上一轮的对话内容，要发新的话题或新的关心。")
-                appendLine("不要提及任何数据来源、工具使用、传感器数据等技术细节，直接以朋友聊天的语气开口。")
+                appendLine("## ✨ 你醒来了")
+                appendLine("你醒来了，想找宝说说话。这次醒来的由头（如果有）：$aiTriggerReason")
+                appendLine("由头只是由头——想说就说，不想说就随便聊聊，用你自己的方式。宝会回你的。")
+                appendLine("距离宝上次回复已过去 $idleMinutes 分钟。")
+                appendLine("如果现在确实没什么想说的，就回复 [PASS] 就好，不用硬找话题。")
                 appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
                 // 注入完整上下文（定位、前台app、app使用、通知、电量、健康等）
                 if (!deviceEventContext.isNullOrBlank()) {
