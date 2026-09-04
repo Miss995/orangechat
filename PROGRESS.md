@@ -4,6 +4,15 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-09-04
+
+### commit bac7dc3 — 语音输入法模式（宝 2026-09-04：语音条没法改错字，要文字进输入框可编辑）
+- 文件：app/src/main/java/me/rerere/rikkahub/ui/pages/chat/ChatPage.kt
+- 背景：ASR 语音配通后（宝改硅基模型名成功，Model does not exist 解决），宝发现发出去是语音条（VoiceMessage），识别错字没法手动改（"手动改语音条太扯了吧"）
+- 改动：onVoiceMessage 不再直接 vm.handleMessageSend(VoiceMessage)——改为 transcript 填入 inputState（输入框已有文字时空格分隔追加），宝编辑后点发送=正常文字消息；识别空白时 Toast「没听清，再说一次？」（ToastType.Normal）
+- 保留：语音条代码未删（UIMessagePart.VoiceMessage / VoiceMessageBubble / VoiceMessageTransformer 仍在），未来要语音消息模式可再开
+- 状态：✅ 已推 main（bac7dc3）→ 待宝构建 APK 验证（按麦克风说话→文字进输入框可编辑→发送）
+
 ## 2026-09-02
 
 ### commit 4f57d12e — 视频转述 V1（宝 2026-09-02 拍板开干，从 19:55 到 20:13 一次推完）
