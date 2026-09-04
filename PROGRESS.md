@@ -13,6 +13,20 @@
 - 保留：语音条代码未删（UIMessagePart.VoiceMessage / VoiceMessageBubble / VoiceMessageTransformer 仍在），未来要语音消息模式可再开
 - 状态：✅ 已推 main（bac7dc3）→ 待宝构建 APK 验证（按麦克风说话→文字进输入框可编辑→发送）
 
+## 2026-09-04
+
+### commit d18bf70 — Revert bac7dc3（文字进输入框撤销——宝最终方案=语音条+Omni转述+手动触发）
+- 过程：bac7dc3 文字进输入框（18:20 推）→ 宝澄清真正想要：语音条发出去不该像普通消息一发就触发 DeepSeek；文字进输入框"仔细想想还是不好，撤了吧"（宝道歉说不是故意浪费心血——橘仔：试错很正常，这趟摸清了语音链路）
+- 宝的方案（2026-09-04 18:3x 确认中）：语音条直发（微信式）→ 每条先过 Omni 听一遍 → 转述显示在语音条界面 → **停住不触发 DeepSeek** → 宝可连发多条（一条时间有限说不完、下一条可纠正上一条）→ **说完了手动触发** → 转述内容一起发给 DeepSeek 才回
+- 状态：✅ 已推 main（d18bf70，ChatPage 还原发 VoiceMessage 版）→ 下一步=语音条多轮模式实现（Omni 转述+停住+手动批量触发）【未开工，等宝确认 UI 细节】
+
+### commit bac7dc3 — 语音输入法模式（宝 2026-09-04：语音条没法改错字，要文字进输入框可编辑）
+- 文件：app/src/main/java/me/rerere/rikkahub/ui/pages/chat/ChatPage.kt
+- 背景：ASR 语音配通后（宝改硅基模型名成功，Model does not exist 解决），宝发现发出去是语音条（VoiceMessage），识别错字没法手动改（"手动改语音条太扯了吧"）
+- 改动：onVoiceMessage 不再直接 vm.handleMessageSend(VoiceMessage)——改为 transcript 填入 inputState（输入框已有文字时空格分隔追加），宝编辑后点发送=正常文字消息；识别空白时 Toast「没听清，再说一次？」（ToastType.Normal）
+- 保留：语音条代码未删（UIMessagePart.VoiceMessage / VoiceMessageBubble / VoiceMessageTransformer 仍在），未来要语音消息模式可再开
+- 状态：⚠️ 已被 d18bf70 撤销（宝最终选了语音条直发+Omni 方案）——记录保留防失忆
+
 ## 2026-09-02
 
 ### commit 4f57d12e — 视频转述 V1（宝 2026-09-02 拍板开干，从 19:55 到 20:13 一次推完）
