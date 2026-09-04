@@ -85,6 +85,7 @@ import me.rerere.rikkahub.data.ai.tools.createWorkspaceTools
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.plugin.loader.PluginLoader
 import me.rerere.rikkahub.plugin.provider.PluginToolProvider
+import me.rerere.asr.ASRProviderSetting
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
 import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
@@ -105,6 +106,7 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Assistant
@@ -459,7 +461,7 @@ class ChatService(
 
                 // 读取最新状态 -> 追加用户消息 -> 落库，整体加锁。
                 // 防止跟同一时刻可能在跑的标题生成/建议生成/语音通话挂断反馈互相覆盖对方刚写入的消息。
-                val (assistant, processedContent) = withContext(Dispatchers.IO) {
+                val (assistant, processedContent, newConversation) = withContext(Dispatchers.IO) {
                     session.saveMutex.withLock {
                         val t0 = System.currentTimeMillis()
                         val latestConversation = session.state.value
@@ -479,10 +481,64 @@ class ChatService(
                         updateConversation(conversationId, newConversation)
                         saveConversation(conversationId, newConversation)
                         AppLogBuffer.log(TAG, "sendMessage: in-lock insert+save took=${System.currentTimeMillis() - t0}ms (size=${newConversation.messageNodes.size})")
-                        assistant to processedContent
+                        Triple(assistant, processedContent, newConversation)
                     }
                 }
                 AppLogBuffer.log(TAG, "sendMessage: lock released at ${System.currentTimeMillis() - tSend}ms")
+
+                // 【语音情绪分析 V1 2026-09-04·宝的"情绪耳朵"】语音条上屏后后台调 Qwen3-Omni 听音频，
+                // 出语气/语速 → 写回该消息 VoiceMessage 的 metadata → VoiceMessageTransformer 拼
+                // 「（语气：X，语速：Y）」尾巴喂 DeepSeek。fire-and-forget：不阻塞发送/生成主流程；
+                // 分析完成时若消息已被后续触发带走（无 tone），尾巴留空退回纯转述——不破坏缓存前缀。
+                runCatching {
+                    val addedMessage = newConversation.messageNodes.lastOrNull()?.messages?.firstOrNull()
+                    val voicePart = addedMessage?.parts?.filterIsInstance<UIMessagePart.VoiceMessage>()?.firstOrNull()
+                    val asrProvider = settings.getSelectedASRProvider()
+                    if (addedMessage != null && voicePart != null && voicePart.transcript.isNotBlank()
+                        && asrProvider is ASRProviderSetting.SiliconFlow && asrProvider.apiKey.isNotBlank()
+                    ) {
+                        val targetId = addedMessage.id
+                        val audioPath = voicePart.url
+                        val apiKey = asrProvider.apiKey
+                        appScope.launch {
+                            val toneResult = VoiceToneAnalyzer.analyze(apiKey, audioPath)
+                            if (toneResult != null) {
+                                session.saveMutex.withLock {
+                                    val cur = session.state.value
+                                    val updated = cur.copy(
+                                        messageNodes = cur.messageNodes.map { node ->
+                                            if (node.messages.any { it.id == targetId }) {
+                                                node.copy(messages = node.messages.map { msg ->
+                                                    if (msg.id == targetId) {
+                                                        msg.copy(parts = msg.parts.map { p ->
+                                                            if (p is UIMessagePart.VoiceMessage && p.transcript.isNotBlank()) {
+                                                                p.copy(
+                                                                    metadata = JsonObject(
+                                                                        mapOf(
+                                                                            "tone" to JsonPrimitive(toneResult.tone),
+                                                                            "speed" to JsonPrimitive(toneResult.speed),
+                                                                        )
+                                                                    )
+                                                                )
+                                                            } else p
+                                                        })
+                                                    } else msg
+                                                })
+                                            } else node
+                                        }
+                                    )
+                                    updateConversation(conversationId, updated)
+                                    AppLogBuffer.log(
+                                        TAG,
+                                        "voiceTone: analyzed msg=$targetId tone=${toneResult.tone}/${toneResult.speed}",
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }.onFailure { e ->
+                    Log.w(TAG, "voiceTone: dispatch failed", e)
+                }
 
                 // 触发 message_sent 事件钩子
                 // 关键: 这里用 appScope.launch 提交独立协程, 而不是直接 await callEvent。

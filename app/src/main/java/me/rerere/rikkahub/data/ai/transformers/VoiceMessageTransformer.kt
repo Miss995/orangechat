@@ -6,6 +6,8 @@
 
 package me.rerere.rikkahub.data.ai.transformers
 
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 
@@ -26,7 +28,10 @@ object VoiceMessageTransformer : InputMessageTransformer {
                 when (part) {
                     is UIMessagePart.VoiceMessage -> {
                         if (part.transcript.isNotBlank()) {
-                            UIMessagePart.Text(text = part.transcript)
+                            // 【语气尾巴 2026-09-04】VoiceToneAnalyzer 分析完把 tone/speed 写进 metadata，
+                            // 这里拼成「（语气：X，语速：Y）」喂给 DeepSeek——让橘仔感知宝说话的状态。
+                            // 分析还没完成/失败时 metadata 无值 → 尾巴为空 → 退回纯转述（不破坏缓存前缀稳定性）
+                            UIMessagePart.Text(text = part.transcript + part.toneSuffix())
                         } else {
                             null
                         }
@@ -35,6 +40,18 @@ object VoiceMessageTransformer : InputMessageTransformer {
                 }
             }
             if (newParts.isEmpty()) null else message.copy(parts = newParts)
+        }
+    }
+
+    /** 从 metadata 读语气/语速拼尾巴；没分析过/没值就返回空串 */
+    private fun UIMessagePart.VoiceMessage.toneSuffix(): String {
+        val meta = metadata ?: return ""
+        val tone = (meta["tone"] as? JsonPrimitive)?.contentOrNull
+        val speed = (meta["speed"] as? JsonPrimitive)?.contentOrNull
+        return when {
+            !tone.isNullOrBlank() && !speed.isNullOrBlank() -> "（语气：$tone，语速：$speed）"
+            !tone.isNullOrBlank() -> "（语气：$tone）"
+            else -> ""
         }
     }
 }
