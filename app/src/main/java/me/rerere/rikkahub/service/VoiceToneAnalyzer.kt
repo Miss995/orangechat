@@ -11,6 +11,7 @@
 
 package me.rerere.rikkahub.service
 
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -35,21 +36,23 @@ object VoiceToneAnalyzer {
             val path = audioPath.removePrefix("file://")
             val file = File(path)
             if (!file.exists() || file.length() == 0L) {
-                android.util.Log.w("VoiceToneAnalyzer", "audio file missing: $path")
+                AppLogBuffer.log("VoiceToneAnalyzer", "audio file missing: $path")
                 return@withContext null
             }
             val b64 = Base64.getEncoder().encodeToString(file.readBytes())
 
             val prompt = "你是声音心理师。听这段中文语音，判断说话者的语气和语速。只输出一行：语气=XX，语速=X。语气从「平静/开心/紧张/低落/激动/犹豫/疲惫/撒娇/认真/其他」里选最接近的一个词；语速从「快/中/慢」里选。不要输出任何其他内容。"
 
-            // OpenAI Chat Completions 音频输入格式（Qwen3-Omni 兼容）
+            // 硅基流动 Qwen3-Omni 音频格式 = audio_url + data URI（官方文档 multimodal 5.3 Audio Understanding）
+            // 注意：不是 OpenAI 的 input_audio！格式错了会 400 静默失败（2026-09-04 踩坑）
             val body = buildString {
                 append("{\"model\":\"$MODEL\",\"max_tokens\":60,\"messages\":[{\"role\":\"user\",\"content\":[")
+                append("{\"type\":\"audio_url\",\"audio_url\":{\"url\":\"data:audio/wav;base64,")
+                append(b64)
+                append("\"}},")
                 append("{\"type\":\"text\",\"text\":")
                 append(JsonEscaper.escape(prompt))
-                append("},{\"type\":\"input_audio\",\"input_audio\":{\"data\":\"")
-                append(b64)
-                append("\",\"format\":\"wav\"}}]}]}")
+                append("}]}]}")
             }
 
             val conn = URL(ENDPOINT).openConnection() as HttpURLConnection
@@ -67,7 +70,7 @@ object VoiceToneAnalyzer {
                     conn.inputStream.bufferedReader().readText()
                 } else {
                     val err = conn.errorStream?.bufferedReader()?.readText() ?: ""
-                    android.util.Log.w("VoiceToneAnalyzer", "Omni http=$code err=$err")
+                    AppLogBuffer.log("VoiceToneAnalyzer", "Omni http=$code err=$err")
                     return@withContext null
                 }
 
@@ -77,15 +80,16 @@ object VoiceToneAnalyzer {
                 val tone = Regex("语气=([^，,、\\s]+)").find(content)?.groupValues?.get(1)
                 val speed = Regex("语速=([^，,、\\s]+)").find(content)?.groupValues?.get(1)
                 if (tone.isNullOrBlank() || speed.isNullOrBlank()) {
-                    android.util.Log.w("VoiceToneAnalyzer", "unparseable content: $content")
+                    AppLogBuffer.log("VoiceToneAnalyzer", "unparseable content: $content")
                     return@withContext null
                 }
+                AppLogBuffer.log("VoiceToneAnalyzer", "omni ok tone=$tone speed=$speed")
                 ToneResult(tone = tone, speed = speed)
             } finally {
                 conn.disconnect()
             }
         } catch (e: Exception) {
-            android.util.Log.w("VoiceToneAnalyzer", "analyze failed", e)
+            AppLogBuffer.log("VoiceToneAnalyzer", "analyze failed: ${e.message}")
             null
         }
     }
