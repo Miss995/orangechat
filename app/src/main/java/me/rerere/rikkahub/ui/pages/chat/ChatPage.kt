@@ -411,7 +411,10 @@ private fun ChatPageContent(
                                     duration = duration,
                                     transcript = transcript,
                                 )
-                            )
+                            ),
+                            // 语音条只上屏不触发 AI（宝 2026-09-04 方案）：一条语音时间有限，
+                            // 可以连发多条攒着（下一条还能纠正上一条），发文字消息时自动一起带走触发
+                            answer = false,
                         )
                         scope.launch {
                             chatListState.requestScrollToItem(conversation.messageNodes.size.coerceAtMost(WINDOW_DISPLAY_SIZE) + 5)
