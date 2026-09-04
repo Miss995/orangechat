@@ -18,21 +18,23 @@ object VoiceMessageTransformer : InputMessageTransformer {
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        return messages.map { message ->
-            message.copy(
-                parts = message.parts.map { part ->
-                    when (part) {
-                        is UIMessagePart.VoiceMessage -> {
-                            if (part.transcript.isNotBlank()) {
-                                UIMessagePart.Text(text = part.transcript)
-                            } else {
-                                UIMessagePart.Text(text = "[语音消息]")
-                            }
+        // 【空转述语音剔除 2026-09-04】ASR 没识别出来的语音条（transcript 空）上屏照常显示，
+        // 但发给 AI 时直接剔除整条消息——"[语音消息]"占位符没信息量，还会占最近 N 条窗口槽位，
+        // 把真正有用的历史挤出上下文（宝实测发现攒几条空语音后真对话全被顶掉+缓存/输入 token 浪费）。
+        return messages.mapNotNull { message ->
+            val newParts = message.parts.mapNotNull { part ->
+                when (part) {
+                    is UIMessagePart.VoiceMessage -> {
+                        if (part.transcript.isNotBlank()) {
+                            UIMessagePart.Text(text = part.transcript)
+                        } else {
+                            null
                         }
-                        else -> part
                     }
+                    else -> part
                 }
-            )
+            }
+            if (newParts.isEmpty()) null else message.copy(parts = newParts)
         }
     }
 }
