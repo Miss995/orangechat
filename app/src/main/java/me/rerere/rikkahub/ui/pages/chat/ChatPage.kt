@@ -399,22 +399,20 @@ private fun ChatPageContent(
                         }
                         inputState.clearInput()
                     },
-                    onVoiceMessage = { url, duration, transcript ->
+                    onVoiceMessage = { _, _, transcript ->
                         if (currentChatModel == null) {
                             toaster.show("请先选择模型", type = ToastType.Error)
                             return@ChatInput
                         }
-                        vm.handleMessageSend(
-                            listOf(
-                                UIMessagePart.VoiceMessage(
-                                    url = url,
-                                    duration = duration,
-                                    transcript = transcript,
-                                )
+                        // 语音输入法模式（宝 2026-09-04）：识别文字填入输入框，宝可编辑后再发送。
+                        // 不再直接发语音条——语音条没法改错字；识别空白时给个轻提示。
+                        if (transcript.isNotBlank()) {
+                            val existing = inputState.textContent.text.toString()
+                            inputState.appendText(
+                                if (existing.isBlank()) transcript else " $transcript"
                             )
-                        )
-                        scope.launch {
-                            chatListState.requestScrollToItem(conversation.messageNodes.size.coerceAtMost(WINDOW_DISPLAY_SIZE) + 5)
+                        } else {
+                            toaster.show("没听清，再说一次？", type = ToastType.Normal)
                         }
                     },
                     onLongSendClick = {
