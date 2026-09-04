@@ -165,6 +165,8 @@ data class UIMessage(
     fun toText() = parts.joinToString(separator = "\n") { part ->
         when (part) {
             is UIMessagePart.Text -> part.text
+            is UIMessagePart.VoiceMessage ->
+                if (part.transcript.isNotBlank()) part.transcript else "[语音消息]"
             else -> ""
         }
     }

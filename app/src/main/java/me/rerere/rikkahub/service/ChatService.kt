@@ -579,7 +579,12 @@ class ChatService(
                     }
                     if (externalMemoryConfigs.isNotEmpty()) {
                         val messageText = processedContent.mapNotNull { part ->
-                            if (part is UIMessagePart.Text) part.text else null
+                            when (part) {
+                                is UIMessagePart.Text -> part.text
+                                is UIMessagePart.VoiceMessage ->
+                                    if (part.transcript.isNotBlank()) part.transcript else "[语音消息]"
+                                else -> null
+                            }
                         }.joinToString("\n")
                         externalMemoryConfigs.forEach { config ->
                             appScope.launch {
