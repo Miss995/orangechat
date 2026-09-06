@@ -96,8 +96,8 @@ private fun messageToPlainText(message: UIMessage): String {
             is UIMessagePart.Audio -> sb.append("[音频]\n")
             is UIMessagePart.Video -> sb.append("[视频]\n")
             is UIMessagePart.Document -> sb.append("[文件]\n")
-            // 思考链/工具调用不参与收藏快照（那是橘仔的工作痕迹，不是宝的话）
-            is UIMessagePart.Tool, is UIMessagePart.Reasoning -> Unit
+            // 其他部件（思考链/工具调用/搜索记录等）不参与收藏快照——那是工作痕迹，不是宝的话
+            else -> Unit
         }
     }
     return sb.toString().trim()
