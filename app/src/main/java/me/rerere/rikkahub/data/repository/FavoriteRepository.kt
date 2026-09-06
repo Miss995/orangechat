@@ -42,6 +42,30 @@ class FavoriteRepository(
         return favorite
     }
 
+    // 五感记忆库 V1（2026-09-06）：橘仔收藏（heart_save 工具）——owner=ai + 理由 + 五感
+    suspend fun addAiNodeFavorite(
+        target: NodeFavoriteTarget,
+        reason: String,
+        senses: List<String>,
+    ): FavoriteEntity {
+        val refKey = NodeFavoriteAdapter.buildRefKey(target)
+        val existing = dao.getByRefKey(refKey)
+        val favorite = NodeFavoriteAdapter.buildAiFavoriteEntity(
+            target = target,
+            existing = existing,
+            reason = reason,
+            senses = senses,
+        )
+        dao.upsert(favorite)
+        return favorite
+    }
+
+    // 五感记忆库 V1：按收藏者查（heart_query 工具用）
+    suspend fun listByOwner(owner: String, keyword: String? = null): List<FavoriteEntity> {
+        return if (keyword.isNullOrBlank()) dao.listByOwner(owner)
+        else dao.searchByOwner(owner, keyword)
+    }
+
     suspend fun removeNodeFavorite(conversationId: Uuid, nodeId: Uuid): Int {
         return dao.deleteByRefKey(NodeFavoriteAdapter.buildRefKey(conversationId.toString(), nodeId.toString()))
     }

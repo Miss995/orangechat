@@ -32,6 +32,9 @@ data class FavoriteMeta(
     val title: String? = null,
     val subtitle: String? = null,
     val previewText: String? = null,
+    // 五感记忆库 V1（2026-09-06）：橘仔收藏专用——收藏理由（灵魂）+ 对应五感标签
+    val reason: String? = null,
+    val senses: List<String>? = null,
 )
 
 @Serializable
@@ -48,12 +51,23 @@ data class NodeFavoriteTarget(
 )
 
 fun UIMessage.buildFavoritePreview(maxLength: Int = 160): String {
-    val plainText = parts
-        .filterIsInstance<UIMessagePart.Text>()
-        .joinToString("\n") { it.text.trim() }
-        .trim()
-    if (plainText.isNotBlank()) {
-        return plainText.take(maxLength)
+    // 五感记忆库 V1（2026-09-06）：快照提取对图片/语音/音视频友好——
+    // 纯语音条、纯图片消息不再 fallback 成 "[User Message]"。
+    val lines = parts.mapNotNull { part ->
+        when (part) {
+            is UIMessagePart.Text -> part.text.trim().takeIf { it.isNotBlank() }
+            is UIMessagePart.Image -> "[图片] ${part.url}"
+            is UIMessagePart.VoiceMessage ->
+                if (part.transcript.isNotBlank()) "[语音] ${part.transcript.trim()}" else "[语音消息]"
+            is UIMessagePart.Audio -> "[音频]"
+            is UIMessagePart.Video -> "[视频]"
+            is UIMessagePart.Document -> "[文件] ${part.url}"
+            else -> null
+        }
+    }
+    val joined = lines.joinToString("\n").trim()
+    if (joined.isNotBlank()) {
+        return joined.take(maxLength)
     }
     return when (role) {
         MessageRole.USER -> "[User Message]"

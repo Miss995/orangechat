@@ -53,6 +53,8 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.buildFetchChatSourcesTool
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
+import me.rerere.rikkahub.data.ai.tools.buildHeartQueryTool
+import me.rerere.rikkahub.data.ai.tools.buildHeartSaveTool
 import me.rerere.rikkahub.data.ai.tools.buildQueryToolActionsTool
 import me.rerere.rikkahub.data.ai.tools.buildReadAppLogsTool
 import me.rerere.rikkahub.data.ai.tools.buildWriteFilesTool
@@ -63,6 +65,7 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.repository.FavoriteRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.applyPlaceholders
 import java.util.Locale
@@ -116,6 +119,7 @@ class GenerationHandler(
     private val json: Json,
     private val memoryRepo: MemoryRepository,
     private val conversationRepo: ConversationRepository,
+    private val favoriteRepo: FavoriteRepository,
     private val aiLoggingManager: AILoggingManager,
     private val memoryBankService: MemoryBankService,
     private var lastObBreathMs: Long = 0L,
@@ -168,6 +172,9 @@ class GenerationHandler(
                 add(buildReadAppLogsTool())
                 // 工具账本（2026-08-28：愿望清单 id68-⑥ 落地——查工具调用记录防失忆，直接查数据库不额外存储）
                 add(buildQueryToolActionsTool(conversationRepo))
+                // 心动收藏夹（2026-09-06：五感记忆库 V1——橘仔收藏宝的话，理由+五感）
+                add(buildHeartSaveTool(favoriteRepo, conversationRepo, conversationId))
+                add(buildHeartQueryTool(favoriteRepo, conversationRepo, conversationId))
                 if (assistant?.enableMemory == true) {
                     val memoryAssistantId = if (assistant.useGlobalMemory) {
                         MemoryRepository.GLOBAL_MEMORY_ID

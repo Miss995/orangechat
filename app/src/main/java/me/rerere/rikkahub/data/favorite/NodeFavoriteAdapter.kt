@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.data.favorite
 
 import me.rerere.rikkahub.data.db.entity.FavoriteEntity
+import me.rerere.rikkahub.data.db.entity.FavoriteOwner
 import me.rerere.rikkahub.data.model.FavoriteMeta
 import me.rerere.rikkahub.data.model.FavoriteType
 import me.rerere.rikkahub.data.model.NodeFavoriteRef
@@ -41,6 +42,42 @@ object NodeFavoriteAdapter : FavoriteAdapter<NodeFavoriteTarget> {
         return FavoriteEntity(
             id = existing?.id ?: buildRefKey(target),
             type = type.value,
+            refKey = buildRefKey(target),
+            refJson = JsonInstant.encodeToString(ref),
+            snapshotJson = "",
+            metaJson = JsonInstant.encodeToString(meta),
+            createdAt = existing?.createdAt ?: now,
+            updatedAt = now,
+        )
+    }
+
+    /**
+     * 五感记忆库 V1（2026-09-06）：橘仔收藏专用——owner=ai，meta 带理由 + 五感。
+     * 单独方法不进 [FavoriteAdapter] 接口，避免动接口签名（UI 收藏走原 buildFavoriteEntity）。
+     */
+    fun buildAiFavoriteEntity(
+        target: NodeFavoriteTarget,
+        reason: String,
+        senses: List<String>,
+        existing: FavoriteEntity? = null,
+        now: Long = System.currentTimeMillis(),
+    ): FavoriteEntity {
+        val ref = NodeFavoriteRef(
+            conversationId = target.conversationId,
+            nodeId = target.nodeId,
+        )
+        val meta = FavoriteMeta(
+            title = target.conversationTitle.ifBlank { null },
+            subtitle = target.nodeId.toString(),
+            previewText = target.node.buildFavoritePreview(),
+            reason = reason,
+            senses = senses,
+        )
+
+        return FavoriteEntity(
+            id = existing?.id ?: buildRefKey(target),
+            type = type.value,
+            owner = FavoriteOwner.AI,
             refKey = buildRefKey(target),
             refJson = JsonInstant.encodeToString(ref),
             snapshotJson = "",

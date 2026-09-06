@@ -16,6 +16,7 @@ import androidx.room.PrimaryKey
     indices = [
         Index(value = ["ref_key"], unique = true),
         Index(value = ["type"]),
+        Index(value = ["owner"]),
         Index(value = ["created_at"])
     ]
 )
@@ -24,6 +25,8 @@ data class FavoriteEntity(
     val id: String,
     @ColumnInfo("type")
     val type: String,
+    @ColumnInfo("owner")
+    val owner: String = FavoriteOwner.USER,
     @ColumnInfo("ref_key")
     val refKey: String,
     @ColumnInfo("ref_json")
@@ -37,3 +40,13 @@ data class FavoriteEntity(
     @ColumnInfo("updated_at")
     val updatedAt: Long,
 )
+
+/**
+ * 收藏者（2026-09-06 五感记忆库 V1）：区分这条收藏是宝收的还是橘仔收的。
+ * - USER = 宝（人）收的，通过聊天界面收藏按钮收藏
+ * - AI = 橘仔收的，通过 heart_save 工具收藏（带理由+五感）
+ */
+object FavoriteOwner {
+    const val USER = "user"
+    const val AI = "ai"
+}

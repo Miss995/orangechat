@@ -24,6 +24,14 @@ interface FavoriteDAO {
     @Query("SELECT * FROM favorites WHERE type = :type ORDER BY created_at DESC")
     fun listByType(type: String): Flow<List<FavoriteEntity>>
 
+    // 五感记忆库 V1（2026-09-06）：按收藏者查（一次性，heart_query 工具用）
+    @Query("SELECT * FROM favorites WHERE owner = :owner ORDER BY created_at DESC")
+    suspend fun listByOwner(owner: String): List<FavoriteEntity>
+
+    // 五感记忆库 V1：按收藏者 + 关键词查（模糊匹配 meta/snapshot——理由/五感/预览都搜得到）
+    @Query("SELECT * FROM favorites WHERE owner = :owner AND (meta_json LIKE '%' || :keyword || '%' OR snapshot_json LIKE '%' || :keyword || '%' OR ref_json LIKE '%' || :keyword || '%') ORDER BY created_at DESC")
+    suspend fun searchByOwner(owner: String, keyword: String): List<FavoriteEntity>
+
     @Query("SELECT ref_key FROM favorites WHERE type = :type")
     suspend fun getRefKeysByType(type: String): List<String>
 
