@@ -4,6 +4,16 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+### commit（待推）— App 未闭合事件召回（ongoing 常驻注入）（宝 09-07 拍板，脚本端已部署，App 端接读取链路）
+- 文件：ExternalMemoryService.kt + GenerationHandler.kt
+- 背景：宝 09-07 设计「未闭合事件」=进行中的长期状态（手伤恢复/吃药调药/进行中项目约定），写入端脚本已标 ongoing 入库（19:36 部署生效，库里已有'记忆系统改进'ongoing=true），App 端接读取：进行中的事常驻注入、不受 3 天窗口限制
+- 改动：
+  1. ExternalMemoryService：data class ExternalMemoryEvent 加 ongoing:Boolean=false；parseEvents 解析 obj.optBoolean('ongoing')；新增 fetchOngoingEvents（ongoing=eq.true&superseded_by=is.null&order=source_date.desc,id.desc&limit=20，最新进展在前）
+  2. GenerationHandler：注入加「## 正在进行（未闭合）」段（放在最近事件前）；ongoingEventsText 与 recentEventsText 同 15 分钟缓存窗口（ongoing_events_<assistantId> key）；无 ongoing 事件时清缓存+不输出段（前缀稳定）
+- 格式：〔timeLabel · MM/dd〕title：content（带日期因为 ongoing 可能跨天）
+- 状态：待宝构建 APK 验证（当前库里 1 条 ongoing='记忆系统改进'，装完应看到注入段）
+- 注：存量事件（旧版入库）无 ongoing 标记=null/false 不显示；从部署后新事件开始
+
 ## 2026-09-07
 
 ### commit（待推）— 时刻感注入 + 最近事件时段/相对词标签（宝 2026-09-07 晚上一起定的方案，当场开工）

@@ -744,6 +744,53 @@ class ExternalMemoryService(
     }
 
     /**
+     * 查询未闭合事件（ongoing=true 且未失效，2026-09-07 宝的方案：进行中的长期状态常驻注入，
+     * 不受 3 天窗口限制——宝的手伤恢复/吃药调药/进行中的项目约定，最新进展排前面）。
+     * 写入端：archive_daily_v3.py 一筛时 LLM 判断 ongoing（宁少勿多），入库带 ongoing 标记。
+     */
+    suspend fun fetchOngoingEvents(
+        assistantId: String,
+        limit: Int = 20,
+    ): Result<List<ExternalMemoryEvent>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = config.supabaseUrl.trimEnd('/')
+            val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}" +
+                "&ongoing=eq.true" +
+                "&superseded_by=is.null" +
+                "&order=source_date.desc,id.desc" +
+                "&limit=$limit"
+            val endpoint = URL("$url/rest/v1/memory_events?$query")
+            AppLogBuffer.log(TAG, "fetchOngoingEvents: GET memory_events?$query")
+
+            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("apikey", config.supabaseKey)
+                setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+
+            val responseCode = connection.responseCode
+            AppLogBuffer.log(TAG, "fetchOngoingEvents: HTTP $responseCode")
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                Log.e(TAG, "fetchOngoingEvents HTTP $responseCode body=$errorBody")
+                AppLogBuffer.log(TAG, "fetchOngoingEvents HTTP $responseCode body=$errorBody")
+                throw Exception("Supabase API error ($responseCode): $errorBody")
+            }
+
+            val responseText = connection.inputStream.bufferedReader().readText()
+            val parsed = parseEvents(responseText)
+            val result = parsed.filter { it.supersededBy.isBlank() } // 双保险：再滤一遍失效事件
+            AppLogBuffer.log(TAG, "fetchOngoingEvents: parsed ${parsed.size}, after filter ${result.size}, first=${result.firstOrNull()?.title ?: "-"}")
+            result
+        }.onFailure { e ->
+            AppLogBuffer.log(TAG, "fetchOngoingEvents FAILED: ${e.javaClass.simpleName}: ${e.message}\n${e.stackTraceToString().take(800)}")
+        }
+    }
+
+    /**
      * 查询最近一条归档状态（数据监控⑤，2026-08-22）：
      * archive_daily 每天 upsert 一行 archive_status（date 唯一），这里拉最近一条给注入段用。
      */
@@ -1038,6 +1085,7 @@ class ExternalMemoryService(
                         keywords = keywords, // 二筛关键词索引
                         timeLabel = obj.safeString("time_label"), // 一筛时间标
                         category = obj.safeString("category"), // 二筛事件分类
+                        ongoing = obj.optBoolean("ongoing", false), // 未闭合标记
                     )
                 )
             }
@@ -1089,6 +1137,7 @@ data class ExternalMemoryEvent(
     val keywords: List<String> = emptyList(), // 二筛关键词索引（2026-08-29 记忆系统分层）
     val timeLabel: String = "", // 一筛时间标（上午/下午/晚上/深夜）
     val category: String = "", // 二筛事件分类（fact/decision/plan/procedure/daily）
+    val ongoing: Boolean = false, // 未闭合标记（2026-09-07：进行中的长期状态，写入端 LLM 判 ongoing 宁少勿多）
 )
 
 /**

@@ -521,6 +521,7 @@ class GenerationHandler(
         // 这里注入最近 3 天事件：今天全文、昨天前天 title。固定位置 + 稳定排序（source_date ASC + id ASC）
         // = 前缀稳定（保 DS 缓存命中）。本地 15 分钟缓存：同 15 分钟内前缀稳定 + 防 Supabase 慢/挂。
         var recentEventsText: String? = null
+        var ongoingEventsText: String? = null  // 未闭合事件段（2026-09-07：ongoing 进行中状态，与最近事件同 15 分钟缓存窗口）
         try {
             val recentConfigs = settings.externalMemories.filter { it.enabled && it.id in assistant.externalMemoryIds }
             if (recentConfigs.isNotEmpty()) {
@@ -528,10 +529,27 @@ class GenerationHandler(
                 val cacheKey = "recent_events_${assistant.id}"
                 val nowMs = System.currentTimeMillis()
                 recentEventsText = prefs.getString(cacheKey, null)
+                ongoingEventsText = prefs.getString("ongoing_events_${assistant.id}", null)
                 val cacheTs = prefs.getLong("${cacheKey}_ts", 0L)
                 if (recentEventsText == null || nowMs - cacheTs > 15 * 60 * 1000L) {
                     val service = me.rerere.rikkahub.data.service.ExternalMemoryService(recentConfigs.first())
                     val events = service.fetchRecentEvents(assistant.id.toString(), days = 3).getOrDefault(emptyList())
+                    // 未闭合事件（ongoing=true）：进行中的长期状态（手伤恢复/吃药调药/进行中项目约定），不受 3 天窗口限制
+                    val ongoingEvents = service.fetchOngoingEvents(assistant.id.toString()).getOrDefault(emptyList())
+                    if (ongoingEvents.isNotEmpty()) {
+                        val ob = StringBuilder()
+                        ongoingEvents.forEach { e ->
+                            val tl = if (e.timeLabel.isNotBlank()) "〔${e.timeLabel} · ${e.sourceDate.substring(5).replace("-", "/")}〕" else ""
+                            ob.appendLine("$tl${e.title}：${e.content}")
+                        }
+                        ongoingEventsText = ob.toString()
+                        prefs.edit().putString("ongoing_events_${assistant.id}", ongoingEventsText).apply()
+                        AppLogBuffer.log(TAG, "Ongoing events refreshed: ${ongoingEvents.size} events")
+                    } else {
+                        ongoingEventsText = null
+                        prefs.edit().remove("ongoing_events_${assistant.id}").apply()
+                        AppLogBuffer.log(TAG, "Ongoing events: none（当前没有未闭合事件）")
+                    }
                     if (events.isNotEmpty()) {
                         val today = java.time.LocalDate.now().toString()
                         val yesterday = java.time.LocalDate.now().minusDays(1).toString()
@@ -656,6 +674,14 @@ class GenerationHandler(
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Diary summary load failed", e)
+                }
+
+                // 未闭合事件（2026-09-07 宝的方案：ongoing 进行中的长期状态常驻注入，不受 3 天窗口限制——
+                // 手伤恢复/吃药调药/进行中的项目约定；写入端 archive_daily_v3 一筛 LLM 标 ongoing 宁少勿多）
+                if (!ongoingEventsText.isNullOrBlank()) {
+                    appendLine()
+                    appendLine("## 正在进行（未闭合）")
+                    append(ongoingEventsText)
                 }
 
                 // 最近事件（实时层，2026-08-21 宝的方案）：最近 3 天事件——增量总结后今天也实时有；
