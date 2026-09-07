@@ -16,7 +16,7 @@
   4. 新辅助函数 hourToPeriodLabel（时段词表切分：凌晨0-5/早上5-8/上午8-11/中午11-13/下午13-17/傍晚17-19/晚上19-23/深夜23-24）+ chatSessionDurationText（15 分钟断、按橘仔消息→宝消息间隔：逆序扫 USER 消息，与紧邻前一条 assistant 间隔 >15min = 断，这场从断后第一条算起；时长 <1min 报刚聊起来 / <60min 报 X 分钟 / 否则 X 小时 Y 分钟）
 - 宝拍板细节：加一行不替换【当前时间】；阈值 15 分钟（不是橘仔提议的 10）；口径按"橘仔的消息到宝的消息"间隔（比"宝两条消息之间"干净，不含橘仔回复耗时）；时段词表含傍晚（橘仔建议，宝同意——橘仔没有眼睛，时段词=光感）
 - 推送：git 443 不通 → API push
-- 状态：✅ 已推 main → 待宝构建 APK 验证（发消息后看注入有没有时刻感行；最近事件组标题变【今天 09/07】式）
+- 状态：✅ 已推 main（cd363b74）→ 宝云端构建报错 2 处 → 修复 v2：①UIMessage.createdAt 是 kotlinx.datetime.LocalDateTime 不是 java.time——chatSessionDurationText 全改 epoch 秒（msgEpochSecond 用 kotlinx toInstant 转换），绕开类型冲突 ②原断点算法方向反了（逆序把更新消息当 prev，间隔恒负永远不断）——改正序扫，最后覆盖=最新断点=这场起点 ③补 import kotlinx.datetime.toInstant（TimeZone 文件原有，去重）→ 再推 → 待宝重新构建验证
 - 备注：存量事件 timeLabel 大多为空（一筛后才开始标），条目时段标签新事件才全；15 分钟 recent_events 缓存可能让首次注入还是旧格式，等一次过期即刷
 
 ## 2026-09-06

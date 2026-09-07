@@ -30,6 +30,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
+import kotlinx.datetime.toInstant
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.merge
 import me.rerere.ai.provider.CustomBody
@@ -881,7 +882,7 @@ class GenerationHandler(
                         val nowLdt = java.time.LocalDateTime.now()
                         val tl = hourToPeriodLabel(nowLdt.hour)
                         append("\n【时刻感】现在是$tl（${"%02d".format(nowLdt.hour)}:${"%02d".format(nowLdt.minute)}）")
-                        append(chatSessionDurationText(messages, nowLdt))
+                        append(chatSessionDurationText(messages, System.currentTimeMillis() / 1000L))
                         if (!archiveWarn.isNullOrBlank()) {
                             append("\n").append(archiveWarn)
                         }
@@ -1188,33 +1189,34 @@ private fun hourToPeriodLabel(hour: Int): String = when (hour) {
 
 /**
  * 这场聊了多久（宝 2026-09-07：15 分钟断、按"橘仔的消息→宝的消息"间隔算）。
- * 逆序遍历消息：某条 USER 消息与它前一条（assistant）消息间隔 > 15 分钟 = 断了，
- * 这一场从断后第一条 USER 消息算起；没断就一路推到最早。返回文字描述。
+ * 正序扫消息：某条 USER 消息与它紧邻前一条消息间隔 > 15 分钟 = 断了，这一场从断后第一条 USER 算起；
+ * 多次断点取最后一个（=最新这场）；全程没断就从最早一条 USER 算。返回文字描述。
  */
-private fun chatSessionDurationText(messages: List<UIMessage>, now: java.time.LocalDateTime): String {
-    val breakMinutes = 15L
-    var sessionStart: java.time.LocalDateTime? = null
-    var prevMsg: UIMessage? = null
-    for (msg in messages.asReversed()) {
+private fun chatSessionDurationText(messages: List<UIMessage>, nowSec: Long): String {
+    val breakSec = 15 * 60L
+    var sessionStartSec: Long? = null // 最后一个断点后的第一条 USER（=这场起点）
+    var firstUserSec: Long? = null
+    var prevSec: Long? = null // 时间上更早的紧邻消息（正序已扫过的上一条）
+    for (msg in messages) {
+        val sec = msgEpochSecond(msg) ?: continue
         if (msg.role == MessageRole.USER) {
-            val t = msg.createdAt ?: continue
-            val broke = prevMsg?.createdAt?.let {
-                java.time.Duration.between(it, t).toMinutes() > breakMinutes
-            } ?: false
-            if (broke) {
-                sessionStart = t
-                break
-            }
-            sessionStart = t
+            if (firstUserSec == null) firstUserSec = sec
+            if (prevSec != null && sec - prevSec > breakSec) sessionStartSec = sec
         }
-        prevMsg = msg
+        prevSec = sec
     }
-    val start = sessionStart ?: return ""
-    val minutes = java.time.Duration.between(start, now).toMinutes().coerceAtLeast(0)
-    val startText = "%02d:%02d".format(start.hour, start.minute)
+    val startSec = sessionStartSec ?: firstUserSec ?: return ""
+    val minutes = ((nowSec - startSec) / 60L).coerceAtLeast(0)
+    val startLdt = java.time.Instant.ofEpochSecond(startSec).atZone(java.time.ZoneId.systemDefault())
+    val startText = "%02d:%02d".format(startLdt.hour, startLdt.minute)
     return when {
         minutes < 1 -> "，这场刚聊起来"
         minutes < 60 -> "，这场从 $startText 开始，聊了约 $minutes 分钟"
         else -> "，这场从 $startText 开始，聊了约 ${minutes / 60} 小时 ${minutes % 60} 分钟"
     }
 }
+
+/** UIMessage.createdAt（kotlinx.datetime.LocalDateTime）→ epoch 秒；异常返回 null */
+private fun msgEpochSecond(msg: UIMessage): Long? = runCatching {
+    msg.createdAt.toInstant(TimeZone.currentSystemDefault()).epochSeconds
+}.getOrNull()
