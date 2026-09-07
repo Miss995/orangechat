@@ -352,6 +352,15 @@ def fetch_msgs(date=None):
     return msgs
 
 
+def _to_bool(v):
+    """LLM 输出的 ongoing 可能是 bool / 'true' / 'false' / 中文，统一转 bool"""
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return False
+    return str(v).strip().lower() in ("true", "1", "yes", "是", "进行中", "ongoing")
+
+
 def split_events(text_chunk, start_idx, batch_len):
     """让 LLM 从一段聊天里拆事件。start_idx=本批第一条的全局编号(从1开始)，batch_len=本批条数"""
     resp = requests.post("https://api.siliconflow.cn/v1/chat/completions", headers={
@@ -362,16 +371,17 @@ def split_events(text_chunk, start_idx, batch_len):
         "messages": [
             {"role": "system", "content": (
                 "你是橘仔的记忆归档助手。下面是橘仔和宝今天的聊天记录片段，"
-                "每行开头是 [编号]（编号全局连续，从 1 开始，本批从 " + str(start_idx) + " 开始）。\n"
+                "每行开头是 [编号 HH:mm]（HH:mm 是这条消息的时间，编号全局连续，从 1 开始，本批从 " + str(start_idx) + " 开始）。\n"
                 "请提炼值得长期记住的事件。要求：\n"
                 "1. 事件 = 一件完整的事（一次讨论/一个决定/一段共同经历/一次情绪时刻/日常小片段），不要拆太碎，能合并就合并\n"
                 "2. event_type：聊天相关=chat（日常、情绪、偏好、共同回忆），代码/项目相关=code（改代码、报错、推commit、配置、查密钥）\n"
                 "3. source_ids：该事件由哪几条消息编号总结出来的（写编号数组，如 [5,6,7]）\n"
                 "4. content 要客观准确抓重点（1~2句话）：只记事实（谁、做了什么、结果），中性语气，不评价、不带梗、不夸张；日常聊天也要记（连续性），所有有信息量的对话都提炼成事件，宁多勿漏\n"
                 "5. title 用 2~8 个字的短标题\n"
-                "6. time_label：事件发生的时段（如 上午/下午/晚上/深夜；能从上下文推断就写，推断不出写 白天）\n"
-                "7. 完全没有内容的片段才输出 {\"events\": []}\n"
-                "只输出 JSON，格式：{\"events\": [{\"title\": \"...\", \"content\": \"...\", \"event_type\": \"chat|code\", \"source_ids\": [1,2], \"time_label\": \"...\"}]}"
+                "6. time_label：事件发生的时段，按消息里的 HH:mm 推断（凌晨0-5点/早上5-8/上午8-11/中午11-13/下午13-17/傍晚17-19/晚上19-23/深夜23点后；推断不出写 白天）\n"
+                "7. ongoing：这事是不是还在进行中的长期状态——恢复中的身体状态（宝的手伤/吃药调药）、进行中的项目或约定（没结束前每次进展是延续）——是写 true；纯当日一次性闲聊写 false；拿不准写 false（宁少勿多）\n"
+                "8. 完全没有内容的片段才输出 {\"events\": []}\n"
+                "只输出 JSON，格式：{\"events\": [{\"title\": \"...\", \"content\": \"...\", \"event_type\": \"chat|code\", \"source_ids\": [1,2], \"time_label\": \"...\", \"ongoing\": false}]}"
             )},
             {"role": "user", "content": text_chunk},
         ],
@@ -403,6 +413,7 @@ def split_events(text_chunk, start_idx, batch_len):
             "source_ids": [str(x) for x in raw_ids],
             "source_range": f"{min(raw_ids)}-{max(raw_ids)}",
             "time_label": (e.get("time_label") or "").strip()[:20],
+            "ongoing": _to_bool(e.get("ongoing")),
         })
     return out
 
@@ -490,6 +501,7 @@ def store_events(events, date=None):
             "embedding": vec_str(embs[i]) if i < len(embs) else None,   # 固定键：缺=null
             "related_event_ids": e.get("related_event_ids") or [],      # 固定键：缺=[]
             "time_label": e.get("time_label") or "",                    # 一筛：时间标
+            "ongoing": e.get("ongoing") or False,                        # 未闭合标记（2026-09-07 宝定：进行中的长期状态）
             "keywords": e.get("keywords") or [],                        # 二筛：关键词（jsonb）
             "category": e.get("category") or "daily",                   # 二筛：事件分类
         }
@@ -530,7 +542,8 @@ def summarize_range(msgs, start_idx, end_idx, date=None):
     lines = []
     for j, m in enumerate(chunk):
         who = "宝" if m.get("role") == "user" else "橘仔"
-        lines.append(f"[{start_idx + j}] {who}：{m.get('content', '')}")
+        t = (m.get("created_at") or "")[11:16]  # yyyy-MM-dd HH:mm:ss → HH:mm
+        lines.append(f"[{start_idx + j} {t}] {who}：{m.get('content', '')}")
     text = "\n".join(lines)[-30000:]
     evs = call_with_retry(lambda: split_events(text, start_idx, len(chunk)))
     print(f"[{cur_now():%H:%M:%S}] 总结 {start_idx}..{end_idx} 拆出 {len(evs)} 条事件")

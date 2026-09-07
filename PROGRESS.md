@@ -19,6 +19,19 @@
 - 状态：✅ 已推 main（cd363b74）→ 宝云端构建报错 2 处 → 修复 v2：①UIMessage.createdAt 是 kotlinx.datetime.LocalDateTime 不是 java.time——chatSessionDurationText 全改 epoch 秒（msgEpochSecond 用 kotlinx toInstant 转换），绕开类型冲突 ②原断点算法方向反了（逆序把更新消息当 prev，间隔恒负永远不断）——改正序扫，最后覆盖=最新断点=这场起点 ③补 import kotlinx.datetime.toInstant（TimeZone 文件原有，去重）→ 再推 → 待宝重新构建验证
 - 备注：存量事件 timeLabel 大多为空（一筛后才开始标），条目时段标签新事件才全；15 分钟 recent_events 缓存可能让首次注入还是旧格式，等一次过期即刷
 
+### commit（待推）— 脚本：时间标词表扩八档 + 消息带时间 + 未闭合事件打标 ongoing（宝 09-07 趁 App 构建改服务器脚本）
+- 文件：scripts/archive_daily_v3.py
+- 背景：①App 端时段词表已扩八档（凌晨/早上/上午/中午/下午/傍晚/晚上/深夜），脚本一筛还只标四档（上午/下午/晚上/深夜）——对齐；②宝要未闭合事件（进行中的长期状态独立活跃区），先打标入库，App 端读取下一轮
+- 改动：
+  1. summarize_range 拼 chunk 行带消息时间 [编号 HH:mm]——之前 LLM 看不到消息时间，time_label 多半瞎写'白天'
+  2. prompt time_label 按 HH:mm 推断，八档词表+切分区间；推断不出写白天
+  3. prompt 加第 7 条 ongoing 判定：恢复中的身体状态（手伤/吃药调药）/进行中的项目约定=进行中的长期状态；纯当日一次性闲聊 false；拿不准 false（宁少勿多）
+  4. 解析加 _to_bool 安全转换（LLM 可能输出 bool/字符串/中文）；out.append 加 ongoing
+  5. store_events 入库行加 ongoing 键（固定键集，需 memory_events 表加列 ongoing boolean default false）
+- 推送：API push（git 443 不通）
+- 状态：✅ 已推 main → 待宝部署：①Supabase 跑 ALTER 加列 ②替换 /root/archive_daily_v3.py ③重启 incremental_listener（import 新版）——今晚 23:50 cron 生效
+- 备注：二筛 second_pass_events 原地加字段不重建 dict，ongoing 不丢；incremental_listener.py 无需改（import archive_daily_v3）
+
 ## 2026-09-06
 
 
