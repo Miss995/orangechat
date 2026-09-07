@@ -571,7 +571,10 @@ class GenerationHandler(
                             }
                             val shortDate = date.substring(5).replace("-", "/") // yyyy-MM-dd → MM/dd
                             sb.appendLine("【$relWord $shortDate】")
-                            list.take(cap).forEach { e ->
+                            // 2026-09-08 修复：events 升序（旧到新），take(cap) 取头=每天最早的事件，
+                            // 下午晚上的事件永远进不了注入（宝发现最近事件只有早上中午的）；
+                            // 改 takeLast 取每天最新 N 条，让"最近事件"名副其实
+                            list.takeLast(cap).forEach { e ->
                                 val tl = if (e.timeLabel.isNotBlank()) "〔${e.timeLabel}〕" else ""
                                 if (date == today) {
                                     sb.appendLine("$tl${e.title}：${e.content}")
