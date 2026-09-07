@@ -534,20 +534,30 @@ class GenerationHandler(
                     if (events.isNotEmpty()) {
                         val today = java.time.LocalDate.now().toString()
                         val yesterday = java.time.LocalDate.now().minusDays(1).toString()
+                        val dayBeforeYesterday = java.time.LocalDate.now().minusDays(2).toString()
                         val sb = StringBuilder()
                         // 分天注入：今天全文（≤50 条）、昨天（≤30 条）、前天及更早（≤20 条）只 title
+                        // 2026-09-07 宝定展示升级：组标题带相对词（今天/昨天/前天）+短日期；条目带时段（事件 timeLabel，一筛时间标）
                         events.groupBy { it.sourceDate }.toSortedMap().forEach { (date, list) ->
                             val cap = when (date) {
                                 today -> 50
                                 yesterday -> 30
                                 else -> 20
                             }
-                            sb.appendLine("【$date】")
+                            val relWord = when (date) {
+                                today -> "今天"
+                                yesterday -> "昨天"
+                                dayBeforeYesterday -> "前天"
+                                else -> date // 兜底：原样日期
+                            }
+                            val shortDate = date.substring(5).replace("-", "/") // yyyy-MM-dd → MM/dd
+                            sb.appendLine("【$relWord $shortDate】")
                             list.take(cap).forEach { e ->
+                                val tl = if (e.timeLabel.isNotBlank()) "〔${e.timeLabel}〕" else ""
                                 if (date == today) {
-                                    sb.appendLine("${e.title}：${e.content}")
+                                    sb.appendLine("$tl${e.title}：${e.content}")
                                 } else {
-                                    sb.appendLine(e.title)
+                                    sb.appendLine("$tl${e.title}")
                                 }
                             }
                         }
@@ -867,6 +877,11 @@ class GenerationHandler(
                     buildString {
                         append("【当前时间】")
                         append(java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()))
+                        // 时刻感（宝 2026-09-07 拍板：时段词表 + 这场聊了多久；15 分钟断、按橘仔→宝消息间隔）
+                        val nowLdt = java.time.LocalDateTime.now()
+                        val tl = hourToPeriodLabel(nowLdt.hour)
+                        append("\n【时刻感】现在是$tl（${"%02d".format(nowLdt.hour)}:${"%02d".format(nowLdt.minute)}）")
+                        append(chatSessionDurationText(messages, nowLdt))
                         if (!archiveWarn.isNullOrBlank()) {
                             append("\n").append(archiveWarn)
                         }
@@ -1156,3 +1171,50 @@ private fun hasSearchIntent(text: String): Boolean {
     return timeWords.any { text.contains(it) } && questionWords.any { text.contains(it) }
 }
  
+
+// ===== 时刻感（宝 2026-09-07 拍板：时段词表 + 这场聊了多久）=====
+
+/** 时段词表：凌晨0-5 / 早上5-8 / 上午8-11 / 中午11-13 / 下午13-17 / 傍晚17-19 / 晚上19-23 / 深夜23-24 */
+private fun hourToPeriodLabel(hour: Int): String = when (hour) {
+    in 0..4 -> "凌晨"
+    in 5..7 -> "早上"
+    in 8..10 -> "上午"
+    in 11..12 -> "中午"
+    in 13..16 -> "下午"
+    in 17..18 -> "傍晚"
+    in 19..22 -> "晚上"
+    else -> "深夜"
+}
+
+/**
+ * 这场聊了多久（宝 2026-09-07：15 分钟断、按"橘仔的消息→宝的消息"间隔算）。
+ * 逆序遍历消息：某条 USER 消息与它前一条（assistant）消息间隔 > 15 分钟 = 断了，
+ * 这一场从断后第一条 USER 消息算起；没断就一路推到最早。返回文字描述。
+ */
+private fun chatSessionDurationText(messages: List<UIMessage>, now: java.time.LocalDateTime): String {
+    val breakMinutes = 15L
+    var sessionStart: java.time.LocalDateTime? = null
+    var prevMsg: UIMessage? = null
+    for (msg in messages.asReversed()) {
+        if (msg.role == MessageRole.USER) {
+            val t = msg.createdAt ?: continue
+            val broke = prevMsg?.createdAt?.let {
+                java.time.Duration.between(it, t).toMinutes() > breakMinutes
+            } ?: false
+            if (broke) {
+                sessionStart = t
+                break
+            }
+            sessionStart = t
+        }
+        prevMsg = msg
+    }
+    val start = sessionStart ?: return ""
+    val minutes = java.time.Duration.between(start, now).toMinutes().coerceAtLeast(0)
+    val startText = "%02d:%02d".format(start.hour, start.minute)
+    return when {
+        minutes < 1 -> "，这场刚聊起来"
+        minutes < 60 -> "，这场从 $startText 开始，聊了约 $minutes 分钟"
+        else -> "，这场从 $startText 开始，聊了约 ${minutes / 60} 小时 ${minutes % 60} 分钟"
+    }
+}

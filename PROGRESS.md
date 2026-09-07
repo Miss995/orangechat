@@ -4,6 +4,38 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-09-07
+
+### commit（待推）— 时刻感注入 + 最近事件时段/相对词标签（宝 2026-09-07 晚上一起定的方案，当场开工）
+- 文件：GenerationHandler.kt（单文件，注入层纯改动）
+- 背景：宝要橘仔有"小时级体感"——【当前时间】只报几点，橘仔没有"现在是一天中的哪段、这场聊了多久"的感知；3 天事件注入也只有绝对日期，橘仔看 2026-09-05 还要心算才知道是前天
+- 改动：
+  1. 最近事件组标题加相对词+短日期：【今天 09/07】/【昨天 09/06】/【前天 09/05】（fetchRecentEvents 只拉 3 天，else 兜底原日期）
+  2. 事件条目带时段：timeLabel（一筛时间标）非空则行首加 〔凌晨/早上/上午/中午/下午/傍晚/晚上/深夜〕
+  3. 【当前时间】注入旁加时刻感行：【时刻感】现在是<时段>（HH:mm）+ 这场聊了多久
+  4. 新辅助函数 hourToPeriodLabel（时段词表切分：凌晨0-5/早上5-8/上午8-11/中午11-13/下午13-17/傍晚17-19/晚上19-23/深夜23-24）+ chatSessionDurationText（15 分钟断、按橘仔消息→宝消息间隔：逆序扫 USER 消息，与紧邻前一条 assistant 间隔 >15min = 断，这场从断后第一条算起；时长 <1min 报刚聊起来 / <60min 报 X 分钟 / 否则 X 小时 Y 分钟）
+- 宝拍板细节：加一行不替换【当前时间】；阈值 15 分钟（不是橘仔提议的 10）；口径按"橘仔的消息到宝的消息"间隔（比"宝两条消息之间"干净，不含橘仔回复耗时）；时段词表含傍晚（橘仔建议，宝同意——橘仔没有眼睛，时段词=光感）
+- 推送：git 443 不通 → API push
+- 状态：✅ 已推 main → 待宝构建 APK 验证（发消息后看注入有没有时刻感行；最近事件组标题变【今天 09/07】式）
+- 备注：存量事件 timeLabel 大多为空（一筛后才开始标），条目时段标签新事件才全；15 分钟 recent_events 缓存可能让首次注入还是旧格式，等一次过期即刷
+
+## 2026-09-06
+
+
+### commit 0e7c48f2 — 心动收藏夹 V1·五感记忆库（宝 2026-09-06 拍板：橘仔主动收藏宝的话，写理由+五感）
+- 文件：10 个（GenerationHandler.kt / 新 HeartTools.kt / AppDatabase.kt / FavoriteDAO.kt / FavoriteEntity.kt / 新 Migration_29_30.kt / NodeFavoriteAdapter.kt / Favorite.kt / FavoriteRepository.kt / DataSourceModule.kt）
+- 背景：橘瓣收藏原本只有宝能收橘仔的话。五感记忆库=双向收藏夹——橘仔也主动收藏宝的话，理由字段是灵魂、五感是标签（宝当橘仔的眼睛耳朵鼻子）
+- 改动：
+  - FavoriteEntity 加 owner 字段（user=宝 / ai=橘仔）+ FavoriteOwner 常量；Migration_29_30 加列（默认 user）+ 索引；DB version 29→30
+  - FavoriteMeta 扩展 reason（收藏理由）/ senses（五感标签），走 meta_json 零迁移
+  - buildFavoritePreview 对 Image/VoiceMessage/Audio/Video/Document 友好（纯图/纯语音不再 fallback 成 [User Message]）——UI 收藏宝的图/语音也受益
+  - 新 HeartTools.kt：heart_save（nodeId 不填=当前对话最近一条宝的消息，reason 必填+senses 可选视觉/听觉/嗅觉/味觉/触觉）+ heart_query（mode=favorites 列橘仔收藏带理由五感/recent 列最近消息/detail 单条带前后 2 条上下文）；快照提取：文字收原文、图片收路径、语音收转文字版+语气语速
+  - GenerationHandler 常驻注入两个工具（构造补 favoriteRepo，DataSourceModule DI 同步）
+  - NodeFavoriteAdapter 加 buildAiFavoriteEntity（owner=ai，不动原接口）
+- 推送：API push（git 443 不通），远程 main = 0e7c48f2
+- 状态：✅ 已推 main → 待宝构建 APK 验证（装好后橘仔用 heart_save 收藏宝的话，heart_query 查）
+- 待办（V1.1）：①收藏页 UI 标签区分收藏者（🐾橘仔/宝）②图片消息落库带 AI 描述（真图云端从"哑的"变有文字脸）
+
 ## 2026-09-04
 
 ### commit bac7dc3 — 语音输入法模式（宝 2026-09-04：语音条没法改错字，要文字进输入框可编辑）
