@@ -471,3 +471,6 @@
 - ✅缓存命中·窗口裁剪组大小同步（已推 main，待宝构建验证）（宝问"组和组对上了吗"）：窗口裁剪组大小从写死 4 改为读对话关联 assistant 的 contextGroupSize（设置里"多少条一组"，与 limitContext 组对齐同源同步）；读不到回退默认 4；groupSize≤1 = 按条裁剪旧行为
 - ✅显示bug·二次调整修复（已推 main，待宝构建验证）（宝 2026-08-26 "改了好多次，这次要确定"）：日志实锤滚动在插入后 3.5s 才发生→根因=USER 插入时 isScrollInProgress=true 被跳过滚动，等 AI 占位插入才滚=二次调整；修法=最后一条是 USER（发送消息）时无视滚动中状态直接滚到底+scrollCheck 诊断日志（userSend/scrollInProgress/atBottom）双保险
 - ✅语音消息进记忆库修复（已推 main，待宝构建验证）（宝 2026-09-04 发现"语音怎么进记忆库啊完蛋"）：根因=ChatService 保存用户消息到外置记忆库时只提取 UIMessagePart.Text（VoiceMessage part 被滤掉）→ Supabase chat_messages content="" → archive_daily 每晚归档拉不到语音内容，语音聊天全丢！修复：①ChatService.kt 用户消息外置库保存 messageText 提取加 VoiceMessage 分支（transcript 非空取 transcript，空取"[语音消息]"）②Message.kt toText() 补 VoiceMessage 分支（一致性修复：通知/标题等 toText 调用点也受益）；发送给 AI 的链路不受影响（走 VoiceMessageTransformer 单独转换，不走 toText）
+
+## 2026-09-08 fix（基于 38897f92 重放）：正文兜底挪到 emit 前
+正文兜底（text=0 时从思考链拉最后一段当正文）原本在 emit(GenerationChunk.Messages) 之后执行、改完 messages 不 re-emit → 无工具直接 break 时兜底正文到不了 UI/落库（18:10 正文被吃复现：思考链在正文空，云端无记录；老规律 text=0 全伴随无工具由此解释）。修复=挪到 emit 前，让 emit 带出兜底后的消息。待宝构建验证。

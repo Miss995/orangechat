@@ -289,10 +289,10 @@ class GenerationHandler(
                     finishedAt = Clock.System.now()
                         .toLocalDateTime(TimeZone.currentSystemDefault())
                 )
-                emit(GenerationChunk.Messages(messages))
- 
-                // 【生成完成自记 2026-08-27】每次生成结束强制记录最后一条消息的 parts 结构（不依赖渲染层），
-                // 正文被吃时 read_app_logs filter "GEN_RESULT" 必能看到——日志环被刷也不怕（配合 AppLogBuffer 落盘）
+                // 【生成完成自记 2026-08-27 + 正文兜底 2026-08-28】
+                // 2026-09-08 修复：自记+兜底原本在 emit 之后执行、改完 messages 不再 emit → 无工具直接
+                // break 时兜底正文到不了 UI/落库（正文被吃复现：思考链在、正文空，云端也无记录）。
+                // 挪到 emit 之前，让 emit 带出兜底后的消息；正文被吃时 read_app_logs filter "GEN_RESULT" 必能看到。
                 runCatching {
                     val lastMsg = messages.last()
                     val partTypes = lastMsg.parts.joinToString(",") { part ->
@@ -323,7 +323,8 @@ class GenerationHandler(
                         }
                     }
                 }
- 
+                emit(GenerationChunk.Messages(messages))
+
                 val tools = messages.last().getTools().filter { !it.isExecuted }
                 if (tools.isEmpty()) {
                     // no tool calls, break
