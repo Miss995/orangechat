@@ -87,6 +87,7 @@ import me.rerere.rikkahub.plugin.loader.PluginLoader
 import me.rerere.rikkahub.plugin.provider.PluginToolProvider
 import me.rerere.asr.ASRProviderSetting
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
+import me.rerere.rikkahub.data.ai.transformers.ImageDescriber
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
 import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
 import me.rerere.rikkahub.data.ai.transformers.VideoNarrationTransformer
@@ -578,7 +579,7 @@ class ChatService(
                         it.enabled && it.id in assistant.externalMemoryIds && it.autoSaveMessages
                     }
                     if (externalMemoryConfigs.isNotEmpty()) {
-                        val messageText = processedContent.mapNotNull { part ->
+                        val textParts = processedContent.mapNotNull { part ->
                             when (part) {
                                 is UIMessagePart.Text -> part.text
                                 is UIMessagePart.VoiceMessage ->
@@ -586,10 +587,24 @@ class ChatService(
                                 else -> null
                             }
                         }.joinToString("\n")
+                        // 真图带文字脸（2026-09-08 宝拍板）：file:// 真图由视觉模型转述内容拼进落库文本——
+                        // 云端图片记录不再"哑巴"，归档总结/记忆召回能"看见"图；表情包/网络图是 Text markdown
+                        // 本来就落库原文，不在这里处理。转述失败给 [图片] 兜底（至少留个存在标记，比完全丢强）。
+                        val imageParts = processedContent.filterIsInstance<UIMessagePart.Image>()
                         externalMemoryConfigs.forEach { config ->
                             appScope.launch {
                                 runCatching {
                                     val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
+                                    var messageText = textParts
+                                    if (imageParts.isNotEmpty()) {
+                                        val descriptions = mutableListOf<String>()
+                                        for (img in imageParts) {
+                                            val desc = ImageDescriber.describe(img.url)
+                                            descriptions.add(if (desc.isNullOrBlank()) "[图片]" else "[图片] $desc")
+                                        }
+                                        if (messageText.isNotBlank()) messageText += "\n"
+                                        messageText += descriptions.joinToString("\n")
+                                    }
                                     service.saveMessage(
                                         assistantId = assistant.id.toString(),
                                         conversationId = conversationId.toString(),

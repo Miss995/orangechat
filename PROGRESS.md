@@ -6,6 +6,18 @@
 
 ## 2026-09-08
 
+### commit（本次提交）— ongoing 30 天时效降级 + 图片消息带文字脸（宝 2026-09-08 拍板"蛮重要的"，自指区闭环后趁热开第二轮）
+- 文件：ExternalMemoryService.kt / 新 ImageDescriber.kt / ChatService.kt
+- 背景：
+  1. ongoing 越堆越多：超 30 天没新进展的 ongoing 仍注入=噪音（宝 09-08 提时效性，第一半=手动闭合已推，这半=自动降级）
+  2. 用户发真图落库时 Image 部件被丢掉（else→null）——云端纯文字库图片记录"哑巴"，归档总结看不到图、记忆召回搜不到图内容
+- 改动：
+  1. fetchOngoingEvents 加 maxInactiveDays=30 参数：SQL 加 source_date.gte.（30 天前）——超期 ongoing 自动不再注入「正在进行」，本体保留（普通向量召回不受影响）；同主题有新进展（新 source_date）自然重新注入
+  2. 新 ImageDescriber.kt（object:KoinComponent）：describe(file://) 复用宝配的 OCR 视觉模型（settings.ocrModelId，Qwen3-VL-32B）转述图片内容；对齐 VideoNarrationTransformer 模式（IMAGE 模态强制注入→序列化层转 data URI）；非 file:///文件缺失/超大/无模型/失败→null
+  3. ChatService 用户消息落库段：textParts 提取不变；另取 imageParts（filterIsInstance<Image>）；saveMessage 前对每张真图 describe→"[图片] 描述"拼进 content（fire-and-forget launch 内 await，不阻塞 UI）；转述失败→"[图片]"兜底留存在标记
+- 状态：推 main 待宝构建 APK 验证：①宝发一张真图 → Supabase chat_messages 该用户消息 content 应带 "[图片] 描述"（archive_daily 归档就能"看见"图）②库里的超 30 天 ongoing 自动从「正在进行」消失（现有 ongoing 都在 30 天内，效果要等库存自然超期，代码逻辑即生效）
+- 注：表情包/网络图是 Text 里的 markdown 链接本来就落库原文，不走转述（省一次视觉调用）
+
 ### commit（本次提交）— 自指区工具 + ongoing 手动闭合（宝 2026-09-08 拍板"先搞"，晚饭后当场开工）
 - 文件：新 SelfMemoryTools.kt / ExternalMemoryService.kt / GenerationHandler.kt / scripts/archive_daily_v3.py（含 09-07 ongoing 半成品一起推）
 - 背景：

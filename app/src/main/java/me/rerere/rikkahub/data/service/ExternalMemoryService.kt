@@ -751,12 +751,15 @@ class ExternalMemoryService(
     suspend fun fetchOngoingEvents(
         assistantId: String,
         limit: Int = 20,
+        maxInactiveDays: Int = 30, // 时效性（2026-09-08 宝：ongoing 超 N 天没新进展自动降级——不再注入，本体保留可普通召回）
     ): Result<List<ExternalMemoryEvent>> = withContext(Dispatchers.IO) {
         runCatching {
             val url = config.supabaseUrl.trimEnd('/')
+            val cutoffDate = java.time.LocalDate.now().minusDays(maxInactiveDays.toLong()).toString()
             val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}" +
                 "&ongoing=eq.true" +
                 "&superseded_by=is.null" +
+                "&source_date=gte.$cutoffDate" + // 30 天前的 ongoing 视为已凉，不注入（可普通召回捞回）
                 "&order=source_date.desc,id.desc" +
                 "&limit=$limit"
             val endpoint = URL("$url/rest/v1/memory_events?$query")
