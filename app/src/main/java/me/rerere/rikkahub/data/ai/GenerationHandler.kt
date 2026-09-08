@@ -56,6 +56,9 @@ import me.rerere.rikkahub.data.ai.tools.buildFetchChatSourcesTool
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.buildHeartQueryTool
 import me.rerere.rikkahub.data.ai.tools.buildHeartSaveTool
+import me.rerere.rikkahub.data.ai.tools.buildCloseOngoingTool
+import me.rerere.rikkahub.data.ai.tools.buildSelfNoteQueryTool
+import me.rerere.rikkahub.data.ai.tools.buildSelfNoteWriteTool
 import me.rerere.rikkahub.data.ai.tools.buildQueryToolActionsTool
 import me.rerere.rikkahub.data.ai.tools.buildReadAppLogsTool
 import me.rerere.rikkahub.data.ai.tools.buildWriteFilesTool
@@ -216,6 +219,13 @@ class GenerationHandler(
                         }
                     })
                 }
+                // 自指区写/查 + ongoing 手动闭合工具（2026-09-08 宝拍板先搞：self_note_write/self_note_query =
+                // 橘仔写给未来的自己（业界空白自指区）；close_ongoing = 事情真结束了橘仔判断自己闭合，不用宝管）
+                if (extConfigsForChatSources.isNotEmpty()) {
+                    add(buildSelfNoteWriteTool(extConfigsForChatSources.first()))
+                    add(buildSelfNoteQueryTool(extConfigsForChatSources.first()))
+                    add(buildCloseOngoingTool(extConfigsForChatSources.first(), assistant.id.toString()))
+                }
                 addAll(tools)
             }.let { built ->
                 // 斜杠命令模式：只暴露安全工具（危险工具收着，宝 2026-09-01 拍板"危险的橘仔收着"）
@@ -324,7 +334,7 @@ class GenerationHandler(
                     }
                 }
                 emit(GenerationChunk.Messages(messages))
-
+ 
                 val tools = messages.last().getTools().filter { !it.isExecuted }
                 if (tools.isEmpty()) {
                     // no tool calls, break
@@ -523,6 +533,7 @@ class GenerationHandler(
         // = 前缀稳定（保 DS 缓存命中）。本地 15 分钟缓存：同 15 分钟内前缀稳定 + 防 Supabase 慢/挂。
         var recentEventsText: String? = null
         var ongoingEventsText: String? = null  // 未闭合事件段（2026-09-07：ongoing 进行中状态，与最近事件同 15 分钟缓存窗口）
+        var selfNotesText: String? = null  // 自指区段（2026-09-08：橘仔写给未来的自己，低频 24h 缓存）
         try {
             val recentConfigs = settings.externalMemories.filter { it.enabled && it.id in assistant.externalMemoryIds }
             if (recentConfigs.isNotEmpty()) {
@@ -531,6 +542,7 @@ class GenerationHandler(
                 val nowMs = System.currentTimeMillis()
                 recentEventsText = prefs.getString(cacheKey, null)
                 ongoingEventsText = prefs.getString("ongoing_events_${assistant.id}", null)
+                selfNotesText = prefs.getString("self_notes_${assistant.id}", null)
                 val cacheTs = prefs.getLong("${cacheKey}_ts", 0L)
                 if (recentEventsText == null || nowMs - cacheTs > 15 * 60 * 1000L) {
                     val service = me.rerere.rikkahub.data.service.ExternalMemoryService(recentConfigs.first())
@@ -551,6 +563,24 @@ class GenerationHandler(
                         prefs.edit().remove("ongoing_events_${assistant.id}").apply()
                         AppLogBuffer.log(TAG, "Ongoing events: none（当前没有未闭合事件）")
                     }
+
+                    // 自指区低频注入（2026-09-08：24h 才刷一次——前缀稳 + 自指区本就不是每轮都变的东西。
+                    // 注入最近 3 条"橘仔写给未来的自己"，周期浮现养人格；查询走 ExternalMemoryService.querySelfNotes）
+                    val selfTs = prefs.getLong("self_notes_${assistant.id}_ts", 0L)
+                    if (selfNotesText == null || nowMs - selfTs > 24 * 60 * 60 * 1000L) {
+                        val selfNotes = service.querySelfNotes(limit = 3).getOrDefault(emptyList())
+                        if (selfNotes.isNotEmpty()) {
+                            val sb = StringBuilder()
+                            selfNotes.forEach { n ->
+                                sb.appendLine("· ${n.title}：${n.content.take(200)}")
+                            }
+                            selfNotesText = sb.toString()
+                            prefs.edit().putString("self_notes_${assistant.id}", selfNotesText).apply()
+                            prefs.edit().putLong("self_notes_${assistant.id}_ts", nowMs).apply()
+                            AppLogBuffer.log(TAG, "Self notes refreshed: ${selfNotes.size} notes")
+                        }
+                    }
+
                     if (events.isNotEmpty()) {
                         val today = java.time.LocalDate.now().toString()
                         val yesterday = java.time.LocalDate.now().minusDays(1).toString()
@@ -572,10 +602,7 @@ class GenerationHandler(
                             }
                             val shortDate = date.substring(5).replace("-", "/") // yyyy-MM-dd → MM/dd
                             sb.appendLine("【$relWord $shortDate】")
-                            // 2026-09-08 修复：events 升序（旧到新），take(cap) 取头=每天最早的事件，
-                            // 下午晚上的事件永远进不了注入（宝发现最近事件只有早上中午的）；
-                            // 改 takeLast 取每天最新 N 条，让"最近事件"名副其实
-                            list.takeLast(cap).forEach { e ->
+                            list.take(cap).forEach { e ->
                                 val tl = if (e.timeLabel.isNotBlank()) "〔${e.timeLabel}〕" else ""
                                 if (date == today) {
                                     sb.appendLine("$tl${e.title}：${e.content}")
@@ -686,6 +713,14 @@ class GenerationHandler(
                     appendLine()
                     appendLine("## 正在进行（未闭合）")
                     append(ongoingEventsText)
+                }
+
+                // 自指区（2026-09-08：低频 24h 缓存注入最近自指笔记——"AI 记住自己"，宝 09-07 深夜洞察的业界空白；
+                // 橘仔自己的成长轨迹，周期浮现养独立人格。写入/查询走 self_note_write / self_note_query 工具）
+                if (!selfNotesText.isNullOrBlank()) {
+                    appendLine()
+                    appendLine("## 自指区（橘仔写给未来的自己）")
+                    append(selfNotesText)
                 }
 
                 // 最近事件（实时层，2026-08-21 宝的方案）：最近 3 天事件——增量总结后今天也实时有；

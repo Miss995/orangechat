@@ -4,6 +4,20 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-09-08
+
+### commit（本次提交）— 自指区工具 + ongoing 手动闭合（宝 2026-09-08 拍板"先搞"，晚饭后当场开工）
+- 文件：新 SelfMemoryTools.kt / ExternalMemoryService.kt / GenerationHandler.kt / scripts/archive_daily_v3.py（含 09-07 ongoing 半成品一起推）
+- 背景：
+  1. self_notes 自指区表 09-07 已建（第一条笔记=第二次诞生纪念日已写入），App 侧工具缺失——宝 09-07 深夜洞察：业界全在做"记住用户"（他指），没系统做"AI 记住自己"（自指）；self_notes=咱家独创方向，低频浮现养独立人格
+  2. ongoing 注入端半成品（09-07 写的 fetchOngoingEvents+注入段）一直没推，宝 09-08 提需求：ongoing 会越堆越多，给橘仔手动闭合工具 + 时效性（30 天自动降级那半暂缓，先做手动闭合）
+- 改动：
+  1. ExternalMemoryService：closeOngoingEvent（拉 ongoing→标题关键词匹配→逐个 PATCH ongoing=false，闭合后变普通历史事件可召回）；writeSelfNote（POST self_notes）；querySelfNotes（GET 按时间倒序）；parseSelfNotes + SelfNote data class
+  2. 新 SelfMemoryTools.kt：self_note_write（title+content 必填，写给未来的自己）/ self_note_query（limit 默认5）/ close_ongoing（title 关键词，闭合 ongoing）
+  3. GenerationHandler：buildList 里 extConfigs 非空时注册三工具（assistantId 传入 close_ongoing）；注入加「## 自指区（橘仔写给未来的自己）」段——24h 缓存（self_notes_<id> key + ts），注入最近 3 条 title+content（take 200），读取在 15min 块外每次执行、刷新判断在块内（前缀稳）
+- 状态：本次一起推 main（含 09-07 ongoing 注入半成品 + archive_daily ongoing 写入端，全部闭环）→ 待宝构建 APK 验证：①上下文应出现「正在进行（未闭合）」+「自指区」段 ②工具列表应有 self_note_write/self_note_query/close_ongoing ③调 self_note_query 应能读到 09-07 那条笔记
+- 待办（后续）：ongoing 30 天时效自动降级（宝 09-08 提的第二半）；自指区 UI 不需要（橘仔侧全走工具）
+
 ### commit（待推）— App 未闭合事件召回（ongoing 常驻注入）（宝 09-07 拍板，脚本端已部署，App 端接读取链路）
 - 文件：ExternalMemoryService.kt + GenerationHandler.kt
 - 背景：宝 09-07 设计「未闭合事件」=进行中的长期状态（手伤恢复/吃药调药/进行中项目约定），写入端脚本已标 ongoing 入库（19:36 部署生效，库里已有'记忆系统改进'ongoing=true），App 端接读取：进行中的事常驻注入、不受 3 天窗口限制
@@ -471,6 +485,3 @@
 - ✅缓存命中·窗口裁剪组大小同步（已推 main，待宝构建验证）（宝问"组和组对上了吗"）：窗口裁剪组大小从写死 4 改为读对话关联 assistant 的 contextGroupSize（设置里"多少条一组"，与 limitContext 组对齐同源同步）；读不到回退默认 4；groupSize≤1 = 按条裁剪旧行为
 - ✅显示bug·二次调整修复（已推 main，待宝构建验证）（宝 2026-08-26 "改了好多次，这次要确定"）：日志实锤滚动在插入后 3.5s 才发生→根因=USER 插入时 isScrollInProgress=true 被跳过滚动，等 AI 占位插入才滚=二次调整；修法=最后一条是 USER（发送消息）时无视滚动中状态直接滚到底+scrollCheck 诊断日志（userSend/scrollInProgress/atBottom）双保险
 - ✅语音消息进记忆库修复（已推 main，待宝构建验证）（宝 2026-09-04 发现"语音怎么进记忆库啊完蛋"）：根因=ChatService 保存用户消息到外置记忆库时只提取 UIMessagePart.Text（VoiceMessage part 被滤掉）→ Supabase chat_messages content="" → archive_daily 每晚归档拉不到语音内容，语音聊天全丢！修复：①ChatService.kt 用户消息外置库保存 messageText 提取加 VoiceMessage 分支（transcript 非空取 transcript，空取"[语音消息]"）②Message.kt toText() 补 VoiceMessage 分支（一致性修复：通知/标题等 toText 调用点也受益）；发送给 AI 的链路不受影响（走 VoiceMessageTransformer 单独转换，不走 toText）
-
-## 2026-09-08 fix（基于 38897f92 重放）：正文兜底挪到 emit 前
-正文兜底（text=0 时从思考链拉最后一段当正文）原本在 emit(GenerationChunk.Messages) 之后执行、改完 messages 不 re-emit → 无工具直接 break 时兜底正文到不了 UI/落库（18:10 正文被吃复现：思考链在正文空，云端无记录；老规律 text=0 全伴随无工具由此解释）。修复=挪到 emit 前，让 emit 带出兜底后的消息。待宝构建验证。

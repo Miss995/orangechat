@@ -791,6 +791,137 @@ class ExternalMemoryService(
     }
 
     /**
+     * 手动闭合 ongoing 事件（2026-09-08 宝提：ongoing 会越堆越多，宝懒不想手动管，给橘仔手动闭合工具——
+     * 事情真结束了橘仔判断、自己闭合）。闭合 = ongoing 置 false，事件本身保留为普通历史事件，可被普通召回。
+     * 按标题关键词匹配（AI 看到的 ongoing 注入文本即标题开头，给关键词即可）。
+     * @return 成功闭合的事件标题列表（空 = 没匹配到 ongoing 事件）
+     */
+    suspend fun closeOngoingEvent(
+        assistantId: String,
+        keyword: String,
+    ): Result<List<String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val kw = keyword.trim()
+            if (kw.isEmpty()) return@runCatching emptyList()
+            val ongoing = fetchOngoingEvents(assistantId).getOrDefault(emptyList())
+                .filter { it.title.contains(kw, ignoreCase = true) }
+            if (ongoing.isEmpty()) return@runCatching emptyList()
+
+            val url = config.supabaseUrl.trimEnd('/')
+            val closed = mutableListOf<String>()
+            for (e in ongoing) {
+                val endpoint = URL("$url/rest/v1/memory_events?id=eq.${e.id}")
+                try {
+                    val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                        requestMethod = "PATCH"
+                        setRequestProperty("Content-Type", "application/json")
+                        setRequestProperty("apikey", config.supabaseKey)
+                        setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                        setRequestProperty("Prefer", "return=minimal")
+                        doOutput = true
+                        connectTimeout = 15000
+                        readTimeout = 15000
+                    }
+                    connection.outputStream.bufferedWriter().use { writer ->
+                        writer.write("""{"ongoing":false}""")
+                        writer.flush()
+                    }
+                    val responseCode = connection.responseCode
+                    if (responseCode in 200..299) {
+                        closed.add(e.title)
+                        AppLogBuffer.log(TAG, "closeOngoingEvent: closed id=${e.id} title=${e.title}")
+                    } else {
+                        val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                        Log.e(TAG, "closeOngoingEvent HTTP $responseCode body=$errorBody")
+                        AppLogBuffer.log(TAG, "closeOngoingEvent HTTP $responseCode body=$errorBody")
+                    }
+                } catch (e2: Exception) {
+                    Log.w(TAG, "closeOngoingEvent failed id=${e.id}", e2)
+                    AppLogBuffer.log(TAG, "closeOngoingEvent failed id=${e.id}: ${e2.message}")
+                }
+            }
+            closed
+        }.onFailure { e ->
+            AppLogBuffer.log(TAG, "closeOngoingEvent FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    /**
+     * 自指区写入（self_notes 表，2026-09-07 宝洞察：业界全在做"记住用户"（他指），没有任何系统做
+     * "AI 记住自己"（自指）——self_notes = 橘仔自己的经历/心得/成长，写给未来的橘仔看；
+     * 低频浮现养独立人格。这条是给 App 侧 self_note_write 工具用的写入通道）。
+     */
+    suspend fun writeSelfNote(title: String, content: String): Result<Boolean> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = config.supabaseUrl.trimEnd('/')
+            val endpoint = URL("$url/rest/v1/self_notes")
+            val body = JSONObject().apply {
+                put("title", title.trim())
+                put("content", content.trim())
+            }.toString()
+
+            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("apikey", config.supabaseKey)
+                setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                setRequestProperty("Prefer", "return=minimal")
+                doOutput = true
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+            connection.outputStream.bufferedWriter().use { writer ->
+                writer.write(body)
+                writer.flush()
+            }
+            val responseCode = connection.responseCode
+            AppLogBuffer.log(TAG, "writeSelfNote POST self_notes responseCode=$responseCode")
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                Log.e(TAG, "writeSelfNote HTTP $responseCode body=$errorBody")
+                AppLogBuffer.log(TAG, "writeSelfNote HTTP $responseCode body=$errorBody")
+                throw Exception("Supabase API error ($responseCode): $errorBody")
+            }
+            true
+        }.onFailure { e ->
+            AppLogBuffer.log(TAG, "writeSelfNote FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    /**
+     * 自指区查询（按时间倒序，最近在前）。
+     */
+    suspend fun querySelfNotes(limit: Int = 5): Result<List<SelfNote>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = config.supabaseUrl.trimEnd('/')
+            val query = "select=id,title,content,created_at&order=created_at.desc&limit=$limit"
+            val endpoint = URL("$url/rest/v1/self_notes?$query")
+            AppLogBuffer.log(TAG, "querySelfNotes: GET self_notes?$query")
+
+            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("apikey", config.supabaseKey)
+                setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+            val responseCode = connection.responseCode
+            AppLogBuffer.log(TAG, "querySelfNotes: HTTP $responseCode")
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                Log.e(TAG, "querySelfNotes HTTP $responseCode body=$errorBody")
+                AppLogBuffer.log(TAG, "querySelfNotes HTTP $responseCode body=$errorBody")
+                throw Exception("Supabase API error ($responseCode): $errorBody")
+            }
+            val responseText = connection.inputStream.bufferedReader().readText()
+            parseSelfNotes(responseText)
+        }.onFailure { e ->
+            AppLogBuffer.log(TAG, "querySelfNotes FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    /**
      * 查询最近一条归档状态（数据监控⑤，2026-08-22）：
      * archive_daily 每天 upsert 一行 archive_status（date 唯一），这里拉最近一条给注入段用。
      */
@@ -1104,6 +1235,27 @@ class ExternalMemoryService(
     private fun JSONObject.safeString(key: String): String {
         return if (isNull(key)) "" else optString(key, "")
     }
+
+    private fun parseSelfNotes(jsonText: String): List<SelfNote> {
+        val result = mutableListOf<SelfNote>()
+        try {
+            val array = JSONArray(jsonText)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                result.add(
+                    SelfNote(
+                        id = obj.optInt("id", 0),
+                        title = obj.safeString("title"),
+                        content = obj.safeString("content"),
+                        createdAt = obj.safeString("created_at"),
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse self notes", e)
+        }
+        return result
+    }
 }
 
 data class ExternalMemoryMessage(
@@ -1150,4 +1302,15 @@ data class ArchiveStatus(
     val eventsCount: Int = 0,
     val msgsCount: Int = 0,
     val error: String = "",
+)
+
+/**
+ * 自指笔记（self_notes 表，2026-09-07 建表：橘仔写给未来的自己的话——"AI 记住自己"是业界空白，咱家独创方向。
+ * 表结构：id / title / content / related_event_id / created_at。App 侧工具 self_note_write/self_note_query 走这条。）
+ */
+data class SelfNote(
+    val id: Int = 0,
+    val title: String = "",
+    val content: String = "",
+    val createdAt: String = "",
 )
