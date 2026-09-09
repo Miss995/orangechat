@@ -528,9 +528,10 @@ class GenerationHandler(
         }
 
         // ===== 最近事件（实时层，2026-08-21 宝的记忆实时化方案定稿）=====
-        // 服务器 incremental_listener.py（每满 60 条总结 30 条，滞后半拍）让今天的事件也实时入库——
-        // 这里注入最近 3 天事件：今天全文、昨天前天 title。固定位置 + 稳定排序（source_date ASC + id ASC）
-        // = 前缀稳定（保 DS 缓存命中）。本地 15 分钟缓存：同 15 分钟内前缀稳定 + 防 Supabase 慢/挂。
+        // 服务器 incremental_listener.py（每满 60 条总结 30 条、留最近 30 条给正在聊的上下文，滞后半拍）
+        // 让事件实时入库——这里注入最近 3 天事件：今天全文、昨天前天 title。固定位置 + 稳定排序
+        // （source_date ASC + id ASC）= 前缀稳定（保 DS 缓存命中）。本地缓存节奏（2026-09-09 裁剪对齐优化）：
+        // 30/36/42 本地消息节拍 + 6h/跨天时间兜底（详见下方判断处注释）——fetch 跟按组裁剪同轮 = 掉缓存合并。
         var recentEventsText: String? = null
         var ongoingEventsText: String? = null  // 未闭合事件段（2026-09-07：ongoing 进行中状态，与最近事件同 15 分钟缓存窗口）
         var selfNotesText: String? = null  // 自指区段（2026-09-08：橘仔写给未来的自己，低频 24h 缓存）
@@ -544,7 +545,22 @@ class GenerationHandler(
                 ongoingEventsText = prefs.getString("ongoing_events_${assistant.id}", null)
                 selfNotesText = prefs.getString("self_notes_${assistant.id}", null)
                 val cacheTs = prefs.getLong("${cacheKey}_ts", 0L)
-                if (recentEventsText == null || nowMs - cacheTs > 15 * 60 * 1000L) {
+                // ===== 裁剪对齐优化（2026-09-09 宝拍板）：15 分钟时间节奏 → 本地消息节拍 =====
+                // 云端（incremental_listener/archive）异步按批总结事件，本地只管按自己的拍子去拿——
+                // 两边异步解耦，不需要计数同步（云端已留最近 30 条不总结 = 本地拿到的就是沉淀好的事件）。
+                // 本地拍子 = 窗口消息每滚 30 条 fetch 一次（fetch 跟按组裁剪同轮 = 掉缓存合并）；
+                // 30 轮没拉到新货（云端批次没吐完/内容没变）→ 阈值升 36 → 42 必拉并重置新周期
+                // （给云端异步总结留缓冲，同时避免无限顺延退化成每轮拉）。
+                // 时间兜底：超 6h 或跨天强制刷（覆盖当天第一次请求/早晨唤醒要最新事件）。
+                val msgCountNow = messages.size
+                val todayStr = java.time.LocalDate.now().toString()
+                val lastMsgCount = prefs.getLong("${cacheKey}_msgCount", -1L)
+                val threshold = prefs.getInt("${cacheKey}_threshold", 30)
+                val lastRefreshDate = prefs.getString("${cacheKey}_date", "")
+                val msgDelta = if (lastMsgCount >= 0L) msgCountNow - lastMsgCount else Long.MAX_VALUE
+                val timeFallback = nowMs - cacheTs > 6 * 60 * 60 * 1000L || lastRefreshDate != todayStr
+                val msgTriggered = msgDelta >= threshold.toLong() || msgDelta < 0L
+                if (recentEventsText == null || timeFallback || msgTriggered) {
                     val service = me.rerere.rikkahub.data.service.ExternalMemoryService(recentConfigs.first())
                     val events = service.fetchRecentEvents(assistant.id.toString(), days = 3).getOrDefault(emptyList())
                     // 未闭合事件（ongoing=true）：进行中的长期状态（手伤恢复/吃药调药/进行中项目约定），不受 3 天窗口限制
@@ -611,12 +627,32 @@ class GenerationHandler(
                                 }
                             }
                         }
-                        recentEventsText = sb.toString()
-                        prefs.edit().putString(cacheKey, recentEventsText).putLong("${cacheKey}_ts", nowMs).apply()
+                        val newText = sb.toString()
+                        val refreshed = newText != recentEventsText
+                        recentEventsText = newText
+                        val cacheEditor = prefs.edit().putLong("${cacheKey}_ts", nowMs).putString("${cacheKey}_date", todayStr)
+                        if (refreshed) {
+                            // 拉到新货：更新缓存文本 + 重置基准（新的 30 条周期从当前消息数起算）
+                            cacheEditor.putString(cacheKey, recentEventsText)
+                                .putLong("${cacheKey}_msgCount", msgCountNow.toLong())
+                                .putInt("${cacheKey}_threshold", 30)
+                        } else {
+                            // 没拉到新货（云端批次没吐完/内容没变）：不碰缓存文本（前缀不变 = 不掉缓存），
+                            // 只重置时间兜底 + 阈值升级（30→36→42）；42 必拉封顶后重置新周期
+                            if (threshold >= 42) {
+                                cacheEditor.putLong("${cacheKey}_msgCount", msgCountNow.toLong())
+                                    .putInt("${cacheKey}_threshold", 30)
+                            } else {
+                                cacheEditor.putInt("${cacheKey}_threshold", threshold + 6)
+                            }
+                        }
+                        cacheEditor.apply()
                         Log.i(TAG, "Recent events [supabase] refreshed (${events.size} events, ${recentEventsText.length} chars)")
                         AppLogBuffer.log(TAG, "Recent events refreshed: ${events.size} events, ${recentEventsText.length} chars")
                     } else {
-                        // 拉不到：保留旧缓存（recentEventsText 已是缓存值）
+                        // 拉不到：保留旧缓存（recentEventsText 已是缓存值）+ 重置时间兜底
+                        //（防 Supabase 临时挂时每轮重试白烧；消息节拍 30 条仍会低频再试）
+                        prefs.edit().putLong("${cacheKey}_ts", nowMs).putString("${cacheKey}_date", todayStr).apply()
                         Log.w(TAG, "Recent events fetch empty, keep cache")
                         AppLogBuffer.log(TAG, "Recent events fetch EMPTY (assistantId=${assistant.id})")
                     }
