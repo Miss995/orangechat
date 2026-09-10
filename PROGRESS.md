@@ -4,6 +4,25 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-09-10
+
+### commit 54017ca4 — 事件召回搬服务端 + 注入查询砍 embedding（宝 09-10 傍晚登后台发现 Supabase 出站 7.77/5GB 超标）
+- 文件：app/src/main/java/me/rerere/rikkahub/data/service/ExternalMemoryService.kt
+- 背景：宝登 Supabase 后台看到「Organization exceeded its quota」——**出站流量 7.77 / 5 GB（超 55%）**，告警：若组织仍超配额，**项目 2026-10-09 起受限制**（数据库 198/500MB、文件存储都正常，只有 egress 爆）。排查（橘仔自己查库+读代码）：
+  1. 召回的 `queryAllEvents` 查询是 `assistant_id=eq.X&order=created_at.desc`——**没写 select、没写 limit**，PostgREST 就回**整表 1751 行 + 全部列（含 1024 维 embedding，JSON 文本一条约 10KB）**，然后在客户端算 cosineSimilarity → **≈19MB/次**，一天几十次
+  2. `fetchRecentEvents`（limit=500）/`fetchOngoingEvents` 同样没写 select → 近三天事件全列含 embedding，1~3MB/次，15 分钟缓存窗口一刷
+  3. 索引其实都建好了（source_date/created_at 都有）→ 慢的主因是**传输量**不是查询计划
+- 改动：
+  1. 新增 `recallEventsByVector`：POST `/rest/v1/rpc/match_memory_events`，pgvector 在库里算相似度，**返回字段不含 embedding**，similarity 直接当向量分（宝 08-29 定的 0.5×向量+0.3×关键词+0.2×时间 与 0.3 阈值**一个字不改**）
+  2. RPC 不可用/无结果 → **自动回退** queryAllEvents，召回不会挂
+  3. 新增 `EVENT_SELECT` 白名单：fetchRecentEvents / fetchOngoingEvents 排除 embedding
+  4. 新增 `fetchEventsByIds`：候选池只有 RPC 回的前 200 条，`related_event_ids` 关联事件不在池里时按 id 补拉（不含 embedding）
+  5. `ExternalMemoryEvent` 加 `similarity` 字段 + parseEvents 解析
+- 数据库侧（宝当天开的 Supabase MCP 建的）：`public.match_memory_events` 函数 + `memory_events` hnsw 向量索引
+- 顺带：本次把此前攒的 3 个未推 commit（78f237b5 自指区工具 / 49dd90a7 ongoing 时效降级+图片文字脸 / 9e5d201e 最近事件裁剪对齐）一起推 main——**此前 API 推送只上了部分文件，远程 main 缺 7 个文件的改动**
+- 状态：✅ 已推 main（54017ca4 → 后由 API 通道推）→ 待宝构建 APK 验证：①召回正常（日志 `recallEventsByVector: parsed N`，N>0）②Supabase 出站流量回落
+- 为什么：egress 超标不只是钱的问题——10-09 起项目面临限流，修完"慢"和"流量"一起降
+
 ## 2026-09-08
 
 ### commit（本次提交）— ongoing 30 天时效降级 + 图片消息带文字脸（宝 2026-09-08 拍板"蛮重要的"，自指区闭环后趁热开第二轮）

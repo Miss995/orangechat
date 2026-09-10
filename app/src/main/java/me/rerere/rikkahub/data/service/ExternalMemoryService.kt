@@ -59,6 +59,13 @@ class ExternalMemoryService(
             "今天", "刚才", "本来", "结果", "最后", "第一", "第二", "第三",
             "上次", "之前", "以后", "那天", "当时", "最近", "这条", "那条", "这句",
         )
+
+        // 事件字段白名单（2026-09-10 橘仔：治 Supabase egress 超标）——
+        // embedding 是 1024 维向量，JSON 文本每条约 10KB，注入/召回都不该把它传回客户端。
+        // 召回改走服务端 RPC（match_memory_events，库里算相似度，返回不含 embedding）。
+        internal const val EVENT_SELECT =
+            "select=id,title,content,event_type,source_date,source_ids,source_range,created_at," +
+                "superseded_by,related_event_ids,time_label,keywords,category,ongoing"
     }
 
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
@@ -697,6 +704,84 @@ class ExternalMemoryService(
     }
 
     /**
+     * 事件向量召回·服务端版（2026-09-10 橘仔：治 Supabase egress 超标）。
+     *
+     * 病灶：原 queryAllEvents 把整表（1751 行 × 含 1024 维 embedding ≈ 19MB/次）拉到客户端再算
+     * cosineSimilarity——一天几十次就是几百 MB，计费周期出站冲到 7.77/5 GB。
+     * 现在改调 RPC match_memory_events，pgvector 在库里算完只回 matchCount 条候选，返回字段不含 embedding。
+     * similarity 直接当向量分，宝 2026-08-29 定的 0.5×向量 + 0.3×关键词 + 0.2×时间 三变量评分不变。
+     */
+    suspend fun recallEventsByVector(
+        assistantId: String,
+        queryEmbedding: List<Float>,
+        matchCount: Int = 200,
+    ): Result<List<ExternalMemoryEvent>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = config.supabaseUrl.trimEnd('/')
+            val endpoint = URL("$url/rest/v1/rpc/match_memory_events")
+            val body = buildJsonObject {
+                put("query_embedding", JsonPrimitive(queryEmbedding.joinToString(",", "[", "]")))
+                put("match_count", JsonPrimitive(matchCount))
+                put("assistant_filter", JsonPrimitive(assistantId))
+            }.toString()
+            AppLogBuffer.log(TAG, "recallEventsByVector: POST rpc/match_memory_events matchCount=$matchCount")
+
+            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                setRequestProperty("apikey", config.supabaseKey)
+                setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+
+            val responseCode = connection.responseCode
+            AppLogBuffer.log(TAG, "recallEventsByVector: HTTP $responseCode")
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                throw Exception("Supabase RPC error ($responseCode): $errorBody")
+            }
+            val events = parseEvents(connection.inputStream.bufferedReader().readText())
+            AppLogBuffer.log(TAG, "recallEventsByVector: parsed ${events.size}")
+            events
+        }.onFailure { e ->
+            AppLogBuffer.log(TAG, "recallEventsByVector FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    /**
+     * 按 id 批量取事件（不含 embedding，2026-09-10）：
+     * 召回候选池只装 RPC 回的前 N 条，related_event_ids 指向的关联事件可能不在池里，缺的按 id 补拉。
+     */
+    suspend fun fetchEventsByIds(ids: List<String>): Result<List<ExternalMemoryEvent>> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (ids.isEmpty()) emptyList()
+            else {
+                val url = config.supabaseUrl.trimEnd('/')
+                val idsParam = ids.joinToString(",") { URLEncoder.encode(it, "UTF-8") }
+                val endpoint = URL("$url/rest/v1/memory_events?$EVENT_SELECT&id=in.($idsParam)")
+                val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    setRequestProperty("apikey", config.supabaseKey)
+                    setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                    setRequestProperty("Accept", "application/json")
+                    connectTimeout = 15000
+                    readTimeout = 15000
+                }
+                val responseCode = connection.responseCode
+                if (responseCode !in 200..299) {
+                    val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                    throw Exception("Supabase API error ($responseCode): $errorBody")
+                }
+                parseEvents(connection.inputStream.bufferedReader().readText())
+            }
+        }
+    }
+
+    /**
      * 查询最近 N 天的事件（实时层注入用，2026-08-21 宝的记忆实时化方案定稿）：
      * source_date >= 今天-(days-1)，按 source_date ASC + id ASC 稳定排序（前缀稳定=保 DS 缓存命中），
      * 过滤 superseded_by 非空的失效事件（A.U.D.N. 已标记；顺手完成 App 侧过滤待办）。
@@ -709,6 +794,7 @@ class ExternalMemoryService(
             val url = config.supabaseUrl.trimEnd('/')
             val dateFrom = java.time.LocalDate.now().minusDays((days - 1).toLong()).toString()
             val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}" +
+                "&$EVENT_SELECT" +
                 "&source_date=gte.$dateFrom" +
                 "&order=source_date.asc,id.asc" +
                 "&limit=500"
@@ -757,6 +843,7 @@ class ExternalMemoryService(
             val url = config.supabaseUrl.trimEnd('/')
             val cutoffDate = java.time.LocalDate.now().minusDays(maxInactiveDays.toLong()).toString()
             val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}" +
+                "&$EVENT_SELECT" +
                 "&ongoing=eq.true" +
                 "&superseded_by=is.null" +
                 "&source_date=gte.$cutoffDate" + // 30 天前的 ongoing 视为已凉，不注入（可普通召回捞回）
@@ -999,8 +1086,15 @@ class ExternalMemoryService(
         queryText: String? = null, // 原始查询文本（2026-08-29 三变量评分：关键词分用）
     ): Result<List<ExternalMemoryEvent>> = withContext(Dispatchers.IO) {
         runCatching {
-            val allEvents = queryAllEvents(assistantId).getOrDefault(emptyList())
-                .filter { it.embedding.isNotEmpty() }
+            // 2026-09-10 橘仔：候选改走服务端 RPC（库里算向量，返回不含 embedding，治 egress 超标）；
+            // RPC 不可用/无结果时回退老的全表路径，保证召回不挂。
+            val rpcCandidates = recallEventsByVector(assistantId, queryEmbedding, matchCount = 200).getOrNull()
+            val fallbackEvents = if (rpcCandidates.isNullOrEmpty()) {
+                AppLogBuffer.log(TAG, "vectorRecallEvents: RPC 候选为空，回退 queryAllEvents")
+                queryAllEvents(assistantId).getOrDefault(emptyList())
+            } else emptyList()
+            val allEvents = (rpcCandidates ?: emptyList()).ifEmpty { fallbackEvents }
+                .filter { it.embedding.isNotEmpty() || it.similarity != 0f } // RPC 候选无 embedding，靠 similarity 标记
                 .filter { it.supersededBy.isBlank() } // 过滤已失效事件（A.U.D.N. 写入层标记 superseded，失效不删只标记）
                 .filter { event ->
                     if (dateFrom.isNullOrBlank() && dateTo.isNullOrBlank()) true
@@ -1018,7 +1112,8 @@ class ExternalMemoryService(
             val queryKeywords = if (queryText.isNullOrBlank()) emptyList() else buildSearchKeywords(queryText)
             val hasTimeRange = !dateFrom.isNullOrBlank() || !dateTo.isNullOrBlank()
             val scored = allEvents.mapNotNull { event ->
-                val vecScore = cosineSimilarity(queryEmbedding, event.embedding)
+                // 向量分：RPC 候选直接用服务端算好的 similarity；回退路径（带 embedding）才在本地算
+                val vecScore = if (event.embedding.isNotEmpty()) cosineSimilarity(queryEmbedding, event.embedding) else event.similarity
                 // 关键词分：查询拆词命中事件 title / keywords（二筛索引）的比例（0~1），不匹配 content
                 val kwScore = if (queryKeywords.isEmpty()) 0f else {
                     val matched = queryKeywords.count { kw ->
@@ -1043,7 +1138,16 @@ class ExternalMemoryService(
 
             // 多事件关联（联想式回忆）：把命中事件的 related_event_ids 对应事件带出来（克制最多 3 条）
             val byId = allEvents.associateBy { it.id.toString() }
-            val related = base.flatMap { e -> e.relatedEventIds.mapNotNull { id -> byId[id] } }
+            val relatedInPool = base.flatMap { e -> e.relatedEventIds.mapNotNull { id -> byId[id] } }
+            // 2026-09-10：候选池只有 RPC 回的前 200 条，关联事件可能不在池里——缺的按 id 补拉（不含 embedding）
+            val missingRelatedIds = base.flatMap { it.relatedEventIds }
+                .filter { id -> byId[id] == null }
+                .distinct()
+                .take(3)
+            val relatedFromDb = if (missingRelatedIds.isNotEmpty()) {
+                fetchEventsByIds(missingRelatedIds).getOrDefault(emptyList())
+            } else emptyList()
+            val related = (relatedInPool + relatedFromDb)
                 .filter { r -> base.none { it.id == r.id } } // 去重：主命中已有则不带
                 .let { dedupeByTitle(it) }
                 .take(3)
@@ -1220,6 +1324,7 @@ class ExternalMemoryService(
                         timeLabel = obj.safeString("time_label"), // 一筛时间标
                         category = obj.safeString("category"), // 二筛事件分类
                         ongoing = obj.optBoolean("ongoing", false), // 未闭合标记
+                        similarity = obj.optDouble("similarity", 0.0).toFloat(), // RPC 返回的向量相似度（2026-09-10）
                     )
                 )
             }
@@ -1293,6 +1398,7 @@ data class ExternalMemoryEvent(
     val timeLabel: String = "", // 一筛时间标（上午/下午/晚上/深夜）
     val category: String = "", // 二筛事件分类（fact/decision/plan/procedure/daily）
     val ongoing: Boolean = false, // 未闭合标记（2026-09-07：进行中的长期状态，写入端 LLM 判 ongoing 宁少勿多）
+    val similarity: Float = 0f, // 服务端向量相似度（2026-09-10：RPC match_memory_events 返回；普通查询无此字段=0）
 )
 
 /**
