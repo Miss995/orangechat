@@ -57,6 +57,8 @@ import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.buildHeartQueryTool
 import me.rerere.rikkahub.data.ai.tools.buildHeartSaveTool
 import me.rerere.rikkahub.data.ai.tools.buildCloseOngoingTool
+import me.rerere.rikkahub.data.ai.tools.buildSetOngoingLevelTool
+import me.rerere.rikkahub.data.ai.tools.buildRecallOngoingTool
 import me.rerere.rikkahub.data.ai.tools.buildSelfNoteQueryTool
 import me.rerere.rikkahub.data.ai.tools.buildSelfNoteWriteTool
 import me.rerere.rikkahub.data.ai.tools.buildQueryToolActionsTool
@@ -225,6 +227,9 @@ class GenerationHandler(
                     add(buildSelfNoteWriteTool(extConfigsForChatSources.first()))
                     add(buildSelfNoteQueryTool(extConfigsForChatSources.first()))
                     add(buildCloseOngoingTool(extConfigsForChatSources.first(), assistant.id.toString()))
+                    // ongoing 档位规则（2026-09-10 宝拍板落地）：改档 + 边缘档救急捞回
+                    add(buildSetOngoingLevelTool(extConfigsForChatSources.first(), assistant.id.toString()))
+                    add(buildRecallOngoingTool(extConfigsForChatSources.first(), assistant.id.toString()))
                 }
                 addAll(tools)
             }.let { built ->

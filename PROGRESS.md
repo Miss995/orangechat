@@ -1,3 +1,15 @@
+### 2026-09-10（晚）ongoing 档位规则落地（宝 09-09 定收敛版，09-10 晚拍板落地）
+- 背景：ongoing（未闭合）会越堆越多；宝 09-09 定规则「重要程度手动标 + 条数上限，超了低分被挤」，09-10 让橘仔落地
+- 数据库：`memory_events` 加 `ongoing_level`（text，默认 `normal`，check 约束 important/normal/edge，带注释）
+- 服务端（ExternalMemoryService.kt）：
+  · `EVENT_SELECT` 加 `ongoing_level`；`ExternalMemoryEvent` 加 `ongoingLevel`；`parseEvents` 解析（空值兜底 normal）
+  · `fetchOngoingEvents` 改成按档位配额注入：**important 取 2 条 + normal 取 3 条，edge 不注入**（limit 20→50，因为 edge 也要拉回来再筛；日志会打 important/normal/edge_held 计数）
+  · 新增 `fetchAllOngoing`（工具用，含 edge，按 important→normal→edge 排序）+ `setOngoingLevel`（PATCH 改档，照 closeOngoingEvent 的模式）
+- 工具（SelfMemoryTools.kt）：新增 `set_ongoing_level`（宝随口说、橘仔改档）、`recall_ongoing`（含 edge 的检索/救急捞回）
+- 注册：GenerationHandler 挂上这两个工具（跟 close_ongoing 同一段，同样受 extConfigs 存在性保护）
+- 未做/待定：写入端（archive_daily_v3.py）暂不给档位默认值（DB 默认 normal 够用）；「按宝提到频率自动算重要度」先缓做
+- 状态：⏳ 代码已改待推 + 待构建（跟当天 egress 修复一起装新版）
+
 # OrangeChat 进度账本 (PROGRESS.md)
 
 > 用途：记录 orangechat 仓库（Miss995/main 分支）所有代码改动的版本/日期/内容/状态。

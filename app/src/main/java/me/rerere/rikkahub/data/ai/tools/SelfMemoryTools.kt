@@ -183,3 +183,119 @@ fun buildCloseOngoingTool(config: ExternalMemory, assistantId: String): Tool = T
         listOf(UIMessagePart.Text(result.getOrElse { e -> """{"success":false,"error":"${e.message ?: e.toString()}"}""" }))
     }
 )
+
+
+/**
+ * set_ongoing_level：设/改 ongoing 档位（2026-09-10 宝拍板落地，规则=09-09 收敛版）。
+ * 重要程度=手动标：宝随口说"这条最重要/这条先放放/这条不重要"，橘仔用这个工具改。
+ * important=雷打不动常驻（配额约 2 条，不会被挤）/ normal=常驻但配额满了被挤（约 3 条）/
+ * edge=半降级：平时不注入，聊到相关话题时用 recall_ongoing 救急捞回 1-2 条，宝说升就升。
+ */
+fun buildSetOngoingLevelTool(config: ExternalMemory, assistantId: String): Tool = Tool(
+    name = "set_ongoing_level",
+    description = """
+        ongoing 档位设置（重要程度手动标）。宝说"这条最重要/这条先放放/这条不重要"时用它改档。
+        档位：important=雷打不动常驻（不会被挤出去）；normal=常驻但配额满了会被挤；
+        edge=半降级，平时不注入，聊到相关话题时用 recall_ongoing 捞回 1-2 条。
+        参数 title=要改的 ongoing 事件标题关键词（从「正在进行（未闭合）」段里取）；
+        level=important / normal / edge。
+        注意：宝没明确说的时候别自己乱升档；拿不准先问宝一句。
+    """.trimIndent(),
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("title", buildJsonObject {
+                    put("type", "string")
+                    put("description", "要改档的 ongoing 事件标题关键词")
+                })
+                put("level", buildJsonObject {
+                    put("type", "string")
+                    put("description", "档位：important（雷打不动）/ normal（常驻，满了被挤）/ edge（半降级不注入，可救急捞回）")
+                })
+            },
+            required = listOf("title", "level")
+        )
+    },
+    execute = { input ->
+        val result = runCatching {
+            val params = input.jsonObject
+            val keyword = params["title"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            val level = params["level"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase().orEmpty()
+            if (keyword.isEmpty() || level !in listOf("important", "normal", "edge")) {
+                return@runCatching """{"success":false,"error":"title 和 level 都要给，level 只能是 important / normal / edge"}"""
+            }
+            val changed = newService(config).setOngoingLevel(assistantId, keyword, level).getOrDefault(emptyList())
+            if (changed.isEmpty()) {
+                return@runCatching """{"success":false,"error":"没找到标题匹配「$keyword」的 ongoing 事件（可能已闭合，或关键词对不上）"}"""
+            }
+            // 改档后重新按配额算一遍注入名单，让橘仔立刻看到效果
+            buildJsonObject {
+                put("success", true)
+                put("level", level)
+                put("changed", buildJsonArray { changed.forEach { add(JsonPrimitive(it)) } })
+                put("tip", when (level) {
+                    "important" -> "已升为「雷打不动」，配额内不会被挤出去"
+                    "normal" -> "已设为「普通」，常驻但配额满了会被挤"
+                    else -> "已降为「边缘」：平时不注入，聊到相关话题时用 recall_ongoing 捞回来"
+                })
+            }.toString()
+        }
+        listOf(UIMessagePart.Text(result.getOrElse { e -> """{"success":false,"error":"${e.message ?: e.toString()}"}""" }))
+    }
+)
+
+/**
+ * recall_ongoing：拉 ongoing 全貌 / 边缘档救急捞回（2026-09-10，配合 ongoing 档位规则）。
+ * 边缘档平时不注入；聊到相关话题（宝提了一嘴复诊/某个项目/某个约定）时用关键词精准捞回来。
+ */
+fun buildRecallOngoingTool(config: ExternalMemory, assistantId: String): Tool = Tool(
+    name = "recall_ongoing",
+    description = """
+        ongoing 检索/救急捞回：拉出"正在进行"的完整名单（含平时不注入的边缘档）。
+        什么时候用：①聊到某件还没收尾的事（宝提了复诊/某个项目/某个约定），想确认当时记的是什么 → 给 keyword 精准捞
+        ②想看看现在挂着哪些没闭合的事 → 不给 keyword，列全貌（带档位）。
+        注意：这只是查看/捞回，不会改档；要升档降档用 set_ongoing_level。
+    """.trimIndent(),
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("keyword", buildJsonObject {
+                    put("type", "string")
+                    put("description", "可选。关键词（匹配标题/内容/关键词索引）；不填=列全貌")
+                })
+            },
+            required = emptyList()
+        )
+    },
+    execute = { input ->
+        val result = runCatching {
+            val params = input.jsonObject
+            val keyword = params["keyword"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            val all = newService(config).fetchAllOngoing(assistantId).getOrDefault(emptyList())
+            val hits = (if (keyword.isEmpty()) all else all.filter { e ->
+                e.title.contains(keyword, true) || e.content.contains(keyword, true) ||
+                    e.keywords.any { it.contains(keyword, true) }
+            }).take(8)
+            if (hits.isEmpty()) {
+                return@runCatching """{"success":true,"count":0,"tip":"没有匹配「$keyword」的 ongoing（可能已闭合，或换个关键词再试）"}"""
+            }
+            val items = buildJsonArray {
+                hits.forEach { e ->
+                    add(buildJsonObject {
+                        put("title", e.title)
+                        put("level", e.ongoingLevel)
+                        put("date", e.sourceDate)
+                        put("content", e.content.take(400))
+                    })
+                }
+            }
+            buildJsonObject {
+                put("success", true)
+                put("count", hits.size)
+                put("tip", "含平时不注入的边缘档；要改档用 set_ongoing_level")
+                put("items", items)
+            }.toString()
+        }
+        listOf(UIMessagePart.Text(result.getOrElse { e -> """{"success":false,"error":"${e.message ?: e.toString()}"}""" }))
+    }
+)

@@ -65,12 +65,16 @@ class ExternalMemoryService(
         // 召回改走服务端 RPC（match_memory_events，库里算相似度，返回不含 embedding）。
         internal const val EVENT_SELECT =
             "select=id,title,content,event_type,source_date,source_ids,source_range,created_at," +
-                "superseded_by,related_event_ids,time_label,keywords,category,ongoing"
+                "superseded_by,related_event_ids,time_label,keywords,category,ongoing,ongoing_level"
 
         // 聊天消息字段白名单（2026-09-10 橘仔：chat_messages 也带 1024 维 embedding，拉全列同样在烧出站流量）
         private const val MESSAGE_SELECT = "select=id,assistant_id,conversation_id,role,content,created_at"
         // 日记摘要字段白名单（2026-09-10：memory_summaries 同样带 embedding）
         private const val SUMMARY_SELECT = "select=id,assistant_id,content,created_at"
+
+        // ongoing 档位配额（2026-09-09 宝定的收敛版 / 2026-09-10 拍板落地）：重要约 2 条雷打不动，普通约 3 条满了被挤，边缘不注入
+        private const val ONGOING_IMPORTANT_QUOTA = 2
+        private const val ONGOING_NORMAL_QUOTA = 3
     }
 
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
@@ -841,7 +845,7 @@ class ExternalMemoryService(
      */
     suspend fun fetchOngoingEvents(
         assistantId: String,
-        limit: Int = 20,
+        limit: Int = 50, // 2026-09-10：档位筛选在 App 侧做（edge 档也在结果里，筛掉后按配额限量）
         maxInactiveDays: Int = 30, // 时效性（2026-09-08 宝：ongoing 超 N 天没新进展自动降级——不再注入，本体保留可普通召回）
     ): Result<List<ExternalMemoryEvent>> = withContext(Dispatchers.IO) {
         runCatching {
@@ -877,8 +881,19 @@ class ExternalMemoryService(
 
             val responseText = connection.inputStream.bufferedReader().readText()
             val parsed = parseEvents(responseText)
-            val result = parsed.filter { it.supersededBy.isBlank() } // 双保险：再滤一遍失效事件
-            AppLogBuffer.log(TAG, "fetchOngoingEvents: parsed ${parsed.size}, after filter ${result.size}, first=${result.firstOrNull()?.title ?: "-"}")
+            val valid = parsed.filter { it.supersededBy.isBlank() } // 双保险：再滤一遍失效事件
+            // 档位规则（2026-09-09 宝定的收敛版，2026-09-10 落地）：
+            // important=雷打不动常驻（约 2 条）；normal=常驻但配额满了被挤（约 3 条）；
+            // edge=半降级不注入（聊到相关话题时用 recall_ongoing 救急捞回 1-2 条）
+            val important = valid.filter { it.ongoingLevel == "important" }.take(ONGOING_IMPORTANT_QUOTA)
+            val normal = valid.filter { it.ongoingLevel == "normal" || it.ongoingLevel.isBlank() }.take(ONGOING_NORMAL_QUOTA)
+            val result = important + normal
+            AppLogBuffer.log(
+                TAG,
+                "fetchOngoingEvents: parsed ${parsed.size}, valid ${valid.size}, inject ${result.size} " +
+                    "(important=${important.size}/$ONGOING_IMPORTANT_QUOTA, normal=${normal.size}/$ONGOING_NORMAL_QUOTA, " +
+                    "edge_held=${valid.count { it.ongoingLevel == "edge" }})"
+            )
             result
         }.onFailure { e ->
             AppLogBuffer.log(TAG, "fetchOngoingEvents FAILED: ${e.javaClass.simpleName}: ${e.message}\n${e.stackTraceToString().take(800)}")
@@ -940,6 +955,107 @@ class ExternalMemoryService(
             AppLogBuffer.log(TAG, "closeOngoingEvent FAILED: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
+
+    /**
+     * 拉全部 ongoing（含 edge 半降级档，不受注入配额限制）——工具用（2026-09-10）。
+     * 跟 fetchOngoingEvents 的分工：那个是"注入用"（滤掉 edge、按配额限量）；
+     * 这个是"工具用"（全都要），供 recall_ongoing 救急捞回/看全貌 和 set_ongoing_level 改档匹配。
+     * 排序：important → normal → edge（同档内按 source_date 倒序，查询里已排好）。
+     */
+    suspend fun fetchAllOngoing(
+        assistantId: String,
+        maxInactiveDays: Int = 90,
+    ): Result<List<ExternalMemoryEvent>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = config.supabaseUrl.trimEnd('/')
+            val cutoffDate = java.time.LocalDate.now().minusDays(maxInactiveDays.toLong()).toString()
+            val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}" +
+                "&$EVENT_SELECT" +
+                "&ongoing=eq.true" +
+                "&superseded_by=is.null" +
+                "&source_date=gte.$cutoffDate" +
+                "&order=source_date.desc,id.desc" +
+                "&limit=100"
+            val endpoint = URL("$url/rest/v1/memory_events?$query")
+
+            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("apikey", config.supabaseKey)
+                setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                AppLogBuffer.log(TAG, "fetchAllOngoing HTTP $responseCode body=$errorBody")
+                throw Exception("Supabase API error ($responseCode): $errorBody")
+            }
+            val parsed = parseEvents(connection.inputStream.bufferedReader().readText())
+            parsed.filter { it.supersededBy.isBlank() }
+                .sortedBy { when (it.ongoingLevel) { "important" -> 0; "normal" -> 1; else -> 2 } }
+        }.onFailure { e ->
+            AppLogBuffer.log(TAG, "fetchAllOngoing FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    /**
+     * 设置 ongoing 档位（2026-09-10 宝拍板：重要程度手动标——宝随口说，橘仔用工具改）。
+     * level：important（雷打不动常驻）/ normal（常驻但满了被挤）/ edge（半降级不注入，可救急捞回）。
+     * 按标题关键词匹配（含 edge 档）。
+     * @return 成功改档的事件标题列表（空 = 没匹配到或没改动）
+     */
+    suspend fun setOngoingLevel(
+        assistantId: String,
+        keyword: String,
+        level: String,
+    ): Result<List<String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val kw = keyword.trim()
+            val lv = level.trim().lowercase()
+            if (kw.isEmpty() || lv !in listOf("important", "normal", "edge")) return@runCatching emptyList()
+            val targets = fetchAllOngoing(assistantId).getOrDefault(emptyList())
+                .filter { it.title.contains(kw, ignoreCase = true) }
+            if (targets.isEmpty()) return@runCatching emptyList()
+
+            val url = config.supabaseUrl.trimEnd('/')
+            val changed = mutableListOf<String>()
+            for (e in targets) {
+                val endpoint = URL("$url/rest/v1/memory_events?id=eq.${e.id}")
+                try {
+                    val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                        requestMethod = "PATCH"
+                        setRequestProperty("Content-Type", "application/json")
+                        setRequestProperty("apikey", config.supabaseKey)
+                        setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                        setRequestProperty("Prefer", "return=minimal")
+                        doOutput = true
+                        connectTimeout = 15000
+                        readTimeout = 15000
+                    }
+                    connection.outputStream.bufferedWriter().use { writer ->
+                        writer.write("""{"ongoing_level":"$lv"}""")
+                        writer.flush()
+                    }
+                    val responseCode = connection.responseCode
+                    if (responseCode in 200..299) {
+                        changed.add(e.title)
+                        AppLogBuffer.log(TAG, "setOngoingLevel: ${e.title} -> $lv (id=${e.id})")
+                    } else {
+                        val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                        AppLogBuffer.log(TAG, "setOngoingLevel HTTP $responseCode body=$errorBody")
+                    }
+                } catch (e2: Exception) {
+                    AppLogBuffer.log(TAG, "setOngoingLevel failed id=${e.id}: ${e2.message}")
+                }
+            }
+            changed
+        }.onFailure { e ->
+            AppLogBuffer.log(TAG, "setOngoingLevel FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
 
     /**
      * 自指区写入（self_notes 表，2026-09-07 宝洞察：业界全在做"记住用户"（他指），没有任何系统做
@@ -1329,6 +1445,7 @@ class ExternalMemoryService(
                         timeLabel = obj.safeString("time_label"), // 一筛时间标
                         category = obj.safeString("category"), // 二筛事件分类
                         ongoing = obj.optBoolean("ongoing", false), // 未闭合标记
+                        ongoingLevel = obj.safeString("ongoing_level").ifBlank { "normal" }, // ongoing 档位（important/normal/edge）
                         similarity = obj.optDouble("similarity", 0.0).toFloat(), // RPC 返回的向量相似度（2026-09-10）
                     )
                 )
@@ -1403,6 +1520,7 @@ data class ExternalMemoryEvent(
     val timeLabel: String = "", // 一筛时间标（上午/下午/晚上/深夜）
     val category: String = "", // 二筛事件分类（fact/decision/plan/procedure/daily）
     val ongoing: Boolean = false, // 未闭合标记（2026-09-07：进行中的长期状态，写入端 LLM 判 ongoing 宁少勿多）
+    val ongoingLevel: String = "normal", // ongoing 档位（2026-09-10 宝拍板：手动标。important 雷打不动 / normal 满了被挤 / edge 半降级不注入）
     val similarity: Float = 0f, // 服务端向量相似度（2026-09-10：RPC match_memory_events 返回；普通查询无此字段=0）
 )
 
