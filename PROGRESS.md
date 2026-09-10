@@ -18,6 +18,8 @@
   3. 新增 `EVENT_SELECT` 白名单：fetchRecentEvents / fetchOngoingEvents 排除 embedding
   4. 新增 `fetchEventsByIds`：候选池只有 RPC 回的前 200 条，`related_event_ids` 关联事件不在池里时按 id 补拉（不含 embedding）
   5. `ExternalMemoryEvent` 加 `similarity` 字段 + parseEvents 解析
+- 补漏（同日晚，宝让"先把漏点补上"）：全量扫了一遍，`queryMessagesByDate`（日记总结/事件原文，**按天全量**）、`queryLatestMessages`、`searchMessages`、`querySummariesByDate`、`queryLatestSummaries` 五处同样没写 select → 各自加 `MESSAGE_SELECT` / `SUMMARY_SELECT` 白名单（chat_messages 与 memory_summaries 也带 embedding，17486 / 71 行）；已确认这些函数的调用方都只取 content/去重判断，不吃 embedding
+- 保留未动：`queryAllEvents` 仍是全列（它是召回的回退保命路径，要算向量分，仅 RPC 挂时走）；`vectorRecallSummaries` 仍在客户端算（memory_summaries 才 71 行，量小）
 - 数据库侧（宝当天开的 Supabase MCP 建的）：`public.match_memory_events` 函数 + `memory_events` hnsw 向量索引
 - 顺带：本次把此前攒的 3 个未推 commit（78f237b5 自指区工具 / 49dd90a7 ongoing 时效降级+图片文字脸 / 9e5d201e 最近事件裁剪对齐）一起推 main——**此前 API 推送只上了部分文件，远程 main 缺 7 个文件的改动**
 - 状态：✅ 已推 main（54017ca4 → 后由 API 通道推）→ 待宝构建 APK 验证：①召回正常（日志 `recallEventsByVector: parsed N`，N>0）②Supabase 出站流量回落

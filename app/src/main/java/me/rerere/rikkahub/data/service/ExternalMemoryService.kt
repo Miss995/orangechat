@@ -66,6 +66,11 @@ class ExternalMemoryService(
         internal const val EVENT_SELECT =
             "select=id,title,content,event_type,source_date,source_ids,source_range,created_at," +
                 "superseded_by,related_event_ids,time_label,keywords,category,ongoing"
+
+        // 聊天消息字段白名单（2026-09-10 橘仔：chat_messages 也带 1024 维 embedding，拉全列同样在烧出站流量）
+        private const val MESSAGE_SELECT = "select=id,assistant_id,conversation_id,role,content,created_at"
+        // 日记摘要字段白名单（2026-09-10：memory_summaries 同样带 embedding）
+        private const val SUMMARY_SELECT = "select=id,assistant_id,content,created_at"
     }
 
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
@@ -133,7 +138,7 @@ class ExternalMemoryService(
     ): Result<List<ExternalMemoryMessage>> = withContext(Dispatchers.IO) {
         runCatching {
             val url = config.supabaseUrl.trimEnd('/')
-            val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}&order=created_at.desc&limit=$limit"
+            val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}&$MESSAGE_SELECT&order=created_at.desc&limit=$limit"
             val endpoint = URL("$url/rest/v1/${config.tableName}?$query")
 
             val connection = (endpoint.openConnection() as HttpURLConnection).apply {
@@ -297,7 +302,7 @@ class ExternalMemoryService(
     ): List<ExternalMemoryMessage> {
         val url = config.supabaseUrl.trimEnd('/')
         val encodedKeyword = URLEncoder.encode("%$keyword%", "UTF-8")
-        val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}&content=ilike.$encodedKeyword&order=created_at.desc&limit=$limit"
+        val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}&content=ilike.$encodedKeyword&$MESSAGE_SELECT&order=created_at.desc&limit=$limit"
         val endpoint = URL("$url/rest/v1/${config.tableName}?$query")
 
         val connection = (endpoint.openConnection() as HttpURLConnection).apply {
@@ -517,7 +522,7 @@ class ExternalMemoryService(
             val url = config.supabaseUrl.trimEnd('/')
             val startOfDay = "${dateStr} 00:00:00"
             val endOfDay = "${dateStr} 23:59:59"
-            val query = "created_at=gte.${URLEncoder.encode(startOfDay, "UTF-8")}&created_at=lte.${URLEncoder.encode(endOfDay, "UTF-8")}&order=created_at.asc"
+            val query = "created_at=gte.${URLEncoder.encode(startOfDay, "UTF-8")}&created_at=lte.${URLEncoder.encode(endOfDay, "UTF-8")}&$MESSAGE_SELECT&order=created_at.asc"
             val endpoint = URL("$url/rest/v1/${config.tableName}?$query")
 
             val connection = (endpoint.openConnection() as HttpURLConnection).apply {
@@ -552,7 +557,7 @@ class ExternalMemoryService(
             val url = config.supabaseUrl.trimEnd('/')
             val startOfDay = "${dateStr} 00:00:00"
             val endOfDay = "${dateStr} 23:59:59"
-            val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}&created_at=gte.${URLEncoder.encode(startOfDay, "UTF-8")}&created_at=lte.${URLEncoder.encode(endOfDay, "UTF-8")}&order=created_at.desc"
+            val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}&created_at=gte.${URLEncoder.encode(startOfDay, "UTF-8")}&created_at=lte.${URLEncoder.encode(endOfDay, "UTF-8")}&$SUMMARY_SELECT&order=created_at.desc"
             val endpoint = URL("$url/rest/v1/${config.summariesTableName}?$query")
 
             val connection = (endpoint.openConnection() as HttpURLConnection).apply {
@@ -585,7 +590,7 @@ class ExternalMemoryService(
     ): Result<List<ExternalMemorySummary>> = withContext(Dispatchers.IO) {
         runCatching {
             val url = config.supabaseUrl.trimEnd('/')
-            val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}&order=created_at.desc&limit=$limit"
+            val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}&$SUMMARY_SELECT&order=created_at.desc&limit=$limit"
             val endpoint = URL("$url/rest/v1/${config.summariesTableName}?$query")
             AppLogBuffer.log(TAG, "queryLatestSummaries: GET ${config.summariesTableName}?$query")
 
