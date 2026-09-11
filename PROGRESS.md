@@ -507,6 +507,20 @@
 - 组合：GenerationHandler 的斜杠命令 AI 兜底版（ff997970）保留——直执行未匹配的命令走 AI 解释
 - 状态：✅ 已推 main（c9747998）→ 待宝构建 APK 验证（发 /mcp 看工具列表、/潮汐岛 plot_ops status 试直执行）
 
+### 窗口起点节拍修复（最近事件注入长期停在旧缓存 · 宝 2026-09-11 发现 · 橘仔落实）
+- 文件：app/src/main/java/me/rerere/rikkahub/data/ai/GenerationHandler.kt（+3 处）、app/src/main/java/me/rerere/rikkahub/service/ChatService.kt（+1 处）
+- 现象：注入的「最近事件」长期停在旧内容——今天只显示凌晨那批，下午的事件 16:53/17:36 明明已入库却进不来
+- 根因：节拍判据用「窗口消息条数差值」（msgCountNow - lastMsgCount），但懒加载窗口长度被 CONVERSATION_LOAD_WINDOW_SIZE 封顶（宝实测 300~306 浮动）→ 差值恒为 0~6，永远够不到 threshold(30) → 节拍器从窗口封顶那天起就再没响过，只剩 6h 时间兜底在撑
+- 修法：改用「懒加载窗口起点在会话中的排名」（ChatService.lazyWindowFirstIndex）当判据——打开对话时按 totalCount - 窗口条数 算出，保存时 +dropped 单调前进，不受窗口长度封顶影响，量的正是「窗口往前滚了多少条」= 原意
+  1. GenerationHandler.generateText 加参数 windowFirstIndex: Int? = null（默认 null，其他调用点不受影响）
+  2. 判据换成（本次 windowFirstIndex - 上次记录的 _windowFirst）；无基准时首次必拉建立基准；调用方没传排名时回退旧判据
+  3. 缓存写入同步存 _windowFirst（refreshed 分支 + threshold≥42 重置基准分支）
+  4. ChatService 调用处传 lazyWindowFirstIndex[conversationId]
+- 关联已知问题（本次未动，待另开工）：
+  ① 每日展示上限用 take(cap) 取「最早」的 cap 条（今天 50 / 昨天 30 / 前天 20），超限时丢掉的是**最新**那批（铁证：注入里 09/09 正好 20 条、09/10 正好 30 条，都被削顶）→ 应改 takeLast
+  ② fetchRecentEvents 用 order=source_date.asc,id.asc + limit=500，三天事件超 500 条时被挤掉的同样是最近的
+- 状态：⏳ 待宝构建验证（装新版后看「最近事件」是否随聊天推进而刷新）
+
 ## 待办（代码相关）
 
 

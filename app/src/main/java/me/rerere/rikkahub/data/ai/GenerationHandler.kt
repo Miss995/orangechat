@@ -517,6 +517,10 @@ class GenerationHandler(
         workspaceCwd: String? = null,
         recallGate: Boolean = false,
         onRecallGatePassed: () -> Unit = {},
+        // 【窗口起点节拍 · 2026-09-11】懒加载窗口起点在会话中的排名（ChatService.lazyWindowFirstIndex 传入）。
+        // 原节拍判据用"窗口消息条数"，但窗口长度被 CONVERSATION_LOAD_WINDOW_SIZE 封顶后差值恒为 0~6
+        // → 节拍器永远够不到 threshold、只剩 6h 兜底（详见下方判断处注释）。null = 调用方没传，回退旧判据。
+        windowFirstIndex: Int? = null,
     ) {
         // ===== 斜杠命令模式（2026-09-01 宝拍板：用户消息以 / 开头 = 直接执行工具，复用 AI 工具链路不做 UI）=====
         // 检测最后一条用户消息是否以 "/" 开头：是则进入命令模式，AI 解析命令调对应工具执行，结果直接展示。
@@ -562,7 +566,21 @@ class GenerationHandler(
                 val lastMsgCount = prefs.getLong("${cacheKey}_msgCount", -1L)
                 val threshold = prefs.getInt("${cacheKey}_threshold", 30)
                 val lastRefreshDate = prefs.getString("${cacheKey}_date", "")
-                val msgDelta = if (lastMsgCount >= 0L) msgCountNow - lastMsgCount else Long.MAX_VALUE
+                // 【窗口起点节拍 · 2026-09-11 宝发现·橘仔落实】原判据用"窗口消息条数"，但懒加载窗口长度被
+                // CONVERSATION_LOAD_WINDOW_SIZE 封顶（实测 300~306 浮动）→ 差值恒为 0~6，永远够不到
+                // threshold，节拍器从窗口封顶那天起就再没响过（只剩 6h 兜底）→ 下午事件归档了也注入不进来。
+                // 改用"懒加载窗口起点在会话中的排名"（ChatService.lazyWindowFirstIndex：打开对话时按
+                // totalCount - 窗口条数 算出，保存时 +dropped 单调前进，不受窗口长度封顶影响）——
+                // 它量的是"窗口往前滚了多少条"，正是"每滚 30 条拉一次"的原意。
+                val lastWindowFirst = prefs.getInt("${cacheKey}_windowFirst", Int.MIN_VALUE)
+                val msgDelta = if (windowFirstIndex != null) {
+                    // 首次没有基准 → 必拉一次，顺便把基准建起来
+                    if (lastWindowFirst == Int.MIN_VALUE) Long.MAX_VALUE
+                    else (windowFirstIndex - lastWindowFirst).toLong()
+                } else {
+                    // 回退旧判据（调用方没传排名：短会话/其他入口）
+                    if (lastMsgCount >= 0L) msgCountNow - lastMsgCount else Long.MAX_VALUE
+                }
                 val timeFallback = nowMs - cacheTs > 6 * 60 * 60 * 1000L || lastRefreshDate != todayStr
                 val msgTriggered = msgDelta >= threshold.toLong() || msgDelta < 0L
                 if (recentEventsText == null || timeFallback || msgTriggered) {
@@ -637,16 +655,18 @@ class GenerationHandler(
                         recentEventsText = newText
                         val cacheEditor = prefs.edit().putLong("${cacheKey}_ts", nowMs).putString("${cacheKey}_date", todayStr)
                         if (refreshed) {
-                            // 拉到新货：更新缓存文本 + 重置基准（新的 30 条周期从当前消息数起算）
+                            // 拉到新货：更新缓存文本 + 重置基准（新的 30 条周期从当前窗口起点起算）
                             cacheEditor.putString(cacheKey, recentEventsText)
                                 .putLong("${cacheKey}_msgCount", msgCountNow.toLong())
                                 .putInt("${cacheKey}_threshold", 30)
+                            if (windowFirstIndex != null) cacheEditor.putInt("${cacheKey}_windowFirst", windowFirstIndex)
                         } else {
                             // 没拉到新货（云端批次没吐完/内容没变）：不碰缓存文本（前缀不变 = 不掉缓存），
                             // 只重置时间兜底 + 阈值升级（30→36→42）；42 必拉封顶后重置新周期
                             if (threshold >= 42) {
                                 cacheEditor.putLong("${cacheKey}_msgCount", msgCountNow.toLong())
                                     .putInt("${cacheKey}_threshold", 30)
+                                if (windowFirstIndex != null) cacheEditor.putInt("${cacheKey}_windowFirst", windowFirstIndex)
                             } else {
                                 cacheEditor.putInt("${cacheKey}_threshold", threshold + 6)
                             }

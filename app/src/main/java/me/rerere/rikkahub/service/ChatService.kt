@@ -1143,6 +1143,9 @@ class ChatService(
                 assistant = assistant,
                 conversationSystemPrompt = conversation.customSystemPrompt,
                 workspaceCwd = conversation.workspaceCwd,
+                // 【窗口起点节拍 · 2026-09-11】把懒加载窗口起点传给最近事件节拍器：
+                // 用"窗口往前滚了多少条"当判据，替代被封顶的"窗口条数差值"（详见 GenerationHandler 注释）
+                windowFirstIndex = lazyWindowFirstIndex[conversationId],
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {
