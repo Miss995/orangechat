@@ -146,6 +146,9 @@ class GenerationHandler(
         workspaceCwd: String? = null,
         pluginPromptInjections: List<String> = emptyList(),
         conversationId: String? = null,
+        // 【窗口起点节拍 · 2026-09-11】懒加载窗口起点（ChatService.lazyWindowFirstIndex），
+        // 由外门透传给内芯（generateInternal）的最近事件节拍器，详见内芯里的注释。
+        windowFirstIndex: Int? = null,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -285,6 +288,7 @@ class GenerationHandler(
                     workspaceCwd = workspaceCwd,
                     recallGate = recallGatePassed,
                     onRecallGatePassed = { recallGatePassed = true },
+                    windowFirstIndex = windowFirstIndex,
                 )
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,

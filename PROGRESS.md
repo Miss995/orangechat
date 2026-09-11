@@ -520,6 +520,8 @@
   ① 每日展示上限用 take(cap) 取「最早」的 cap 条（今天 50 / 昨天 30 / 前天 20），超限时丢掉的是**最新**那批（铁证：注入里 09/09 正好 20 条、09/10 正好 30 条，都被削顶）→ 应改 takeLast
   ② fetchRecentEvents 用 order=source_date.asc,id.asc + limit=500，三天事件超 500 条时被挤掉的同样是最近的
 - 状态：⏳ 待宝构建验证（装新版后看「最近事件」是否随聊天推进而刷新）
+- 补记（同日 · 修编译）：首次推送只给「内芯」generateInternal 加了参数，漏了「外门」generateText → CI 报
+  `ChatService.kt:1148 No parameter with name 'windowFirstIndex' found`。已补：generateText 加同名参数（windowFirstIndex: Int? = null）+ 调用 generateInternal 时透传。教训：同文件里外门（generateText）/内芯（generateInternal）两个函数，加参数要两头都过一道，改完先自检五个点——定义、透传、调用、类型、命名。
 
 ## 待办（代码相关）
 
