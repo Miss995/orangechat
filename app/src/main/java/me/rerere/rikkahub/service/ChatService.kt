@@ -134,7 +134,7 @@ private const val TAG = "ChatService"
  * 长对话（几千条）不再全量加载，流式更新/重组只碰窗口内的少量节点 → 大窗口不卡。
  * 显示只取最后 200 条（ChatList.WINDOW_DISPLAY_SIZE），这里多留余量给 AI 上下文取用。
  */
-private const val CONVERSATION_LOAD_WINDOW_SIZE = 300
+internal const val CONVERSATION_LOAD_WINDOW_SIZE = 300  // internal（2026-09-12）：GenerationHandler 的注入刷新节拍要用它预判"本回合会不会裁组"
 
 /**
  * 【缓存对齐 2026-08-26】窗口裁剪组大小兜底值：正常取对话关联 assistant 的 contextGroupSize

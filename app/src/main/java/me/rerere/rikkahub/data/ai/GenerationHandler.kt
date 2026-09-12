@@ -545,7 +545,25 @@ class GenerationHandler(
                 val msgDelta = if (windowFirstIndex != null) {
                     // 首次没有基准 → 必拉一次，顺便把基准建起来
                     if (lastWindowFirst == Int.MIN_VALUE) Long.MAX_VALUE
-                    else (windowFirstIndex - lastWindowFirst).toLong()
+                    else {
+                        // 【缓存对齐修复 2026-09-12 宝发现】预判本回合保存阶段会裁掉多少条：
+                        // 裁剪在保存阶段（本回合生成之后）才发生，而这里读到的 windowFirstIndex 是
+                        // 上一回合末的值 → 不预判的话刷新永远比裁剪晚一回合：
+                        //   第 N 回合保存时裁组（窗口变 → 掉缓存）→ 第 N+1 回合 delta 才够、刷新注入（又掉）
+                        // 于是"连着两个回合掉缓存"（宝实测）。把"本回合将裁掉的条数"提前算进来，
+                        // 让刷新和裁剪落在同一回合，两个掉缓存的动作合并成一次。
+                        // 算法与 ChatService.saveConversation 完全一致（攒一组裁一组）：
+                        //   overflow = (生成后条数) - WINDOW；估算生成后条数 = 当前条数 + 1（AI 回复）
+                        //   overflow > groupSize 才裁，且只裁 groupSize 的倍数条；groupSize <= 1 = 按条裁
+                        val gs = (assistant?.contextGroupSize ?: 4).coerceAtLeast(1)  // 4 = ChatService.DEFAULT_WINDOW_GROUP_SIZE
+                        val overflowAfter = (msgCountNow + 1) - me.rerere.rikkahub.service.CONVERSATION_LOAD_WINDOW_SIZE
+                        val willDrop = if (gs <= 1) {
+                            overflowAfter.coerceAtLeast(0)
+                        } else if (overflowAfter > gs) {
+                            overflowAfter - (overflowAfter % gs)
+                        } else 0
+                        (windowFirstIndex - lastWindowFirst + willDrop).toLong()
+                    }
                 } else {
                     // 回退旧判据（调用方没传排名：短会话/其他入口）
                     if (lastMsgCount >= 0L) msgCountNow - lastMsgCount else Long.MAX_VALUE
