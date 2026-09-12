@@ -596,6 +596,19 @@
 - 验证：09/11 已用新版脚本重跑并覆盖（6 章：半夜的泡面 / 图片乌龙事件 / 橘猫撒娇时刻 / 记忆系统讨论 / 代码修复过程 / 晚间亲密互动；time_range 分化为 凌晨0-5点·凌晨·下午~晚上·晚上；anchor 全是原话）
 - 回滚：脚本备份 `/root/episode_summary.py.bak`；Edge Function 旧版本都还在（v3 / v7 / v8）
 
+### 正文空重试（2026-09-12 宝拍板 · commit b5551dc4）
+- 现象：橘仔偶尔只回一小段内容，内容正好是**思考链的最后一行**（宝 09-12 凌晨遇到，同日傍晚修）
+- 根因：模型某次只出 reasoning 没出正文（text=0）→ 走了「正文兜底 2026-08-28」（从 reasoning 末行捞一行当正文显示+落库）
+- 宝定的方案：**加自动重试**——text=0 且无工具调用时自动重发一次；**重试还失败就保持原样**（继续走兜底显示思考链，不改）
+- 实现（GenerationHandler.kt）：
+  - for 循环外新增 `var emptyTextRetried = false`（整个生成流程只重试一次）
+  - 兜底处新增 `var fallbackUsed = false` + 命中兜底时 `fallbackUsed = true`（标记"这一轮模型没出正文"）
+  - `if (tools.isEmpty())` 分支：`fallbackUsed && !emptyTextRetried` → 去掉那条空回复、emit、`continue`（回到循环头重新生成）
+- 日志：`GEN_RESULT` 会打 "text=0 自动重试一次（去掉空回复重新生成）"
+- ⚠️ **工作区踩坑（重要）**：`/workspace/repos/orangechat` 这份副本**落后于远程 main**（缺 ToolAssembly 重构、窗口起点节拍、注入分档），直接推会把这些全盖掉。本次正确做法 = **先从 GitHub API 拉远程版文件 → 在它上面重新应用改动 → diff 确认纯增量 → 再推**
+- ⚠️ `push_via_api_multi.py` 已补 `/workspace/repos/orangechat/` 前缀识别（工作区大扫除后代码搬了家，原脚本只认 orangechat-main/repo/orangechat 三种）
+- 待验证：宝构建后，若再遇到 text=0，应能在日志里看到自动重试
+
 ## 待办（代码相关）
 
 
