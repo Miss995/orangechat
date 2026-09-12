@@ -22,8 +22,7 @@ import me.rerere.rikkahub.data.service.ProactiveMessageTriggerService
  * 主动发消息 AI 接口（2026-08-23 宝拍板）：
  * AI / workflow 可调用此工具触发一次主动发消息流程（走 ProactiveMessageTriggerService）。
  *
- * - reason（AI 出口）：这次醒来的目的，注入提示词「你这次醒来的目的：X」——AI 醒来知道自己要干嘛
- * - promptOverride（客户端出口）：自定义提示词规则，注入主动消息上下文末尾——不写死，外部可传
+ * - reason（AI 出口）：这次醒来的目的，注入 user 消息「这次醒来的由头：X」——AI 醒来知道自己要干嘛
  *
  * 传 EXTRA_FORCE_TRIGGER=true 跳过内部最小间隔去重；
  * 传 EXTRA_AI_TRIGGER=true 让主动消息开关未开启时也能独立触发（与激进模式同待遇）。
@@ -47,26 +46,18 @@ fun buildTriggerProactiveMessageTool(context: Context): Tool = Tool(
                     put("type", "string")
                     put("description", "Optional: why you are waking up. Injected into the prompt as 「你这次醒来的目的」 so the AI knows what it planned to do (e.g. '提醒宝睡觉').")
                 })
-                put("prompt_override", buildJsonObject {
-                    put("type", "string")
-                    put("description", "Optional: custom rules appended to the proactive message prompt (client-side escape hatch, replaces nothing, only adds).")
-                })
             }
         )
     },
     execute = { args ->
         val params = args.jsonObject
         val reason = params["reason"]?.jsonPrimitive?.contentOrNull ?: ""
-        val promptOverride = params["prompt_override"]?.jsonPrimitive?.contentOrNull ?: ""
         try {
             val intent = Intent(context, ProactiveMessageTriggerService::class.java).apply {
                 putExtra(ProactiveMessageTriggerService.EXTRA_FORCE_TRIGGER, true)
                 putExtra(ProactiveMessageTriggerService.EXTRA_AI_TRIGGER, true)
                 if (reason.isNotBlank()) {
                     putExtra(ProactiveMessageTriggerService.EXTRA_AI_TRIGGER_REASON, reason)
-                }
-                if (promptOverride.isNotBlank()) {
-                    putExtra(ProactiveMessageTriggerService.EXTRA_PROMPT_OVERRIDE, promptOverride)
                 }
             }
             context.startForegroundService(intent)

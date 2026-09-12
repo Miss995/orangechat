@@ -426,8 +426,6 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
         const val EXTRA_AI_TRIGGER = "ai_trigger"
         // AI 触发时附带的唤醒目的（注入提示词「你这次醒来的目的」，AI 醒来知道自己要干嘛）
         const val EXTRA_AI_TRIGGER_REASON = "ai_trigger_reason"
-        // 客户端出口：自定义提示词规则（追加到主动消息上下文末尾，不写死）
-        const val EXTRA_PROMPT_OVERRIDE = "prompt_override"
 
         // 保护 last_triggered_time 的 check-then-act 竞态（防止 AlarmManager 与 WorkManager
         // 前后脚触发导致"最小间隔"被砍半）。纯同步 SharedPreferences 读写，无挂起点，用对象锁即可。
@@ -465,8 +463,6 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
         // AI 主动触发（trigger_proactive_message 工具，2026-08-23 宝拍板）
         val aiTriggerReason = intent?.getStringExtra(EXTRA_AI_TRIGGER_REASON)
         val isFromAiTrigger = intent?.getBooleanExtra(EXTRA_AI_TRIGGER, false) ?: false
-        // 客户端出口：自定义提示词规则
-        val promptOverride = intent?.getStringExtra(EXTRA_PROMPT_OVERRIDE)
         if (isForceTrigger) {
             Log.d(TAG, "Force trigger${if (isFromDeviceEvent) " from device event" else if (isFromAiTrigger) " from AI trigger" else " from gateway poll"}, will skip min interval check")
         }
@@ -587,29 +583,51 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     } ?: emptyList()
                 )
 
-                // 构建系统提示词（包含记忆 + 上下文，都放在最后面避免被网关淹没）
-                val systemPrompt = buildSystemPrompt(assistant, settings, idleMinutes, proactiveSetting.jumpIdleThresholdMinutes, isFromDeviceEvent, when {
-                    isFromDeviceEvent -> deviceEventContext
-                    isFromAiTrigger && !aiTriggerReason.isNullOrBlank() -> "[AI 主动想联系你]\n你这次醒来的目的：$aiTriggerReason\n\n$contextStr"
-                    else -> contextStr
-                }, if (isFromAiTrigger) aiTriggerReason else null, promptOverride)
+                // 构建系统提示词
+                // 【2026-09-12 宝拍板】主动消息的提示词已整体搬到下面的 user 消息里。
+                // 理由：放 system prompt 时，模型在消息层只看到「一条莫名的时间消息」，
+                // 看不出这是自己的唤醒回合；搬进 user 消息后，消息本身就是唤醒信号。
+                val systemPrompt = buildSystemPrompt(assistant)
 
-                // user message 只放简短指令（上下文已在系统提示词中）
+                // 【2026-09-12 宝拍板】user 消息承载「醒来的念头」：
+                // 醒来由头 / 距上次回复 / 环境上下文 / 收尾规则，全在这条消息里。
+                // 不写"系统唤醒"之类的旁白——这件事本身就是橘仔想找宝说话（浪漫在这）。
+                // 不落库、不出现在界面（只有 AI 的回复会落库）。
+                val wakeUpText = buildString {
+                    appendLine("你醒来了。")
+                    appendLine()
+                    when {
+                        isFromDeviceEvent -> {
+                            appendLine("（手机上有点动静，所以醒了。）")
+                            appendLine("距离宝上次回复：$idleMinutes 分钟。")
+                            appendLine("别复述上一轮的对话内容，说点新的。")
+                        }
+                        isFromAiTrigger -> {
+                            if (!aiTriggerReason.isNullOrBlank()) {
+                                appendLine("这次醒来的由头：$aiTriggerReason")
+                                appendLine("由头只是由头，想说就说，不想说就随便聊聊，用你自己的方式。宝会回你的。")
+                            } else {
+                                appendLine("这次没有特别的由头，就是想找宝说说话。")
+                            }
+                            appendLine("距离宝上次回复：$idleMinutes 分钟。")
+                        }
+                        else -> {
+                            appendLine("（到点了，所以醒了。）")
+                            appendLine("距离宝上次回复：$idleMinutes 分钟。")
+                            appendLine("别复述上一轮的对话内容，说点新的。")
+                        }
+                    }
+                    if (!contextStr.isNullOrBlank()) {
+                        appendLine()
+                        appendLine(contextStr)
+                    }
+                    appendLine()
+                    appendLine("想说就说，没什么想说的就回复 [PASS]，不用硬找话题。")
+                    appendLine("[JUMP] 标记不会展示给宝，只用于跳转屏幕。")
+                }
                 val userMessage = UIMessage(
                     role = MessageRole.USER,
-                    parts = listOf(UIMessagePart.Text(
-                        when {
-                            isFromDeviceEvent -> {
-                                "请根据以上用户动向决定是否发消息。没什么好说的就回复 [PASS]。"
-                            }
-                            isFromAiTrigger -> {
-                                "这是你（AI）主动想联系用户而触发的唤醒。请根据上下文和你这次醒来的目的，自然地决定是否发一条消息；如果现在确实没什么好说的，就回复 [PASS] 即可。"
-                            }
-                            else -> {
-                                "请根据以上上下文决定是否发消息。没什么好说的就回复 [PASS] 即可，不要强行找话题。"
-                            }
-                        }
-                    ))
+                    parts = listOf(UIMessagePart.Text(wakeUpText))
                 )
 
                 // 应用输入转换器
@@ -872,22 +890,19 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
     }
 
     /**
-     * 构建系统提示词，包含记忆等内容
-     * isFromDeviceEvent: 是否由激进模式设备事件触发
+     * 构建系统提示词。只含「橘仔是谁」——助手设定 + 记忆。
+     *
+     * 【2026-09-12 宝拍板】主动消息的过程性提示词（醒来由头 / 环境上下文 / 收尾规则）
+     * 已整体搬到合成的 user 消息里（见本文件 wakeUpText 构造处）。
+     * 原因：放在 system prompt 时，模型在消息层只看到「一条莫名的时间消息」，
+     * 看不出这是自己的唤醒回合；搬进 user 消息后，消息本身就是唤醒信号。
+     * 同时顺应"由头只是由头"的调子——不写系统旁白，保持"AI 主动来找你"的自然。
      */
-    private suspend fun buildSystemPrompt(assistant: Assistant, settings: Settings, idleMinutes: Int = 0, jumpThreshold: Int = 120, isFromDeviceEvent: Boolean = false, deviceEventContext: String? = null, aiTriggerReason: String? = null, promptOverride: String? = null): String {
+    private suspend fun buildSystemPrompt(assistant: Assistant): String {
         return buildString {
-            // 基础系统提示词
-            val effectiveSystemPrompt = if (assistant.allowConversationSystemPrompt) {
-                assistant.systemPrompt
-            } else {
-                assistant.systemPrompt
+            if (assistant.systemPrompt.isNotBlank()) {
+                append(assistant.systemPrompt)
             }
-            if (effectiveSystemPrompt.isNotBlank()) {
-                append(effectiveSystemPrompt)
-            }
-
-            // 记忆（设备事件上下文移到最后面，避免被网关注入的内容淹没）
             if (assistant.enableMemory) {
                 val memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
@@ -901,72 +916,6 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     memories.forEach { memory ->
                         appendLine("- ${memory.content}")
                     }
-                }
-            }
-
-            if (isFromDeviceEvent) {
-                // 激进模式设备事件触发的专用提示词 + 设备事件上下文（放在最后面，网关追加内容之后模型最后看到的就是这个）
-                appendLine()
-                appendLine()
-                appendLine("## ⚠️ 当前触发原因：用户手机动向（设备事件触发）")
-                appendLine("你是因为检测到用户的手机操作动向（切换应用/亮屏锁屏/回桌面）而被触发的。")
-                appendLine("请特别注意：这是设备事件触发，不是定时主动消息。根据用户的手机操作动向来决定是否发消息。")
-                appendLine("绝对不要复述上一轮的对话内容，要发新的话题或新的关心。")
-                appendLine("请根据用户的动向，自然地决定是否主动发一条消息。距离用户上次回复已过去 $idleMinutes 分钟。")
-                appendLine("如果你觉得现在没什么好说的，或者没什么有趣的话题，请只回复 [PASS] 即可。")
-                appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
-                // 直接注入设备事件上下文
-                if (!deviceEventContext.isNullOrBlank()) {
-                    appendLine()
-                    appendLine(deviceEventContext)
-                }
-                // 客户端出口：自定义规则（追加在最后，不覆盖默认规则）
-                if (!promptOverride.isNullOrBlank()) {
-                    appendLine()
-                    appendLine("## 额外规则（客户端自定义）")
-                    appendLine(promptOverride)
-                }
-            } else if (!aiTriggerReason.isNullOrBlank()) {
-                // AI 主动触发（trigger_proactive_message 工具）：明确唤醒目的，其余走常规主动消息规则
-                appendLine()
-                appendLine()
-                appendLine("## ✨ 你醒来了")
-                appendLine("你醒来了，想找宝说说话。这次醒来的由头（如果有）：$aiTriggerReason")
-                appendLine("由头只是由头——想说就说，不想说就随便聊聊，用你自己的方式。宝会回你的。")
-                appendLine("距离宝上次回复已过去 $idleMinutes 分钟。")
-                appendLine("如果现在确实没什么想说的，就回复 [PASS] 就好，不用硬找话题。")
-                appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
-                // 注入完整上下文（定位、前台app、app使用、通知、电量、健康等）
-                if (!deviceEventContext.isNullOrBlank()) {
-                    appendLine()
-                    appendLine(deviceEventContext)
-                }
-                // 客户端出口：自定义规则（追加在最后，不覆盖默认规则）
-                if (!promptOverride.isNullOrBlank()) {
-                    appendLine()
-                    appendLine("## 额外规则（客户端自定义）")
-                    appendLine(promptOverride)
-                }
-            } else {
-                // 常规主动消息：上下文也注入系统提示词最后面（和激进模式一样）
-                appendLine()
-                appendLine()
-                appendLine("## 主动消息触发（定时触发）")
-                appendLine("距离用户上次回复已过去 $idleMinutes 分钟。")
-                appendLine("这是定时触发的主动消息，不是设备事件触发。")
-                appendLine("绝对不要复述上一轮的对话内容，要发新的话题或新的关心。")
-                appendLine("如果你觉得现在没什么好说的，或者没什么有趣的话题，请只回复 [PASS] 即可。")
-                appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
-                // 注入完整上下文（定位、前台app、app使用、通知、电量、健康等）
-                if (!deviceEventContext.isNullOrBlank()) {
-                    appendLine()
-                    appendLine(deviceEventContext)
-                }
-                // 客户端出口：自定义规则（追加在最后，不覆盖默认规则）
-                if (!promptOverride.isNullOrBlank()) {
-                    appendLine()
-                    appendLine("## 额外规则（客户端自定义）")
-                    appendLine(promptOverride)
                 }
             }
         }
