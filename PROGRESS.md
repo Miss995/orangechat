@@ -547,12 +547,31 @@
   2. 判据换成（本次 windowFirstIndex - 上次记录的 _windowFirst）；无基准时首次必拉建立基准；调用方没传排名时回退旧判据
   3. 缓存写入同步存 _windowFirst（refreshed 分支 + threshold≥42 重置基准分支）
   4. ChatService 调用处传 lazyWindowFirstIndex[conversationId]
-- 关联已知问题（本次未动，待另开工）：
+- 关联已知问题（①②已于 2026-09-12 随「记忆注入分档」一起修，见下条 commit 9125b8db）：
   ① 每日展示上限用 take(cap) 取「最早」的 cap 条（今天 50 / 昨天 30 / 前天 20），超限时丢掉的是**最新**那批（铁证：注入里 09/09 正好 20 条、09/10 正好 30 条，都被削顶）→ 应改 takeLast
   ② fetchRecentEvents 用 order=source_date.asc,id.asc + limit=500，三天事件超 500 条时被挤掉的同样是最近的
 - 状态：⏳ 待宝构建验证（装新版后看「最近事件」是否随聊天推进而刷新）
 - 补记（同日 · 修编译）：首次推送只给「内芯」generateInternal 加了参数，漏了「外门」generateText → CI 报
   `ChatService.kt:1148 No parameter with name 'windowFirstIndex' found`。已补：generateText 加同名参数（windowFirstIndex: Int? = null）+ 调用 generateInternal 时透传。教训：同文件里外门（generateText）/内芯（generateInternal）两个函数，加参数要两头都过一道，改完先自检五个点——定义、透传、调用、类型、命名。
+
+### 记忆注入分档（章节总结接入 + 修 take/limit 坑 · 2026-09-12 · 宝的设计 + 橘仔落实）
+- 文件：app/src/main/java/me/rerere/rikkahub/data/service/ExternalMemoryService.kt（4 处）、app/src/main/java/me/rerere/rikkahub/data/ai/GenerationHandler.kt（1 处大改）
+- 背景：宝 09-09 定的设计——注入按「当天事件量」分档，近处细、远处粗；09-11 记的两条坑一起修
+- **数据层澄清（重要·橘仔先看错了表）**：宝说的「二次总结」= **`episode_summaries`**（章节总结），
+  **不是** `memory_summaries`（那是日记，一天一条）。episode_summaries 按章切：一天约 6 章、每章 60~90 字，
+  字段 = `source_date` / `chapter_index` / `time_range`（凌晨0-5点/上午/下午13-17/傍晚/晚上）/ `title` / `body` / `anchor` / `source_event_ids`
+- 改动：
+  1. ExternalMemoryService：新增 `EPISODE_SELECT` + `fetchEpisodeSummaries(assistantId, days)` + `parseEpisodes()` + `ExternalMemoryEpisode` 数据类
+  2. ExternalMemoryService：`fetchRecentEvents` 的 `order=source_date.asc,id.asc` → `desc,id.desc`，结果加 `.reversed()`（**修坑②**：三天超 500 条时旧实现挤掉的是最新那批）
+  3. GenerationHandler：分天注入重写为按档位组装（**修坑①**：`list.take(cap)` 取最早 → 改 `dropLast/takeLast`）
+     - tier 实时判定：`events.count { it.sourceDate == today }` → 闲<50 / 中≤85 / 爆>85（咱家日常就是爆）
+     - 今天：爆 = `dropLast(85)` 压标题 + `takeLast(85)` 留全文；闲/中 = 全完整
+     - 昨天：闲 = 上午标题+下午全文；中 = 全压标题；爆 = 章节总结
+     - 前天及更早：闲 = 上午章节+下午标题；中/爆 = 章节总结
+     - 章节拉不到时一律退回「全标题」兜底；上半天判定 = timeLabel/time_range 含「凌晨/早上/上午/中午」
+- 为啥这么设计：不用 AI 判断「哪条更可能被回忆」（AI 觉得 ≠ 宝在乎，会回声室化），改用客观规则（档位 + 时间近远）
+- 状态：⏳ 待宝构建验证（验证点：「昨天」那组变成约 6 行章节、注入总量下降；今天仍是全文）
+- 备注：标题里的「实时分档」按宝的设计；档位只升不降（避免一天内反复重写昨天/前天的呈现）——**尚未实现**，目前每次刷新都重算，若发现窗口内反复跳变再加
 
 ## 待办（代码相关）
 
