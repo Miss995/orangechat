@@ -609,6 +609,20 @@
 - ⚠️ `push_via_api_multi.py` 已补 `/workspace/repos/orangechat/` 前缀识别（工作区大扫除后代码搬了家，原脚本只认 orangechat-main/repo/orangechat 三种）
 - 待验证：宝构建后，若再遇到 text=0，应能在日志里看到自动重试
 
+### 缓存对齐修复：注入刷新预判裁组量（宝 09-12 发现 · commit b33837c0）
+- 现象：宝看消息结尾的缓存提示，发现「连着两个回合掉缓存」（设计上应该只有每三回合一次的推组掉落）
+- 根因（时序错位一回合）：
+  - **裁组**在保存阶段（本回合生成**之后**）执行：ChatService 攒一组裁一组 → `lazyWindowFirstIndex += dropped`
+  - **注入刷新**在生成前判断，读到的 `windowFirstIndex` 是**上一回合末**的值
+  - 于是：第 N 回合保存时裁组（窗口变 → 掉缓存）→ 第 N+1 回合 delta 才够 30、刷新注入（又掉）
+  - 设计意图本是让两者撞在同一回合（threshold 从 30 起、每次 +6 = groupSize，让刷新点永远落在组边界），但没人把「保存后才变」这个滞后算进去
+- 修法：
+  1. `ChatService`：`CONVERSATION_LOAD_WINDOW_SIZE` 从 `private` 放开为 `internal`（GenerationHandler 要引用，避免两边各写一个 300 埋雷）
+  2. `GenerationHandler`：`msgDelta` 加预判 `willDrop` —— 用与裁剪**完全一致**的算法（overflow = 当前条数+1 - WINDOW；overflow > groupSize 时只裁 groupSize 的倍数）先算出「本回合会裁多少」，加进 delta。这样「本回合会裁」时刷新也提前到同一回合，两个掉缓存动作合并成一次
+- 参数：groupSize = 6（宝设）、WINDOW = 300
+- ⚠️ **工作区踩坑（第二次，已固化规矩）**：本地 `/workspace/repos/orangechat` 的 `ChatService.kt` **也落后于远程**（缺 09-11「把窗口起点传给节拍器」那段）→ 直接推会删掉它。**规矩：推任何文件前，先从 GitHub API 拉远程版 → 在远程版上重做改动 → diff 确认纯增量 → 再推**（本次两个文件都这么走的）
+- 待验证：宝构建后，观察缓存提示是否恢复「只有推组那一回合掉」
+
 ## 待办（代码相关）
 
 
