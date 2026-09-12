@@ -52,6 +52,7 @@ import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
+import me.rerere.rikkahub.data.ai.tools.buildAssistantTools
 import me.rerere.rikkahub.data.ai.tools.buildFetchChatSourcesTool
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.buildHeartQueryTool
@@ -93,7 +94,7 @@ private const val EXTERNAL_RECALL_TIMEOUT_MS = 15_000L
 
 // 斜杠命令模式安全工具白名单（2026-09-01 宝拍板：用户消息以 / 开头 = 直接执行工具；
 // 只暴露安全工具给用户玩，危险工具（写文件/GitHub/SSH/锁应用/短信等）收着）
-private val SLASH_COMMAND_SAFE_TOOLS = setOf(
+internal val SLASH_COMMAND_SAFE_TOOLS = setOf(
     // 查日志 / 工具账本（排查用，只读）
     "read_app_logs", "query_tool_actions",
     // 记事 / 查原文（记忆相关，只读或写记忆）
@@ -175,73 +176,19 @@ class GenerationHandler(
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
  
-            val toolsInternal = buildList {
-                Log.i(TAG, "generateInternal: build tools($assistant)")
-                // 查日志工具（2026-08-21：宝 8-19 待办落地——排查静默失败用，如 fetchRecentEvents 不注入；始终注入，排查随时可用）
-                add(buildReadAppLogsTool())
-                // 工具账本（2026-08-28：愿望清单 id68-⑥ 落地——查工具调用记录防失忆，直接查数据库不额外存储）
-                add(buildQueryToolActionsTool(conversationRepo))
-                // 心动收藏夹（2026-09-06：五感记忆库 V1——橘仔收藏宝的话，理由+五感）
-                add(buildHeartSaveTool(favoriteRepo, conversationRepo, conversationId))
-                add(buildHeartQueryTool(favoriteRepo, conversationRepo, conversationId))
-                if (assistant?.enableMemory == true) {
-                    val memoryAssistantId = if (assistant.useGlobalMemory) {
-                        MemoryRepository.GLOBAL_MEMORY_ID
-                    } else {
-                        assistant.id.toString()
-                    }
-                    buildMemoryTools(
-                        json = json,
-                        onCreation = { content ->
-                            memoryRepo.addMemory(memoryAssistantId, content)
-                        },
-                        onUpdate = { id, content ->
-                            memoryRepo.updateContent(id, content)
-                        },
-                        onDelete = { id ->
-                            memoryRepo.deleteMemory(id)
-                        }
-                    ).let(this::addAll)
-                }
-                // 文件写入工具 - AI可直接将文件内容写入设备或打包ZIP（缓存持久化到 App files 目录）
-                add(buildWriteFilesTool(context, conversationId))
-                // 查原文工具（主动版）：外置记忆库事件召回后，模型可按 日期+消息号 主动拉原始聊天记录深挖
-                val extConfigsForChatSources = settings.externalMemories.filter { it.enabled && it.id in assistant.externalMemoryIds }
-                if (extConfigsForChatSources.isNotEmpty()) {
-                    add(buildFetchChatSourcesTool { date, ids ->
-                        val service = me.rerere.rikkahub.data.service.ExternalMemoryService(extConfigsForChatSources.first())
-                        val messages = service.queryMessagesByDate(date).getOrDefault(emptyList()).sortedBy { it.createdAt }
-                        val pick = if (ids.isEmpty()) messages.take(30) else ids.mapNotNull { id ->
-                            messages.getOrNull(id - 1) // 消息号=当天1-based序号（与 fetchEventSources 同口径）
-                        }
-                        pick.map { msg ->
-                            val prefix = when (msg.role) {
-                                "assistant" -> "AI"
-                                "user" -> "用户"
-                                else -> msg.role
-                            }
-                            "[$prefix] ${msg.content}"
-                        }
-                    })
-                }
-                // 自指区写/查 + ongoing 手动闭合工具（2026-09-08 宝拍板先搞：self_note_write/self_note_query =
-                // 橘仔写给未来的自己（业界空白自指区）；close_ongoing = 事情真结束了橘仔判断自己闭合，不用宝管）
-                if (extConfigsForChatSources.isNotEmpty()) {
-                    add(buildSelfNoteWriteTool(extConfigsForChatSources.first()))
-                    add(buildSelfNoteQueryTool(extConfigsForChatSources.first()))
-                    add(buildCloseOngoingTool(extConfigsForChatSources.first(), assistant.id.toString()))
-                    // ongoing 档位规则（2026-09-10 宝拍板落地）：改档 + 边缘档救急捞回
-                    add(buildSetOngoingLevelTool(extConfigsForChatSources.first(), assistant.id.toString()))
-                    add(buildRecallOngoingTool(extConfigsForChatSources.first(), assistant.id.toString()))
-                }
-                addAll(tools)
-            }.let { built ->
-                // 斜杠命令模式：只暴露安全工具（危险工具收着，宝 2026-09-01 拍板"危险的橘仔收着"）
-                if (slashCommandText != null) {
-                    built.filter { it.name in SLASH_COMMAND_SAFE_TOOLS }
-                } else built
-            }
- 
+            // 工具清单统一组装（2026-09-12 治本：与主动消息路径共用同一份，见 ToolAssembly.kt）
+            val toolsInternal = buildAssistantTools(
+                context = context,
+                conversationId = conversationId,
+                assistant = assistant,
+                settings = settings,
+                memoryRepo = memoryRepo,
+                conversationRepo = conversationRepo,
+                favoriteRepo = favoriteRepo,
+                json = json,
+                extraTools = tools,
+                slashCommandText = slashCommandText,
+            ) 
             // Check if we have tool calls ready to continue after user interaction.
             val pendingTools = messages.lastOrNull()?.getTools()?.filter {
                 it.canResumeExecution

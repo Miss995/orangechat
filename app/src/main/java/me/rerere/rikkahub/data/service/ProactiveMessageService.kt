@@ -58,6 +58,7 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
+import me.rerere.rikkahub.data.ai.tools.buildAssistantTools
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.tools.SystemTools
 import me.rerere.rikkahub.data.ai.tools.createSearchTools
@@ -66,6 +67,7 @@ import me.rerere.rikkahub.data.ai.tools.ToolNaming
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.plugin.provider.PluginToolProvider
+import me.rerere.rikkahub.data.repository.FavoriteRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -402,6 +404,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
     private val settingsStore: SettingsStore by inject()
     private val conversationRepository: ConversationRepository by inject()
     private val memoryRepository: MemoryRepository by inject()
+    private val favoriteRepository: FavoriteRepository by inject()
     private val providerManager: ProviderManager by inject()
     private val templateTransformer: TemplateTransformer by inject()
     private val localTools: LocalTools by inject()
@@ -643,7 +646,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 val providerImpl = providerManager.getProviderByType(providerSetting)
 
                 // 构建工具列表（与 ChatService 保持一致）
-                val tools = buildTools(settings, assistant, model)
+                val tools = buildTools(settings, assistant, model, conversationId.toString())
 
                 // 主动消息场景：支持工具调用，但限制最大步数
                 // temperature 不强制默认 0.8f，保持与 GenerationHandler 一致（assistant.temperature 为 null 时不传），
@@ -1044,12 +1047,25 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
     }
 
     /**
-     * 构建工具列表（主动消息场景精简版）
-     * 只加载系统工具 + 本地工具 + MCP 工具 + 插件工具，不加载搜索/Skill 工具，
-     * 避免工具过多导致请求体过大触发 API 400。
+     * 构建工具列表。
+     *
+     * 2026-09-12（宝拍板「治本」）：原来是「主动消息场景精简版」，只挂 本地/系统/MCP/插件 四类，
+     * 漏了 查日志 / 工具账本 / 心动收藏 / 记忆 / 写文件 / 查原文 / 自指区五件套 ——
+     * 主动消息醒来的橘仔手里没有自指区钥匙，workflow 让「先翻自指区」也翻不了。
+     * 现在改成与聊天路径共用 [buildAssistantTools]，两边永远一致。
+     *
+     * 注：早年的精简理由（工具过多触发 API 400）已不成立 ——
+     * 聊天路径一直挂着完整清单在跑，实测无 400。若将来真出现请求体过大，
+     * 在 [buildAssistantTools] 里统一裁剪即可，不要再分叉成两份清单。
      */
-    private suspend fun buildTools(settings: Settings, assistant: Assistant, model: Model): List<Tool> {
-        return buildList {
+    private suspend fun buildTools(
+        settings: Settings,
+        assistant: Assistant,
+        model: Model,
+        conversationId: String? = null,
+    ): List<Tool> {
+        // 外部工具（本地/系统/MCP/插件）：两条路径各有来源，各自组装后传进去
+        val extraTools = buildList {
             // 本地工具（助手已启用的）
             addAll(localTools.getTools(assistant.localTools))
 
@@ -1078,6 +1094,19 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
             // 插件工具
             addAll(pluginToolProvider.getTools())
         }
+
+        // 助手级工具：与聊天路径同一份清单（查日志/工具账本/心动收藏/记忆/写文件/查原文/自指区/ongoing）
+        return buildAssistantTools(
+            context = this@ProactiveMessageTriggerService,
+            conversationId = conversationId,
+            assistant = assistant,
+            settings = settings,
+            memoryRepo = memoryRepository,
+            conversationRepo = conversationRepository,
+            favoriteRepo = favoriteRepository,
+            json = json,
+            extraTools = extraTools,
+        )
     }
 
     /**
