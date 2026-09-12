@@ -173,6 +173,10 @@ class GenerationHandler(
         // 二次请求不再重复判断/注入，避免工具步骤反复召回破坏前缀稳定。
         var recallGatePassed = false
  
+        // 【正文空重试 2026-09-12 宝拍板】模型只出思考、没出正文（text=0）时自动重发一次。
+        // 整个生成流程只重试一次；重试还失败就保持原样（走兜底显示思考链）。
+        var emptyTextRetried = false
+ 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
  
@@ -259,6 +263,9 @@ class GenerationHandler(
                 // 2026-09-08 修复：自记+兜底原本在 emit 之后执行、改完 messages 不再 emit → 无工具直接
                 // break 时兜底正文到不了 UI/落库（正文被吃复现：思考链在、正文空，云端也无记录）。
                 // 挪到 emit 之前，让 emit 带出兜底后的消息；正文被吃时 read_app_logs filter "GEN_RESULT" 必能看到。
+                // 【正文空重试 2026-09-12】fallbackUsed = 这一轮走了兜底（模型只出思考、没出正文），
+                // 供下面 break 前判断是否重发一次。
+                var fallbackUsed = false
                 runCatching {
                     val lastMsg = messages.last()
                     val partTypes = lastMsg.parts.joinToString(",") { part ->
@@ -283,6 +290,7 @@ class GenerationHandler(
                             ?.trim()
                         if (!fallback.isNullOrBlank()) {
                             AppLogBuffer.log("GEN_RESULT", "text=0 fallback: $fallback")
+                            fallbackUsed = true
                             messages = messages.slice(0 until messages.lastIndex) + lastMsg.copy(
                                 parts = lastMsg.parts + UIMessagePart.Text(fallback)
                             )
@@ -293,6 +301,16 @@ class GenerationHandler(
  
                 val tools = messages.last().getTools().filter { !it.isExecuted }
                 if (tools.isEmpty()) {
+                    // 【正文空重试 2026-09-12 宝拍板】
+                    // fallbackUsed = 模型只出了思考、没出正文（这一轮走了上面的兜底）。
+                    // 这时自动重发一次：重试成功就是正常回复；还失败就保持原样（显示思考链兜底）。
+                    if (fallbackUsed && !emptyTextRetried) {
+                        emptyTextRetried = true
+                        AppLogBuffer.log("GEN_RESULT", "text=0 自动重试一次（去掉空回复重新生成）")
+                        messages = messages.slice(0 until messages.lastIndex)
+                        emit(GenerationChunk.Messages(messages))
+                        continue
+                    }
                     // no tool calls, break
                     break
                 }
