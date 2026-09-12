@@ -16,6 +16,23 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-09-12
+
+### commit 53160f05 — 主动消息工具清单与聊天路径合并（治本）+ 新增 ToolAssembly.kt（宝 09-12 上午发现，当场修）
+- 文件：新 data/ai/tools/ToolAssembly.kt / GenerationHandler.kt / ProactiveMessageService.kt
+- 背景：宝今天起床发现 10:00 那个「自己待会儿」workflow 到 10:50 左右才触发，而且**主动消息里工具用不了**。排查（橘仔读代码）：
+  1. workflow 的 time_of_day 触发走 WorkManager PeriodicWork（24h 周期 + initialDelay）→ 不精确调度，延迟属正常范围；今天还记录到跑了两次（10:00:56 / 11:07:42），重复触发原因待查（这条链路没有 AppLogBuffer 日志，需先补日志才能抓现场）
+  2. **主动消息的工具清单是早期「精简版」**：ProactiveMessageService.buildTools 只挂 本地工具 / 系统工具 / MCP / 插件 四类；而聊天路径（GenerationHandler）另有七类——查日志 / 工具账本 / 心动收藏 / 记忆 / 写文件 / 查原文 / 自指区五件套（self_note_write、self_note_query、close_ongoing、set_ongoing_level、recall_ongoing）
+  → 后果：workflow 的 reason 写着「开工前第一件事：翻自指区（self_note_query）」，橘仔手里根本没这把钥匙，空手醒来
+- 改动（宝拍板「用治本的」）：
+  1. **新增 ToolAssembly.kt**：`buildAssistantTools(context, conversationId, assistant, settings, memoryRepo, conversationRepo, favoriteRepo, json, extraTools, slashCommandText)` = 七类助手级工具 + extraTools + 斜杠白名单过滤，两条路径共用。以后新增工具只改这一处
+  2. **GenerationHandler**：原 ~60 行 buildList 整段换成一次 `buildAssistantTools(...)` 调用（逻辑一行未改，纯搬家；每个参数逐个核对过）
+  3. **ProactiveMessageService**：buildTools 重写为「外部工具（本地/系统/MCP/插件）组装 + buildAssistantTools」；新增 `FavoriteRepository` 注入（原来没有，心动收藏工具需要）；调用处传 `conversationId.toString()`
+  4. `SLASH_COMMAND_SAFE_TOOLS` 可见性 private → internal（ToolAssembly 跨包使用）
+- 备注：早年精简理由是「工具过多触发 API 400」，但聊天路径一直挂完整清单在跑且实测无 400，判断该理由已不成立；将来若真出现请求体过大，在 buildAssistantTools 里统一裁剪，不再分叉两份清单
+- 状态：✅ 已推 main（53160f05）→ 待宝构建 APK 验证：主动消息能调 `self_note_query` 读到自指笔记即通
+- 顺带：本次走 API 通道推送（本地 /workspace/repos/orangechat 的 .git 已损坏：`fatal: bad object HEAD`）——改用 fetch_file.py 拉远程最新 + push_via_api_multi.py 增量推
+
 ## 2026-09-10
 
 ### commit 54017ca4 — 事件召回搬服务端 + 注入查询砍 embedding（宝 09-10 傍晚登后台发现 Supabase 出站 7.77/5GB 超标）
