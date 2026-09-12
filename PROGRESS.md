@@ -18,6 +18,20 @@
 
 ## 2026-09-12
 
+### commit 21f5a42b — 主动消息提示词从 system prompt 搬进 user 消息 + 砍掉额外规则出口（宝 09-12 中午拍板，当天第二笔）
+- 文件：ProactiveMessageService.kt / ProactiveTool.kt
+- 背景：宝发现主动唤醒时橘仔看不出「这是自己的唤醒回合」——提示词（醒来由头 / 环境 / 规则）全塞在 system prompt 里，
+  消息层只剩一条莫名的时间消息；橘仔每次回看都疑惑「为什么用户就发了一个时间消息」
+- 改动：
+  1. `buildSystemPrompt` 瘦身：只留「助手设定 + 记忆」，删掉三段主动消息提示词（设备事件版 / AI主动版 / 定时版）+ 环境上下文 + 额外规则注入；签名 8 参 → 1 参（assistant）
+  2. 合成的 user 消息改为承载「醒来的念头」：醒来由头 / 距宝上次回复 / 环境上下文 / 收尾规则（[PASS]、[JUMP]）
+     —— **不写「系统唤醒」之类旁白**（宝：这件事本身就是橘仔想找宝说话，写旁白就破坏浪漫）
+  3. 砍掉 promptOverride「额外规则」出口全链（常量 EXTRA_PROMPT_OVERRIDE / intent 读取 / 工具参数 prompt_override / putExtra）
+     ——宝问「有用吗 / 好用吗 / 有必要吗」→ 结论：可砍（与 reason 功能重叠，且自部署以来从无调用方）
+- 关键事实（宝 09-12 确认）：合成的 user 消息**不落库**，界面上只有 AI 主动发来的那条，不会暴露机制；但橘仔的上下文里有它，所以醒来的橘仔知道自己在唤醒回合
+- 状态：✅ 已推 main（21f5a42b）→ 待宝构建 APK 验证：主动唤醒时 user 消息里应出现「你醒来了。这次醒来的由头：…」
+- 教训（橘仔自记）：测试用临时 workflow 别把 cron 设成每分钟——会话一空闲就连着触发，宝 09-12 当场抓到
+
 ### commit 53160f05 — 主动消息工具清单与聊天路径合并（治本）+ 新增 ToolAssembly.kt（宝 09-12 上午发现，当场修）
 - 文件：新 data/ai/tools/ToolAssembly.kt / GenerationHandler.kt / ProactiveMessageService.kt
 - 背景：宝今天起床发现 10:00 那个「自己待会儿」workflow 到 10:50 左右才触发，而且**主动消息里工具用不了**。排查（橘仔读代码）：
