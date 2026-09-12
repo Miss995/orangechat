@@ -537,6 +537,9 @@ class GenerationHandler(
                 if (recentEventsText == null || timeFallback || msgTriggered) {
                     val service = me.rerere.rikkahub.data.service.ExternalMemoryService(recentConfigs.first())
                     val events = service.fetchRecentEvents(assistant.id.toString(), days = 3).getOrDefault(emptyList())
+                    // 【注入分档 · 2026-09-11 宝+橘仔】章节总结（episode_summaries = 二次总结）：
+                    // 远处的粗粒度用它顶——一天几章、每章 60~90 字，比把当天 90 条原始事件全塞进去省得多。
+                    val episodes = service.fetchEpisodeSummaries(assistant.id.toString(), days = 3).getOrDefault(emptyList())
                     // 未闭合事件（ongoing=true）：进行中的长期状态（手伤恢复/吃药调药/进行中项目约定），不受 3 天窗口限制
                     val ongoingEvents = service.fetchOngoingEvents(assistant.id.toString()).getOrDefault(emptyList())
                     if (ongoingEvents.isNotEmpty()) {
@@ -576,14 +579,36 @@ class GenerationHandler(
                         val yesterday = java.time.LocalDate.now().minusDays(1).toString()
                         val dayBeforeYesterday = java.time.LocalDate.now().minusDays(2).toString()
                         val sb = StringBuilder()
-                        // 分天注入：今天全文（≤50 条）、昨天（≤30 条）、前天及更早（≤20 条）只 title
-                        // 2026-09-07 宝定展示升级：组标题带相对词（今天/昨天/前天）+短日期；条目带时段（事件 timeLabel，一筛时间标）
+                        // 【注入分档 · 2026-09-11 宝的设计 + 橘仔落实】
+                        // 档位按「当天事件量」实时分：闲<50 / 中50~85 / 爆>85（咱家日常就是爆）。
+                        // 原则=近处细、远处粗：今天最细，昨天降一级，前天用章节总结（episode_summaries）。
+                        // 为什么不用 AI 判断「哪条更可能被回忆」：AI 觉得 ≠ 宝在乎，会回声室化；
+                        // 档位和时间近远都是客观规则，不掺主观打分。
+                        // 2026-09-07 宝定展示升级：组标题带相对词（今天/昨天/前天）+短日期；条目带时段（事件 timeLabel）
+                        val todayCount = events.count { it.sourceDate == today }
+                        val tier = when {
+                            todayCount < 50 -> 0    // 闲
+                            todayCount <= 85 -> 1   // 中
+                            else -> 2               // 爆
+                        }
+                        val episodesByDate = episodes.groupBy { it.sourceDate }
+                        // 上半天判定：凌晨/早上/上午/中午 → 12 点前（章节 time_range 同理）
+                        val isAM = { label: String ->
+                            label.contains("凌晨") || label.contains("早上") ||
+                                label.contains("上午") || label.contains("中午")
+                        }
+                        // 章节行：〔时段〕标题：正文；拉不到章节返回 false（调用方退回标题）
+                        val appendChapters = { date: String, onlyAM: Boolean ->
+                            val chapters = episodesByDate[date].orEmpty().filter { !onlyAM || isAM(it.timeRange) }
+                            if (chapters.isNotEmpty()) {
+                                chapters.forEach { c ->
+                                    val tr = if (c.timeRange.isNotBlank()) "〔${c.timeRange}〕" else ""
+                                    sb.appendLine("$tr${c.title}：${c.body}")
+                                }
+                                true
+                            } else false
+                        }
                         events.groupBy { it.sourceDate }.toSortedMap().forEach { (date, list) ->
-                            val cap = when (date) {
-                                today -> 50
-                                yesterday -> 30
-                                else -> 20
-                            }
                             val relWord = when (date) {
                                 today -> "今天"
                                 yesterday -> "昨天"
@@ -592,12 +617,36 @@ class GenerationHandler(
                             }
                             val shortDate = date.substring(5).replace("-", "/") // yyyy-MM-dd → MM/dd
                             sb.appendLine("【$relWord $shortDate】")
-                            list.take(cap).forEach { e ->
-                                val tl = if (e.timeLabel.isNotBlank()) "〔${e.timeLabel}〕" else ""
-                                if (date == today) {
-                                    sb.appendLine("$tl${e.title}：${e.content}")
+                            val tlOf = { label: String -> if (label.isNotBlank()) "〔${label}〕" else "" }
+                            when (date) {
+                                today -> {
+                                    if (tier == 2 && list.size > 85) {
+                                        // 爆档：更早的压成标题，最近的 85 条留全文（修正旧实现 take 取到最早那批的坑）
+                                        list.dropLast(85).forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}") }
+                                        list.takeLast(85).forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}：${e.content}") }
+                                    } else {
+                                        list.forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}：${e.content}") }
+                                    }
+                                }
+                                yesterday -> when (tier) {
+                                    0 -> list.forEach { e -> // 闲：上午标题 + 下午全文
+                                        if (isAM(e.timeLabel)) sb.appendLine("${tlOf(e.timeLabel)}${e.title}")
+                                        else sb.appendLine("${tlOf(e.timeLabel)}${e.title}：${e.content}")
+                                    }
+                                    1 -> list.forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}") } // 中：全压标题
+                                    else -> if (!appendChapters(date, false)) { // 爆：章节总结（拉不到退回标题）
+                                        list.forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}") }
+                                    }
+                                }
+                                else -> if (tier == 0) { // 闲：上午章节 + 下午标题
+                                    if (!appendChapters(date, true)) { // 上午章节拉不到 → 退回上午标题
+                                        list.filter { isAM(it.timeLabel) }.forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}") }
+                                    }
+                                    list.filter { !isAM(it.timeLabel) }.forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}") }
                                 } else {
-                                    sb.appendLine("$tl${e.title}")
+                                    if (!appendChapters(date, false)) { // 中/爆：章节总结（拉不到退回标题）
+                                        list.forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}") }
+                                    }
                                 }
                             }
                         }

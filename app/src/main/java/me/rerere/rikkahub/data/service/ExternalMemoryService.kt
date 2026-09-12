@@ -71,6 +71,9 @@ class ExternalMemoryService(
         private const val MESSAGE_SELECT = "select=id,assistant_id,conversation_id,role,content,created_at"
         // 日记摘要字段白名单（2026-09-10：memory_summaries 同样带 embedding）
         private const val SUMMARY_SELECT = "select=id,assistant_id,content,created_at"
+        // 章节总结字段白名单（2026-09-11 橘仔：episode_summaries = 二次总结表，
+        // 一天几章、每章 60~90 字，time_range 记时段（凌晨0-5点/上午/下午13-17/傍晚/晚上））
+        private const val EPISODE_SELECT = "select=id,source_date,chapter_index,title,body,time_range,anchor"
 
         // ongoing 档位配额（2026-09-09 宝定的收敛版 / 2026-09-10 拍板落地）：重要约 2 条雷打不动，普通约 3 条满了被挤，边缘不注入
         private const val ONGOING_IMPORTANT_QUOTA = 2
@@ -805,7 +808,7 @@ class ExternalMemoryService(
             val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}" +
                 "&$EVENT_SELECT" +
                 "&source_date=gte.$dateFrom" +
-                "&order=source_date.asc,id.asc" +
+                "&order=source_date.desc,id.desc" +
                 "&limit=500"
             val endpoint = URL("$url/rest/v1/memory_events?$query")
             AppLogBuffer.log(TAG, "fetchRecentEvents: GET memory_events?$query")
@@ -830,12 +833,87 @@ class ExternalMemoryService(
 
             val responseText = connection.inputStream.bufferedReader().readText()
             val parsed = parseEvents(responseText)
-            val result = parsed.filter { it.supersededBy.isBlank() } // 过滤已失效事件（A.U.D.N. 写入层标记）
+            // 【2026-09-11 修坑②】order 改 desc + limit=500 = 取「最近 500 条」；
+            // 旧实现 asc 拿到的是「最早 500 条」，三天超 500 条时被挤掉的恰恰是最新的那批。
+            // 反转回升序，保持下游（分天注入）的预期顺序。
+            val result = parsed.filter { it.supersededBy.isBlank() }.reversed() // 过滤已失效事件（A.U.D.N. 写入层标记）
             AppLogBuffer.log(TAG, "fetchRecentEvents: parsed ${parsed.size}, after filter ${result.size}, first=${result.firstOrNull()?.title ?: "-"}")
             result
         }.onFailure { e ->
             AppLogBuffer.log(TAG, "fetchRecentEvents FAILED: ${e.javaClass.simpleName}: ${e.message}\n${e.stackTraceToString().take(800)}")
         }
+    }
+
+    /**
+     * 查询最近 N 天的章节总结（episode_summaries = 二次总结）
+     * 2026-09-11 宝+橘仔：注入分档方案里「远处的粗粒度」用这个——
+     * 一天几章、每章 60~90 字，比把当天 90 条原始事件全塞进上下文省得多。
+     * 返回按 source_date 升序、同日按 chapter_index 升序。
+     */
+    suspend fun fetchEpisodeSummaries(
+        assistantId: String,
+        days: Int = 3,
+    ): Result<List<ExternalMemoryEpisode>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = config.supabaseUrl.trimEnd('/')
+            val dateFrom = java.time.LocalDate.now().minusDays((days - 1).toLong()).toString()
+            val query = "assistant_id=eq.${URLEncoder.encode(assistantId, "UTF-8")}" +
+                "&$EPISODE_SELECT" +
+                "&source_date=gte.$dateFrom" +
+                "&order=source_date.asc,chapter_index.asc"
+            val endpoint = URL("$url/rest/v1/episode_summaries?$query")
+            AppLogBuffer.log(TAG, "fetchEpisodeSummaries: GET episode_summaries?$query")
+
+            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("apikey", config.supabaseKey)
+                setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                AppLogBuffer.log(TAG, "fetchEpisodeSummaries HTTP $responseCode body=$errorBody")
+                throw Exception("Supabase API error ($responseCode): $errorBody")
+            }
+
+            val responseText = connection.inputStream.bufferedReader().readText()
+            val result = parseEpisodes(responseText)
+            AppLogBuffer.log(TAG, "fetchEpisodeSummaries: ${result.size} chapters")
+            result
+        }.onFailure { e ->
+            AppLogBuffer.log(TAG, "fetchEpisodeSummaries FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    /**
+     * 解析 episode_summaries 响应
+     */
+    private fun parseEpisodes(jsonText: String): List<ExternalMemoryEpisode> {
+        val result = mutableListOf<ExternalMemoryEpisode>()
+        try {
+            val array = JSONArray(jsonText)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                result.add(
+                    ExternalMemoryEpisode(
+                        id = obj.optInt("id", 0),
+                        sourceDate = obj.safeString("source_date"),
+                        chapterIndex = obj.optInt("chapter_index", 0),
+                        title = obj.safeString("title"),
+                        body = obj.safeString("body"),
+                        timeRange = obj.safeString("time_range"),
+                        anchor = obj.safeString("anchor"),
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "parseEpisodes failed", e)
+        }
+        return result
     }
 
     /**
@@ -1503,6 +1581,17 @@ data class ExternalMemorySummary(
     val content: String = "",
     val createdAt: String = "",
     val embedding: List<Float> = emptyList(),
+)
+
+/** 章节总结（episode_summaries = 二次总结，2026-09-11 注入分档用） */
+data class ExternalMemoryEpisode(
+    val id: Int = 0,
+    val sourceDate: String = "",
+    val chapterIndex: Int = 0,
+    val title: String = "",
+    val body: String = "",
+    val timeRange: String = "",
+    val anchor: String = "",
 )
 
 data class ExternalMemoryEvent(
