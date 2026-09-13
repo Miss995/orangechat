@@ -56,6 +56,9 @@ fun RequestEditDialog(
     var editing by remember { mutableStateOf<Pair<Int, RequestEditController.EditSection>?>(null) }
     // 历史消息展开原文：按 index 记录哪些条展开了
     var expandedIds by remember { mutableStateOf(setOf<Int>()) }
+    // 【2026-09-13】本次召回内容开关 + 展开状态
+    var recallEnabled by remember(data) { mutableStateOf(data.recallEnabled) }
+    var recallExpanded by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onCancel) {
         Surface(
@@ -195,6 +198,44 @@ fun RequestEditDialog(
                             )
                         }
                     }
+                    // 【2026-09-13 宝的方案】本次召回内容：可见 + 一键关掉（关掉后时间和时刻感仍保留）
+                    if (!data.recall.isNullOrBlank()) {
+                        item {
+                            Text(
+                                "本次召回内容（取消勾选 = 这轮不带上它；【当前时间】【时刻感】仍保留）",
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                        }
+                        item {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                            ) {
+                                Checkbox(
+                                    checked = recallEnabled,
+                                    onCheckedChange = { checked -> recallEnabled = checked },
+                                )
+                                Text(
+                                    data.recall,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = if (recallExpanded) Int.MAX_VALUE else 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    if (recallExpanded) "收起" else "展开",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .padding(start = 4.dp)
+                                        .clickable { recallExpanded = !recallExpanded },
+                                )
+                            }
+                        }
+                    }
                     item {
                         Text(
                             "工具（勾选 = 本轮注入，默认全选，取消 = 省 token）",
@@ -243,6 +284,8 @@ fun RequestEditDialog(
                                     sections = sections,
                                     history = history,
                                     tools = tools,
+                                    recall = data.recall,
+                                    recallEnabled = recallEnabled,
                                 )
                             )
                         },

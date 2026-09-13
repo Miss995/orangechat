@@ -45,6 +45,11 @@ object RequestEditController {
         val sections: List<EditSection>,
         val history: List<EditItem>,
         val tools: List<ToolEditItem> = emptyList(),
+        // 【2026-09-13 宝的方案】本次召回内容（请求末尾的【背景补充】那段）：
+        // 单独拎出来给 UI 看、单独给一个开关 —— 召回不准时可以一键关掉再发送。
+        // 关掉只剥【背景补充】，时间和时刻感保留（那两个是每轮都要的）。
+        val recall: String? = null,
+        val recallEnabled: Boolean = true,
     )
 
     private val _pending = MutableStateFlow<RequestEditData?>(null)
@@ -78,7 +83,11 @@ object RequestEditController {
      * 把内部消息转成可编辑数据（system 分段 + 历史列表 + 工具勾选列表）。
      * @param toolNames 本轮将要注入的工具名列表（默认全勾选，用户可取消）。
      */
-    fun toEditData(messages: List<UIMessage>, toolNames: List<String> = emptyList()): RequestEditData {
+    fun toEditData(
+        messages: List<UIMessage>,
+        toolNames: List<String> = emptyList(),
+        recall: String? = null,
+    ): RequestEditData {
         val systemText = messages.firstOrNull { it.role == MessageRole.SYSTEM }?.toText() ?: ""
         val sections = splitSystem(systemText)
         val history = messages.filter { it.role != MessageRole.SYSTEM }.map { msg ->
@@ -88,7 +97,13 @@ object RequestEditController {
             )
         }
         val tools = toolNames.map { ToolEditItem(name = it) }
-        return RequestEditData(sections = sections, history = history, tools = tools)
+        return RequestEditData(
+            sections = sections,
+            history = history,
+            tools = tools,
+            recall = recall?.takeIf { it.isNotBlank() },
+            recallEnabled = true,
+        )
     }
 
     /** 把编辑结果还原成内部消息；edited 为 null 时返回原始消息（调用方应已处理取消） */
@@ -107,6 +122,19 @@ object RequestEditController {
         edited.history.forEachIndexed { index, item ->
             if (item.enabled && index < originalHistory.size) {
                 result.add(originalHistory[index])
+            }
+        }
+        // 【2026-09-13 宝的方案】召回开关：关掉就把末尾注入消息里的【背景补充】剥掉。
+        // 只剥那一段（时间和时刻感照常保留）；命中不了就原样返回，不冒风险。
+        if (!edited.recallEnabled && !edited.recall.isNullOrBlank()) {
+            val marker = "\n【背景补充】\n" + edited.recall
+            return result.map { msg ->
+                if (msg.role != MessageRole.USER) msg
+                else {
+                    val text = msg.toText()
+                    if (!text.contains(marker)) msg
+                    else UIMessage.user(prompt = text.replace(marker, ""))
+                }
             }
         }
         return result

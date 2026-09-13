@@ -513,6 +513,23 @@ class GenerationHandler(
         var recentEventsText: String? = null
         var ongoingEventsText: String? = null  // 未闭合事件段（2026-09-07：ongoing 进行中状态，与最近事件同 15 分钟缓存窗口）
         var selfNotesJson: String? = null  // 自指区笔记列表 JSON（2026-09-13：改作"浮现"用，见 SelfNoteSurfacing）
+        // 召回内容块（2026-09-13 宝的方案）：动态召回不放 system 前缀区，改在请求末尾随"系统消息注入"块一起给，
+        // 免得每次召回都改变前缀（碎缓存），同时离生成更近。
+        var recalledBlock: String? = null
+        // 自指区缓存刷新（2026-09-13 晚移到这里：每轮独立检查，自己带 24h TTL，
+        // 不再寄生在上面"最近事件刷新"的分支里——那样外层条件不满足时缓存可能整天建不起来）。
+        // 仍写进同一个 prefs（recent_events_cache），仍由 SelfNoteSurfacing 管 TTL 与格式。
+        runCatching {
+            val cfg = settings.externalMemories.firstOrNull { it.enabled && it.id in assistant.externalMemoryIds }
+            if (cfg != null) {
+                SelfNoteSurfacing.refreshIfStale(
+                    context.getSharedPreferences("recent_events_cache", Context.MODE_PRIVATE),
+                    assistant.id.toString(),
+                    me.rerere.rikkahub.data.service.ExternalMemoryService(cfg),
+                    System.currentTimeMillis(),
+                )
+            }
+        }
         try {
             val recentConfigs = settings.externalMemories.filter { it.enabled && it.id in assistant.externalMemoryIds }
             if (recentConfigs.isNotEmpty()) {
@@ -593,10 +610,8 @@ class GenerationHandler(
                         AppLogBuffer.log(TAG, "Ongoing events: none（当前没有未闭合事件）")
                     }
 
-                    // 自指区缓存（2026-09-13 改造：从"拼好的文本"改成"笔记列表 JSON"）
-                    // 浮现要按窗口起点轮换（每裁一组换一条），所以必须存列表结构——拼成一段字符串就挑不出来了。
-                    // 刷新逻辑收进 SelfNoteSurfacing.refreshIfStale（同样 24h TTL，只换了存储形态）。
-                    SelfNoteSurfacing.refreshIfStale(prefs, assistant.id.toString(), service, nowMs)
+                    // （自指区刷新 2026-09-13 晚移出本分支：它自己带 24h TTL，不该寄生在"最近事件要不要刷"的节奏上
+                    //  —— 实测后果：外层条件没满足时，缓存整天建不起来，浮现永远不出现。）
 
                     if (events.isNotEmpty()) {
                         val today = java.time.LocalDate.now().toString()
@@ -902,12 +917,12 @@ class GenerationHandler(
                                     .filterNotNull()
                                     .flatten()
                             }
+                            // 【2026-09-13 挪位】不再拼进 system，改为收集到 recalledBlock，
+                            // 在请求末尾的"系统消息注入"块里以【背景补充】出现（动态内容别放前缀区）。
                             if (allRecalled.isNotEmpty()) {
-                                appendLine()
-                                appendLine("## 外置记忆库")
-                                allRecalled.reversed().forEachIndexed { index, memory ->
-                                    appendLine("${index + 1}. ${memory}")
-                                }
+                                recalledBlock = allRecalled.reversed()
+                                    .mapIndexed { index, memory -> "${index + 1}. $memory" }
+                                    .joinToString("\n")
                             }
                         }
                     }
@@ -1044,13 +1059,22 @@ class GenerationHandler(
             add(
                 UIMessage.user(
                     buildString {
-                        append("【当前时间】")
+                        // 【2026-09-13 宝的方案】合并成一块"系统消息注入"并加头部标记。
+                        // 起因：这几行原来是裸的【当前时间】【时刻感】，伪装成用户消息直接出现 →
+                        // 橘仔经常误读成"宝说了话"（role 仍是 user，因为 API 里 system 只能放最前，
+                        // 而这条必须放最末尾才离生成最近）。加一行头部标记后一眼分得清来源。
+                        append("以下是系统消息注入:")
+                        append("\n【当前时间】")
                         append(java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()))
                         // 时刻感（宝 2026-09-07 拍板：时段词表 + 这场聊了多久；15 分钟断、按橘仔→宝消息间隔）
                         val nowLdt = java.time.LocalDateTime.now()
                         val tl = hourToPeriodLabel(nowLdt.hour)
                         append("\n【时刻感】现在是$tl（${"%02d".format(nowLdt.hour)}:${"%02d".format(nowLdt.minute)}）")
                         append(chatSessionDurationText(messages, System.currentTimeMillis() / 1000L))
+                        // 背景补充（召回内容，2026-09-13 从 system 挪来的）
+                        if (!recalledBlock.isNullOrBlank()) {
+                            append("\n【背景补充】\n").append(recalledBlock)
+                        }
                         if (!archiveWarn.isNullOrBlank()) {
                             append("\n").append(archiveWarn)
                         }
@@ -1071,7 +1095,11 @@ class GenerationHandler(
         val finalMessages: List<UIMessage>
         var effectiveTools = tools
         if (settings.requestEditMode && internalMessages.isNotEmpty()) {
-            val editData = RequestEditController.toEditData(internalMessages, tools.map { it.name })
+            val editData = RequestEditController.toEditData(
+                internalMessages,
+                tools.map { it.name },
+                recall = recalledBlock,
+            )
             val edited = RequestEditController.waitForEdit(editData)
                 ?: throw CancellationException("Request edit cancelled by user")
             finalMessages = RequestEditController.toMessages(edited, internalMessages)
