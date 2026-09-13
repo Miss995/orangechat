@@ -994,11 +994,31 @@ class GenerationHandler(
             // 位置固定（index 6 = 第一组结尾）：裁剪发生时它跟着回原位 → 前缀稳定、不碎缓存；
             // 内容按窗口起点轮换（每裁一组换一条）；只在这里造，不进 Conversation、不落库（宝的红线）。
             val ctxMessages = messages.limitContext(assistant.contextMessageSize, assistant.contextGroupSize)
+            // 【浮现相位对齐 · 2026-09-14 宝发现】轮换序号必须与「上下文换组」同源，否则每 6 条掉两次缓存。
+            //
+            // 系统里有两个会让前缀断掉的节拍器：
+            //   A. 上下文真的换一组 —— 发生在 messages.size % gs == 0 时（limitContext 的对齐起点 k 跳 +gs）
+            //   B. 窗口裁剪 —— ChatService 让 windowFirstIndex += gs，同时内存态丢掉最旧 gs 条 → k 减 gs
+            //      → 两者抵消：裁剪前后 ctx 指向的内容【完全没变】（这正是 8-26「信息对齐」的设计目的）
+            //
+            // 所以「ctx 起点在全会话里的坐标」P = windowFirstIndex + k 才是稳定的节拍源：
+            //   A 时 P += gs（内容真的换了），B 时 P 不变（内容没换）。
+            //
+            // 旧写法 tick = windowFirstIndex / gs 正好反了：
+            //   A 那一轮 windowFirstIndex 不动 → 浮现不换（该换没换）
+            //   B 那一轮 windowFirstIndex += gs → 浮现换条（内容没变却换 → 白碎一次）
+            //   → 每 6 条碎两次，且两者错开约 1 条消息的相位（宝 09-13 深夜实测命中率掉）。
+            val gsCfg = assistant.contextGroupSize
+            val ctxStartInMemory = if (assistant.contextMessageSize > 0 &&
+                messages.size > assistant.contextMessageSize && gsCfg > 1
+            ) {
+                (messages.size - assistant.contextMessageSize) - (messages.size % gsCfg)
+            } else 0
             val surfacingMsg = if (ctxMessages.size > SelfNoteSurfacing.SLOT_INDEX) {
-                val gs = assistant.contextGroupSize.coerceAtLeast(1)
+                val gs = gsCfg.coerceAtLeast(1)
                 SelfNoteSurfacing.buildMessage(
                     json = selfNotesJson,
-                    tick = (windowFirstIndex ?: 0).toLong() / gs,
+                    tick = ((windowFirstIndex ?: 0) + ctxStartInMemory).toLong() / gs,
                 )
             } else null
             if (surfacingMsg != null) {
