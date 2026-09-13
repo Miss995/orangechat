@@ -44,9 +44,27 @@ object SelfNoteSurfacing {
     /** 一次最多缓存多少条（够轮换很久了；自指笔记本来就是低频的） */
     private const val MAX_NOTES = 50
 
-    fun cacheKey(assistantId: String) = "self_notes_$assistantId"
+    // 缓存 key 带版本号 v2（2026-09-13 修复）
+    // 起因：v1 时代这个 key 存的是"拼好的纯文本"，改造后读同一个 key 却期望 JSON 数组
+    // → 旧值骗过了"有没有缓存"的判断 → 永远跳过刷新 → parse() 每次都失败 → 静默不插。
+    // 加版本号让旧值自动作废；refreshIfStale 里另有格式校验兜底（见 isValidCache）。
+    fun cacheKey(assistantId: String) = "self_notes_v2_$assistantId"
 
-    private fun cacheTsKey(assistantId: String) = "self_notes_${assistantId}_ts"
+    private fun cacheTsKey(assistantId: String) = "self_notes_v2_${assistantId}_ts"
+
+    /** v1 时代的旧 key（纯文本格式）—— 只为顺手清掉它，不再读写 */
+    private fun legacyCacheKey(assistantId: String) = "self_notes_$assistantId"
+
+    private fun legacyCacheTsKey(assistantId: String) = "self_notes_${assistantId}_ts"
+
+    /**
+     * 缓存能不能用：必须能解析成「非空 JSON 数组」。
+     *
+     * 只判 `cached != null` 是不够的 —— 旧格式（纯文本）会骗过它，
+     * 让刷新永远被跳过、每次渲染都失败（2026-09-13 宝实测浮现不出现，就是这么来的）。
+     */
+    private fun isValidCache(json: String?): Boolean =
+        !json.isNullOrBlank() && parse(json)?.isNotEmpty() == true
 
     private data class Note(val title: String, val content: String, val date: String)
 
@@ -64,11 +82,24 @@ object SelfNoteSurfacing {
     ) {
         val cached = prefs.getString(cacheKey(assistantId), null)
         val ts = prefs.getLong(cacheTsKey(assistantId), 0L)
-        if (cached != null && nowMs - ts <= CACHE_TTL_MS) return
+        if (isValidCache(cached) && nowMs - ts <= CACHE_TTL_MS) return
+
+        // 顺手清掉 v1 时代的旧值（纯文本格式 + 旧 key）——留着也没用，只会占地方
+        prefs.edit()
+            .remove(legacyCacheKey(assistantId))
+            .remove(legacyCacheTsKey(assistantId))
+            .apply()
 
         val notes = runCatching { service.querySelfNotes(limit = MAX_NOTES).getOrNull() }.getOrNull()
-            ?: return
-        if (notes.isEmpty()) return
+        if (notes == null) {
+            // 静默失败是这次查不出原因的元凶（2026-09-13）：失败必须留痕
+            AppLogBuffer.log(TAG, "Self notes refresh FAILED（查询失败，保持原样）")
+            return
+        }
+        if (notes.isEmpty()) {
+            AppLogBuffer.log(TAG, "Self notes refresh: 库里没有笔记")
+            return
+        }
 
         val arr = JSONArray()
         notes.forEach { n ->
@@ -96,15 +127,25 @@ object SelfNoteSurfacing {
      * @return 该插进上下文的那条 assistant 消息；缓存空 / 解析失败 / 没笔记 → null（不插）
      */
     fun buildMessage(json: String?, tick: Long): UIMessage? {
-        val notes = parse(json) ?: return null
-        if (notes.isEmpty()) return null
+        val notes = parse(json)
+        if (notes == null) {
+            AppLogBuffer.log(TAG, "surfacing 跳过：缓存无法解析（len=${json?.length ?: 0}）")
+            return null
+        }
+        if (notes.isEmpty()) {
+            AppLogBuffer.log(TAG, "surfacing 跳过：缓存里没有笔记")
+            return null
+        }
 
         val size = notes.size
         val idx = (((tick % size) + size) % size).toInt()
         val note = notes[idx]
 
         val body = note.content.trim()
-        if (body.isBlank()) return null
+        if (body.isBlank()) {
+            AppLogBuffer.log(TAG, "surfacing 跳过：挑到的那条正文为空（idx=$idx）")
+            return null
+        }
 
         val text = buildString {
             append("【浮现·")

@@ -989,6 +989,11 @@ class GenerationHandler(
             if (surfacingMsg != null) {
                 addAll(ctxMessages.toMutableList().apply { add(SelfNoteSurfacing.SLOT_INDEX, surfacingMsg) })
             } else {
+                // 没插上时留个痕（2026-09-13：这次"浮现不出现"排查时，这条链路全程无声）
+                AppLogBuffer.log(
+                    "SelfNoteSurfacing",
+                    "surfacing 未插入：ctx=${ctxMessages.size} jsonLen=${selfNotesJson?.length ?: 0} windowFirst=${windowFirstIndex ?: -1}"
+                )
                 addAll(ctxMessages)
             }
             // 实时时间戳（宝的方案 2026-08-18）：不动原机制（长时间离开才注入一次的时间注入保留），
