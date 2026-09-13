@@ -521,7 +521,7 @@ class GenerationHandler(
                 val nowMs = System.currentTimeMillis()
                 recentEventsText = prefs.getString(cacheKey, null)
                 ongoingEventsText = prefs.getString("ongoing_events_${assistant.id}", null)
-                selfNotesJson = prefs.getString(SelfNoteSurfacing.cacheKey(assistant.id), null)
+                selfNotesJson = prefs.getString(SelfNoteSurfacing.cacheKey(assistant.id.toString()), null)
                 val cacheTs = prefs.getLong("${cacheKey}_ts", 0L)
                 // ===== 裁剪对齐优化（2026-09-09 宝拍板）：15 分钟时间节奏 → 本地消息节拍 =====
                 // 云端（incremental_listener/archive）异步按批总结事件，本地只管按自己的拍子去拿——
@@ -596,7 +596,7 @@ class GenerationHandler(
                     // 自指区缓存（2026-09-13 改造：从"拼好的文本"改成"笔记列表 JSON"）
                     // 浮现要按窗口起点轮换（每裁一组换一条），所以必须存列表结构——拼成一段字符串就挑不出来了。
                     // 刷新逻辑收进 SelfNoteSurfacing.refreshIfStale（同样 24h TTL，只换了存储形态）。
-                    SelfNoteSurfacing.refreshIfStale(prefs, assistant.id, service, nowMs)
+                    SelfNoteSurfacing.refreshIfStale(prefs, assistant.id.toString(), service, nowMs)
 
                     if (events.isNotEmpty()) {
                         val today = java.time.LocalDate.now().toString()
