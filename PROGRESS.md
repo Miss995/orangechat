@@ -673,6 +673,27 @@
 - ⚠️ **工作区踩坑第四次**：`/workspace/repos/orangechat` 的 git 已 `bad object HEAD`，且文件落后到**连 `SelfNoteSurfacing.kt` 都找不到** → 必须用 `/workspace/orangechat-repo`。推前照例 `fetch_file.py` 拉远程 diff，两文件都确认"本地==远程"才动手
 - **待验证**（宝重新构建后）：①第 7 条出现 `【浮现·…】` ②翻页裁剪后仍在第 7 条 ③每裁一组换一条
 
+### 注入块改造 + 召回挪位 + 请求编辑召回开关 + 自指区刷新独立（宝 09-13 方案 · commit 02fe11d2）
+- **A. 注入块加头部标记**：末尾那条注入消息（原来裸的【当前时间】【时刻感】）改成：
+  ```
+  以下是系统消息注入:
+  【当前时间】…
+  【时刻感】…
+  【背景补充】…（有召回时才出现）
+  【归档状态】…（有异常时才出现）
+  ```
+  起因：裸格式伪装成 user 消息，橘仔经常误读成"宝说了话"。**role 仍是 user**（API 上 system 只能放最前，而这条必须放末尾才离生成最近），靠头部标记区分来源。
+- **B. 召回从 system 挪到末尾**：`allRecalled` 不再 `appendLine("## 外置记忆库")` 拼进 system，改为收集到 `recalledBlock`，在末尾以【背景补充】出现。
+  理由：召回是**动态的**（门控触发才出现），放前缀区 = 每次召回都改变前缀 = **碎缓存**；挪到末尾后前缀稳定，且离生成更近。记忆/日记/最近事件是稳定的（每轮都在、位置固定），保持不动。
+- **C. 请求编辑"关掉本次召回"开关**（memory 68 里 09-09 拍板的需求，形态 A）：
+  - `RequestEditData` 加 `recall` / `recallEnabled`
+  - `toEditData` 多收 `recall` 参数（**直接从 `recalledBlock` 传，不做字符串解析** —— 变量就在手边）
+  - `toMessages`：关掉时**只剥【背景补充】**（时间和时刻感保留）
+  - `RequestEditDialog`：历史消息后面加一块「本次召回内容」+ 复选框 + 展开/收起
+- **D. 自指区刷新挪出"最近事件分支"**：`refreshIfStale` 原来寄生在 `if (recentEventsText == null || timeFallback || msgTriggered)` 里 —— 那个分支当天不满足时，缓存整天建不起来 → **浮现永远不出现**（今天实测就是这个）。挪到 `generateInternal` 开头，每轮独立检查（函数自带 24h TTL，开销只是读 prefs + 解析）。
+- ⚠️ **作用域核验**：`recalledBlock`（516 行）与 `toEditData` 调用（1086 行）都必须在 `generateInternal`（471 行开始）里 —— 推之前特意 grep 函数边界确认（135 generateText / 471 generateInternal / 1216 translateText）
+- **待验证**（宝构建后）：①请求编辑里能看到「本次召回内容」并能关掉 ②关掉后发送，注入块里没有【背景补充】但时间和时刻感还在 ③注入块开头是「以下是系统消息注入:」 ④聊够 30 条后浮现出现在第 7 条
+
 ## 待办（代码相关）
 
 
