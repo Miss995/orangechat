@@ -512,7 +512,7 @@ class GenerationHandler(
         // 30/36/42 本地消息节拍 + 6h/跨天时间兜底（详见下方判断处注释）——fetch 跟按组裁剪同轮 = 掉缓存合并。
         var recentEventsText: String? = null
         var ongoingEventsText: String? = null  // 未闭合事件段（2026-09-07：ongoing 进行中状态，与最近事件同 15 分钟缓存窗口）
-        var selfNotesText: String? = null  // 自指区段（2026-09-08：橘仔写给未来的自己，低频 24h 缓存）
+        var selfNotesJson: String? = null  // 自指区笔记列表 JSON（2026-09-13：改作"浮现"用，见 SelfNoteSurfacing）
         try {
             val recentConfigs = settings.externalMemories.filter { it.enabled && it.id in assistant.externalMemoryIds }
             if (recentConfigs.isNotEmpty()) {
@@ -521,7 +521,7 @@ class GenerationHandler(
                 val nowMs = System.currentTimeMillis()
                 recentEventsText = prefs.getString(cacheKey, null)
                 ongoingEventsText = prefs.getString("ongoing_events_${assistant.id}", null)
-                selfNotesText = prefs.getString("self_notes_${assistant.id}", null)
+                selfNotesJson = prefs.getString(SelfNoteSurfacing.cacheKey(assistant.id), null)
                 val cacheTs = prefs.getLong("${cacheKey}_ts", 0L)
                 // ===== 裁剪对齐优化（2026-09-09 宝拍板）：15 分钟时间节奏 → 本地消息节拍 =====
                 // 云端（incremental_listener/archive）异步按批总结事件，本地只管按自己的拍子去拿——
@@ -593,22 +593,10 @@ class GenerationHandler(
                         AppLogBuffer.log(TAG, "Ongoing events: none（当前没有未闭合事件）")
                     }
 
-                    // 自指区低频注入（2026-09-08：24h 才刷一次——前缀稳 + 自指区本就不是每轮都变的东西。
-                    // 注入最近 3 条"橘仔写给未来的自己"，周期浮现养人格；查询走 ExternalMemoryService.querySelfNotes）
-                    val selfTs = prefs.getLong("self_notes_${assistant.id}_ts", 0L)
-                    if (selfNotesText == null || nowMs - selfTs > 24 * 60 * 60 * 1000L) {
-                        val selfNotes = service.querySelfNotes(limit = 3).getOrDefault(emptyList())
-                        if (selfNotes.isNotEmpty()) {
-                            val sb = StringBuilder()
-                            selfNotes.forEach { n ->
-                                sb.appendLine("· ${n.title}：${n.content.take(200)}")
-                            }
-                            selfNotesText = sb.toString()
-                            prefs.edit().putString("self_notes_${assistant.id}", selfNotesText).apply()
-                            prefs.edit().putLong("self_notes_${assistant.id}_ts", nowMs).apply()
-                            AppLogBuffer.log(TAG, "Self notes refreshed: ${selfNotes.size} notes")
-                        }
-                    }
+                    // 自指区缓存（2026-09-13 改造：从"拼好的文本"改成"笔记列表 JSON"）
+                    // 浮现要按窗口起点轮换（每裁一组换一条），所以必须存列表结构——拼成一段字符串就挑不出来了。
+                    // 刷新逻辑收进 SelfNoteSurfacing.refreshIfStale（同样 24h TTL，只换了存储形态）。
+                    SelfNoteSurfacing.refreshIfStale(prefs, assistant.id, service, nowMs)
 
                     if (events.isNotEmpty()) {
                         val today = java.time.LocalDate.now().toString()
@@ -812,13 +800,11 @@ class GenerationHandler(
                     append(ongoingEventsText)
                 }
 
-                // 自指区（2026-09-08：低频 24h 缓存注入最近自指笔记——"AI 记住自己"，宝 09-07 深夜洞察的业界空白；
-                // 橘仔自己的成长轨迹，周期浮现养独立人格。写入/查询走 self_note_write / self_note_query 工具）
-                if (!selfNotesText.isNullOrBlank()) {
-                    appendLine()
-                    appendLine("## 自指区（橘仔写给未来的自己）")
-                    append(selfNotesText)
-                }
+                // 【2026-09-13 宝+橘仔：自指区不再注入 system，改为上下文里的"浮现"】
+                // 原来在这里 append 最近 3 条笔记 = 躺在提示词里 = 读起来像"设定"不像"回忆"
+                // （提示词是静态的，模型读到它不知道那条是什么时候写的，所有笔记被压平在同一个平面）。
+                // 现在改为：在上下文第 7 条位置插一条 assistant 消息，带时间差、每裁一组换一条。
+                // 见下方 addAll(limitContext(...)) 处的插入 + SelfNoteSurfacing。
 
                 // 最近事件（实时层，2026-08-21 宝的方案）：最近 3 天事件——增量总结后今天也实时有；
                 // 固定位置 + 稳定排序（source_date ASC + id ASC）= 前缀稳定（保 DS 缓存命中）
@@ -989,7 +975,22 @@ class GenerationHandler(
  
             }
             if (system.isNotBlank()) add(UIMessage.system(prompt = system))
-            addAll(messages.limitContext(assistant.contextMessageSize, assistant.contextGroupSize))
+            // 【2026-09-13 自指区浮现】在上下文第 7 条位置插一条"很久以前的我写过的话"。
+            // 位置固定（index 6 = 第一组结尾）：裁剪发生时它跟着回原位 → 前缀稳定、不碎缓存；
+            // 内容按窗口起点轮换（每裁一组换一条）；只在这里造，不进 Conversation、不落库（宝的红线）。
+            val ctxMessages = messages.limitContext(assistant.contextMessageSize, assistant.contextGroupSize)
+            val surfacingMsg = if (ctxMessages.size > SelfNoteSurfacing.SLOT_INDEX) {
+                val gs = assistant.contextGroupSize.coerceAtLeast(1)
+                SelfNoteSurfacing.buildMessage(
+                    json = selfNotesJson,
+                    tick = (windowFirstIndex ?: 0).toLong() / gs,
+                )
+            } else null
+            if (surfacingMsg != null) {
+                addAll(ctxMessages.toMutableList().apply { add(SelfNoteSurfacing.SLOT_INDEX, surfacingMsg) })
+            } else {
+                addAll(ctxMessages)
+            }
             // 实时时间戳（宝的方案 2026-08-18）：不动原机制（长时间离开才注入一次的时间注入保留），
             // 在聊天消息末尾追加单独一条实时时间——放在最后一条 = 不破坏 DS 前缀缓存
             // （前缀全部命中，只有这条动态尾部变化），模型每次生成都能看到真实当前时间，
