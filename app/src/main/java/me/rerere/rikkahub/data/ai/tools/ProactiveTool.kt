@@ -46,18 +46,26 @@ fun buildTriggerProactiveMessageTool(context: Context): Tool = Tool(
                     put("type", "string")
                     put("description", "Optional: why you are waking up. Injected into the prompt as 「你这次醒来的目的」 so the AI knows what it planned to do (e.g. '提醒宝睡觉').")
                 })
+                put("label", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Optional: 这次唤醒的名字（例如「园丁时刻」）。它会成为唤醒消息的开头标记「【主动唤醒回合·X】」，让 AI 一眼认出这是唤醒回合、而不是历史里的一条普通消息。建议每个定时 workflow 都填自己的名字。")
+                })
             }
         )
     },
     execute = { args ->
         val params = args.jsonObject
         val reason = params["reason"]?.jsonPrimitive?.contentOrNull ?: ""
+        val label = params["label"]?.jsonPrimitive?.contentOrNull ?: ""
         try {
             val intent = Intent(context, ProactiveMessageTriggerService::class.java).apply {
                 putExtra(ProactiveMessageTriggerService.EXTRA_FORCE_TRIGGER, true)
                 putExtra(ProactiveMessageTriggerService.EXTRA_AI_TRIGGER, true)
                 if (reason.isNotBlank()) {
                     putExtra(ProactiveMessageTriggerService.EXTRA_AI_TRIGGER_REASON, reason)
+                }
+                if (label.isNotBlank()) {
+                    putExtra(ProactiveMessageTriggerService.EXTRA_AI_TRIGGER_LABEL, label)
                 }
             }
             context.startForegroundService(intent)

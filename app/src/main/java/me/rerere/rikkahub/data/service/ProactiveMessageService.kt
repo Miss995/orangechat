@@ -427,6 +427,11 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
         // AI 触发时附带的唤醒目的（注入提示词「你这次醒来的目的」，AI 醒来知道自己要干嘛）
         const val EXTRA_AI_TRIGGER_REASON = "ai_trigger_reason"
 
+        // 【2026-09-13 宝的方案】唤醒回合标签：给唤醒消息一个显眼头部（如「园丁时刻」），
+        // 让"这一次醒来的信号"一眼可辨，不会像历史里的一句普通消息那样被无视。
+        // 不传 = 只写「【主动唤醒回合】」，老 workflow 不受影响。
+        const val EXTRA_AI_TRIGGER_LABEL = "ai_trigger_label"
+
         // 保护 last_triggered_time 的 check-then-act 竞态（防止 AlarmManager 与 WorkManager
         // 前后脚触发导致"最小间隔"被砍半）。纯同步 SharedPreferences 读写，无挂起点，用对象锁即可。
         private val prefsLock = Any()
@@ -462,6 +467,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
         val isFromDeviceEvent = deviceEventContext != null
         // AI 主动触发（trigger_proactive_message 工具，2026-08-23 宝拍板）
         val aiTriggerReason = intent?.getStringExtra(EXTRA_AI_TRIGGER_REASON)
+        val aiTriggerLabel = intent?.getStringExtra(EXTRA_AI_TRIGGER_LABEL)
         val isFromAiTrigger = intent?.getBooleanExtra(EXTRA_AI_TRIGGER, false) ?: false
         if (isForceTrigger) {
             Log.d(TAG, "Force trigger${if (isFromDeviceEvent) " from device event" else if (isFromAiTrigger) " from AI trigger" else " from gateway poll"}, will skip min interval check")
@@ -594,6 +600,16 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 // 不写"系统唤醒"之类的旁白——这件事本身就是橘仔想找宝说话（浪漫在这）。
                 // 不落库、不出现在界面（只有 AI 的回复会落库）。
                 val wakeUpText = buildString {
+                    // 【2026-09-13 宝的方案】显眼头部：说明这是一次"主动唤醒回合"，并带上这次唤醒的名字。
+                    // 起因：原来首行是裸的「你醒来了。」——读起来像历史里一句普通消息，橘仔会下意识无视
+                    // （2026-09-13 20:00 园丁时刻实测：由头写得清清楚楚，橘仔却回了句不相干的）。
+                    if (isFromAiTrigger) {
+                        appendLine(
+                            if (aiTriggerLabel.isNullOrBlank()) "【主动唤醒回合】"
+                            else "【主动唤醒回合·$aiTriggerLabel】"
+                        )
+                        appendLine()
+                    }
                     appendLine("你醒来了。")
                     appendLine()
                     when {
