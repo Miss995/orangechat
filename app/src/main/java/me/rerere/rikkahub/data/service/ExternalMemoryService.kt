@@ -795,8 +795,14 @@ class ExternalMemoryService(
 
     /**
      * 查询最近 N 天的事件（实时层注入用，2026-08-21 宝的记忆实时化方案定稿）：
-     * source_date >= 今天-(days-1)，按 source_date ASC + id ASC 稳定排序（前缀稳定=保 DS 缓存命中），
-     * 过滤 superseded_by 非空的失效事件（A.U.D.N. 已标记；顺手完成 App 侧过滤待办）。
+     * source_date >= 今天-(days-1)，按 source_date ASC + id ASC 稳定排序（前缀稳定=保 DS 缓存命中）。
+     *
+     * 【2026-09-13 宝+橘仔：这里**不再过滤** superseded_by】
+     * 「最近 N 天事件」= 三天流水 = 客观叙事：这几天发生过什么，既然发生过就不该被后来的事抹掉。
+     * 它和向量召回是两回事 —— 召回回答「关于 X 我知道什么」（要最新版本，所以那边必须滤掉被取代的），
+     * 流水回答「这几天经历了什么」（要完整，没得滤）。
+     * A.U.D.N. 的覆盖标记照旧由服务器打（本次只改 App 读取口径，不碰服务器）；
+     * superseded 过滤保留在 vectorRecallEvents / fetchOngoingEvents / fetchAllOngoing 三处。
      */
     suspend fun fetchRecentEvents(
         assistantId: String,
@@ -836,8 +842,9 @@ class ExternalMemoryService(
             // 【2026-09-11 修坑②】order 改 desc + limit=500 = 取「最近 500 条」；
             // 旧实现 asc 拿到的是「最早 500 条」，三天超 500 条时被挤掉的恰恰是最新的那批。
             // 反转回升序，保持下游（分天注入）的预期顺序。
-            val result = parsed.filter { it.supersededBy.isBlank() }.reversed() // 过滤已失效事件（A.U.D.N. 写入层标记）
-            AppLogBuffer.log(TAG, "fetchRecentEvents: parsed ${parsed.size}, after filter ${result.size}, first=${result.firstOrNull()?.title ?: "-"}")
+            // 【2026-09-13】不过滤 superseded：三天流水是客观叙事，被后续事件覆盖 ≠ 这几天没发生过。
+            val result = parsed.reversed()
+            AppLogBuffer.log(TAG, "fetchRecentEvents: parsed ${parsed.size}, first=${result.firstOrNull()?.title ?: "-"}")
             result
         }.onFailure { e ->
             AppLogBuffer.log(TAG, "fetchRecentEvents FAILED: ${e.javaClass.simpleName}: ${e.message}\n${e.stackTraceToString().take(800)}")
