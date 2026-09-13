@@ -657,6 +657,22 @@
 - ⚠️ `push_via_api_multi.py` 要传**绝对路径**（传相对路径会 FileNotFoundError）。
 - **待验证**（宝构建后）：①请求编辑里第 7 条是 `【浮现·…】` ②翻页裁剪后仍在第 7 条 ③每裁一组换一条
 
+### 浮现 v1 修复：v1 文本缓存骗过 TTL 判断（宝 09-13 实测 · commit 0eb2eca0）
+- **现象**：宝装了含 f68ad31e 的新包，但请求编辑里第 7 条**没有** `【浮现·…】`；system 段里旧的「## 自指区」也**已按设计删除** → 两头都空。橘仔自己的上下文同样看不到。
+- **排查路径**（几个岔路都记一下）：
+  1. 先猜"装的是旧包" → **排除**：宝确认 system 里已经没有「## 自指区」→ 新代码在跑
+  2. 再猜"缓存空" → 方向对，原因错（见根因）
+  3. 查日志查不到 —— 日志环只留 500 条，生成时被 StreamChunk 瞬间淹没 → **改用"主动调一次 self_note_query、然后立刻读日志"**，拿到 `querySelfNotes: HTTP 200`
+  4. **关键证据**：日志里只有 `limit=3` 那一次（工具触发），**没有 `limit=50`**（refreshIfStale 触发）→ 说明刷新函数**走到了"直接 return"那一步**，根本没发请求
+- **根因**：`refreshIfStale` 开头是 `if (cached != null && 没过 24h) return`。而 **v1 时代同一个 key（`self_notes_<id>`）存的是"拼好的纯文本"**（旧实现），改造后读同一个 key 却期望 JSON 数组 → **旧值让 `cached != null` 成立 → 永远跳过刷新 → 每次 `parse()` 失败 → `buildMessage` 返回 null → 静默不插**。全程零日志。
+- **修法（三项一起上）**：
+  1. **cacheKey 加版本号** → `self_notes_v2_<id>`（旧值自动作废）+ 顺手 `remove` 掉 v1 旧 key
+  2. **新增 `isValidCache()`**：缓存必须能解析成「非空 JSON 数组」才算有效 —— **治本**，以后再改格式也不会踩同一个坑
+  3. **失败留痕**：查询失败 / 库里没笔记 / 缓存解析失败 / 挑到的正文为空，四处都补了 `AppLogBuffer.log`（**静默失败是这次查不出原因的元凶**）
+  4. `GenerationHandler` 未插入时也打一条（带 ctx 条数 / json 长度 / windowFirst）
+- ⚠️ **工作区踩坑第四次**：`/workspace/repos/orangechat` 的 git 已 `bad object HEAD`，且文件落后到**连 `SelfNoteSurfacing.kt` 都找不到** → 必须用 `/workspace/orangechat-repo`。推前照例 `fetch_file.py` 拉远程 diff，两文件都确认"本地==远程"才动手
+- **待验证**（宝重新构建后）：①第 7 条出现 `【浮现·…】` ②翻页裁剪后仍在第 7 条 ③每裁一组换一条
+
 ## 待办（代码相关）
 
 
