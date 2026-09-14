@@ -758,3 +758,23 @@
 - ✅缓存命中·窗口裁剪组大小同步（已推 main，待宝构建验证）（宝问"组和组对上了吗"）：窗口裁剪组大小从写死 4 改为读对话关联 assistant 的 contextGroupSize（设置里"多少条一组"，与 limitContext 组对齐同源同步）；读不到回退默认 4；groupSize≤1 = 按条裁剪旧行为
 - ✅显示bug·二次调整修复（已推 main，待宝构建验证）（宝 2026-08-26 "改了好多次，这次要确定"）：日志实锤滚动在插入后 3.5s 才发生→根因=USER 插入时 isScrollInProgress=true 被跳过滚动，等 AI 占位插入才滚=二次调整；修法=最后一条是 USER（发送消息）时无视滚动中状态直接滚到底+scrollCheck 诊断日志（userSend/scrollInProgress/atBottom）双保险
 - ✅语音消息进记忆库修复（已推 main，待宝构建验证）（宝 2026-09-04 发现"语音怎么进记忆库啊完蛋"）：根因=ChatService 保存用户消息到外置记忆库时只提取 UIMessagePart.Text（VoiceMessage part 被滤掉）→ Supabase chat_messages content="" → archive_daily 每晚归档拉不到语音内容，语音聊天全丢！修复：①ChatService.kt 用户消息外置库保存 messageText 提取加 VoiceMessage 分支（transcript 非空取 transcript，空取"[语音消息]"）②Message.kt toText() 补 VoiceMessage 分支（一致性修复：通知/标题等 toText 调用点也受益）；发送给 AI 的链路不受影响（走 VoiceMessageTransformer 单独转换，不走 toText）
+
+## 2026-09-14 提示词结构统一（commit d4e1ea57）
+
+宝构建后报了三个问题，一起修了：
+
+1. **请求编辑里【】块显示不出来**：根因 = `RequestEditController.splitSystem` 只认 `\n## ` 切节；今天下午把「日记 / 正在进行 / 最近事件 / 外置记忆库」的 `## ` 标题改成【】之后，这些块不再产生切分点 → 全部并进上一节。
+   修法：`split(Regex("\n(?=## |【)"))` —— 两种标记都认；content 存完整原文，重组直接 join（拼回原文，不动内容）。
+2. **RikkaHub 自带英文提示词残留**（宝：rikk 本身的那个英文那些好像都没改）：
+   - `## Skip Reply` + 英文 → 【跳过回复】+ 中文
+   - `## Message Bubbles` + 英文 → 【消息气泡】+ 中文
+   - `## Code Block Rules (MUST FOLLOW)` + 英文 → 【代码块规则】（必须遵守）+ 中文
+   - `## 屏幕跳转能力` / `## 斜杠命令模式（当前生效）` → 标题统一成【】
+   - 结果：系统提示词里已无 `## ` 标题，全是【】格式
+3. **工作区说明中文化**：源文件 = `app/src/main/java/me/rerere/rikkahub/data/ai/transformers/WorkspaceReminderTransformer.kt`（`buildWorkspacePrompt`）；工作区 shell READY 时由 transformer **append 到第一条 system 消息末尾**。
+   - 全英文 → 中文，并加【工作区】标题（请求编辑里可单独分节）
+   - ⚠️ 位置（system 末尾）**待宝定**：挪 or 不挪
+
+**踩坑**：精简副本 `/workspace/orangechat-repo` 缺 `data/ai/transformers/` 目录 → 在它里面全仓库都搜不到工作区说明那段（搜代码要留意副本完整度，缺目录会误导）。
+
+**推送方式**：仓库 .git 坏了（bad object HEAD）→ 走 `scripts/push_via_api_multi.py`（GitHub API 多文件）。推前先拉远程对比基线（改前备份 == 远程 main ✅）。
