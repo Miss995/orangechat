@@ -511,7 +511,7 @@ class GenerationHandler(
         // （source_date ASC + id ASC）= 前缀稳定（保 DS 缓存命中）。本地缓存节奏（2026-09-09 裁剪对齐优化）：
         // 30/36/42 本地消息节拍 + 6h/跨天时间兜底（详见下方判断处注释）——fetch 跟按组裁剪同轮 = 掉缓存合并。
         var recentEventsText: String? = null
-        var ongoingEventsText: String? = null  // 未闭合事件段（2026-09-07：ongoing 进行中状态，与最近事件同 15 分钟缓存窗口）
+        var ongoingEventsText: String? = null  // 未闭合事件段（2026-09-07：ongoing 进行中状态，与最近事件同节拍（30/36/42 条滚动 + 6h/跨天兜底））
         var selfNotesJson: String? = null  // 自指区笔记列表 JSON（2026-09-13：改作"浮现"用，见 SelfNoteSurfacing）
         // 召回内容块（2026-09-13 宝的方案）：动态召回不放 system 前缀区，改在请求末尾随"系统消息注入"块一起给，
         // 免得每次召回都改变前缀（碎缓存），同时离生成更近。
@@ -739,19 +739,55 @@ class GenerationHandler(
                     append(effectiveSystemPrompt)
                 }
  
-                // 代码文件命名和ZIP打包功能说明（稳定前缀，置于动态内容之前以提升前缀缓存命中率）
-                appendLine()
-                append(buildCodeBlockPrompt())
  
+                appendLine("【工具】（每个工具自己的用法说明）")
                 // 工具prompt（稳定前缀）
                 tools.forEach { tool ->
                     appendLine()
                     append(tool.systemPrompt(model, messages))
                 }
+
+                // 输出规则（2026-09-14 宝+橘仔：原来散在末尾的跳过回复/屏幕跳转/分气泡，归拢到工具之后）
+                appendLine()
+                appendLine("【输出规则】")
+                appendLine()
+                append(buildCodeBlockPrompt())
+
+                // 允许跳过回复
+                if (assistant.allowSkipReply) {
+                    appendLine()
+                    appendLine()
+                    appendLine("## Skip Reply")
+                    appendLine("If you determine that no reply is needed (e.g., the user's message doesn't require a response, or you have nothing meaningful to add), you may reply with exactly `[SKIP]` (without any other text). This message will be hidden from the user. Use this sparingly and only when truly appropriate.")
+                }
+
+                // 屏幕跳转能力（AI总是可以跳转，不需要开关）
+                if (true) {
+                    appendLine()
+                    appendLine()
+                    appendLine("## 屏幕跳转能力")
+                    appendLine("你可以在回复末尾追加 [JUMP] 标记（单独一行）来把聊天界面拉到用户屏幕最前面。")
+                    appendLine("适用场景：")
+                    appendLine("- 用户说要去别的应用，你觉得需要把用户拉回来时")
+                    appendLine("- 你觉得接下来的内容需要用户立即看到时")
+                    appendLine("不适用场景：")
+                    appendLine("- 一般闲聊不需要跳转")
+                    appendLine("- 用户正在跟你正常对话时不需要跳转")
+                    appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
+                }
+ 
+                // 分气泡: 告知模型它自己能控制消息如何被拆成多个气泡
+                if (assistant.splitBubbleByLine) {
+                    appendLine()
+                    appendLine()
+                    appendLine("## Message Bubbles")
+                    appendLine("Your reply will be automatically split into separate chat bubbles at every line break (\\n) you write, similar to how a person sends several short texts in a row instead of one long message. You are fully in control of this: write a line break whenever you want the previous thought/sentence to appear as its own bubble, and keep things on the same line when they belong together. Do not insert blank lines purely for spacing — every line break becomes a new bubble, so use them intentionally. Exception: line breaks inside fenced code blocks (```) and Markdown tables are preserved as-is and will NOT create new bubbles, since those must stay intact as a single block.")
+                }
  
                 // 记忆（动态内容统一放到稳定前缀之后）
                 if (assistant.enableMemory) {
                     appendLine()
+                    appendLine("【长期记忆】（你的手记，记录你想记录的事实）")
                     append(buildMemoryPrompt(memories = memories))
                 }
 
@@ -799,7 +835,7 @@ class GenerationHandler(
                         if (!diaryText.isNullOrBlank()) {
                             Log.i(TAG, "Diary [$source] injected ($cacheKey)")
                             appendLine()
-                            appendLine("## 日记")
+                            appendLine("【日记】（前一天的一篇，一天更新一次）")
                             append(diaryText)
                         }
                     }
@@ -811,7 +847,7 @@ class GenerationHandler(
                 // 手伤恢复/吃药调药/进行中的项目约定；写入端 archive_daily_v3 一筛 LLM 标 ongoing 宁少勿多）
                 if (!ongoingEventsText.isNullOrBlank()) {
                     appendLine()
-                    appendLine("## 正在进行（未闭合）")
+                    appendLine("【进行中】（你们还没收尾的事）")
                     append(ongoingEventsText)
                 }
 
@@ -825,7 +861,7 @@ class GenerationHandler(
                 // 固定位置 + 稳定排序（source_date ASC + id ASC）= 前缀稳定（保 DS 缓存命中）
                 if (!recentEventsText.isNullOrBlank()) {
                     appendLine()
-                    appendLine("## 最近事件（最近 3 天）")
+                    appendLine("【最近 3 天】（你们的三天，参考用，不是“现在”）")
                     append(recentEventsText)
                 }
  
@@ -939,36 +975,6 @@ class GenerationHandler(
                     }
                 }
  
-                // 允许跳过回复
-                if (assistant.allowSkipReply) {
-                    appendLine()
-                    appendLine()
-                    appendLine("## Skip Reply")
-                    appendLine("If you determine that no reply is needed (e.g., the user's message doesn't require a response, or you have nothing meaningful to add), you may reply with exactly `[SKIP]` (without any other text). This message will be hidden from the user. Use this sparingly and only when truly appropriate.")
-                }
-
-                // 屏幕跳转能力（AI总是可以跳转，不需要开关）
-                if (true) {
-                    appendLine()
-                    appendLine()
-                    appendLine("## 屏幕跳转能力")
-                    appendLine("你可以在回复末尾追加 [JUMP] 标记（单独一行）来把聊天界面拉到用户屏幕最前面。")
-                    appendLine("适用场景：")
-                    appendLine("- 用户说要去别的应用，你觉得需要把用户拉回来时")
-                    appendLine("- 你觉得接下来的内容需要用户立即看到时")
-                    appendLine("不适用场景：")
-                    appendLine("- 一般闲聊不需要跳转")
-                    appendLine("- 用户正在跟你正常对话时不需要跳转")
-                    appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
-                }
- 
-                // 分气泡: 告知模型它自己能控制消息如何被拆成多个气泡
-                if (assistant.splitBubbleByLine) {
-                    appendLine()
-                    appendLine()
-                    appendLine("## Message Bubbles")
-                    appendLine("Your reply will be automatically split into separate chat bubbles at every line break (\\n) you write, similar to how a person sends several short texts in a row instead of one long message. You are fully in control of this: write a line break whenever you want the previous thought/sentence to appear as its own bubble, and keep things on the same line when they belong together. Do not insert blank lines purely for spacing — every line break becomes a new bubble, so use them intentionally. Exception: line breaks inside fenced code blocks (```) and Markdown tables are preserved as-is and will NOT create new bubbles, since those must stay intact as a single block.")
-                }
 
                 // 斜杠命令模式：用户输入 /xxx = 直接执行工具（宝 2026-09-01 拍板，复用 AI 工具链路不做 UI）
                 if (slashCommandText != null) {
