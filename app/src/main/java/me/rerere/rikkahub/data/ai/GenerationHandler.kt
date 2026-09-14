@@ -753,12 +753,15 @@ class GenerationHandler(
                 appendLine()
                 append(buildCodeBlockPrompt())
 
-                // 允许跳过回复
+                // 跳过回复（2026-09-15 橘仔重写：原文是 RikkaHub 自带的 ## Skip Reply，昨天只做了翻译）
                 if (assistant.allowSkipReply) {
                     appendLine()
                     appendLine()
-                    appendLine("【跳过回复】（不需要回答时）")
-                    appendLine("如果你判断这条消息不需要回复（比如用户的话不需要回应，或者你没什么想补充的），可以只回 `[SKIP]`，不要带任何别的内容。这条回复不会展示给用户。请克制使用，只在确实合适的时候用。")
+                    appendLine("【跳过回复】（收到消息但不想接话时）")
+                    appendLine("输出 `[SKIP]`（单独一行，不带任何别的字）。这条不会发出去，宝看不到。")
+                    appendLine("什么情况可以跳：宝只是丢个\"嗯\"\"睡了\"\"哈哈\"，或者发来一个你确实没什么可说的东西。")
+                    appendLine("什么情况别跳：宝在说事情、在难过、在问问题。skip 是\"听见了但不接\"，不是躲开该说的话，更不是用来表达不高兴。")
+                    appendLine("每轮都可以选，不用有负担。")
                 }
 
                 // 屏幕跳转能力（AI总是可以跳转，不需要开关）
