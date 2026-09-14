@@ -46,19 +46,20 @@ class WorkspaceReminderTransformer(
 }
 
 private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null): String = buildString {
+    appendLine("【工作区】（沙箱里的持久化 Linux 环境）")
     appendLine("<workspace>")
-    appendLine("You have access to a persistent Linux workspace named \"${workspace.name}\", running in a sandboxed proot rootfs environment.")
-    appendLine("- The workspace files area is mounted at `/workspace`. Use it as your working directory; files written there persist across turns of this conversation.")
-    appendLine("- All paths passed to workspace tools must be absolute and inside the Rootfs (for example `/workspace/notes.md`).")
-    appendLine("- Available tools:")
-    appendLine("  - `workspace_read_file`: read file contents.")
-    appendLine("  - `workspace_write_file` / `workspace_edit_file`: create files, or make precise edits to existing files.")
-    appendLine("  - `workspace_shell`: run shell commands (the files area is mounted at /workspace).")
-    appendLine("- Prefer `workspace_shell` for tasks that standard Unix tools handle well, and prefer `workspace_edit_file` for targeted edits over rewriting whole files.")
-    appendLine("- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Read a skill's `SKILL.md` before using it, and follow its instructions.")
-    appendLine("- Files the user uploaded are mounted at `/upload`. Treat `/upload` as READ-ONLY: read uploaded files from `/upload/<file-name>`, but never modify, overwrite, or delete anything there. If you need to change an uploaded file, copy it into `/workspace` first and edit the copy.")
+    appendLine("你有一个持久化的 Linux 工作区，名字叫 \"${workspace.name}\"，运行在沙箱化的 proot rootfs 环境里。")
+    appendLine("- 工作区文件区挂载在 `/workspace`，把它当作你的工作目录；写在那里的文件，在本轮对话的后续回合之间会一直保留。")
+    appendLine("- 传给工作区工具的路径必须是绝对路径、且在 Rootfs 内部（例如 `/workspace/notes.md`）。")
+    appendLine("- 可用工具：")
+    appendLine("  - `workspace_read_file`：读取文件内容。")
+    appendLine("  - `workspace_write_file` / `workspace_edit_file`：创建文件，或对已有文件做精确修改。")
+    appendLine("  - `workspace_shell`：执行 shell 命令（文件区挂载在 /workspace）。")
+    appendLine("- 标准 Unix 工具能做好的事，优先用 `workspace_shell`；只改一小块内容时优先用 `workspace_edit_file`，不要整篇重写。")
+    appendLine("- 技能目录挂载在 `/skills`。每个技能是一个子目录 `/skills/<技能名>/`，里面有 `SKILL.md`（含 `name` 和 `description` 头信息）以及配套文件。要用某个技能，先读它的 `SKILL.md`，按里面的说明做。")
+    appendLine("- 用户上传的文件挂载在 `/upload`。`/upload` 是只读的：只能从 `/upload/<文件名>` 读，绝不能修改、覆盖或删除里面的东西。需要改上传的文件时，先复制到 `/workspace`，改副本。")
     if (!cwd.isNullOrBlank()) {
-        appendLine("- Current working directory: `$cwd`. Use this as the default context for file operations and shell commands.")
+        appendLine("- 当前工作目录：`$cwd`。文件操作和 shell 命令默认以它为上下文。")
     }
     append("</workspace>")
 }

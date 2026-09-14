@@ -757,15 +757,15 @@ class GenerationHandler(
                 if (assistant.allowSkipReply) {
                     appendLine()
                     appendLine()
-                    appendLine("## Skip Reply")
-                    appendLine("If you determine that no reply is needed (e.g., the user's message doesn't require a response, or you have nothing meaningful to add), you may reply with exactly `[SKIP]` (without any other text). This message will be hidden from the user. Use this sparingly and only when truly appropriate.")
+                    appendLine("【跳过回复】（不需要回答时）")
+                    appendLine("如果你判断这条消息不需要回复（比如用户的话不需要回应，或者你没什么想补充的），可以只回 `[SKIP]`，不要带任何别的内容。这条回复不会展示给用户。请克制使用，只在确实合适的时候用。")
                 }
 
                 // 屏幕跳转能力（AI总是可以跳转，不需要开关）
                 if (true) {
                     appendLine()
                     appendLine()
-                    appendLine("## 屏幕跳转能力")
+                    appendLine("【屏幕跳转能力】")
                     appendLine("你可以在回复末尾追加 [JUMP] 标记（单独一行）来把聊天界面拉到用户屏幕最前面。")
                     appendLine("适用场景：")
                     appendLine("- 用户说要去别的应用，你觉得需要把用户拉回来时")
@@ -780,8 +780,8 @@ class GenerationHandler(
                 if (assistant.splitBubbleByLine) {
                     appendLine()
                     appendLine()
-                    appendLine("## Message Bubbles")
-                    appendLine("Your reply will be automatically split into separate chat bubbles at every line break (\\n) you write, similar to how a person sends several short texts in a row instead of one long message. You are fully in control of this: write a line break whenever you want the previous thought/sentence to appear as its own bubble, and keep things on the same line when they belong together. Do not insert blank lines purely for spacing — every line break becomes a new bubble, so use them intentionally. Exception: line breaks inside fenced code blocks (```) and Markdown tables are preserved as-is and will NOT create new bubbles, since those must stay intact as a single block.")
+                    appendLine("【消息气泡】（你的回复会按换行拆成多条）")
+                    appendLine("你的回复会在每个换行（\\n）处自动拆成独立的聊天气泡，就像真人连发几条短消息，而不是一条长消息。这个完全由你控制：想让上一句话单独成一个气泡，就在那里换行；属于同一句的，就留在同一行。不要为了排版而插入空行——每个换行都会变成一个气泡，所以要有意识地用。例外：围栏代码块（```）和 Markdown 表格里的换行会原样保留、不会拆成新气泡，因为它们必须保持完整。")
                 }
  
                 // 记忆（动态内容统一放到稳定前缀之后）
@@ -980,7 +980,7 @@ class GenerationHandler(
                 if (slashCommandText != null) {
                     appendLine()
                     appendLine()
-                    appendLine("## 斜杠命令模式（当前生效）")
+                    appendLine("【斜杠命令模式】（当前生效）")
                     appendLine("用户刚刚输入了一条斜杠命令：`$slashCommandText`")
                     appendLine("这不是普通聊天！请把这条命令当作指令，直接调用对应工具执行，执行完把结果简洁地告诉用户：")
                     appendLine("- `/截图` → 调用 take_screenshot 截当前屏幕")
@@ -1338,23 +1338,23 @@ private fun <T> Flow<T>.throttleLatest(periodMillis: Long): Flow<T> {
  * 构建代码块提示 - 告知AI代码文件命名和ZIP打包功能
  */
 private fun buildCodeBlockPrompt(): String = buildString {
-    appendLine("## Code Block Rules (MUST FOLLOW)")
+    appendLine("【代码块规则】（必须遵守）")
     appendLine()
-    appendLine("1. **ALWAYS name code blocks with filenames**: You MUST use the actual filename as the code block language tag instead of just the language name. This is critical for proper file saving and syntax highlighting. Examples:")
-    appendLine("   - ✅ Correct: ```MainActivity.kt instead of ```kotlin")
-    appendLine("   - ✅ Correct: ```index.html instead of ```html")
-    appendLine("   - ✅ Correct: ```styles.css instead of ```css")
-    appendLine("   - ✅ Correct: ```package.json instead of ```json")
-    appendLine("   - ✅ Correct: ```main.py instead of ```python")
-    appendLine("   - ✅ Correct: ```App.vue instead of ```vue")
-    appendLine("   - ❌ Wrong: ```kotlin, ```python, ```javascript (these don't provide filenames)")
-    appendLine("   - For code without a specific filename, use a descriptive name like ```example.ts, ```helper.py")
+    appendLine("1. **代码块一律用文件名当语言标签**：你必须用真实的文件名作为代码块的语言标签，而不是只写语言名。这关系到文件能否被正确保存、语法高亮是否生效。例如：")
+    appendLine("   - ✅ 正确：```MainActivity.kt，而不是 ```kotlin")
+    appendLine("   - ✅ 正确：```index.html，而不是 ```html")
+    appendLine("   - ✅ 正确：```styles.css，而不是 ```css")
+    appendLine("   - ✅ 正确：```package.json，而不是 ```json")
+    appendLine("   - ✅ 正确：```main.py，而不是 ```python")
+    appendLine("   - ✅ 正确：```App.vue，而不是 ```vue")
+    appendLine("   - ❌ 错误：```kotlin、```python、```javascript（这些没给出文件名）")
+    appendLine("   - 没有具体文件名的代码，用一个描述性的名字，比如 ```example.ts、```helper.py")
     appendLine()
-    appendLine("2. **ZIP Download via `write_files` tool**: Users can download code files as a ZIP ONLY when you call this tool.")
-    appendLine("   - **Full write** (first time / new files): `{\"zip_name\":\"project.zip\",\"files\":[{\"name\":\"MainActivity.kt\",\"content\":\"...\"}]}`")
-    appendLine("   - **Incremental edit** (saves tokens! For modifying existing files): `{\"zip_name\":\"project-v2.zip\",\"base_files\":\"previous\",\"edits\":[{\"name\":\"MainActivity.kt\",\"search\":\"old code\",\"replace\":\"new code\"}]}`")
-    appendLine("   - The `edits` mode applies search/replace to the files from your previous `write_files` call. Files not mentioned in `edits` keep their cached content unchanged.")
-    appendLine("   - Always use actual filenames (e.g. `MainActivity.kt`) as code block language tags, not just language names (e.g. `kotlin`).")
+    appendLine("2. **用 `write_files` 工具打包 ZIP**：只有你调用这个工具时，用户才能把代码文件下载成 ZIP。")
+    appendLine("   - **全量写入**（第一次 / 新文件）：`{\"zip_name\":\"project.zip\",\"files\":[{\"name\":\"MainActivity.kt\",\"content\":\"...\"}]}`")
+    appendLine("   - **增量修改**（省 token！改已有文件时用）：`{\"zip_name\":\"project-v2.zip\",\"base_files\":\"previous\",\"edits\":[{\"name\":\"MainActivity.kt\",\"search\":\"old code\",\"replace\":\"new code\"}]}`")
+    appendLine("   - `edits` 模式会对你上一次 `write_files` 调用里的文件做查找替换；没在 `edits` 里提到的文件，保持缓存内容不变。")
+    appendLine("   - 代码块的语言标签一律用真实文件名（如 `MainActivity.kt`），不要只写语言名（如 `kotlin`）。")
 }
 
 /**

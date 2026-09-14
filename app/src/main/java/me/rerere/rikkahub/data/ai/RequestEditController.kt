@@ -141,20 +141,31 @@ object RequestEditController {
     }
 
     /**
-     * 把 system 大字符串按 "## " 分节：
-     * 第一段（人设开头）没有标题标记，后续每段以 "## 标题" 开头。
-     * content 保存完整原文（含 "## 标题" 行），重组时直接拼接。
+     * 把 system 大字符串分节。支持两种节标题标记：
+     *  - Markdown 风格：行首 "## 标题"
+     *  - 方括号风格：行首 "【标题】……"（2026-09 提示词结构改造后启用）
+     * 第一段（人设/规则开头）没有标题标记时单独成一节。
+     * content 保存完整原文（含标题行），重组时直接拼接。
      */
     private fun splitSystem(systemText: String): List<EditSection> {
         if (systemText.isBlank()) return emptyList()
-        val parts = systemText.split("\n## ")
+        // 只在换行后紧跟 "## " 或 "【" 处切分，避免误伤正文里的中文方括号
+        val parts = systemText.split(Regex("\n(?=## |【)"))
         return parts.mapIndexed { index, part ->
-            if (index == 0) {
-                EditSection(title = "开头（人设/规则）", content = part.trim())
+            val text = part.trim()
+            val firstLine = text.lineSequence().firstOrNull().orEmpty()
+            val title = when {
+                firstLine.startsWith("## ") -> firstLine.removePrefix("## ").trim()
+                firstLine.startsWith("【") -> {
+                    val end = firstLine.indexOf('】')
+                    if (end > 0) firstLine.substring(0, end + 1) else firstLine.trim()
+                }
+                else -> ""
+            }
+            if (index == 0 && title.isEmpty()) {
+                EditSection(title = "开头（人设/规则）", content = text)
             } else {
-                val firstLine = part.substringBefore("\n")
-                val title = firstLine.trim().removePrefix("## ").trim()
-                EditSection(title = title.ifBlank { "第${index + 1}节" }, content = ("## " + part).trim())
+                EditSection(title = title.ifBlank { "第${index + 1}节" }, content = text)
             }
         }
     }
