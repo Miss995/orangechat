@@ -78,6 +78,8 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.ai.buildCodeBlockPrompt
+import me.rerere.rikkahub.data.ai.buildMemoryPrompt
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.RouteActivity
@@ -593,7 +595,9 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 // 【2026-09-12 宝拍板】主动消息的提示词已整体搬到下面的 user 消息里。
                 // 理由：放 system prompt 时，模型在消息层只看到「一条莫名的时间消息」，
                 // 看不出这是自己的唤醒回合；搬进 user 消息后，消息本身就是唤醒信号。
-                val systemPrompt = buildSystemPrompt(assistant)
+                // 工具列表要在 system prompt 之前构建：工具 prompt 属于稳定前缀的一部分
+                val tools = buildTools(settings, assistant, model, conversationId.toString())
+                val systemPrompt = buildSystemPrompt(assistant, tools, model, historyMessages)
 
                 // 【2026-09-12 宝拍板】user 消息承载「醒来的念头」：
                 // 醒来由头 / 距上次回复 / 环境上下文 / 收尾规则，全在这条消息里。
@@ -655,6 +659,17 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     settings = settings
                 ).first()
 
+                // 【2026-09-15 宝的需求】留痕：把这次唤醒真正喂进去的 system + user 内容打进日志环，
+                // 事后用 read_app_logs 筛 "ProactiveDebug" 就能查"主动消息到底看到了什么"。
+                // 日志环只留最近 500 条，属短时可见，够排查用。
+                AppLogBuffer.log(
+                    ProactiveMessageService.TAG,
+                    "ProactiveDebug label=${aiTriggerLabel ?: "-"} reason=${aiTriggerReason ?: "-"} " +
+                        "sysLen=${systemPrompt.length} userLen=${wakeUpText.length}\n" +
+                        "--- SYSTEM HEAD ---\n${systemPrompt.take(1200)}\n" +
+                        "--- USER MSG ---\n${wakeUpText.take(800)}"
+                )
+
                 // 组合完整消息列表：System + History + User Context
                 // 合并相邻同角色消息（包括 history 末尾与合成 User 消息之间可能出现的 USER-USER 相邻），避免 400
                 val messages = mergeAdjacentSameRoleMessages(
@@ -679,8 +694,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
 
                 val providerImpl = providerManager.getProviderByType(providerSetting)
 
-                // 构建工具列表（与 ChatService 保持一致）
-                val tools = buildTools(settings, assistant, model, conversationId.toString())
+                // 工具列表已在 system prompt 构建前创建（见上方 val tools）
 
                 // 主动消息场景：支持工具调用，但限制最大步数
                 // temperature 不强制默认 0.8f，保持与 GenerationHandler 一致（assistant.temperature 为 null 时不传），
@@ -914,11 +928,35 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
      * 看不出这是自己的唤醒回合；搬进 user 消息后，消息本身就是唤醒信号。
      * 同时顺应"由头只是由头"的调子——不写系统旁白，保持"AI 主动来找你"的自然。
      */
-    private suspend fun buildSystemPrompt(assistant: Assistant): String {
+    /**
+     * 构建主动消息的 system prompt。
+     *
+     * 【2026-09-15 宝的方案】与聊天路径（GenerationHandler.generateText）共用同一套「稳定前缀」，
+     * 顺序严格对齐：助手设定 → 代码块说明 → 工具 prompt → 记忆。
+     * 目的：让主动消息请求的前缀与聊天请求一致，吃满 DeepSeek 的前缀缓存。
+     * 维护提醒：GenerationHandler 里这段前缀若有增删，这里要同步（同顺序、同函数）。
+     */
+    private suspend fun buildSystemPrompt(
+        assistant: Assistant,
+        tools: List<Tool>,
+        model: Model,
+        contextMessages: List<UIMessage>,
+    ): String {
         return buildString {
             if (assistant.systemPrompt.isNotBlank()) {
                 append(assistant.systemPrompt)
             }
+
+            // 代码块命名 / ZIP 说明（与聊天路径同一个函数，保证逐字节一致）
+            appendLine()
+            append(buildCodeBlockPrompt())
+
+            // 工具 prompt（与聊天路径同顺序、同调用方式）
+            tools.forEach { tool ->
+                appendLine()
+                append(tool.systemPrompt(model, contextMessages))
+            }
+
             if (assistant.enableMemory) {
                 val memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
@@ -927,11 +965,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 }
                 if (memories.isNotEmpty()) {
                     appendLine()
-                    appendLine()
-                    appendLine("## 记忆")
-                    memories.forEach { memory ->
-                        appendLine("- ${memory.content}")
-                    }
+                    append(buildMemoryPrompt(memories = memories))
                 }
             }
         }

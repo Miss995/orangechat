@@ -1340,7 +1340,7 @@ private fun <T> Flow<T>.throttleLatest(periodMillis: Long): Flow<T> {
 /**
  * 构建代码块提示 - 告知AI代码文件命名和ZIP打包功能
  */
-private fun buildCodeBlockPrompt(): String = buildString {
+internal fun buildCodeBlockPrompt(): String = buildString {
     appendLine("【代码块规则】（必须遵守）")
     appendLine()
     appendLine("1. **代码块一律用文件名当语言标签**：你必须用真实的文件名作为代码块的语言标签，而不是只写语言名。这关系到文件能否被正确保存、语法高亮是否生效。例如：")
