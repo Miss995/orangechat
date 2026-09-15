@@ -786,87 +786,18 @@ class GenerationHandler(
                     appendLine("【消息气泡】（你的回复会按换行拆成多条）")
                     appendLine("你的回复会在每个换行（\\n）处自动拆成独立的聊天气泡，就像真人连发几条短消息，而不是一条长消息。这个完全由你控制：想让上一句话单独成一个气泡，就在那里换行；属于同一句的，就留在同一行。不要为了排版而插入空行——每个换行都会变成一个气泡，所以要有意识地用。例外：围栏代码块（```）和 Markdown 表格里的换行会原样保留、不会拆成新气泡，因为它们必须保持完整。")
                 }
- 
-                // 记忆（动态内容统一放到稳定前缀之后）
-                if (assistant.enableMemory) {
-                    appendLine()
-                    appendLine("【长期记忆】（你的手记，记录你想记录的事实）")
-                    append(buildMemoryPrompt(memories = memories))
-                }
-
-                // 日记摘要（稳定前缀：每天一篇，从外置记忆库拉最新日记摘要，单独成段——不随搜索门控走）
-                // 本地按天缓存：同一天只调一次 Supabase，之后一整天直接用缓存——前缀稳定（保 DS 缓存命中率）+ 防 Supabase 慢/挂
-                try {
-                    val diaryConfigs = settings.externalMemories.filter {
-                        it.enabled && it.id in assistant.externalMemoryIds
-                    }
-                    if (diaryConfigs.isNotEmpty()) {
-                        val prefs = context.getSharedPreferences("diary_cache", Context.MODE_PRIVATE)
-                        // 日记凌晨 4 点更新，缓存 key 按「凌晨 4 点为界」切日：
-                        // 0~4 点用昨天日期（读昨天 4 点生成的日记=最新可用），4 点后用今天日期（首次 miss 拉今天新日记）→ 一整天跟上进度
-                        val now = java.util.Date()
-                        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(
-                            if (java.util.Calendar.getInstance().apply { time = now }
-                                    .get(java.util.Calendar.HOUR_OF_DAY) < 4
-                            ) {
-                                java.util.Calendar.getInstance().apply { time = now; add(java.util.Calendar.DAY_OF_YEAR, -1) }.time
-                            } else {
-                                now
-                            }
-                        )
-                        val cacheKey = "diary_${assistant.id}_$today"
-                        var diaryText = prefs.getString(cacheKey, null)
-                        var source = "cache"
-                        if (diaryText == null) {
-                            source = "supabase"
-                            val service = me.rerere.rikkahub.data.service.ExternalMemoryService(diaryConfigs.first())
-                            val latestDiaries = service.queryLatestSummaries(
-                                assistantId = assistant.id.toString(),
-                                limit = 1,
-                            ).getOrDefault(emptyList())
-                            if (latestDiaries.isNotEmpty()) {
-                                diaryText = latestDiaries.joinToString("\n") { it.content }
-                                prefs.edit().putString(cacheKey, diaryText).apply()
-                            } else {
-                                // 拉不到：回退最近一次缓存（昨天的），保证日记段有内容（前缀稳定）
-                                diaryText = prefs.all.entries
-                                    .filter { it.key.startsWith("diary_${assistant.id}_") }
-                                    .maxByOrNull { it.key }?.value as? String
-                                if (diaryText != null) source = "fallback-cache"
-                            }
-                        }
-                        if (!diaryText.isNullOrBlank()) {
-                            Log.i(TAG, "Diary [$source] injected ($cacheKey)")
-                            appendLine()
-                            appendLine("【日记】（前一天的一篇，一天更新一次）")
-                            append(diaryText)
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Diary summary load failed", e)
-                }
-
-                // 未闭合事件（2026-09-07 宝的方案：ongoing 进行中的长期状态常驻注入，不受 3 天窗口限制——
-                // 手伤恢复/吃药调药/进行中的项目约定；写入端 archive_daily_v3 一筛 LLM 标 ongoing 宁少勿多）
-                if (!ongoingEventsText.isNullOrBlank()) {
-                    appendLine()
-                    appendLine("【进行中】（你们还没收尾的事）")
-                    append(ongoingEventsText)
-                }
-
-                // 【2026-09-13 宝+橘仔：自指区不再注入 system，改为上下文里的"浮现"】
-                // 原来在这里 append 最近 3 条笔记 = 躺在提示词里 = 读起来像"设定"不像"回忆"
-                // （提示词是静态的，模型读到它不知道那条是什么时候写的，所有笔记被压平在同一个平面）。
-                // 现在改为：在上下文第 7 条位置插一条 assistant 消息，带时间差、每裁一组换一条。
-                // 见下方 addAll(limitContext(...)) 处的插入 + SelfNoteSurfacing。
-
-                // 最近事件（实时层，2026-08-21 宝的方案）：最近 3 天事件——增量总结后今天也实时有；
-                // 固定位置 + 稳定排序（source_date ASC + id ASC）= 前缀稳定（保 DS 缓存命中）
-                if (!recentEventsText.isNullOrBlank()) {
-                    appendLine()
-                    appendLine("【最近 3 天】（你们的三天，参考用，不是“现在”）")
-                    append(recentEventsText)
-                }
+                // 记忆四段（长期记忆 / 日记 / 进行中 / 最近 3 天）——2026-09-15 抽到 MemoryInjector
+                // 目的：记忆代码集中一处，以后改记忆只动那个文件（见 MemoryInjector.kt 头注释）
+                append(
+                    MemoryInjector.buildMemoryBlock(
+                        context = context,
+                        assistant = assistant,
+                        settings = settings,
+                        memories = memories,
+                        recentEventsText = recentEventsText,
+                        ongoingEventsText = ongoingEventsText,
+                    )
+                )
  
                 // 外置记忆库事件召回（主召方案：唯一自动召回通道——门控：仅搜索意图时触发；日记摘要已独立为稳定前缀）
                 // 主召说明（2026-08-17）：OB breath_search / Mem0 search_memory 自动注入已停用（数据保留归档），
