@@ -651,8 +651,12 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 )
 
                 // 应用输入转换器
+                // 【2026-09-15 修复】合成的唤醒消息不跑 TimeReminderTransformer：
+                // 它会在首条 user 消息前插一条 <time_reminder>，导致下面 .first() 取到的是时间提醒、
+                // 真正的唤醒消息被丢弃（宝 2026-09-15 在请求日志实测："用户消息只是一条时间提醒"）。
+                // 唤醒消息自己已带「距离宝上次回复 N 分钟」，不需要重复的时间提醒。
                 val processedUserMessage = listOf(userMessage).transforms(
-                    transformers = inputTransformers + templateTransformer,
+                    transformers = inputTransformers.filterNot { it === TimeReminderTransformer } + templateTransformer,
                     context = this@ProactiveMessageTriggerService,
                     model = model,
                     assistant = assistant,
