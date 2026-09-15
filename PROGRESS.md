@@ -18,6 +18,34 @@
 
 ## 2026-09-15
 
+### commit 7efd12a3 — 记忆注入第一刀：system 记忆四段抽到 MemoryInjector（宝 09-15 晚拍板"干呗"）
+- 文件：新增 `app/src/main/java/me/rerere/rikkahub/data/ai/MemoryInjector.kt`；改 `GenerationHandler.kt`
+- 背景：宝问"主动消息为什么非得另走一条"→ 挖到结构性欠账：咱家记忆系统长在橘瓣里（不是外挂模块），每改一次记忆都要动请求构建，而聊天/主动消息两份实现会各自漂
+- 本次只搬「system 里的记忆四段拼装」：①【长期记忆】磐石层 ②【日记】外置库最新日记摘要（按天缓存）③【进行中】ongoing ④【最近 3 天】最近事件；逻辑逐字照搬、零改动（纯搬家）
+- 新接口：`MemoryInjector.buildMemoryBlock(context, assistant, settings, memories, recentEventsText, ongoingEventsText): String`，返回值自带前导空行，调用方直接 append 即可
+- GenerationHandler 里原 80 行（789-869）→ 13 行一次调用
+- **没搬的（下一刀）**：取数段（节拍器 / 缓存读写 / fetchRecentEvents / fetchEpisodeSummaries / fetchOngoingEvents）、事件召回段（门控 + 向量搜 → recalledBlock）、自指区浮现（插 SLOT_INDEX）
+- 勘察清单：`/workspace/notes/2026-09-15-记忆注入剥离勘察.md`
+- 影响面确认：请求编辑（`RequestEditController.toEditData` 拿的是拼好的 internalMessages）不受影响；`recalledBlock` 未动
+- 状态：⏳ 已推待构建
+
+### commit 4fdbf9bb — 主动消息真凶：唤醒消息被 TimeReminderTransformer 顶包（宝 09-15 晚实测发现）
+- 文件：ProactiveMessageService.kt
+- 现象：主动消息总是"关注不到唤醒提示词"；宝在请求日志实测发现"用户消息只是一条时间提醒"
+- 根因：`TimeReminderTransformer` 会在首条 user 消息前插一条 `<time_reminder>`，而主动消息合成唤醒消息时用 `listOf(userMessage).transforms(...).first()`，取到的正是这条插进来的时间提醒，真正的唤醒消息（【主动唤醒回合·X】+ 由头）被丢弃、压根没进请求
+- 修复：合成唤醒消息时排除 TimeReminderTransformer（它自己已带"距离宝上次回复 N 分钟"）
+- 教训：transforms 是 fold 链式处理，transformer 可能插入新消息，取结果不能想当然用 `.first()`
+- 状态：⏳ 已推待构建
+
+### commit 048628a1 — 主动消息 system 前缀对齐聊天（宝 09-15 晚，双链路治本第一刀）
+- 文件：ProactiveMessageService.kt、GenerationHandler.kt
+- 背景：主动消息的 system prompt 是自己抄的一份，跟聊天侧不一样（连记忆格式都不同）→ 缓存吃不到 + 表现不一致
+- 改动：buildSystemPrompt 改成与聊天同顺序四段（助手设定→代码块说明→工具段→记忆）；记忆改用同一个 `buildMemoryPrompt`；`GenerationHandler.buildCodeBlockPrompt` private→internal；tools 构建提前到 system 之前
+- 新增 ProactiveDebug 留痕日志：唤醒时把 system 前 1200 字 + user 800 字打进日志环（read_app_logs 筛 ProactiveDebug 可查"主动消息到底看到了什么"）
+- system 后半动态段（日记/ongoing/自指区/最近事件/召回）**故意没抄**：它们自带缓存与消息节拍，硬抄会互相打乱
+- 血缘澄清：主动消息是橘瓣作者小橘老师加的功能（不是宝和橘仔加的），两条链路的硬理由=运行环境（闹钟触发时 app 可能在后台/被杀，没有界面没有 ViewModel）
+- 状态：⏳ 已推待构建
+
 ### commit f7fbdf42 — 跳过回复提示词重写（宝 09-15 早批准，橘仔改）
 - 文件：GenerationHandler.kt
 - 背景：宝说「这个是自带的功能，昨天只是把它翻译成中文而已」→ 提示词按咱家的意思重写，不再只是翻译
