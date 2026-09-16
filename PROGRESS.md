@@ -37,6 +37,18 @@
             （注意：`buildList` 的 lambda 不是 suspend，必须在外面先取）
 - 遗留：宝触发主动消息时崩过一次 OOM（`ConversationRepository.updateConversation` 序列化整坨会话 → 512MB 堆顶爆），日志被刷掉；与头像框那笔（memory 155）是两码事，待查
 - 教训：推代码前必须确认工作副本跟远程 main 一致——本次发现工作副本落后（缺 4fdbf9bb 的修复），已先 `fetch_file.py` 拉最新再改，避免覆盖
+- 状态：✅ 已构建验证（宝 2026-09-16）
+
+## 2026-09-16
+
+### 第二刀 · 取数段搬进 MemoryInjector（③ 两条请求线共用 · 第一步）
+- 文件：`app/src/main/java/me/rerere/rikkahub/data/ai/MemoryInjector.kt`（新增）、`GenerationHandler.kt`
+- 背景：宝定的 ③——主动消息和聊天是两条独立请求线，要把聊天那套拆出来给两边共用
+- 本次：把 `generateInternal` 里的**取数段整段**搬进 MemoryInjector，新增 `fetchRecentEvents()` + `RecentEventsResult`
+  - 搬走的内容：自指区缓存刷新 / 节拍器（30/36/42 + 6h/跨天兜底 + 窗口起点预判裁剪）/ 缓存读写 / 三路 fetch（fetchRecentEvents + fetchEpisodeSummaries + fetchOngoingEvents）/ 分档拼装 / 写回
+  - **纯搬家**，逻辑逐字不动（只把 `messages.size` → `messagesCount` 参数化）
+  - `generateInternal`：505-728 共 224 行 → 一次调用 + 三行解构（文件 1391 → 1172 行）
+- 主动消息侧接线（下一步）：主动消息没有窗口上下文，`messagesCount = 0` + `windowFirstIndex = null` 走时间兜底；接线前需确认要不要给主动消息也注入「最近 3 天」（会改变它的 system 内容）
 - 状态：⏳ 已推待构建
 
 ## 2026-09-15
@@ -50,7 +62,7 @@
 - **没搬的（下一刀）**：取数段（节拍器 / 缓存读写 / fetchRecentEvents / fetchEpisodeSummaries / fetchOngoingEvents）、事件召回段（门控 + 向量搜 → recalledBlock）、自指区浮现（插 SLOT_INDEX）
 - 勘察清单：`/workspace/notes/2026-09-15-记忆注入剥离勘察.md`
 - 影响面确认：请求编辑（`RequestEditController.toEditData` 拿的是拼好的 internalMessages）不受影响；`recalledBlock` 未动
-- 状态：⏳ 已推待构建
+- 状态：✅ 已构建验证（宝 2026-09-16）
 
 ### commit 4fdbf9bb — 主动消息真凶：唤醒消息被 TimeReminderTransformer 顶包（宝 09-15 晚实测发现）
 - 文件：ProactiveMessageService.kt
@@ -58,7 +70,7 @@
 - 根因：`TimeReminderTransformer` 会在首条 user 消息前插一条 `<time_reminder>`，而主动消息合成唤醒消息时用 `listOf(userMessage).transforms(...).first()`，取到的正是这条插进来的时间提醒，真正的唤醒消息（【主动唤醒回合·X】+ 由头）被丢弃、压根没进请求
 - 修复：合成唤醒消息时排除 TimeReminderTransformer（它自己已带"距离宝上次回复 N 分钟"）
 - 教训：transforms 是 fold 链式处理，transformer 可能插入新消息，取结果不能想当然用 `.first()`
-- 状态：⏳ 已推待构建
+- 状态：✅ 已构建验证（宝 2026-09-16）
 
 ### commit 048628a1 — 主动消息 system 前缀对齐聊天（宝 09-15 晚，双链路治本第一刀）
 - 文件：ProactiveMessageService.kt、GenerationHandler.kt
@@ -67,7 +79,7 @@
 - 新增 ProactiveDebug 留痕日志：唤醒时把 system 前 1200 字 + user 800 字打进日志环（read_app_logs 筛 ProactiveDebug 可查"主动消息到底看到了什么"）
 - system 后半动态段（日记/ongoing/自指区/最近事件/召回）**故意没抄**：它们自带缓存与消息节拍，硬抄会互相打乱
 - 血缘澄清：主动消息是橘瓣作者小橘老师加的功能（不是宝和橘仔加的），两条链路的硬理由=运行环境（闹钟触发时 app 可能在后台/被杀，没有界面没有 ViewModel）
-- 状态：⏳ 已推待构建
+- 状态：✅ 已构建验证（宝 2026-09-16）
 
 ### commit f7fbdf42 — 跳过回复提示词重写（宝 09-15 早批准，橘仔改）
 - 文件：GenerationHandler.kt
