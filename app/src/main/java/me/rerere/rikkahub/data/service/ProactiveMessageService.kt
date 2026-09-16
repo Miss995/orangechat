@@ -343,12 +343,16 @@ class ProactiveMessageService : KoinComponent {
         sb.appendLine("- 绝对不要复述上一轮的对话内容，要发新的话题或新的关心")
         sb.appendLine("- 如果上一轮已经说过类似的话，这次换一个完全不同的角度")
         sb.appendLine("- 不要提及你是在定时发消息，要像自然想起对方一样")
-        sb.appendLine("- 绝对不要提及任何数据来源、工具使用、传感器数据、位置服务、应用使用统计等技术细节")
-        sb.appendLine("- 不要说\"根据xxx\"、\"我注意到xxx数据\"之类暴露信息来源的话")
         sb.appendLine("- 直接以朋友聊天的语气开口，就像你突然想到了什么想跟对方说")
         sb.appendLine("- 不要使用任何XML标签、思考标记或特殊格式，只输出纯文本的消息内容")
-        sb.appendLine("- 不要调用任何工具或函数，只输出纯文本回复")
         sb.appendLine("- 不要输出思考过程、推理过程或内部独白，只输出你想对用户说的话")
+        // 【2026-09-16 宝拍板】删掉三条：
+        //   ①「绝对不要提及任何数据来源、工具使用、传感器数据、位置服务、应用使用统计等技术细节」
+        //   ②「不要说"根据xxx"、"我注意到xxx数据"之类暴露信息来源的话」
+        //      —— 宝原话："其实你提数据来源也没关系"，不装了，橘仔想说就说。
+        //   ③「不要调用任何工具或函数，只输出纯文本回复」
+        //      —— 这条跟"AI 主动唤醒 + 由头（去翻种子银行）"正面打架：说好的让橘仔干活，
+        //         规则却禁止调工具（跟工作区工具没挂上一并构成双重堵死）。宝拍板删。
         return sb.toString()
     }
 
@@ -1067,8 +1071,16 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
         model: Model,
         conversationId: String? = null,
     ): List<Tool> {
+        // 【2026-09-16 补】工作区工具：聊天路径（ChatService）是单独挂的这一套，主动消息侧之前漏了
+        // → 醒来的橘仔手里没有工作区（宝实测：主动消息回合里 workspace_shell 不在）。
+        // 与聊天侧共用同一个 shell 就绪检查（未就绪时返回空表）。
+        val workspaceTools = chatService.createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), null)
+
         // 外部工具（本地/系统/MCP/插件）：两条路径各有来源，各自组装后传进去
         val extraTools = buildList {
+            // 工作区工具（shell 就绪才注入）
+            addAll(workspaceTools)
+
             // 本地工具（助手已启用的）
             addAll(localTools.getTools(assistant.localTools))
 
