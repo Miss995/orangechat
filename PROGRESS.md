@@ -50,7 +50,40 @@
   - `generateInternal`：505-728 共 224 行 → 一次调用 + 三行解构（文件 1391 → 1172 行）
 - 主动消息侧接线（**同批完成 ✅**）：主动消息没有窗口上下文，`messagesCount = 0` + `windowFirstIndex = null` 走时间兜底；`buildSystemPrompt` 的记忆段从「只 append 磐石层」改成 `MemoryInjector.buildMemoryBlock`（四段全给：长期记忆 / 日记 / 进行中 / 最近 3 天）——宝 09-16 晚拍板「带吧」，顾虑（缓存计数被重置、token 小涨）已评估为可接受
 - 已知副作用：主动消息取数会把 `recent_events_cache` 里的 `msgCount` 基准重置（它没有窗口），主判据（windowFirstIndex）不受影响，仅回退判据会偶尔多拉一次
+
+### OOM 案（第二笔）· 2026-09-16 20:15 定位（未改代码）
+- 现象：宝 09-16 **18:21** 触发主动消息、AI 回复保存时应用崩溃
+  `java.lang.OutOfMemoryError: Failed to allocate a 11720 byte allocation with 3543040 free bytes`（堆只剩 3.4MB）
+  堆栈：`ConversationRepository$updateConversation$2` → `Json.encodeToString` → `StringFactory.newStringFromChars`
+- 与 memory 155（头像框全尺寸解码那笔）**不是同一个触发点**，但同一个根：堆被顶到 512MB 上限
+- **时间线澄清**：18:21 跑的还是旧版（宝 19:50 才构建今天的改动），**与本批两刀无关**
+- 排查结论：
+  · 报错的「ConversationRepository.kt:825」是 release 构建 R8 优化后的行号，源码文件只有 800 行，**别按它找**
+  · `conversationToConversationEntity()` 是干净的（nodes 存单独表、字段写死 `"[]"`，只序列化 chatSuggestions，且有 `require` 拦 base64）
+  · 真正的分配点在 `updateConversation()` 的 **329 行**：`conversation.messageNodes.mapIndexed { ... JsonInstant.encodeToString(node.messages) }`
+    ——**每次保存都把整个窗口的所有节点重新序列化**，哪怕只变了一条
+- 可能的病根（待进 App 验证）：长窗口里的历史消息本身太大（尤其工具结果那种大 part），或全局 ImageLoader / Coil 图片缓存没上限（155 提过但没做）
+- 两条路线（**未动**）：
+  ① 治标（低价低风险）：`updateConversation` 只序列化真变了的节点 + 改用流式写（不一次性拼大字符串）
+  ② 治本（要进 App 看）：找出堆里的大头
+- 状态：⏳ 已勘察，未改代码
 - 状态：⏳ 已推待构建
+
+### 召回双路化（向量 + 关键词）· 2026-09-16 晚（⏳ 待构建验证）
+- 病灶（宝实测）：问「花园」→ 召回的全是「记忆系统」
+  · 候选池只装向量 RPC 的 Top 200（按语义相似度）
+  · 关键词分只在池内排序，**无法把池外事件捞进来**
+  · →「语义不相似但有精确词」的事件（花园类）根本不上桌
+  · 且记忆系统类事件两边都高 + 关联再带 3 条，把 `count` 名额占满
+- 修法：
+  · 新增 `recallEventsByKeyword()`：ILIKE 搜 memory_events 的 title / content（每词一次，最多 4 词，limit 30）
+  · `vectorRecallEvents` 在**打分之前**把关键词候选并入候选池（`distinctBy id`）
+  · 关键词路事件无 embedding/similarity → 加过滤白名单免被误伤
+  · 回退条件放宽（RPC 空 **且** 关键词路也空 才回退全表）
+- 附带发现：
+  · memory_events 里**大量早期事件的 keywords 是 null**（关键词提取是后加的，没补跑存量）→ 关键词路不能只搜 keywords 列，必须搜 title/content
+  · 有词的多是组合词（「花园隐喻」「rickycat后花园」），靠子串包含勉强命中
+- 未做（待定）：关联事件仍是「直接过、不筛」；关联条数 3 → 1 也还没动
 
 ## 2026-09-15
 

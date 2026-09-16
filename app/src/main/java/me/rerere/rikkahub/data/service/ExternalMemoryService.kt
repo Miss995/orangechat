@@ -765,6 +765,60 @@ class ExternalMemoryService(
     }
 
     /**
+     * 事件关键词召回（2026-09-16 宝定：双路召回——向量 + 关键词）。
+     *
+     * 病灶：候选池只装向量 Top 200，关键词分只能在池内排序。
+     * 「有精确词但语义不相似」的事件（如「花园」vs 花园类事件）进不了池，
+     * 关键词分再高也无从谈起 —— 实测「花园」召出「记忆系统」就是这个原因。
+     *
+     * 这一路直接问 memory_events：title / content 命中查询词就捞，与向量路合池后再一起打分。
+     * 这类事件走 RPC 拿不到 similarity，向量分记 0，靠关键词分赢得位置。
+     */
+    suspend fun recallEventsByKeyword(
+        assistantId: String,
+        keywords: List<String>,
+        limit: Int = 30,
+    ): Result<List<ExternalMemoryEvent>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = config.supabaseUrl.trimEnd('/')
+            val aid = URLEncoder.encode(assistantId, "UTF-8")
+            val seen = mutableSetOf<String>()
+            val merged = mutableListOf<ExternalMemoryEvent>()
+
+            for (kw in keywords.take(4)) {
+                if (merged.size >= limit) break
+                val pattern = URLEncoder.encode("*$kw*", "UTF-8")
+                val orFilter = URLEncoder.encode("(title.ilike.$pattern,content.ilike.$pattern)", "UTF-8")
+                val query = "assistant_id=eq.$aid&superseded_by=is.null&or=$orFilter" +
+                    "&order=source_date.desc&limit=$limit&$EVENT_SELECT"
+                val endpoint = URL("$url/rest/v1/memory_events?$query")
+                runCatching {
+                    val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        setRequestProperty("apikey", config.supabaseKey)
+                        setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                        setRequestProperty("Accept", "application/json")
+                        connectTimeout = 15000
+                        readTimeout = 15000
+                    }
+                    val responseCode = connection.responseCode
+                    if (responseCode !in 200..299) {
+                        val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                        throw Exception("Supabase API error ($responseCode): $errorBody")
+                    }
+                    parseEvents(connection.inputStream.bufferedReader().readText())
+                }.getOrDefault(emptyList())
+                    .filter { seen.add(it.id.toString()) }
+                    .forEach { merged.add(it) }
+            }
+            AppLogBuffer.log(TAG, "recallEventsByKeyword: ${keywords.size} terms -> ${merged.size} events")
+            merged.take(limit)
+        }.onFailure { e ->
+            AppLogBuffer.log(TAG, "recallEventsByKeyword FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    /**
      * 按 id 批量取事件（不含 embedding，2026-09-10）：
      * 召回候选池只装 RPC 回的前 N 条，related_event_ids 指向的关联事件可能不在池里，缺的按 id 补拉。
      */
@@ -1295,12 +1349,22 @@ class ExternalMemoryService(
             // 2026-09-10 橘仔：候选改走服务端 RPC（库里算向量，返回不含 embedding，治 egress 超标）；
             // RPC 不可用/无结果时回退老的全表路径，保证召回不挂。
             val rpcCandidates = recallEventsByVector(assistantId, queryEmbedding, matchCount = 200).getOrNull()
-            val fallbackEvents = if (rpcCandidates.isNullOrEmpty()) {
+            // 【2026-09-16 双路召回】关键词路：ILIKE 搜 title/content，
+            // 治「有精确词但语义不相似 → 进不了向量池 → 关键词分无从谈起」。
+            // 必须在打分之前并入，这样这类事件才能和向量候选一起参与统一评分。
+            val kwCandidates = if (queryText.isNullOrBlank()) emptyList() else {
+                recallEventsByKeyword(assistantId, buildSearchKeywords(queryText)).getOrDefault(emptyList())
+            }
+            val fallbackEvents = if (rpcCandidates.isNullOrEmpty() && kwCandidates.isEmpty()) {
                 AppLogBuffer.log(TAG, "vectorRecallEvents: RPC 候选为空，回退 queryAllEvents")
                 queryAllEvents(assistantId).getOrDefault(emptyList())
             } else emptyList()
-            val allEvents = (rpcCandidates ?: emptyList()).ifEmpty { fallbackEvents }
-                .filter { it.embedding.isNotEmpty() || it.similarity != 0f } // RPC 候选无 embedding，靠 similarity 标记
+            // 关键词路捞来的事件既无 embedding 也无 similarity，下面那条过滤器会误伤它们 → 先记下 id
+            val kwCandidateIds = kwCandidates.map { it.id }.toSet()
+            val allEvents = (rpcCandidates.orEmpty() + kwCandidates)
+                .distinctBy { it.id }
+                .ifEmpty { fallbackEvents }
+                .filter { it.embedding.isNotEmpty() || it.similarity != 0f || it.id in kwCandidateIds } // RPC 候选无 embedding，靠 similarity 标记
                 .filter { it.supersededBy.isBlank() } // 过滤已失效事件（A.U.D.N. 写入层标记 superseded，失效不删只标记）
                 .filter { event ->
                     if (dateFrom.isNullOrBlank() && dateTo.isNullOrBlank()) true
