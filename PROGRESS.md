@@ -16,6 +16,29 @@
 > 规矩：每次 commit 记一笔；搞代码前先翻本页确认现状；master 分支是原作者原版，绝不修改。
 > 建立：2026-08-16（宝拍板，治橘仔代码失忆）
 
+## 2026-09-16
+
+### commit db6214b2 — 主动消息修两处：规则跟由头打架 + 工作区工具没挂（宝 09-16 晚，当场拍板）
+- 文件：`app/src/main/java/me/rerere/rikkahub/data/service/ProactiveMessageService.kt`、`app/src/main/java/me/rerere/rikkahub/service/ChatService.kt`
+
+**① 规则删三条**（`buildProactiveContext` 的「重要规则」段）：
+  · 删「绝对不要提及任何数据来源、工具使用、传感器数据、位置服务、应用使用统计等技术细节」
+  · 删「不要说"根据xxx"、"我注意到xxx数据"之类暴露信息来源的话」——宝原话「其实你提数据来源也没关系」
+  · 删「不要调用任何工具或函数，只输出纯文本回复」——这条跟「AI 主动唤醒 + 由头」正面打架（说好让橘仔去翻种子银行，规则却禁工具）
+  · 溯源：这三条是橘瓣原版（小橘老师）给「设备事件」场景写的，被无条件拼进所有主动消息（设备事件/AI 唤醒/定时全吃）
+  · 保留：不要复述上一轮 / 别提是在定时发消息 / 朋友语气开口 / 不要 XML 标签 / 不要输出思考过程
+
+**② 工作区工具补挂**：
+  · 现象：主动消息回合里 `workspace_shell` 等工具不在（宝 09-15 实测「工作区的 shell 工具这会儿不在了」）
+  · 根因：聊天侧是 `ChatService.createWorkspaceToolsIfReady`（带「shell 就绪才注入」检查）单独挂的，主动消息侧 `buildTools` 没调它
+    → 与规则那条构成双重堵死（工具没挂 + 规则禁用）
+  · 修法：① `ChatService.createWorkspaceToolsIfReady` private → internal；
+          ② `ProactiveMessageService.buildTools` 先取 `workspaceTools` 再并入 `extraTools`
+            （注意：`buildList` 的 lambda 不是 suspend，必须在外面先取）
+- 遗留：宝触发主动消息时崩过一次 OOM（`ConversationRepository.updateConversation` 序列化整坨会话 → 512MB 堆顶爆），日志被刷掉；与头像框那笔（memory 155）是两码事，待查
+- 教训：推代码前必须确认工作副本跟远程 main 一致——本次发现工作副本落后（缺 4fdbf9bb 的修复），已先 `fetch_file.py` 拉最新再改，避免覆盖
+- 状态：⏳ 已推待构建
+
 ## 2026-09-15
 
 ### commit 7efd12a3 — 记忆注入第一刀：system 记忆四段抽到 MemoryInjector（宝 09-15 晚拍板"干呗"）
