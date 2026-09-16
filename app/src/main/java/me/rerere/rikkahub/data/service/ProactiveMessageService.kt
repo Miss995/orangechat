@@ -80,6 +80,7 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.ai.buildCodeBlockPrompt
 import me.rerere.rikkahub.data.ai.buildMemoryPrompt
+import me.rerere.rikkahub.data.ai.MemoryInjector
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.RouteActivity
@@ -601,7 +602,24 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 // 看不出这是自己的唤醒回合；搬进 user 消息后，消息本身就是唤醒信号。
                 // 工具列表要在 system prompt 之前构建：工具 prompt 属于稳定前缀的一部分
                 val tools = buildTools(settings, assistant, model, conversationId.toString())
-                val systemPrompt = buildSystemPrompt(assistant, tools, model, historyMessages)
+                // 【2026-09-16 第二刀 · ③】取数段搬到 MemoryInjector，与聊天侧共用同一份
+                // 主动消息没有窗口上下文：messagesCount=0 + windowFirstIndex=null（走 6h/跨天兜底）
+                val recentData = MemoryInjector.fetchRecentEvents(
+                    context = this@ProactiveMessageTriggerService,
+                    assistant = assistant,
+                    settings = settings,
+                    messagesCount = 0,
+                    windowFirstIndex = null,
+                )
+                val systemPrompt = buildSystemPrompt(
+                    assistant = assistant,
+                    settings = settings,
+                    tools = tools,
+                    model = model,
+                    contextMessages = historyMessages,
+                    recentEventsText = recentData.recentEventsText,
+                    ongoingEventsText = recentData.ongoingEventsText,
+                )
 
                 // 【2026-09-12 宝拍板】user 消息承载「醒来的念头」：
                 // 醒来由头 / 距上次回复 / 环境上下文 / 收尾规则，全在这条消息里。
@@ -946,9 +964,12 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
      */
     private suspend fun buildSystemPrompt(
         assistant: Assistant,
+        settings: Settings,
         tools: List<Tool>,
         model: Model,
         contextMessages: List<UIMessage>,
+        recentEventsText: String? = null,
+        ongoingEventsText: String? = null,
     ): String {
         return buildString {
             if (assistant.systemPrompt.isNotBlank()) {
@@ -965,17 +986,25 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 append(tool.systemPrompt(model, contextMessages))
             }
 
-            if (assistant.enableMemory) {
-                val memories = if (assistant.useGlobalMemory) {
+            // 【2026-09-16 第二刀 · ③】记忆段改用 MemoryInjector.buildMemoryBlock（与聊天侧同一函数）
+            // 主动消息现在也有：长期记忆 / 日记 / 进行中 / 最近 3 天（取数在调用方完成）
+            val memories = if (assistant.enableMemory) {
+                if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {
                     memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
                 }
-                if (memories.isNotEmpty()) {
-                    appendLine()
-                    append(buildMemoryPrompt(memories = memories))
-                }
-            }
+            } else emptyList()
+            append(
+                MemoryInjector.buildMemoryBlock(
+                    context = this@ProactiveMessageTriggerService,
+                    assistant = assistant,
+                    settings = settings,
+                    memories = memories,
+                    recentEventsText = recentEventsText,
+                    ongoingEventsText = ongoingEventsText,
+                )
+            )
         }
     }
 

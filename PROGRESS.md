@@ -48,7 +48,8 @@
   - 搬走的内容：自指区缓存刷新 / 节拍器（30/36/42 + 6h/跨天兜底 + 窗口起点预判裁剪）/ 缓存读写 / 三路 fetch（fetchRecentEvents + fetchEpisodeSummaries + fetchOngoingEvents）/ 分档拼装 / 写回
   - **纯搬家**，逻辑逐字不动（只把 `messages.size` → `messagesCount` 参数化）
   - `generateInternal`：505-728 共 224 行 → 一次调用 + 三行解构（文件 1391 → 1172 行）
-- 主动消息侧接线（下一步）：主动消息没有窗口上下文，`messagesCount = 0` + `windowFirstIndex = null` 走时间兜底；接线前需确认要不要给主动消息也注入「最近 3 天」（会改变它的 system 内容）
+- 主动消息侧接线（**同批完成 ✅**）：主动消息没有窗口上下文，`messagesCount = 0` + `windowFirstIndex = null` 走时间兜底；`buildSystemPrompt` 的记忆段从「只 append 磐石层」改成 `MemoryInjector.buildMemoryBlock`（四段全给：长期记忆 / 日记 / 进行中 / 最近 3 天）——宝 09-16 晚拍板「带吧」，顾虑（缓存计数被重置、token 小涨）已评估为可接受
+- 已知副作用：主动消息取数会把 `recent_events_cache` 里的 `msgCount` 基准重置（它没有窗口），主判据（windowFirstIndex）不受影响，仅回退判据会偶尔多拉一次
 - 状态：⏳ 已推待构建
 
 ## 2026-09-15
