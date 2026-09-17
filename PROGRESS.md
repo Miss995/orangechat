@@ -1002,3 +1002,14 @@
 - `RequestEditController.bypassNextRequestEdit`（`@Volatile`）+ `consumeBypass()`（读完即清）
 - `ScheduledMessageSendService` 发送前置 true
 - `GenerationHandler` 请求编辑判断里加 `&& !bypassRequestEdit`
+
+### 2026-09-17 事故复盘：误用滞后副本覆盖远程（已修）
+**现象**：宝构建报 `No parameter with name 'recall' found` + `Unresolved reference 'recall'/'recallEnabled'`（GenerationHandler:1063、RequestEditDialog 多处）。
+**根因**：橘仔工作区**两个副本版本不同步** ——
+- `/workspace/orangechat-repo/`（精简副本）= **新**（GenerationHandler 带 MemoryInjector 重构；RequestEditController 带 recall / recallEnabled）
+- `/workspace/repos/orangechat/`（完整副本）= **旧**（停在 9 月上旬）
+这次修「跳过请求编辑」时改了完整副本的这两个文件并直接推 → 把远程最新版**回退**了。
+**修法**：从 commit `bb7735fd` 拉回远程原版（= 精简副本，diff 0 行）验证无误，重新加上 bypass 改动，再推。
+**教训**：
+1. 推文件前**必须** diff 远程（这次偷懒了，代价是宝多构建一次 + 远程一度回退）
+2. 两个副本要先确认**哪个新**：`data/ai/` 下的文件精简副本更新（记忆注入重构在那边改的），别默认用完整副本
