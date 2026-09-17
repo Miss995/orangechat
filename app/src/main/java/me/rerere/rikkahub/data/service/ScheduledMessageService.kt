@@ -193,6 +193,8 @@ class ScheduledMessageSendService : Service() {
             return
         }
         val chatService = GlobalContext.get().get<ChatService>()
+        // 后台回合：请求编辑跳过（界面上没人在，弹出来只会卡住等确认）
+        me.rerere.rikkahub.data.ai.RequestEditController.bypassNextRequestEdit = true
         // 走宝平时发消息那条链路：落库 + 界面显示 + 橘仔照常回
         chatService.sendMessage(
             conversationId = Uuid.parse(message.conversationId),

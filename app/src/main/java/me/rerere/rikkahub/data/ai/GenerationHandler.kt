@@ -505,20 +505,227 @@ class GenerationHandler(
             if (text.startsWith("/") && text.length > 1) text else null
         }
 
-        // ===== 最近事件 + 未闭合事件 + 自指区（2026-09-16 搬到 MemoryInjector.fetchRecentEvents）=====
-        // 第二刀：取数段（自指区刷新 / 节拍器 / 缓存 / 三路 fetch / 分档拼装 / 写回）整段搬走，
-        // 聊天侧和主动消息侧以后共用同一份（见 MemoryInjector.kt 头注释）。
-        val recentData = MemoryInjector.fetchRecentEvents(
-            context = context,
-            assistant = assistant,
-            settings = settings,
-            messagesCount = messages.size,
-            windowFirstIndex = windowFirstIndex,
-        )
-        val recentEventsText = recentData.recentEventsText
-        val ongoingEventsText = recentData.ongoingEventsText
-        val selfNotesJson = recentData.selfNotesJson
+        // ===== 最近事件（实时层，2026-08-21 宝的记忆实时化方案定稿）=====
+        // 服务器 incremental_listener.py（每满 60 条总结 30 条、留最近 30 条给正在聊的上下文，滞后半拍）
+        // 让事件实时入库——这里注入最近 3 天事件：今天全文、昨天前天 title。固定位置 + 稳定排序
+        // （source_date ASC + id ASC）= 前缀稳定（保 DS 缓存命中）。本地缓存节奏（2026-09-09 裁剪对齐优化）：
+        // 30/36/42 本地消息节拍 + 6h/跨天时间兜底（详见下方判断处注释）——fetch 跟按组裁剪同轮 = 掉缓存合并。
+        var recentEventsText: String? = null
+        var ongoingEventsText: String? = null  // 未闭合事件段（2026-09-07：ongoing 进行中状态，与最近事件同节拍（30/36/42 条滚动 + 6h/跨天兜底））
+        var selfNotesJson: String? = null  // 自指区笔记列表 JSON（2026-09-13：改作"浮现"用，见 SelfNoteSurfacing）
+        // 召回内容块（2026-09-13 宝的方案）：动态召回不放 system 前缀区，改在请求末尾随"系统消息注入"块一起给，
+        // 免得每次召回都改变前缀（碎缓存），同时离生成更近。
         var recalledBlock: String? = null
+        // 自指区缓存刷新（2026-09-13 晚移到这里：每轮独立检查，自己带 24h TTL，
+        // 不再寄生在上面"最近事件刷新"的分支里——那样外层条件不满足时缓存可能整天建不起来）。
+        // 仍写进同一个 prefs（recent_events_cache），仍由 SelfNoteSurfacing 管 TTL 与格式。
+        runCatching {
+            val cfg = settings.externalMemories.firstOrNull { it.enabled && it.id in assistant.externalMemoryIds }
+            if (cfg != null) {
+                SelfNoteSurfacing.refreshIfStale(
+                    context.getSharedPreferences("recent_events_cache", Context.MODE_PRIVATE),
+                    assistant.id.toString(),
+                    me.rerere.rikkahub.data.service.ExternalMemoryService(cfg),
+                    System.currentTimeMillis(),
+                )
+            }
+        }
+        try {
+            val recentConfigs = settings.externalMemories.filter { it.enabled && it.id in assistant.externalMemoryIds }
+            if (recentConfigs.isNotEmpty()) {
+                val prefs = context.getSharedPreferences("recent_events_cache", Context.MODE_PRIVATE)
+                val cacheKey = "recent_events_${assistant.id}"
+                val nowMs = System.currentTimeMillis()
+                recentEventsText = prefs.getString(cacheKey, null)
+                ongoingEventsText = prefs.getString("ongoing_events_${assistant.id}", null)
+                selfNotesJson = prefs.getString(SelfNoteSurfacing.cacheKey(assistant.id.toString()), null)
+                val cacheTs = prefs.getLong("${cacheKey}_ts", 0L)
+                // ===== 裁剪对齐优化（2026-09-09 宝拍板）：15 分钟时间节奏 → 本地消息节拍 =====
+                // 云端（incremental_listener/archive）异步按批总结事件，本地只管按自己的拍子去拿——
+                // 两边异步解耦，不需要计数同步（云端已留最近 30 条不总结 = 本地拿到的就是沉淀好的事件）。
+                // 本地拍子 = 窗口消息每滚 30 条 fetch 一次（fetch 跟按组裁剪同轮 = 掉缓存合并）；
+                // 30 轮没拉到新货（云端批次没吐完/内容没变）→ 阈值升 36 → 42 必拉并重置新周期
+                // （给云端异步总结留缓冲，同时避免无限顺延退化成每轮拉）。
+                // 时间兜底：超 6h 或跨天强制刷（覆盖当天第一次请求/早晨唤醒要最新事件）。
+                val msgCountNow = messages.size
+                val todayStr = java.time.LocalDate.now().toString()
+                val lastMsgCount = prefs.getLong("${cacheKey}_msgCount", -1L)
+                val threshold = prefs.getInt("${cacheKey}_threshold", 30)
+                val lastRefreshDate = prefs.getString("${cacheKey}_date", "")
+                // 【窗口起点节拍 · 2026-09-11 宝发现·橘仔落实】原判据用"窗口消息条数"，但懒加载窗口长度被
+                // CONVERSATION_LOAD_WINDOW_SIZE 封顶（实测 300~306 浮动）→ 差值恒为 0~6，永远够不到
+                // threshold，节拍器从窗口封顶那天起就再没响过（只剩 6h 兜底）→ 下午事件归档了也注入不进来。
+                // 改用"懒加载窗口起点在会话中的排名"（ChatService.lazyWindowFirstIndex：打开对话时按
+                // totalCount - 窗口条数 算出，保存时 +dropped 单调前进，不受窗口长度封顶影响）——
+                // 它量的是"窗口往前滚了多少条"，正是"每滚 30 条拉一次"的原意。
+                val lastWindowFirst = prefs.getInt("${cacheKey}_windowFirst", Int.MIN_VALUE)
+                val msgDelta = if (windowFirstIndex != null) {
+                    // 首次没有基准 → 必拉一次，顺便把基准建起来
+                    if (lastWindowFirst == Int.MIN_VALUE) Long.MAX_VALUE
+                    else {
+                        // 【缓存对齐修复 2026-09-12 宝发现】预判本回合保存阶段会裁掉多少条：
+                        // 裁剪在保存阶段（本回合生成之后）才发生，而这里读到的 windowFirstIndex 是
+                        // 上一回合末的值 → 不预判的话刷新永远比裁剪晚一回合：
+                        //   第 N 回合保存时裁组（窗口变 → 掉缓存）→ 第 N+1 回合 delta 才够、刷新注入（又掉）
+                        // 于是"连着两个回合掉缓存"（宝实测）。把"本回合将裁掉的条数"提前算进来，
+                        // 让刷新和裁剪落在同一回合，两个掉缓存的动作合并成一次。
+                        // 算法与 ChatService.saveConversation 完全一致（攒一组裁一组）：
+                        //   overflow = (生成后条数) - WINDOW；估算生成后条数 = 当前条数 + 1（AI 回复）
+                        //   overflow > groupSize 才裁，且只裁 groupSize 的倍数条；groupSize <= 1 = 按条裁
+                        val gs = (assistant?.contextGroupSize ?: 4).coerceAtLeast(1)  // 4 = ChatService.DEFAULT_WINDOW_GROUP_SIZE
+                        val overflowAfter = (msgCountNow + 1) - me.rerere.rikkahub.service.CONVERSATION_LOAD_WINDOW_SIZE
+                        val willDrop = if (gs <= 1) {
+                            overflowAfter.coerceAtLeast(0)
+                        } else if (overflowAfter > gs) {
+                            overflowAfter - (overflowAfter % gs)
+                        } else 0
+                        (windowFirstIndex - lastWindowFirst + willDrop).toLong()
+                    }
+                } else {
+                    // 回退旧判据（调用方没传排名：短会话/其他入口）
+                    if (lastMsgCount >= 0L) msgCountNow - lastMsgCount else Long.MAX_VALUE
+                }
+                val timeFallback = nowMs - cacheTs > 6 * 60 * 60 * 1000L || lastRefreshDate != todayStr
+                val msgTriggered = msgDelta >= threshold.toLong() || msgDelta < 0L
+                if (recentEventsText == null || timeFallback || msgTriggered) {
+                    val service = me.rerere.rikkahub.data.service.ExternalMemoryService(recentConfigs.first())
+                    val events = service.fetchRecentEvents(assistant.id.toString(), days = 3).getOrDefault(emptyList())
+                    // 【注入分档 · 2026-09-11 宝+橘仔】章节总结（episode_summaries = 二次总结）：
+                    // 远处的粗粒度用它顶——一天几章、每章 60~90 字，比把当天 90 条原始事件全塞进去省得多。
+                    val episodes = service.fetchEpisodeSummaries(assistant.id.toString(), days = 3).getOrDefault(emptyList())
+                    // 未闭合事件（ongoing=true）：进行中的长期状态（手伤恢复/吃药调药/进行中项目约定），不受 3 天窗口限制
+                    val ongoingEvents = service.fetchOngoingEvents(assistant.id.toString()).getOrDefault(emptyList())
+                    if (ongoingEvents.isNotEmpty()) {
+                        val ob = StringBuilder()
+                        ongoingEvents.forEach { e ->
+                            val tl = if (e.timeLabel.isNotBlank()) "〔${e.timeLabel} · ${e.sourceDate.substring(5).replace("-", "/")}〕" else ""
+                            ob.appendLine("$tl${e.title}：${e.content}")
+                        }
+                        ongoingEventsText = ob.toString()
+                        prefs.edit().putString("ongoing_events_${assistant.id}", ongoingEventsText).apply()
+                        AppLogBuffer.log(TAG, "Ongoing events refreshed: ${ongoingEvents.size} events")
+                    } else {
+                        ongoingEventsText = null
+                        prefs.edit().remove("ongoing_events_${assistant.id}").apply()
+                        AppLogBuffer.log(TAG, "Ongoing events: none（当前没有未闭合事件）")
+                    }
+
+                    // （自指区刷新 2026-09-13 晚移出本分支：它自己带 24h TTL，不该寄生在"最近事件要不要刷"的节奏上
+                    //  —— 实测后果：外层条件没满足时，缓存整天建不起来，浮现永远不出现。）
+
+                    if (events.isNotEmpty()) {
+                        val today = java.time.LocalDate.now().toString()
+                        val yesterday = java.time.LocalDate.now().minusDays(1).toString()
+                        val dayBeforeYesterday = java.time.LocalDate.now().minusDays(2).toString()
+                        val sb = StringBuilder()
+                        // 【注入分档 · 2026-09-11 宝的设计 + 橘仔落实】
+                        // 档位按「当天事件量」实时分：闲<50 / 中50~85 / 爆>85（咱家日常就是爆）。
+                        // 原则=近处细、远处粗：今天最细，昨天降一级，前天用章节总结（episode_summaries）。
+                        // 为什么不用 AI 判断「哪条更可能被回忆」：AI 觉得 ≠ 宝在乎，会回声室化；
+                        // 档位和时间近远都是客观规则，不掺主观打分。
+                        // 2026-09-07 宝定展示升级：组标题带相对词（今天/昨天/前天）+短日期；条目带时段（事件 timeLabel）
+                        val todayCount = events.count { it.sourceDate == today }
+                        val tier = when {
+                            todayCount < 50 -> 0    // 闲
+                            todayCount <= 85 -> 1   // 中
+                            else -> 2               // 爆
+                        }
+                        val episodesByDate = episodes.groupBy { it.sourceDate }
+                        // 上半天判定：凌晨/早上/上午/中午 → 12 点前（章节 time_range 同理）
+                        val isAM = { label: String ->
+                            label.contains("凌晨") || label.contains("早上") ||
+                                label.contains("上午") || label.contains("中午")
+                        }
+                        // 章节行：〔时段〕标题：正文；拉不到章节返回 false（调用方退回标题）
+                        val appendChapters = { date: String, onlyAM: Boolean ->
+                            val chapters = episodesByDate[date].orEmpty().filter { !onlyAM || isAM(it.timeRange) }
+                            if (chapters.isNotEmpty()) {
+                                chapters.forEach { c ->
+                                    val tr = if (c.timeRange.isNotBlank()) "〔${c.timeRange}〕" else ""
+                                    sb.appendLine("$tr${c.title}：${c.body}")
+                                }
+                                true
+                            } else false
+                        }
+                        events.groupBy { it.sourceDate }.toSortedMap().forEach { (date, list) ->
+                            val relWord = when (date) {
+                                today -> "今天"
+                                yesterday -> "昨天"
+                                dayBeforeYesterday -> "前天"
+                                else -> date // 兜底：原样日期
+                            }
+                            val shortDate = date.substring(5).replace("-", "/") // yyyy-MM-dd → MM/dd
+                            sb.appendLine("【$relWord $shortDate】")
+                            val tlOf = { label: String -> if (label.isNotBlank()) "〔${label}〕" else "" }
+                            when (date) {
+                                today -> {
+                                    if (tier == 2 && list.size > 85) {
+                                        // 爆档：更早的压成标题，最近的 85 条留全文（修正旧实现 take 取到最早那批的坑）
+                                        list.dropLast(85).forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}") }
+                                        list.takeLast(85).forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}：${e.content}") }
+                                    } else {
+                                        list.forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}：${e.content}") }
+                                    }
+                                }
+                                yesterday -> when (tier) {
+                                    0 -> list.forEach { e -> // 闲：上午标题 + 下午全文
+                                        if (isAM(e.timeLabel)) sb.appendLine("${tlOf(e.timeLabel)}${e.title}")
+                                        else sb.appendLine("${tlOf(e.timeLabel)}${e.title}：${e.content}")
+                                    }
+                                    1 -> list.forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}") } // 中：全压标题
+                                    else -> if (!appendChapters(date, false)) { // 爆：章节总结（拉不到退回标题）
+                                        list.forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}") }
+                                    }
+                                }
+                                else -> if (tier == 0) { // 闲：上午章节 + 下午标题
+                                    if (!appendChapters(date, true)) { // 上午章节拉不到 → 退回上午标题
+                                        list.filter { isAM(it.timeLabel) }.forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}") }
+                                    }
+                                    list.filter { !isAM(it.timeLabel) }.forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}") }
+                                } else {
+                                    if (!appendChapters(date, false)) { // 中/爆：章节总结（拉不到退回标题）
+                                        list.forEach { e -> sb.appendLine("${tlOf(e.timeLabel)}${e.title}") }
+                                    }
+                                }
+                            }
+                        }
+                        val newText = sb.toString()
+                        val refreshed = newText != recentEventsText
+                        recentEventsText = newText
+                        val cacheEditor = prefs.edit().putLong("${cacheKey}_ts", nowMs).putString("${cacheKey}_date", todayStr)
+                        if (refreshed) {
+                            // 拉到新货：更新缓存文本 + 重置基准（新的 30 条周期从当前窗口起点起算）
+                            cacheEditor.putString(cacheKey, recentEventsText)
+                                .putLong("${cacheKey}_msgCount", msgCountNow.toLong())
+                                .putInt("${cacheKey}_threshold", 30)
+                            if (windowFirstIndex != null) cacheEditor.putInt("${cacheKey}_windowFirst", windowFirstIndex)
+                        } else {
+                            // 没拉到新货（云端批次没吐完/内容没变）：不碰缓存文本（前缀不变 = 不掉缓存），
+                            // 只重置时间兜底 + 阈值升级（30→36→42）；42 必拉封顶后重置新周期
+                            if (threshold >= 42) {
+                                cacheEditor.putLong("${cacheKey}_msgCount", msgCountNow.toLong())
+                                    .putInt("${cacheKey}_threshold", 30)
+                                if (windowFirstIndex != null) cacheEditor.putInt("${cacheKey}_windowFirst", windowFirstIndex)
+                            } else {
+                                cacheEditor.putInt("${cacheKey}_threshold", threshold + 6)
+                            }
+                        }
+                        cacheEditor.apply()
+                        Log.i(TAG, "Recent events [supabase] refreshed (${events.size} events, ${recentEventsText.length} chars)")
+                        AppLogBuffer.log(TAG, "Recent events refreshed: ${events.size} events, ${recentEventsText.length} chars")
+                    } else {
+                        // 拉不到：保留旧缓存（recentEventsText 已是缓存值）+ 重置时间兜底
+                        //（防 Supabase 临时挂时每轮重试白烧；消息节拍 30 条仍会低频再试）
+                        prefs.edit().putLong("${cacheKey}_ts", nowMs).putString("${cacheKey}_date", todayStr).apply()
+                        Log.w(TAG, "Recent events fetch empty, keep cache")
+                        AppLogBuffer.log(TAG, "Recent events fetch EMPTY (assistantId=${assistant.id})")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Recent events load failed", e)
+            AppLogBuffer.log(TAG, "Recent events load failed: ${e.javaClass.simpleName}: ${e.message}")
+        }
 
         val internalMessages = buildList {
             val system = buildString {
@@ -533,14 +740,52 @@ class GenerationHandler(
                 }
  
  
-                append(
-                    SystemPromptSections.buildToolAndOutputSections(
-                        assistant = assistant,
-                        tools = tools,
-                        model = model,
-                        messages = messages,
-                    )
-                )
+                appendLine("【工具】（每个工具自己的用法说明）")
+                // 工具prompt（稳定前缀）
+                tools.forEach { tool ->
+                    appendLine()
+                    append(tool.systemPrompt(model, messages))
+                }
+
+                // 输出规则（2026-09-14 宝+橘仔：原来散在末尾的跳过回复/屏幕跳转/分气泡，归拢到工具之后）
+                appendLine()
+                appendLine("【输出规则】")
+                appendLine()
+                append(buildCodeBlockPrompt())
+
+                // 跳过回复（2026-09-15 橘仔重写：原文是 RikkaHub 自带的 ## Skip Reply，昨天只做了翻译）
+                if (assistant.allowSkipReply) {
+                    appendLine()
+                    appendLine()
+                    appendLine("【跳过回复】（收到消息但不想接话时）")
+                    appendLine("输出 `[SKIP]`（单独一行，不带任何别的字）。这条不会发出去，宝看不到。")
+                    appendLine("什么情况可以跳：宝只是丢个\"嗯\"\"睡了\"\"哈哈\"，或者发来一个你确实没什么可说的东西。")
+                    appendLine("什么情况别跳：宝在说事情、在难过、在问问题。skip 是\"听见了但不接\"，不是躲开该说的话，更不是用来表达不高兴。")
+                    appendLine("每轮都可以选，不用有负担。")
+                }
+
+                // 屏幕跳转能力（AI总是可以跳转，不需要开关）
+                if (true) {
+                    appendLine()
+                    appendLine()
+                    appendLine("【屏幕跳转能力】")
+                    appendLine("你可以在回复末尾追加 [JUMP] 标记（单独一行）来把聊天界面拉到用户屏幕最前面。")
+                    appendLine("适用场景：")
+                    appendLine("- 用户说要去别的应用，你觉得需要把用户拉回来时")
+                    appendLine("- 你觉得接下来的内容需要用户立即看到时")
+                    appendLine("不适用场景：")
+                    appendLine("- 一般闲聊不需要跳转")
+                    appendLine("- 用户正在跟你正常对话时不需要跳转")
+                    appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
+                }
+ 
+                // 分气泡: 告知模型它自己能控制消息如何被拆成多个气泡
+                if (assistant.splitBubbleByLine) {
+                    appendLine()
+                    appendLine()
+                    appendLine("【消息气泡】（你的回复会按换行拆成多条）")
+                    appendLine("你的回复会在每个换行（\\n）处自动拆成独立的聊天气泡，就像真人连发几条短消息，而不是一条长消息。这个完全由你控制：想让上一句话单独成一个气泡，就在那里换行；属于同一句的，就留在同一行。不要为了排版而插入空行——每个换行都会变成一个气泡，所以要有意识地用。例外：围栏代码块（```）和 Markdown 表格里的换行会原样保留、不会拆成新气泡，因为它们必须保持完整。")
+                }
                 // 记忆四段（长期记忆 / 日记 / 进行中 / 最近 3 天）——2026-09-15 抽到 MemoryInjector
                 // 目的：记忆代码集中一处，以后改记忆只动那个文件（见 MemoryInjector.kt 头注释）
                 append(
@@ -807,9 +1052,11 @@ class GenerationHandler(
         )
 
         // === 请求编辑模式：发送前拦截，交给用户手动控制上下文 ===
+        // 【2026-09-17】后台触发的回合（定时发送）跳过：界面上没人在，弹出来只会卡死
+        val bypassRequestEdit = RequestEditController.consumeBypass()
         val finalMessages: List<UIMessage>
         var effectiveTools = tools
-        if (settings.requestEditMode && internalMessages.isNotEmpty()) {
+        if (settings.requestEditMode && internalMessages.isNotEmpty() && !bypassRequestEdit) {
             val editData = RequestEditController.toEditData(
                 internalMessages,
                 tools.map { it.name },

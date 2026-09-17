@@ -995,3 +995,10 @@
 `showScheduleDialog` 三处未解析。根因：**ChatPage.kt 里有两个函数** —— 外层 `ChatPage`（状态/ViewModel 那层）与内层 `ChatPageContent`（真正画 UI 那层）。state 被加在了外层，但用它的 `ChatInput` 调用和对话框都在内层 → 作用域够不着。
 修法：把声明挪进 `ChatPageContent`（`rememberSaveable` 那几行下面）。
 教训：**改 UI 文件前先 grep `^fun` 确认函数边界**，别凭缩进猜。
+
+### 2026-09-17 补丁 3：定时消息撞上「请求编辑」会卡死
+宝实测发现：开着请求编辑模式时，定时消息到点会卡在编辑界面（弹出来等确认，可后台没人在）。
+修法：加一次性「后台回合跳过」开关 ——
+- `RequestEditController.bypassNextRequestEdit`（`@Volatile`）+ `consumeBypass()`（读完即清）
+- `ScheduledMessageSendService` 发送前置 true
+- `GenerationHandler` 请求编辑判断里加 `&& !bypassRequestEdit`

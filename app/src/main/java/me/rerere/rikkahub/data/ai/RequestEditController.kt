@@ -21,6 +21,21 @@ import me.rerere.ai.ui.UIMessage
  */
 object RequestEditController {
 
+    /**
+     * 后台触发的回合（定时发送等）跳过请求编辑。
+     * 那种场景界面上没人在，弹出来只会卡住等一个永远不来的确认。
+     * 调用方发之前置 true，GenerationHandler 读完立刻清掉（一次性）。
+     */
+    @Volatile
+    var bypassNextRequestEdit: Boolean = false
+
+    /** 读走「跳过」标记（一次性，读完即清） */
+    fun consumeBypass(): Boolean {
+        val value = bypassNextRequestEdit
+        bypassNextRequestEdit = false
+        return value
+    }
+
     /** system 里的一节（按 "## " 标题分段） */
     data class EditSection(
         val title: String,
@@ -45,11 +60,6 @@ object RequestEditController {
         val sections: List<EditSection>,
         val history: List<EditItem>,
         val tools: List<ToolEditItem> = emptyList(),
-        // 【2026-09-13 宝的方案】本次召回内容（请求末尾的【背景补充】那段）：
-        // 单独拎出来给 UI 看、单独给一个开关 —— 召回不准时可以一键关掉再发送。
-        // 关掉只剥【背景补充】，时间和时刻感保留（那两个是每轮都要的）。
-        val recall: String? = null,
-        val recallEnabled: Boolean = true,
     )
 
     private val _pending = MutableStateFlow<RequestEditData?>(null)
@@ -83,11 +93,7 @@ object RequestEditController {
      * 把内部消息转成可编辑数据（system 分段 + 历史列表 + 工具勾选列表）。
      * @param toolNames 本轮将要注入的工具名列表（默认全勾选，用户可取消）。
      */
-    fun toEditData(
-        messages: List<UIMessage>,
-        toolNames: List<String> = emptyList(),
-        recall: String? = null,
-    ): RequestEditData {
+    fun toEditData(messages: List<UIMessage>, toolNames: List<String> = emptyList()): RequestEditData {
         val systemText = messages.firstOrNull { it.role == MessageRole.SYSTEM }?.toText() ?: ""
         val sections = splitSystem(systemText)
         val history = messages.filter { it.role != MessageRole.SYSTEM }.map { msg ->
@@ -97,13 +103,7 @@ object RequestEditController {
             )
         }
         val tools = toolNames.map { ToolEditItem(name = it) }
-        return RequestEditData(
-            sections = sections,
-            history = history,
-            tools = tools,
-            recall = recall?.takeIf { it.isNotBlank() },
-            recallEnabled = true,
-        )
+        return RequestEditData(sections = sections, history = history, tools = tools)
     }
 
     /** 把编辑结果还原成内部消息；edited 为 null 时返回原始消息（调用方应已处理取消） */
@@ -124,48 +124,24 @@ object RequestEditController {
                 result.add(originalHistory[index])
             }
         }
-        // 【2026-09-13 宝的方案】召回开关：关掉就把末尾注入消息里的【背景补充】剥掉。
-        // 只剥那一段（时间和时刻感照常保留）；命中不了就原样返回，不冒风险。
-        if (!edited.recallEnabled && !edited.recall.isNullOrBlank()) {
-            val marker = "\n【背景补充】\n" + edited.recall
-            return result.map { msg ->
-                if (msg.role != MessageRole.USER) msg
-                else {
-                    val text = msg.toText()
-                    if (!text.contains(marker)) msg
-                    else UIMessage.user(prompt = text.replace(marker, ""))
-                }
-            }
-        }
         return result
     }
 
     /**
-     * 把 system 大字符串分节。支持两种节标题标记：
-     *  - Markdown 风格：行首 "## 标题"
-     *  - 方括号风格：行首 "【标题】……"（2026-09 提示词结构改造后启用）
-     * 第一段（人设/规则开头）没有标题标记时单独成一节。
-     * content 保存完整原文（含标题行），重组时直接拼接。
+     * 把 system 大字符串按 "## " 分节：
+     * 第一段（人设开头）没有标题标记，后续每段以 "## 标题" 开头。
+     * content 保存完整原文（含 "## 标题" 行），重组时直接拼接。
      */
     private fun splitSystem(systemText: String): List<EditSection> {
         if (systemText.isBlank()) return emptyList()
-        // 只在换行后紧跟 "## " 或 "【" 处切分，避免误伤正文里的中文方括号
-        val parts = systemText.split(Regex("\n(?=## |【)"))
+        val parts = systemText.split("\n## ")
         return parts.mapIndexed { index, part ->
-            val text = part.trim()
-            val firstLine = text.lineSequence().firstOrNull().orEmpty()
-            val title = when {
-                firstLine.startsWith("## ") -> firstLine.removePrefix("## ").trim()
-                firstLine.startsWith("【") -> {
-                    val end = firstLine.indexOf('】')
-                    if (end > 0) firstLine.substring(0, end + 1) else firstLine.trim()
-                }
-                else -> ""
-            }
-            if (index == 0 && title.isEmpty()) {
-                EditSection(title = "开头（人设/规则）", content = text)
+            if (index == 0) {
+                EditSection(title = "开头（人设/规则）", content = part.trim())
             } else {
-                EditSection(title = title.ifBlank { "第${index + 1}节" }, content = text)
+                val firstLine = part.substringBefore("\n")
+                val title = firstLine.trim().removePrefix("## ").trim()
+                EditSection(title = title.ifBlank { "第${index + 1}节" }, content = ("## " + part).trim())
             }
         }
     }
