@@ -951,3 +951,8 @@
 **涉及文件**：`data/ai/SystemPromptSections.kt`（新增）、`data/ai/GenerationHandler.kt`、`data/service/ProactiveMessageService.kt`、`data/ai/transformers/WorkspaceReminderTransformer.kt`
 
 **状态**：⏳ 待宝构建验证（主动消息的 system 里应出现【工具】/【输出规则】/【跳过回复】/【屏幕跳转能力】/【工作区】，消息下面应出现 token 用量）
+
+### 2026-09-17 补丁（b71e8a4b 之后）
+宝构建报错：`ProactiveMessageService.kt:1310 Unresolved reference 'merge'`。
+- 原因 1：`merge` 是 `me.rerere.ai.core` 里的扩展函数（`fun TokenUsage?.merge(other: TokenUsage)`），忘了 import → 补 `import me.rerere.ai.core.merge`
+- 原因 2（自查发现的第二个坑，尚未被编译器报出）：工作区判空写成 `workspace?.shellStatus == X`，编译器无法据此推断非空 → 传参处会报类型不匹配。改成 `val workspace = if (wsId != null) ... else null` + `if (workspace != null && workspace.shellStatus == X)`

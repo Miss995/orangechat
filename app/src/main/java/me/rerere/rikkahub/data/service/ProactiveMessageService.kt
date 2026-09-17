@@ -81,6 +81,7 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.ai.buildCodeBlockPrompt
 import me.rerere.rikkahub.data.ai.buildMemoryPrompt
 import me.rerere.rikkahub.data.ai.MemoryInjector
+import me.rerere.ai.core.merge
 import me.rerere.rikkahub.data.ai.SelfNoteSurfacing
 import me.rerere.rikkahub.data.ai.SystemPromptSections
 import me.rerere.rikkahub.data.ai.transformers.buildWorkspacePrompt
@@ -1027,12 +1028,10 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
             // 主动消息这边直接调同一个 buildWorkspacePrompt（不挂 transformer——它会在
             // "只有一条 user 消息"的列表里插一条新 system，把唤醒消息顶掉，跟 09-15 那次同一个坑）。
             val wsId = assistant.workspaceId?.toString()
-            if (wsId != null) {
-                val workspace = workspaceRepository.getById(wsId)
-                if (workspace?.shellStatus == WorkspaceShellStatus.READY.name) {
-                    appendLine()
-                    append(buildWorkspacePrompt(workspace))
-                }
+            val workspace = if (wsId != null) workspaceRepository.getById(wsId) else null
+            if (workspace != null && workspace.shellStatus == WorkspaceShellStatus.READY.name) {
+                appendLine()
+                append(buildWorkspacePrompt(workspace))
             }
         }
     }
