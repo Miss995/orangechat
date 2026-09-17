@@ -18,6 +18,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
+import coil3.compose.AsyncImage
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.content.MediaType
@@ -486,11 +487,11 @@ fun ChatInput(
     }
 
     // Load input background image
+    // 2026-09-17：改用 Coil。原来 BitmapFactory.decodeFile 是全尺寸解码，
+    // 一张 2000×2000 的图展开就是 16MB，且不和消息图片共享缓存。
     val inputBgPath = settings.displaySetting.inputBackgroundPath
-    val inputBgBitmap = remember(inputBgPath) {
-        if (inputBgPath.isNotBlank() && File(inputBgPath).exists()) {
-            android.graphics.BitmapFactory.decodeFile(inputBgPath)?.asImageBitmap()
-        } else null
+    val inputBgAvailable = remember(inputBgPath) {
+        inputBgPath.isNotBlank() && File(inputBgPath).exists()
     }
 
     Surface(
@@ -518,16 +519,16 @@ fun ChatInput(
                 shape = MaterialTheme.shapes.largeIncreased,
                 tonalElevation = 0.dp,
                 // When background image is set, make surface transparent so image is visible
-                color = if (inputBgBitmap != null) Color.Transparent
+                color = if (inputBgAvailable) Color.Transparent
                     else if (settings.displaySetting.enableBlurEffect) Color.Transparent
                     else settings.displaySetting.inputFieldColor?.let { it.toComposeColor() } ?: hazeTintColor,
             ) {
                 // Use Box so background image can match parent size
                 Box {
                     // Background image inside input area (matches content size exactly)
-                    if (inputBgBitmap != null) {
-                        Image(
-                            bitmap = inputBgBitmap,
+                    if (inputBgAvailable) {
+                        AsyncImage(
+                            model = File(inputBgPath),
                             contentDescription = null,
                             modifier = Modifier
                                 .matchParentSize()

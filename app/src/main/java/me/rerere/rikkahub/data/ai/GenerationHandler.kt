@@ -279,6 +279,14 @@ class GenerationHandler(
                     val textLen = lastMsg.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
                     val reasoningLen = lastMsg.parts.filterIsInstance<UIMessagePart.Reasoning>().sumOf { it.reasoning.length }
                     AppLogBuffer.log("GEN_RESULT", "parts=${lastMsg.parts.size} [$partTypes] text=$textLen reasoning=$reasoningLen role=${lastMsg.role}")
+                    // 2026-09-17：内存观察点。生成结束时打一次堆占用，
+                    // 下次再出 OOM 就能看出是「慢慢涨上去」还是「某一下爆掉」。
+                    run {
+                        val rt = Runtime.getRuntime()
+                        val usedMb = (rt.totalMemory() - rt.freeMemory()) / 1048576L
+                        val maxMb = rt.maxMemory() / 1048576L
+                        AppLogBuffer.log("MemWatch", "heap=${usedMb}/${maxMb}MB (${if (maxMb > 0) usedMb * 100 / maxMb else 0}%)")
+                    }
 
                     // 【正文兜底 2026-08-28 宝的方案】text=0（只有思考没正文）时，
                     // 从 reasoning 最后一段提取像正文的内容当兜底——既让宝看到内容，

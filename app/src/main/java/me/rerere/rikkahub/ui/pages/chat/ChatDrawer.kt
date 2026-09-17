@@ -38,6 +38,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import coil3.compose.AsyncImage
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -185,19 +186,15 @@ fun ChatDrawerContent(
             if (drawerBgPath.isNotEmpty()) {
                 val bgFile = java.io.File(drawerBgPath)
                 if (bgFile.exists()) {
-                    val bgBitmap = remember(drawerBgPath) {
-                        BitmapFactory.decodeFile(drawerBgPath)
-                    }
-                    if (bgBitmap != null) {
-                        Image(
-                            bitmap = bgBitmap.asImageBitmap(),
-                            contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .alpha(0.15f),
-                            contentScale = ContentScale.Crop,
-                        )
-                    }
+                    // 2026-09-17：改用 Coil，避免全尺寸解码常驻内存
+                    AsyncImage(
+                        model = bgFile,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .alpha(0.15f),
+                        contentScale = ContentScale.Crop,
+                    )
                 }
             }
 

@@ -26,6 +26,7 @@ import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import coil3.compose.AsyncImage
 import androidx.compose.material3.Text
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
@@ -332,10 +333,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                         },
                     )
                     if (displaySetting.userAvatarFramePath.isNotBlank() && File(displaySetting.userAvatarFramePath).exists()) {
-                        val userFrameBitmap = remember(displaySetting.userAvatarFramePath) {
-                            android.graphics.BitmapFactory.decodeFile(displaySetting.userAvatarFramePath)
-                        }
-                        if (userFrameBitmap != null) {
+                        run {
                             // 实时预览：圆形头像 + 挂件叠加
                             item(
                                 headlineContent = { Text("预览") },
@@ -363,8 +361,8 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                                 )
                                                 .size((80 * displaySetting.userAvatarFrameScale).dp)
                                         ) {
-                                            Image(
-                                                bitmap = userFrameBitmap.asImageBitmap(),
+                                            AsyncImage(
+                                                model = File(displaySetting.userAvatarFramePath),
                                                 contentDescription = "用户头像挂件",
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentScale = ContentScale.Fit,
@@ -442,10 +440,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                         },
                     )
                     if (displaySetting.aiAvatarFramePath.isNotBlank() && File(displaySetting.aiAvatarFramePath).exists()) {
-                        val aiFrameBitmap = remember(displaySetting.aiAvatarFramePath) {
-                            android.graphics.BitmapFactory.decodeFile(displaySetting.aiAvatarFramePath)
-                        }
-                        if (aiFrameBitmap != null) {
+                        run {
                             // 实时预览：圆形头像 + 挂件叠加
                             item(
                                 headlineContent = { Text("预览") },
@@ -473,8 +468,8 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                                 )
                                                 .size((80 * displaySetting.aiAvatarFrameScale).dp)
                                         ) {
-                                            Image(
-                                                bitmap = aiFrameBitmap.asImageBitmap(),
+                                            AsyncImage(
+                                                model = File(displaySetting.aiAvatarFramePath),
                                                 contentDescription = "AI头像挂件",
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentScale = ContentScale.Fit,
