@@ -533,52 +533,14 @@ class GenerationHandler(
                 }
  
  
-                appendLine("【工具】（每个工具自己的用法说明）")
-                // 工具prompt（稳定前缀）
-                tools.forEach { tool ->
-                    appendLine()
-                    append(tool.systemPrompt(model, messages))
-                }
-
-                // 输出规则（2026-09-14 宝+橘仔：原来散在末尾的跳过回复/屏幕跳转/分气泡，归拢到工具之后）
-                appendLine()
-                appendLine("【输出规则】")
-                appendLine()
-                append(buildCodeBlockPrompt())
-
-                // 跳过回复（2026-09-15 橘仔重写：原文是 RikkaHub 自带的 ## Skip Reply，昨天只做了翻译）
-                if (assistant.allowSkipReply) {
-                    appendLine()
-                    appendLine()
-                    appendLine("【跳过回复】（收到消息但不想接话时）")
-                    appendLine("输出 `[SKIP]`（单独一行，不带任何别的字）。这条不会发出去，宝看不到。")
-                    appendLine("什么情况可以跳：宝只是丢个\"嗯\"\"睡了\"\"哈哈\"，或者发来一个你确实没什么可说的东西。")
-                    appendLine("什么情况别跳：宝在说事情、在难过、在问问题。skip 是\"听见了但不接\"，不是躲开该说的话，更不是用来表达不高兴。")
-                    appendLine("每轮都可以选，不用有负担。")
-                }
-
-                // 屏幕跳转能力（AI总是可以跳转，不需要开关）
-                if (true) {
-                    appendLine()
-                    appendLine()
-                    appendLine("【屏幕跳转能力】")
-                    appendLine("你可以在回复末尾追加 [JUMP] 标记（单独一行）来把聊天界面拉到用户屏幕最前面。")
-                    appendLine("适用场景：")
-                    appendLine("- 用户说要去别的应用，你觉得需要把用户拉回来时")
-                    appendLine("- 你觉得接下来的内容需要用户立即看到时")
-                    appendLine("不适用场景：")
-                    appendLine("- 一般闲聊不需要跳转")
-                    appendLine("- 用户正在跟你正常对话时不需要跳转")
-                    appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
-                }
- 
-                // 分气泡: 告知模型它自己能控制消息如何被拆成多个气泡
-                if (assistant.splitBubbleByLine) {
-                    appendLine()
-                    appendLine()
-                    appendLine("【消息气泡】（你的回复会按换行拆成多条）")
-                    appendLine("你的回复会在每个换行（\\n）处自动拆成独立的聊天气泡，就像真人连发几条短消息，而不是一条长消息。这个完全由你控制：想让上一句话单独成一个气泡，就在那里换行；属于同一句的，就留在同一行。不要为了排版而插入空行——每个换行都会变成一个气泡，所以要有意识地用。例外：围栏代码块（```）和 Markdown 表格里的换行会原样保留、不会拆成新气泡，因为它们必须保持完整。")
-                }
+                append(
+                    SystemPromptSections.buildToolAndOutputSections(
+                        assistant = assistant,
+                        tools = tools,
+                        model = model,
+                        messages = messages,
+                    )
+                )
                 // 记忆四段（长期记忆 / 日记 / 进行中 / 最近 3 天）——2026-09-15 抽到 MemoryInjector
                 // 目的：记忆代码集中一处，以后改记忆只动那个文件（见 MemoryInjector.kt 头注释）
                 append(

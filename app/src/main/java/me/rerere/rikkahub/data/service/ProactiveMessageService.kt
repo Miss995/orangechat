@@ -82,6 +82,10 @@ import me.rerere.rikkahub.data.ai.buildCodeBlockPrompt
 import me.rerere.rikkahub.data.ai.buildMemoryPrompt
 import me.rerere.rikkahub.data.ai.MemoryInjector
 import me.rerere.rikkahub.data.ai.SelfNoteSurfacing
+import me.rerere.rikkahub.data.ai.SystemPromptSections
+import me.rerere.rikkahub.data.ai.transformers.buildWorkspacePrompt
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.workspace.WorkspaceShellStatus
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.RouteActivity
@@ -421,6 +425,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
     private val pluginToolProvider: PluginToolProvider by inject()
     private val json: Json by inject()
     private val chatService: ChatService by inject()
+    private val workspaceRepository: WorkspaceRepository by inject()
     private val proactiveMessageService = ProactiveMessageService()
 
     companion object {
@@ -986,15 +991,17 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 append(assistant.systemPrompt)
             }
 
-            // 代码块命名 / ZIP 说明（与聊天路径同一个函数，保证逐字节一致）
-            appendLine()
-            append(buildCodeBlockPrompt())
-
-            // 工具 prompt（与聊天路径同顺序、同调用方式）
-            tools.forEach { tool ->
-                appendLine()
-                append(tool.systemPrompt(model, contextMessages))
-            }
+            // 【2026-09-17 宝拍板】工具段 + 输出规则段：与聊天侧共用同一个函数（SystemPromptSections）
+            // 原来两边各写一份，主动消息这边只有代码块规则 + 工具列表，缺【工具】标题、【输出规则】、
+            // 【跳过回复】、【屏幕跳转能力】——共用之后不会再各自漂。
+            append(
+                SystemPromptSections.buildToolAndOutputSections(
+                    assistant = assistant,
+                    tools = tools,
+                    model = model,
+                    messages = contextMessages,
+                )
+            )
 
             // 【2026-09-16 第二刀 · ③】记忆段改用 MemoryInjector.buildMemoryBlock（与聊天侧同一函数）
             // 主动消息现在也有：长期记忆 / 日记 / 进行中 / 最近 3 天（取数在调用方完成）
@@ -1015,6 +1022,18 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     ongoingEventsText = ongoingEventsText,
                 )
             )
+
+            // 【2026-09-17 宝发现】工作区说明：聊天侧由 WorkspaceReminderTransformer 追加到 system 末尾，
+            // 主动消息这边直接调同一个 buildWorkspacePrompt（不挂 transformer——它会在
+            // "只有一条 user 消息"的列表里插一条新 system，把唤醒消息顶掉，跟 09-15 那次同一个坑）。
+            val wsId = assistant.workspaceId?.toString()
+            if (wsId != null) {
+                val workspace = workspaceRepository.getById(wsId)
+                if (workspace?.shellStatus == WorkspaceShellStatus.READY.name) {
+                    appendLine()
+                    append(buildWorkspacePrompt(workspace))
+                }
+            }
         }
     }
 
@@ -1283,6 +1302,17 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 params = params
             ).collect { chunk ->
                 streamMessages = streamMessages.handleMessageChunk(chunk = chunk, model = model)
+                // 【2026-09-17 宝的需求】token 用量：照抄聊天侧做法
+                // （流式过程中遇到 chunk.usage 就合并进最后一条消息，消息下面才能显示用量）
+                chunk.usage?.let { usage ->
+                    streamMessages = streamMessages.mapIndexed { index, message ->
+                        if (index == streamMessages.lastIndex) {
+                            message.copy(usage = message.usage.merge(usage))
+                        } else {
+                            message
+                        }
+                    }
+                }
             }
             // 流式结束：记录本次流式的最终状态（数据是否完整、reasoning 是否已 finish）
             val streamedAi = streamMessages.lastOrNull { it.role == MessageRole.ASSISTANT }

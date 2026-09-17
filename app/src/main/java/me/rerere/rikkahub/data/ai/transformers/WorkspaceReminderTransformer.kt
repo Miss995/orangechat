@@ -45,7 +45,9 @@ class WorkspaceReminderTransformer(
     }
 }
 
-private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null): String = buildString {
+// 2026-09-17：private → internal —— 主动消息侧（ProactiveMessageService）也要调它把工作区说明写进 system
+// （那边不走 transformer：transformer 会在"只有一条 user 消息"的列表里插新 system，把唤醒消息顶掉）
+internal fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null): String = buildString {
     appendLine("【工作区】（沙箱里的持久化 Linux 环境）")
     appendLine("<workspace>")
     appendLine("你有一个持久化的 Linux 工作区，名字叫 \"${workspace.name}\"，运行在沙箱化的 proot rootfs 环境里。")

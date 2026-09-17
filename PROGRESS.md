@@ -928,3 +928,26 @@
 **不落库**：浮现消息是拼请求时的局部变量，不进 Conversation，saveProactiveMessage 碰不到它。
 
 **状态**：⏳ 已推 main → 待宝构建 APK 验证（触发一次主动消息，请求日志里应出现 `【浮现·…我写过这样一段话】`）
+
+## 2026-09-17（下半场）主动消息侧补上公共提示词段 + 工作区 + token 用量
+
+宝构建验证「浮现」成功 ✅ 之后，宝对比两边请求发现主动消息侧提示词还缺几段，一并收掉（第二刀 B 方案：抽共用）。
+
+**1. 新建 `data/ai/SystemPromptSections.kt`（公共段集中处）**
+- `buildToolAndOutputSections(assistant, tools, model, messages)` = 【工具】标题 + 各工具 prompt + 【输出规则】 + 代码块规则 + 【跳过回复】 + 【屏幕跳转能力】 + 【消息气泡】
+- 逐字搬自 GenerationHandler 内联写法（用脚本比对过：去掉注释/空行后逐行一致 ✅）
+- 聊天侧 GenerationHandler 那段内联 → 换成一次 `append(SystemPromptSections.buildToolAndOutputSections(...))`
+- 主动消息侧原来只有「代码块规则 + 工具列表」，现在也调同一个函数（顺手补上缺的三段）
+
+**2. 工作区说明（宝：主动消息那边没有工作区提示词）**
+- 根因：`WorkspaceReminderTransformer` 只挂在 ChatService 的转换器链上，主动消息那份 inputTransformers 里没有它
+- ⚠️ 不能直接挂：transformer 找不到 system 消息时会**插一条新 system 在最前**，而 PMS 用 `.first()` 取「处理后的用户消息」→ 唤醒消息会被顶掉（跟 09-15 TimeReminderTransformer 同一个坑）
+- 改法：`buildWorkspacePrompt` private → internal；PMS 的 buildSystemPrompt 末尾（记忆段之后）直接调它。PMS 加 `workspaceRepository` 注入
+
+**3. token 用量（宝：主动消息能不能显示用量）**
+- 根因：PMS 的流式 collect 只调 handleMessageChunk，没处理 chunk.usage（聊天侧有）
+- 改法：照抄聊天侧 —— `chunk.usage?.let { ... message.copy(usage = message.usage.merge(usage)) }`
+
+**涉及文件**：`data/ai/SystemPromptSections.kt`（新增）、`data/ai/GenerationHandler.kt`、`data/service/ProactiveMessageService.kt`、`data/ai/transformers/WorkspaceReminderTransformer.kt`
+
+**状态**：⏳ 待宝构建验证（主动消息的 system 里应出现【工具】/【输出规则】/【跳过回复】/【屏幕跳转能力】/【工作区】，消息下面应出现 token 用量）
