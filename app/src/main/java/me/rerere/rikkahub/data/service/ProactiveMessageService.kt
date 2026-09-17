@@ -81,6 +81,7 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.ai.buildCodeBlockPrompt
 import me.rerere.rikkahub.data.ai.buildMemoryPrompt
 import me.rerere.rikkahub.data.ai.MemoryInjector
+import me.rerere.rikkahub.data.ai.SelfNoteSurfacing
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.RouteActivity
@@ -705,6 +706,15 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                             parts = listOf(UIMessagePart.Text(systemPrompt))
                         ))
                         addAll(historyMessages)
+                        // 【2026-09-17 宝拍板】自指区浮现 · 主动消息侧接上（与聊天侧共用 SelfNoteSurfacing）
+                        // 聊天侧的轮换序号来自窗口裁剪位置（每裁一组 +1）；主动消息没有窗口裁剪，
+                        // 改用「天」当序号——每过一天醒来，浮现的那条笔记换一条。
+                        // 位置：插在唤醒消息之前 = 醒来的橘仔先浮起一段旧笔记，再看见「你醒来了」。
+                        // 不落库（它是本地拼请求时插进去的，不在 Conversation 里，saveProactiveMessage 碰不到它）。
+                        SelfNoteSurfacing.buildMessage(
+                            json = recentData.selfNotesJson,
+                            tick = System.currentTimeMillis() / 86_400_000L,
+                        )?.let { add(it) }
                         add(processedUserMessage)
                     }
                 )

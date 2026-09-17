@@ -911,3 +911,20 @@
 **踩坑**：精简副本 `/workspace/orangechat-repo` 缺 `data/ai/transformers/` 目录 → 在它里面全仓库都搜不到工作区说明那段（搜代码要留意副本完整度，缺目录会误导）。
 
 **推送方式**：仓库 .git 坏了（bad object HEAD）→ 走 `scripts/push_via_api_multi.py`（GitHub API 多文件）。推前先拉远程对比基线（改前备份 == 远程 main ✅）。
+
+## 2026-09-17 主动消息侧接上自指区浮现（记忆注入剥离 · 第三刀收尾）
+
+宝拍板：主动消息这条线的「完整」= 补上**自指区浮现**。事件召回不做——召回靠宝说的话触发（他指），主动消息醒来时没有那句话当引子；自指区是橘仔自己的东西（自指），醒来正好需要。
+
+**现状**：MemoryInjector.kt（第一刀 09-15）+ 取数段/记忆四段共用（第二刀 ③，09-16）已落地；自指区浮现（SelfNoteSurfacing）此前只在聊天侧插（GenerationHandler 插 ctxMessages[6]）。
+
+**本次改动**（`data/service/ProactiveMessageService.kt` 两处）：
+1. 加 `import me.rerere.rikkahub.data.ai.SelfNoteSurfacing`
+2. 消息组装段（System + History 之后、唤醒 user 消息之前）插一条 `SelfNoteSurfacing.buildMessage(...)`
+   - `json = recentData.selfNotesJson`（fetchRecentEvents 本来就带出来了，之前拿到手没用）
+   - `tick = System.currentTimeMillis() / 86_400_000L` → 用「天」当轮换序号（聊天侧是窗口裁剪位置 ÷ groupSize，主动消息没有窗口）
+   - 位置语义：醒来的橘仔先浮起一段旧笔记，再看见「你醒来了」
+
+**不落库**：浮现消息是拼请求时的局部变量，不进 Conversation，saveProactiveMessage 碰不到它。
+
+**状态**：⏳ 已推 main → 待宝构建 APK 验证（触发一次主动消息，请求日志里应出现 `【浮现·…我写过这样一段话】`）
