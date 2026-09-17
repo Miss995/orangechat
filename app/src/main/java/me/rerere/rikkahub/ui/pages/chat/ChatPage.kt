@@ -106,8 +106,6 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
     // 【老消息跳转 2026-08-31】目标在懒加载窗口外时，临时加载目标段显示（配合 ChatList 跳转模式）
     var jumpNodes by remember { mutableStateOf<List<MessageNode>?>(null) }
     var jumpTargetIndex by remember { mutableStateOf<Int?>(null) }
-    // 定时发送对话框（2026-09-17 宝提的小玩法）
-    var showScheduleDialog by remember { mutableStateOf(false) }
     val loadingJob by vm.conversationJob.collectAsStateWithLifecycle()
     val processingStatus by vm.processingStatus.collectAsStateWithLifecycle()
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
@@ -312,6 +310,8 @@ private fun ChatPageContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     var previewMode by rememberSaveable { mutableStateOf(false) }
+    // 定时发送对话框（2026-09-17 宝提的小玩法）
+    var showScheduleDialog by remember { mutableStateOf(false) }
     val hazeState = rememberHazeState()
 
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)

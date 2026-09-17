@@ -990,3 +990,8 @@
 2. `kotlin.time.Duration.Companion.hours(1)` 写法错误 → 正确是 `1.hours`，并 `import kotlin.time.Duration.Companion.hours`
 3. **ChatPage 编辑失误**：`onUpdateChatModel = {` 那一行被 search/replace 吞掉了（旧文本包含它、新文本没包含）→ 补回
 4. 上面两类语法错在 ChatPage 引发一串级联报错（`showScheduleDialog` 未解析、缺参数、named/positional 混用），修完即消
+
+### 构建修复 2（1525c458 之后）
+`showScheduleDialog` 三处未解析。根因：**ChatPage.kt 里有两个函数** —— 外层 `ChatPage`（状态/ViewModel 那层）与内层 `ChatPageContent`（真正画 UI 那层）。state 被加在了外层，但用它的 `ChatInput` 调用和对话框都在内层 → 作用域够不着。
+修法：把声明挪进 `ChatPageContent`（`rememberSaveable` 那几行下面）。
+教训：**改 UI 文件前先 grep `^fun` 确认函数边界**，别凭缩进猜。
