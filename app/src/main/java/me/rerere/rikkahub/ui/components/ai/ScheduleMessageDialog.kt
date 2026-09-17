@@ -41,6 +41,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Cancel01
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 import me.rerere.rikkahub.data.service.ScheduledMessage
 import me.rerere.rikkahub.data.service.ScheduledMessageScheduler
 import me.rerere.rikkahub.data.service.ScheduledMessageStore
@@ -74,8 +77,7 @@ fun ScheduleMessageDialog(
 
     // 默认排在「一小时后」
     val defaultTrigger = remember {
-        Clock.System.now().plus(kotlin.time.Duration.Companion.hours(1))
-            .toLocalDateTime(zone)
+        Clock.System.now().plus(1.hours).toLocalDateTime(zone)
     }
     var triggerAt by remember { mutableStateOf(defaultTrigger) }
     var showDatePicker by remember { mutableStateOf(false) }
@@ -132,9 +134,9 @@ fun ScheduleMessageDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val now = Clock.System.now()
                     listOf(
-                        "+5分钟" to kotlin.time.Duration.Companion.minutes(5),
-                        "+1小时" to kotlin.time.Duration.Companion.hours(1),
-                        "+3小时" to kotlin.time.Duration.Companion.hours(3),
+                        "+5分钟" to 5.minutes,
+                        "+1小时" to 1.hours,
+                        "+3小时" to 3.hours,
                     ).forEach { (label, delta) ->
                         TextButton(onClick = {
                             triggerAt = now.plus(delta).toLocalDateTime(zone)

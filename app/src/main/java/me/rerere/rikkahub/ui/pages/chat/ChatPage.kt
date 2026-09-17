@@ -440,6 +440,7 @@ private fun ChatPageContent(
                     onScheduleClick = {
                         showScheduleDialog = true
                     },
+                    onUpdateChatModel = {
                         vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it)
                     },
                     onUpdateAssistant = {

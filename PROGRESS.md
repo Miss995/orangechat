@@ -983,3 +983,10 @@
 - `AndroidManifest.xml`：注册 `ScheduledMessageReceiver`（exported=true，含 BOOT_COMPLETED）+ `ScheduledMessageSendService`（foregroundServiceType=specialUse）
 
 **状态**：⏳ 待宝构建验证
+
+### 构建修复（22676ac0 之后）
+宝构建报错，共四类：
+1. `HugeIcons.Clock02` / `HugeIcons.Cancel01` → **图标要单独 import 扩展属性**：`import me.rerere.hugeicons.stroke.Clock02`（参考 ChatMessageNerdLine.kt 的写法，只 import `HugeIcons` 对象是不够的）
+2. `kotlin.time.Duration.Companion.hours(1)` 写法错误 → 正确是 `1.hours`，并 `import kotlin.time.Duration.Companion.hours`
+3. **ChatPage 编辑失误**：`onUpdateChatModel = {` 那一行被 search/replace 吞掉了（旧文本包含它、新文本没包含）→ 补回
+4. 上面两类语法错在 ChatPage 引发一串级联报错（`showScheduleDialog` 未解析、缺参数、named/positional 混用），修完即消
