@@ -1013,3 +1013,11 @@
 **教训**：
 1. 推文件前**必须** diff 远程（这次偷懒了，代价是宝多构建一次 + 远程一度回退）
 2. 两个副本要先确认**哪个新**：`data/ai/` 下的文件精简副本更新（记忆注入重构在那边改的），别默认用完整副本
+
+### 2026-09-17 补丁 4：定时消息加 WorkManager 兜底（OPPO 后台冷冻）
+宝实测：OPPO 上退到后台后定时消息不发，得等 App 转前台才发 —— ColorOS 的 cached app freezer 把进程冻住，闹钟到点了跑不动，解冻才补投。
+修法（照主动消息那套双保险）：
+- 新增 `ScheduledMessageWorker`（WorkManager，系统级调度器，进程被杀/设备重启后仍会执行）
+- `ScheduledMessageScheduler.schedule / cancel / rescheduleAll` 同时排 WorkManager
+- `ScheduledMessageStore.removeIfPresent`（`@Synchronized` 原子取走）防两道同时到重复发
+- `sendScheduled` 改用原子取走；发送失败放回清单（不丢宝的消息）

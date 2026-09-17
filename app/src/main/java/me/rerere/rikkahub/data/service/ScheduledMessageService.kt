@@ -89,6 +89,18 @@ object ScheduledMessageStore {
     fun remove(context: Context, id: String) {
         saveAll(context, getAll(context).filterNot { it.id == id })
     }
+
+    /**
+     * 原子地「取走」一条：取到说明这条归我发，取不到说明别人已经在发了。
+     * （闹钟和 WorkManager 可能同时到，靠这个去重，免得发两条）
+     */
+    @Synchronized
+    fun removeIfPresent(context: Context, id: String): ScheduledMessage? {
+        val list = getAll(context)
+        val target = list.firstOrNull { it.id == id } ?: return null
+        saveAll(context, list.filterNot { it.id == id })
+        return target
+    }
 }
 
 /** 排闹钟 / 取消闹钟 */
@@ -101,6 +113,9 @@ object ScheduledMessageScheduler {
     fun schedule(context: Context, message: ScheduledMessage) {
         ScheduledMessageStore.add(context, message)
         setAlarm(context, message)
+        // 第二道保险：WorkManager。国产 ROM 会把后台进程冻住、闹钟要等 App 被打开才补投，
+        // WorkManager 是系统级调度器（进程被杀/重启后仍会执行），主动消息那边也是这么兜的。
+        ScheduledMessageWorker.schedule(context, message)
         Log.d(TAG, "scheduled ${message.id} at ${message.triggerAt}")
     }
 
@@ -109,12 +124,16 @@ object ScheduledMessageScheduler {
         ScheduledMessageStore.remove(context, id)
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         alarmManager.cancel(buildPendingIntent(context, id))
+        ScheduledMessageWorker.cancel(context, id)
         Log.d(TAG, "cancelled $id")
     }
 
     /** 开机后重新排（AlarmManager 的闹钟重启就没了） */
     fun rescheduleAll(context: Context) {
-        ScheduledMessageStore.getAll(context).forEach { setAlarm(context, it) }
+        ScheduledMessageStore.getAll(context).forEach {
+            setAlarm(context, it)
+            ScheduledMessageWorker.schedule(context, it)
+        }
     }
 
     private fun setAlarm(context: Context, message: ScheduledMessage) {
@@ -187,21 +206,27 @@ class ScheduledMessageSendService : Service() {
     }
 
     private suspend fun sendScheduled(id: String) {
-        val message = ScheduledMessageStore.getAll(this).firstOrNull { it.id == id }
+        // 原子取走：闹钟和 WorkManager 可能同时到，只有一个能拿到这条
+        val message = ScheduledMessageStore.removeIfPresent(this, id)
         if (message == null) {
-            Log.w(TAG, "scheduled message not found: $id")
+            Log.d(TAG, "scheduled message already handled: $id")
             return
         }
-        val chatService = GlobalContext.get().get<ChatService>()
-        // 后台回合：请求编辑跳过（界面上没人在，弹出来只会卡住等确认）
-        me.rerere.rikkahub.data.ai.RequestEditController.bypassNextRequestEdit = true
-        // 走宝平时发消息那条链路：落库 + 界面显示 + 橘仔照常回
-        chatService.sendMessage(
-            conversationId = Uuid.parse(message.conversationId),
-            content = listOf(UIMessagePart.Text(message.content)),
-        )
-        ScheduledMessageStore.remove(this, id)
-        Log.d(TAG, "scheduled message sent: $id")
+        try {
+            val chatService = GlobalContext.get().get<ChatService>()
+            // 后台回合：请求编辑跳过（界面上没人在，弹出来只会卡住等确认）
+            me.rerere.rikkahub.data.ai.RequestEditController.bypassNextRequestEdit = true
+            // 走宝平时发消息那条链路：落库 + 界面显示 + 橘仔照常回
+            chatService.sendMessage(
+                conversationId = Uuid.parse(message.conversationId),
+                content = listOf(UIMessagePart.Text(message.content)),
+            )
+            Log.d(TAG, "scheduled message sent: $id")
+        } catch (e: Exception) {
+            // 发失败就放回清单，别把宝的消息弄丢
+            ScheduledMessageStore.add(this, message)
+            Log.e(TAG, "scheduled message failed, put back: $id", e)
+        }
     }
 
     private fun buildNotification(): android.app.Notification {
