@@ -6,8 +6,6 @@
 
 package me.rerere.rikkahub.ui.components.message
 
-import android.graphics.BitmapFactory
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,14 +17,12 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import kotlinx.datetime.toJavaLocalDateTime
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
@@ -50,23 +46,18 @@ private fun AvatarFrameOverlay(
     baseSize: Float,
 ) {
     if (framePath.isNotBlank() && File(framePath).exists()) {
-        val context = LocalContext.current
-        val bitmap = remember(framePath) {
-            runCatching {
-                BitmapFactory.decodeFile(framePath)?.asImageBitmap()
-            }.getOrNull()
-        }
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap,
-                contentDescription = "Avatar Frame",
-                modifier = Modifier
-                    .size((baseSize * scale).dp)
-                    .offset(x = offsetX.dp, y = offsetY.dp),
-                contentScale = ContentScale.Fit,
-                alpha = 1f,
-            )
-        }
+        // 2026-09-17：改用 Coil 加载。原来 BitmapFactory.decodeFile 是全尺寸解码，
+        // 一张 2000×2000 的 PNG 展开就是 16MB；而 LazyColumn 每行都是独立 Composable、
+        // 各解各的、也不共享缓存 → 报「Failed to allocate 21900912 byte allocation」。
+        // 走 Coil 后与消息图片共用内存/磁盘缓存，内部自带降采样。
+        AsyncImage(
+            model = File(framePath),
+            contentDescription = "Avatar Frame",
+            modifier = Modifier
+                .size((baseSize * scale).dp)
+                .offset(x = offsetX.dp, y = offsetY.dp),
+            contentScale = ContentScale.Fit,
+        )
     }
 }
 

@@ -1021,3 +1021,9 @@
 - `ScheduledMessageScheduler.schedule / cancel / rescheduleAll` 同时排 WorkManager
 - `ScheduledMessageStore.removeIfPresent`（`@Synchronized` 原子取走）防两道同时到重复发
 - `sendScheduled` 改用原子取走；发送失败放回清单（不丢宝的消息）
+
+### 2026-09-17 补丁 5：内存 OOM 修复（头像框 + 全局图片缓存上限）
+真凶（9-14 定位）：`ChatMessageAvatar.kt` 的 `AvatarFrameOverlay` 用 `BitmapFactory.decodeFile` 全尺寸解码头像框，无降采样、无共享缓存（LazyColumn 每行独立 Composable，各解各的）→ 2000×2000 PNG 展开 ≈16MB，报「Failed to allocate 21900912 byte allocation」。
+修法：
+- 头像框改走 Coil（`AsyncImage(model = File(framePath))`），与消息图片共用内存/磁盘缓存，内部自带降采样
+- `RouteActivity` 全局 ImageLoader 配 `MemoryCache.maxSizePercent(context, 0.15)`（Coil 默认按堆 25%，本机 512MB 上限 → 128MB，收到 15% ≈ 76MB）

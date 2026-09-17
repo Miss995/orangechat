@@ -64,6 +64,7 @@ import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.gif.AnimatedImageDecoder
 import coil3.gif.GifDecoder
+import coil3.memory.MemoryCache
 import coil3.network.cachecontrol.CacheControlCacheStrategy
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
@@ -233,6 +234,14 @@ class RouteActivity : ComponentActivity() {
                 setSingletonImageLoaderFactory { context ->
                     ImageLoader.Builder(context)
                         .crossfade(true)
+                        // 2026-09-17：给全局图片加载器配内存缓存上限。
+                        // Coil 默认按堆的 25% 算（咱这设备 512MB 上限 → 128MB），
+                        // 跟头像框那处一起收一收（→ 15%，约 76MB），别让图片把堆吃满。
+                        .memoryCache {
+                            MemoryCache.Builder()
+                                .maxSizePercent(context, 0.15)
+                                .build()
+                        }
                         .components {
                             add(OkHttpNetworkFetcherFactory(
                                 callFactory = { okHttpClient },
