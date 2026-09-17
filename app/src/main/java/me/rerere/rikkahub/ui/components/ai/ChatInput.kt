@@ -161,6 +161,7 @@ fun ChatInput(
     onCancelClick: () -> Unit,
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
+    onScheduleClick: () -> Unit = {},
     onVoiceMessage: ((url: String, duration: Long, transcript: String) -> Unit)? = null,
     autoStartVoice: Boolean = false,
 ) {
@@ -608,6 +609,18 @@ fun ChatInput(
                                     )
                                 }
 
+                            }
+
+                            // 定时发送：点一下选时间，到点自动把这条消息发出去（2026-09-17 宝提的新玩法）
+                            ActionIconButton(
+                                onClick = onScheduleClick
+                            ) {
+                                Icon(
+                                    imageVector = HugeIcons.Clock02,
+                                    contentDescription = "定时发送",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
 
                             ActionIconButton(

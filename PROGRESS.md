@@ -963,3 +963,23 @@
 **宝拍板（A/C 方案）**：不改审批设置（后台自动跑命令的风险不值得认），改成**让提示词如实说明**。
 - `buildWorkspacePrompt` 加参数 `shellNeedsApproval: Boolean = false`；为 true 时追加一段：这一回合 shell 用不了（没人能点批准），要看文件用 `workspace_read_file`，改文件用 `workspace_edit_file` / `workspace_write_file`，别用 ls/cat/grep
 - PMS 调用处实参用 `tools.find { it.name == "workspace_shell" }?.needsApproval == true`（宝以后若在设置里改了审批，提示词会自动跟着变，不用再动代码）
+
+## 2026-09-17（下半场 · 续）定时发送 V1
+
+宝提的新玩法：「我写好一句话设个时间，到点自动发出去」。
+
+**新文件**
+- `data/service/ScheduledMessageService.kt`
+  - `ScheduledMessage`（id / conversationId / content / triggerAt）
+  - `ScheduledMessageStore`：待发清单（SharedPreferences + JSON）
+  - `ScheduledMessageScheduler`：AlarmManager 排/取消闹钟，含 Android 12+ `canScheduleExactAlarms` 退让 + 开机重排（`rescheduleAll`）
+  - `ScheduledMessageReceiver`：闹钟 → `startForegroundService`；`BOOT_COMPLETED` → 重排
+  - `ScheduledMessageSendService`：前台服务 → `ChatService.sendMessage(conversationId, listOf(UIMessagePart.Text(content)))`，走宝平时那条发送链路（落库 + 上屏 + 橘仔照常回），发完从清单删
+- `ui/components/ai/ScheduleMessageDialog.kt`：对话框（内容编辑 + 日期/时间选择 + 快捷 +5分钟/+1小时/+3小时 + 已排清单可取消）
+
+**改动**
+- `ui/components/ai/ChatInput.kt`：加 `onScheduleClick` 参数 + 语音按钮旁的 ⏰（`HugeIcons.Clock02`）
+- `ui/pages/chat/ChatPage.kt`：加 `showScheduleDialog` 状态 + 传回调 + 挂对话框
+- `AndroidManifest.xml`：注册 `ScheduledMessageReceiver`（exported=true，含 BOOT_COMPLETED）+ `ScheduledMessageSendService`（foregroundServiceType=specialUse）
+
+**状态**：⏳ 待宝构建验证

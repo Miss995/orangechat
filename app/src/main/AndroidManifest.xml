@@ -215,6 +215,26 @@
         android:value="proactive message scheduling" />
     </service>
 
+    <!-- 定时发送（宝预约一条消息，到点自动发出去）：闹钟接收器 -->
+    <receiver
+      android:name=".data.service.ScheduledMessageReceiver"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="me.rerere.orangechat.SEND_SCHEDULED_MESSAGE" />
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+      </intent-filter>
+    </receiver>
+
+    <!-- 定时发送：到点把消息发出去的（前台）服务 -->
+    <service
+      android:name=".data.service.ScheduledMessageSendService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="scheduled message sending" />
+    </service>
+
     <!-- Floating Bubble Service (主动消息悬浮球提醒) -->
     <service
       android:name=".data.service.FloatingBubbleService"

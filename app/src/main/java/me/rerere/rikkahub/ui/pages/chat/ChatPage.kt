@@ -75,6 +75,7 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.service.VoiceCallService
 import me.rerere.rikkahub.ui.components.ai.ChatInput
+import me.rerere.rikkahub.ui.components.ai.ScheduleMessageDialog
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.Navigator
@@ -105,6 +106,8 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
     // 【老消息跳转 2026-08-31】目标在懒加载窗口外时，临时加载目标段显示（配合 ChatList 跳转模式）
     var jumpNodes by remember { mutableStateOf<List<MessageNode>?>(null) }
     var jumpTargetIndex by remember { mutableStateOf<Int?>(null) }
+    // 定时发送对话框（2026-09-17 宝提的小玩法）
+    var showScheduleDialog by remember { mutableStateOf(false) }
     val loadingJob by vm.conversationJob.collectAsStateWithLifecycle()
     val processingStatus by vm.processingStatus.collectAsStateWithLifecycle()
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
@@ -434,7 +437,9 @@ private fun ChatPageContent(
                         }
                         inputState.clearInput()
                     },
-                    onUpdateChatModel = {
+                    onScheduleClick = {
+                        showScheduleDialog = true
+                    },
                         vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it)
                     },
                     onUpdateAssistant = {
@@ -546,6 +551,18 @@ private fun ChatPageContent(
                 },
             )
         }
+    }
+
+    // 定时发送：让宝预约一条消息，到点自动发出去（2026-09-17 宝提的）
+    if (showScheduleDialog) {
+        ScheduleMessageDialog(
+            conversationId = conversation.id.toString(),
+            initialText = inputState.getContents()
+                .filterIsInstance<UIMessagePart.Text>()
+                .joinToString("") { it.text },
+            onDismiss = { showScheduleDialog = false },
+            onScheduled = { inputState.clearInput() },
+        )
     }
 }
 
