@@ -47,7 +47,11 @@ class WorkspaceReminderTransformer(
 
 // 2026-09-17：private → internal —— 主动消息侧（ProactiveMessageService）也要调它把工作区说明写进 system
 // （那边不走 transformer：transformer 会在"只有一条 user 消息"的列表里插新 system，把唤醒消息顶掉）
-internal fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null): String = buildString {
+internal fun buildWorkspacePrompt(
+    workspace: WorkspaceEntity,
+    cwd: String? = null,
+    shellNeedsApproval: Boolean = false,
+): String = buildString {
     appendLine("【工作区】（沙箱里的持久化 Linux 环境）")
     appendLine("<workspace>")
     appendLine("你有一个持久化的 Linux 工作区，名字叫 \"${workspace.name}\"，运行在沙箱化的 proot rootfs 环境里。")
@@ -62,6 +66,14 @@ internal fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = nul
     appendLine("- 用户上传的文件挂载在 `/upload`。`/upload` 是只读的：只能从 `/upload/<文件名>` 读，绝不能修改、覆盖或删除里面的东西。需要改上传的文件时，先复制到 `/workspace`，改副本。")
     if (!cwd.isNullOrBlank()) {
         appendLine("- 当前工作目录：`$cwd`。文件操作和 shell 命令默认以它为上下文。")
+    }
+    // 【2026-09-17 宝拍板】headless 场景（主动唤醒回合）：需要批准的工具会被自动拒绝，
+    // 而 workspace_shell 默认就是 needsApproval = true → 提示词里如实讲清楚，
+    // 免得醒来的橘仔习惯性喊 shell、白费一步工具调用（2026-09-17 实测被拒过一次）。
+    if (shellNeedsApproval) {
+        appendLine("- ⚠️ 这一回合 `workspace_shell` 用不了：它需要用户批准，而现在没有人能点批准，调用会被自动拒绝。")
+        appendLine("  要看文件就用 `workspace_read_file`（支持整篇读），改文件用 `workspace_edit_file` / `workspace_write_file`。")
+        appendLine("  别用 shell 去 ls / cat / grep，这一回合跑不起来。")
     }
     append("</workspace>")
 }

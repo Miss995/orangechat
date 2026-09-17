@@ -956,3 +956,10 @@
 宝构建报错：`ProactiveMessageService.kt:1310 Unresolved reference 'merge'`。
 - 原因 1：`merge` 是 `me.rerere.ai.core` 里的扩展函数（`fun TokenUsage?.merge(other: TokenUsage)`），忘了 import → 补 `import me.rerere.ai.core.merge`
 - 原因 2（自查发现的第二个坑，尚未被编译器报出）：工作区判空写成 `workspace?.shellStatus == X`，编译器无法据此推断非空 → 传参处会报类型不匹配。改成 `val workspace = if (wsId != null) ... else null` + `if (workspace != null && workspace.shellStatus == X)`
+
+### 2026-09-17 补丁 2：工作区提示词如实讲「这一回合 shell 不可用」
+宝发现：主动消息醒来的橘仔想翻工作区，工具调用被自动拒绝（`requires user approval in proactive mode`）。
+**排查**：PMS 里有 auto-deny 逻辑 —— `toolDef.needsApproval == true` 的工具在主动消息模式下直接拒。工作区四个工具的默认审批在 `WorkspaceTools.kt` 的 `WorkspaceToolDefaultApprovals`：读/写/改 = false，**`workspace_shell` = true**（权限最大，单独要批准）。
+**宝拍板（A/C 方案）**：不改审批设置（后台自动跑命令的风险不值得认），改成**让提示词如实说明**。
+- `buildWorkspacePrompt` 加参数 `shellNeedsApproval: Boolean = false`；为 true 时追加一段：这一回合 shell 用不了（没人能点批准），要看文件用 `workspace_read_file`，改文件用 `workspace_edit_file` / `workspace_write_file`，别用 ls/cat/grep
+- PMS 调用处实参用 `tools.find { it.name == "workspace_shell" }?.needsApproval == true`（宝以后若在设置里改了审批，提示词会自动跟着变，不用再动代码）

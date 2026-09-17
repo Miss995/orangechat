@@ -1031,7 +1031,10 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
             val workspace = if (wsId != null) workspaceRepository.getById(wsId) else null
             if (workspace != null && workspace.shellStatus == WorkspaceShellStatus.READY.name) {
                 appendLine()
-                append(buildWorkspacePrompt(workspace))
+                // 这一回合是后台触发的，没有人能点「批准」→ 需要批准的工具会被自动拒绝，
+                // 所以 shell 的可用性要如实写进提示词（workspace_shell 默认 needsApproval = true）
+                val shellNeedsApproval = tools.find { it.name == "workspace_shell" }?.needsApproval == true
+                append(buildWorkspacePrompt(workspace, shellNeedsApproval = shellNeedsApproval))
             }
         }
     }
