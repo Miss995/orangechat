@@ -637,6 +637,12 @@ class ConversationRepository(
      * 分页读取 [startOffset, endOffsetExclusive) 区间的消息节点，保留超大行逐行重试逻辑。
      * 循环终止完全由 offset < endOffsetExclusive 控制，不依赖"空结果"判断（防止误判提前退出）。
      */
+    /** 单条消息 JSON 的字符上限，超过则跳过该条（防止单条巨型思考链拖垮解析）。 */
+    private val MAX_SINGLE_NODE_CHARS = 4_000_000
+
+    /** 单次加载允许解析的 JSON 字符总量上限，超过则停止继续加载（保留已解析结果）。 */
+    private val MAX_DECODED_CHARS_PER_LOAD = 12_000_000
+
     private suspend fun loadMessageNodesRange(
         conversationId: String,
         startOffset: Int,
@@ -659,7 +665,12 @@ class ConversationRepository(
 
             val pageSize = 64
             var offset = startOffset
-            while (offset < endOffsetExclusive) {
+            // 内存预算（2026-09-18 OOM 修复）：每条消息解析出的对象会一直挂在 nodes 上不释放，
+            // 全量加载时容易在多次解析后累积到 OOM。这里按已解析的 JSON 字符数做预算，
+            // 超限就停止继续加载，已解析的部分照常返回（宁可少显示几条，也不整个崩掉）。
+            var decodedChars = 0L
+            var budgetExhausted = false
+            while (offset < endOffsetExclusive && !budgetExhausted) {
                 val page = try {
                     messageNodeDAO.getNodesOfConversationPaged(conversationId, pageSize, offset)
                 } catch (e: SQLiteBlobTooBigException) {
@@ -696,8 +707,41 @@ class ConversationRepository(
 
                 // 注意：不能用 page.isEmpty() 来判断是否读完——逐行重试时如果整页全是超大行，
                 // recovered 会是空的，但后面可能还有正常数据。循环终止完全由 offset < endOffsetExclusive 控制。
-                page.forEach { entity ->
-                    val messages = JsonInstant.decodeFromString<List<UIMessage>>(entity.messages)
+                for (entity in page) {
+                    val rawLength = entity.messages.length
+                    if (rawLength > MAX_SINGLE_NODE_CHARS) {
+                        Log.e(
+                            TAG,
+                            "loadMessageNodesRange: skipping node over single-node cap, " +
+                                "conversationId=$conversationId, offset=$offset, chars=$rawLength"
+                        )
+                        continue
+                    }
+                    if (decodedChars + rawLength > MAX_DECODED_CHARS_PER_LOAD) {
+                        Log.w(
+                            TAG,
+                            "loadMessageNodesRange: decode budget reached, stopping early, " +
+                                "conversationId=$conversationId, offset=$offset, " +
+                                "decodedChars=$decodedChars, requested=${startOffset}..${endOffsetExclusive}"
+                        )
+                        budgetExhausted = true
+                        break
+                    }
+                    val messages = try {
+                        JsonInstant.decodeFromString<List<UIMessage>>(entity.messages)
+                    } catch (e: OutOfMemoryError) {
+                        // 兜底：解析单条消息时瞬间 OOM（旧 buffer + 新 buffer 双份占用）。
+                        // 停止继续加载，已解析的部分照常返回，避免整个进程崩溃。
+                        Log.e(
+                            TAG,
+                            "loadMessageNodesRange: OOM while decoding node, aborting range, " +
+                                "conversationId=$conversationId, offset=$offset, chars=$rawLength",
+                            e
+                        )
+                        budgetExhausted = true
+                        break
+                    }
+                    decodedChars += rawLength
                     val nodeId = Uuid.parse(entity.id)
                     nodes.add(
                         MessageNode(
