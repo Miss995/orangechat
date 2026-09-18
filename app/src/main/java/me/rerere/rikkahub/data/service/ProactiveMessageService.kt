@@ -102,6 +102,13 @@ import org.koin.core.component.inject
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
+/**
+ * 主动消息链路读取对话时最多加载的节点数（2026-09-18 修复）。
+ * 与懒加载窗口对齐：只需要最近一个窗口，不必把几千条历史全部读出来反序列化
+ * （全量读会 OOM，且塞进 session 后界面会显示残缺内容）。
+ */
+private const val PROACTIVE_LOAD_WINDOW = 300
+
 class ProactiveMessageService : KoinComponent {
     private val settingsStore: SettingsStore by inject()
     private val conversationRepository: ConversationRepository by inject()
@@ -374,7 +381,11 @@ class ProactiveMessageService : KoinComponent {
             val recentConversations = conversationRepository.getRecentConversations(assistantId, limit = 1)
             if (recentConversations.isNotEmpty()) {
                 val conv = recentConversations.first()
-                val fullConv = conversationRepository.getConversationById(conv.id)
+                val fullConv = conversationRepository.getConversationById(
+                    conv.id,
+                    // 2026-09-18：这里只需要最后一条消息的时间，原来不带限制=全量加载，白读几千条。
+                    PROACTIVE_LOAD_WINDOW
+                )
                 val localDateTime: LocalDateTime? = fullConv?.messageNodes?.lastOrNull()?.messages?.lastOrNull()?.createdAt
                 localDateTime?.toInstant(TimeZone.currentSystemDefault())
             } else null
@@ -552,7 +563,12 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 // 找到最近的对话
                 val recentConversations = conversationRepository.getRecentConversations(assistantUuid, limit = 1)
                 val conversation = if (recentConversations.isNotEmpty()) {
-                    conversationRepository.getConversationById(recentConversations.first().id)
+                    // 2026-09-18：这份会塞进 session 供界面渲染，全量加载一旦被截断界面就会跳。
+                    // 改成只加载最近一个窗口，与懒加载窗口对齐。
+                    conversationRepository.getConversationById(
+                        recentConversations.first().id,
+                        PROACTIVE_LOAD_WINDOW
+                    )
                 } else null
 
                 conversationId = conversation?.id ?: kotlin.uuid.Uuid.random()
