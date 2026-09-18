@@ -56,10 +56,16 @@ class ConversationRepository(
             assistantId = assistantId.toString(),
             limit = limit
         ).map { entity ->
-            val nodes = loadMessageNodes(entity.id)
+            // 2026-09-18：这里原来是不带限制的全量加载，而唯一调用方（ProactiveMessageService）
+            // 只用到 conversation.id，导致每次主动唤醒都把整个对话（几千条）读出来反序列化，
+            // 既浪费又容易 OOM。改成只加载最近一小段（列表预览足够）。
+            val nodes = loadMessageNodes(entity.id, RECENT_CONVERSATION_NODES)
             conversationEntityToConversation(entity, nodes)
         }
     }
+
+    /** getRecentConversations 每个对话最多加载的节点数（只用于列表预览，不需要全文）。 */
+    private val RECENT_CONVERSATION_NODES = 30
 
     fun getConversationsOfAssistant(assistantId: Uuid): Flow<List<Conversation>> {
         return conversationDAO
