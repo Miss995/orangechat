@@ -136,9 +136,10 @@ fun createMcpSwitchTool(
         }
 
         val key = rawName.trim()
-        val matches = servers.filter {
-            it.displayName.equals(key, ignoreCase = true) ||
-                it.displayName.contains(key, ignoreCase = true)
+        // 精确同名优先（2026-09-19 修）：否则「花园」会同时命中「花园」和「花园2」。
+        val exact = servers.filter { it.displayName.equals(key, ignoreCase = true) }
+        val matches = if (exact.isNotEmpty()) exact else servers.filter {
+            it.displayName.contains(key, ignoreCase = true)
         }
 
         if (matches.isEmpty()) {
