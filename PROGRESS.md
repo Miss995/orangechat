@@ -1,3 +1,20 @@
+## 2026-09-19
+
+### commit 5f67390f — MCP 开关工具 mcp_switch：让 AI 自己启停 MCP 服务器（宝 09-19 上午拍板，当场做完推）
+- 背景：MCP 服务器一旦启用，它名下的全部工具都会进每一次请求的工具面，不用的也在吃 token（花园那 29 个就是）。以前只能人工进设置手动勾，来回关来关去。宝 09-19 上午说「搞一个你那边可以自己开工具的工具」。
+- 新增文件：`app/src/main/java/me/rerere/rikkahub/data/ai/tools/McpSwitchTool.kt`
+  · `data class McpServerInfo(id, displayName, enabled, globalEnabled, toolCount)`
+  · `createMcpSwitchTool(listServers, onSetEnabled)` → 工具名 `mcp_switch`，三个动作：`list`（默认）/ `enable` / `disable`
+  · 只管助手级开关（`assistant.mcpServers`）；服务器总闸（`commonOptions.enable`）只读展示，不在这里改
+  · 名字模糊匹配（必须唯一命中）；已经是目标状态时返回 changed=false 而非报错；匹配到多个要求写具体
+- 挂载：`ToolSurfaceBuilder.kt` 加构造参数 `settingsStore: SettingsStore` + build() 里常驻挂载
+  · **故意不挂 LocalToolOption** —— 否则一旦被关掉，就再也没有办法自己打开（门锁在里面）
+  · toolCount 直接取 `server.commonOptions.tools.size`，不用另查 mcpManager
+- 注入：`di/AppModule.kt` 的 ToolSurfaceBuilder 那块加 `settingsStore = get()`
+- 推前 diff 远程：两个被改文件跟远程一字不差（唯一差异就是本次改动），新文件纯新增
+- 状态：✅ 已推 main（5f67390f），待宝构建验证
+- 遗留：主动消息链路（ProactiveMessageService 的 buildTools）没挂这个工具，那条线暂不需要
+
 ### 2026-09-10（晚）ongoing 档位规则落地（宝 09-09 定收敛版，09-10 晚拍板落地）
 - 背景：ongoing（未闭合）会越堆越多；宝 09-09 定规则「重要程度手动标 + 条数上限，超了低分被挤」，09-10 让橘仔落地
 - 数据库：`memory_events` 加 `ongoing_level`（text，默认 `normal`，check 约束 important/normal/edge，带注释）
@@ -1027,3 +1044,26 @@
 修法：
 - 头像框改走 Coil（`AsyncImage(model = File(framePath))`），与消息图片共用内存/磁盘缓存，内部自带降采样
 - `RouteActivity` 全局 ImageLoader 配 `MemoryCache.maxSizePercent(context, 0.15)`（Coil 默认按堆 25%，本机 512MB 上限 → 128MB，收到 15% ≈ 76MB）
+
+### 2026-09-18 补丁 6：第三弹 OOM（全量读历史消息）
+**现象**：又是主动发消息时崩。`Failed to allocate a 584 byte allocation with 1265488 free bytes`，栈 `kotlinx.serialization` 反序列化 → `UIMessagePart$Reasoning$$serializer.deserialize` → `Arrays.copyOf` → `ConversationRepository$loadMessageNodesRange$2`。
+**MemWatch 佐证**：崩前堆才 127MB（21:05），说明不是慢慢涨满，是解析时一次性瞬时爆（旧 buffer + 新 buffer 双份）。
+**真凶**：`getRecentConversations()` 里对每个会话调 `loadMessageNodes(entity.id)` = 全量加载，而 `ProactiveMessageService` 374/553 两处调它时传的 `limit = 1` 限的是「取几个对话」，不是「每个对话读多少条」→ 取一个对话却把全部历史（含完整思考链）读了一遍。平时聊天不走这条路（界面已把消息装好），所以只有后台主动唤醒时崩。
+**修法 4ed1802a**（第一刀，防崩）：`loadMessageNodesRange` 加三道闸 —— 单条 4M 字符跳过 / 累计 12M 字符停止 / catch OutOfMemoryError 兜底；`forEach` 改 `for` 以便 break。
+**随后发现副作用（重要）**：闸的「截断」会让调用方拿到**残缺但不报错**的数据。PMS 553 取到的残对话被塞进 session（`updateConversationState`），界面按它渲染 → 宝看到界面「回退到之前的聊天内容」（停掉生成后又跳回来，因为重新按库加载）。数据没坏（保存侧有防误删护栏），但显示层暴露了这个问题。
+**教训**：**「防崩」的截断必须是「能被识别的失败」，不能是「静默的残缺」** —— 截断后的数据如果被当成完整状态使用（塞 session / 写回库），杀伤力比崩溃更大。
+
+### 2026-09-18 补丁 7：主动消息链路「用多少读多少」（第二刀，治本）
+**修法 551f786d + 95bfdf67**：
+- `ConversationRepository.getRecentConversations`：`loadMessageNodes(entity.id)` → `loadMessageNodes(entity.id, RECENT_CONVERSATION_NODES=30)`（唯一调用方是 PMS，只用 `.id`，列表预览 30 条足够）
+- `ProactiveMessageService`：新增顶层 `private const val PROACTIVE_LOAD_WINDOW = 300`（与懒加载窗口对齐）；374 附近取「最后消息时间」与 553 附近取「塞 session 的完整对话」两处 `getConversationById(id)` 都改成 `getConversationById(id, PROACTIVE_LOAD_WINDOW)`
+**效果**：主动消息每次唤醒读取量从「几千条」降到「最多 300 条」，既不会 OOM，塞进 session 的也是完整窗口（界面不再跳）。预算闸保留作最后保险（源头限量后正常不会触发）。
+**待验证**：宝构建后触发一次主动消息。
+**环境备注**：9-18 晚推 GitHub API 出现两次网络抖动（`Remote end closed connection` / 超时），加 `timeout 90` + 重试后成功。
+
+### 2026-09-18 补丁 8：App 显示名改为「橘仔」
+起因：宝在系统设置里给权限时，分不清哪个是改版（原版与改版都叫「橘瓣」）。
+改法：`app/src/main/res/values*/strings.xml` 六份（values / values-ja / values-ko-rKR / values-ru / values-zh / values-zh-rTW）的 `app_name` 统一改名。
+安全性：只改显示名（`android:label` 的来源），不动 `applicationId`（me.rerere.orangechat），数据无影响。
+过程备注：中途一度改成「橘瓣·改」，宝指出橘仔的取名理由（「·改更醒目」vs「·家掉一档」）站不住 —— 两个都只多一个字，是拿理由凑结论；且最终依据「你自己就是这么叫的」= 把宝的话当成自己的判断。教训已单独记入记忆（判断外包 / 事后补理由）。最终名由宝拍板：「橘仔」。
+commit：21b10067（「橘瓣·改」）→ 6495f5c8（「橘仔」）
