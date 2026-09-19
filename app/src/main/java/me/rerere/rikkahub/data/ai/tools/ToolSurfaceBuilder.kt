@@ -13,6 +13,7 @@ import me.rerere.ai.ui.UIMessage
 import kotlinx.serialization.json.jsonObject
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -40,6 +41,7 @@ class ToolSurfaceBuilder(
     private val workspaceRepository: WorkspaceRepository,
     private val json: Json,
     private val memoryRepository: MemoryRepository,
+    private val settingsStore: SettingsStore,
 ) {
     suspend fun build(
         assistant: me.rerere.rikkahub.data.model.Assistant,
@@ -87,6 +89,28 @@ class ToolSurfaceBuilder(
                 )
             )
         }
+        // MCP 开关 (2026-09-19 宝拍板): 让 AI 自己启停 MCP 服务器.
+        // 故意不挂 LocalToolOption —— 一旦被关掉就再也没办法自己打开 (门锁在里面).
+        add(
+            createMcpSwitchTool(
+                listServers = {
+                    settings.mcpServers.map { server ->
+                        McpServerInfo(
+                            id = server.id,
+                            displayName = server.commonOptions.name.ifBlank { "未命名服务器" },
+                            enabled = server.id in assistant.mcpServers,
+                            globalEnabled = server.commonOptions.enable,
+                            toolCount = server.commonOptions.tools.size,
+                        )
+                    }
+                },
+                onSetEnabled = { newSet ->
+                    settingsStore.updateAssistantMcpServers(assistant.id, newSet)
+                    val on = settings.mcpServers.count { it.id in newSet }
+                    "已保存。这个助手现在开着 $on 个 MCP 服务器。"
+                },
+            )
+        )
         addAll(pluginToolProvider.getTools())
     }
 }
