@@ -1198,6 +1198,27 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                             )
                         )
                     }
+                    // MCP 开关 (2026-09-19 宝拍板): 让 AI 自己启停 MCP 服务器, 不用人工进设置手动勾.
+                    add(
+                        me.rerere.rikkahub.data.ai.tools.createMcpSwitchTool(
+                            listServers = {
+                                settings.mcpServers.map { server ->
+                                    me.rerere.rikkahub.data.ai.tools.McpServerInfo(
+                                        id = server.id,
+                                        displayName = server.commonOptions.name.ifBlank { "未命名服务器" },
+                                        enabled = server.id in assistant.mcpServers,
+                                        globalEnabled = server.commonOptions.enable,
+                                        toolCount = server.commonOptions.tools.size,
+                                    )
+                                }
+                            },
+                            onSetEnabled = { newSet ->
+                                settingsStore.updateAssistantMcpServers(assistant.id, newSet)
+                                val on = settings.mcpServers.count { it.id in newSet }
+                                "已保存。这个助手现在开着 $on 个 MCP 服务器。"
+                            },
+                        )
+                    )
                     // Plugin tools
                     addAll(pluginToolProvider.getTools())
                 },
