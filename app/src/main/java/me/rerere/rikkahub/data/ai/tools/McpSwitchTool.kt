@@ -54,7 +54,7 @@ data class McpServerInfo(
  * @param onSetEnabled 回写新的助手级启用集合; 返回一句给人看的结果描述
  */
 fun createMcpSwitchTool(
-    listServers: () -> List<McpServerInfo>,
+    listServers: suspend () -> List<McpServerInfo>,
     onSetEnabled: suspend (Set<Uuid>) -> String,
 ): Tool = Tool(
     name = "mcp_switch",

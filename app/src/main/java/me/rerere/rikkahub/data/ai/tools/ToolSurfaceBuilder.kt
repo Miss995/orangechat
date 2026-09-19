@@ -10,6 +10,7 @@ import android.content.Context
 import kotlinx.serialization.json.Json
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessage
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.jsonObject
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
@@ -94,11 +95,15 @@ class ToolSurfaceBuilder(
         add(
             createMcpSwitchTool(
                 listServers = {
-                    settings.mcpServers.map { server ->
+                    // 实时读（2026-09-19 修）：settings 是本回合开始时的快照，
+                    // 同回合内开关别的服务器后它不会变，会读到旧状态。
+                    val live = settingsStore.settingsFlow.first()
+                    val liveAssistant = live.assistants.firstOrNull { it.id == assistant.id } ?: assistant
+                    live.mcpServers.map { server ->
                         McpServerInfo(
                             id = server.id,
                             displayName = server.commonOptions.name.ifBlank { "未命名服务器" },
-                            enabled = server.id in assistant.mcpServers,
+                            enabled = server.id in liveAssistant.mcpServers,
                             globalEnabled = server.commonOptions.enable,
                             toolCount = server.commonOptions.tools.size,
                         )
