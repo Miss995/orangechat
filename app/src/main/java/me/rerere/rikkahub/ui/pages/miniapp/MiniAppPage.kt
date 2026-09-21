@@ -39,6 +39,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat.startActivity
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowLeft01
@@ -72,6 +74,7 @@ fun MiniAppPage(
 
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
     val webView by webViewRef
+    val toolScope = rememberCoroutineScope()
     var pageTitle by remember { mutableStateOf(title ?: "") }
     var isLoading by remember { mutableStateOf(true) }
     var mainButtonVisible by remember { mutableStateOf(false) }
@@ -113,6 +116,20 @@ fun MiniAppPage(
             onClose = { navController.popBackStack() },
             onHaptic = { style ->
                 webView?.performHapticFeedback(parseHapticStyle(style))
+            },
+            onToolRequest = { method, params ->
+                val callbackId = params["callbackId"].orEmpty()
+                toolScope.launch {
+                    val payload = try {
+                        MiniAppToolBridge.handle(method, params)
+                    } catch (e: Exception) {
+                        "{\"ok\":false,\"error\":\"${e.javaClass.simpleName}\"}"
+                    }
+                    webView?.evaluateJavascript(
+                        "window.__bridgeResult('$callbackId', ${org.json.JSONObject.quote(payload)});",
+                        null,
+                    )
+                }
             },
         )
     }
@@ -320,6 +337,7 @@ private class MiniAppWebViewClient(
     private val onOpenTelegramLink: (String) -> Unit,
     private val onClose: () -> Unit,
     private val onHaptic: (String) -> Unit,
+    private val onToolRequest: (method: String, params: Map<String, String>) -> Unit,
 ) : WebViewClient() {
 
     override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
@@ -434,7 +452,11 @@ private class MiniAppWebViewClient(
                 onBackButton(false)
             }
             else -> {
-                Log.w(TAG, "Unknown bridge method: $method")
+                if (MiniAppToolBridge.handles(method)) {
+                    onToolRequest(method, params)
+                } else {
+                    Log.w(TAG, "Unknown bridge method: $method")
+                }
             }
         }
     }
@@ -548,6 +570,8 @@ private val TELEGRAM_BRIDGE_JAVASCRIPT = """
             setTimeout(function() { document.body.removeChild(iframe); }, 100);
         });
     }
+
+    window.__bridgeCall = bridgeCall;
 
     window.__bridgeResult = function(callbackId, result) {
         var cb = window.__tgCallbacks[callbackId];
