@@ -8,6 +8,8 @@ package me.rerere.rikkahub.ui.pages.miniapp
 
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
@@ -49,13 +51,15 @@ object MiniAppToolBridge {
     fun handles(method: String): Boolean = method == "tools.list" || method == "tools.call"
 
     /** 统一的入口。返回 JSON 字符串。 */
-    suspend fun handle(method: String, params: Map<String, String>): String = when (method) {
-        "tools.list" -> listTools()
-        "tools.call" -> callTool(
-            name = params["name"].orEmpty(),
-            argsJson = params["args"].orEmpty(),
-        )
-        else -> errorJson("unknown method: $method")
+    suspend fun handle(method: String, params: Map<String, String>): String = withContext(Dispatchers.IO) {
+        when (method) {
+            "tools.list" -> listTools()
+            "tools.call" -> callTool(
+                name = params["name"].orEmpty(),
+                argsJson = params["args"].orEmpty(),
+            )
+            else -> errorJson("unknown method: $method")
+        }
     }
 
     /** 取当前助手的完整工具面（跟聊天那边同一个真源）。 */
