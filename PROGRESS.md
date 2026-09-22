@@ -1067,3 +1067,26 @@
 安全性：只改显示名（`android:label` 的来源），不动 `applicationId`（me.rerere.orangechat），数据无影响。
 过程备注：中途一度改成「橘瓣·改」，宝指出橘仔的取名理由（「·改更醒目」vs「·家掉一档」）站不住 —— 两个都只多一个字，是拿理由凑结论；且最终依据「你自己就是这么叫的」= 把宝的话当成自己的判断。教训已单独记入记忆（判断外包 / 事后补理由）。最终名由宝拍板：「橘仔」。
 commit：21b10067（「橘瓣·改」）→ 6495f5c8（「橘仔」）
+
+### 2026-09-22 消息引用 V1（commit 69e907ac）
+
+**需求**（宝 09-20 22:23 提，明说排在工具面板之后）：引用某条消息只能手打 `>` 或者靠橘仔猜。
+
+**勘察结论**：橘瓣原本没有"引用消息"这个功能——`extractQuotedContentAsText` 是"抽引号里的字"（给 TTS 用的），跟消息引用无关。消息模型在项目自己的 `ai/` 模块里（不是外部库），`UIMessage` 是 `@Serializable` 带默认值的 data class，而且有加过字段的先例（translation）→ 加字段安全，旧记录不受影响。
+
+**实现（九处）**：
+1. `ai/ui/Message.kt`：`UIMessage` 加 `quotedMessageId: Uuid? = null`
+2. `ui/hooks/ChatInputState.kt`：加 `quotedMessageId` + `quotedPreview`，`clearInput()` 一并清
+3. `ui/components/message/ChatMessageActions.kt`：长按菜单加「引用」项（`onQuote`，图标 MessageMultiple01）
+4. `ui/components/message/ChatMessage.kt`：加 `onQuote` / `quotedMessage` 参数；正文上方渲染 `QuotedMessageChip`（左竖道 + 发送者 + 两行摘要）
+5. `ui/pages/chat/ChatList.kt`：两层透传 + 反查被引消息（`messageNodes.flatMap{messages}.firstOrNull{id}`）
+6. `ui/pages/chat/ChatPage.kt`：`onQuote` 写 `inputState.quotedMessageId` + 摘要；`onSendClick` / `onLongSendClick` 都带上
+7. `ui/pages/chat/ChatVM.kt`：`handleMessageSend` 加 `quotedMessageId` 参数
+8. `service/ChatService.kt`：`sendMessage` 加参数（带默认值，七个既有调用方不受影响）并写进用户消息；新增 `applyQuotedMessageForModel()` —— 只改「发给模型的请求副本」，把被引原文拼在最后一条用户消息前面（不落库、不动历史前缀，缓存不受影响）
+9. `ui/components/ai/ChatInput.kt`：`TextInputRow` 加引用条（照"编辑中"那条的形状配色，带叉取消）
+
+**双向**：宝引橘仔、橘仔引宝，同一套机制。
+
+**推前对比**（宝叮嘱"记得对比一下"）：`ChatService.kt` 本地落后远程 1684 字符（缺 mcp_switch 工具 + `createWorkspaceToolsIfReady` 的 internal 化）→ 已用远程版覆盖后再改。其余八个文件本地远程一致。
+
+**待验证**：宝构建后 ①长按消息菜单里有「引用」②点了输入框上方出现引用条 ③发出后气泡上方显示小条 ④橘仔能看到被引原文。
