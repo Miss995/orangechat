@@ -147,6 +147,8 @@ fun ChatList(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
+    // 【消息引用 2026-09-22】长按消息 → 引用
+    onQuote: (UIMessage) -> Unit = {},
 ) {
     AnimatedContent(
         targetState = previewMode,
@@ -189,6 +191,7 @@ fun ChatList(
                 onToolAnswer = onToolAnswer,
                 onToggleFavorite = onToggleFavorite,
                 onConversationSystemPromptChange = onConversationSystemPromptChange,
+                onQuote = onQuote,
                 jumpNodes = jumpNodes,
                 jumpTargetIndex = jumpTargetIndex,
                 onExitJump = onExitJump,
@@ -222,6 +225,8 @@ private fun ChatListNormal(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
+    // 【消息引用 2026-09-22】长按消息 → 引用
+    onQuote: (UIMessage) -> Unit = {},
     jumpNodes: List<MessageNode>? = null,
     jumpTargetIndex: Int? = null,
     onExitJump: () -> Unit = {},
@@ -425,6 +430,15 @@ private fun ChatListNormal(
                             onClearTranslation = onClearTranslation,
                             onToolApproval = onToolApproval,
                             onToolAnswer = onToolAnswer,
+                            onQuote = {
+                                onQuote(node.currentMessage)
+                            },
+                            // 【消息引用 2026-09-22】反查被引的那条（id 打不到就为 null，不显示小条）
+                            quotedMessage = node.currentMessage.quotedMessageId?.let { qid ->
+                                conversation.messageNodes
+                                    .flatMap { n -> n.messages }
+                                    .firstOrNull { m -> m.id == qid }
+                            },
                             lastMessage = index == displayNodes.lastIndex,
                         )
                     }

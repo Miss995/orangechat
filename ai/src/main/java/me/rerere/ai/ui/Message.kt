@@ -33,7 +33,10 @@ data class UIMessage(
     val finishedAt: LocalDateTime? = null,
     val modelId: Uuid? = null,
     val usage: TokenUsage? = null,
-    val translation: String? = null
+    val translation: String? = null,
+    // 【消息引用 2026-09-22】这条消息在回复哪一条（宝长按消息选"引用"）。
+    // 只存被引消息的 id；正文仍在本条里，渲染时反查被引消息取摘要。
+    val quotedMessageId: Uuid? = null
 ) {
     private fun appendChunk(chunk: MessageChunk): UIMessage {
         val choice = chunk.choices.getOrNull(0)

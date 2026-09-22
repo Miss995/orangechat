@@ -845,6 +845,39 @@ private fun TextInputRow(
             }
         }
 
+        // 【消息引用 2026-09-22】引用条：显示被引消息的摘要，右侧一个叉取消。
+        // 形状/配色跟上面那条"编辑中"保持一致，宝一眼能认。
+        if (state.quotedMessageId != null) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "引用：" + state.quotedPreview.ifBlank { "（一条消息）" },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = HugeIcons.Cancel01,
+                        contentDescription = "取消引用",
+                        modifier = Modifier.clickable {
+                            state.quotedMessageId = null
+                            state.quotedPreview = ""
+                        }
+                    )
+                }
+            }
+        }
+
         var isFocused by remember { mutableStateOf(false) }
         var isFullScreen by remember { mutableStateOf(false) }
         val receiveContentListener = remember(

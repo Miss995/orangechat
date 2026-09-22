@@ -438,7 +438,41 @@ class ChatService(
 
     // ---- 发送消息 ----
 
-    fun sendMessage(conversationId: Uuid, content: List<UIMessagePart>, answer: Boolean = true) {
+    /**
+     * 【消息引用 2026-09-22】把"这条在回复哪一条"翻译成模型看得见的背景。
+     *
+     * 只在发给模型的这份副本上改：不落库、不动历史前缀（被引的那条本来就在历史里，
+     * 这里补一份摘要贴在引用它的那条消息前面，模型才知道宝指的是哪一句）。
+     */
+    private fun applyQuotedMessageForModel(
+        messages: List<UIMessage>,
+        conversation: Conversation,
+    ): List<UIMessage> {
+        val lastUserIndex = messages.indexOfLast { it.role == MessageRole.USER }
+        if (lastUserIndex < 0) return messages
+        val target = messages[lastUserIndex]
+        val quotedId = target.quotedMessageId ?: return messages
+
+        val quoted = conversation.messageNodes
+            .flatMap { it.messages }
+            .firstOrNull { it.id == quotedId } ?: return messages
+
+        val quotedText = quoted.parts
+            .filterIsInstance<UIMessagePart.Text>()
+            .joinToString("\n") { it.text }
+            .trim()
+        if (quotedText.isBlank()) return messages
+
+        val who = if (quoted.role == MessageRole.USER) "宝" else "橘仔"
+        val header = UIMessagePart.Text(
+            "【引用·$who 的一条消息】\n$quotedText\n——以上是被引用的原文，下面是宝这次说的话。\n\n"
+        )
+
+        val patched = target.copy(parts = listOf(header) + target.parts)
+        return messages.toMutableList().also { it[lastUserIndex] = patched }
+    }
+
+    fun sendMessage(conversationId: Uuid, content: List<UIMessagePart>, answer: Boolean = true, quotedMessageId: Uuid? = null) {
         if (content.isEmptyInputMessage()) return
         val tSend = System.currentTimeMillis()
 
@@ -474,6 +508,8 @@ class ChatService(
                             messageNodes = latestConversation.messageNodes + UIMessage(
                                 role = MessageRole.USER,
                                 parts = processedContent,
+                                // 【消息引用 2026-09-22】这条在回复哪一条（宝长按消息选的"引用"）
+                                quotedMessageId = quotedMessageId,
                             ).toMessageNode(),
                         )
                         // 【先显示再落库 2026-08-28】用户消息先进内存态 → UI 立刻显示（秒显）；
@@ -1139,6 +1175,9 @@ class ChatService(
                     } else {
                         it
                     }
+                }.let { msgs ->
+                    // 【消息引用 2026-09-22】把被引的那条补进请求（只改请求副本，不落库、不动前缀）
+                    applyQuotedMessageForModel(msgs, conversation)
                 },
                 assistant = assistant,
                 conversationSystemPrompt = conversation.customSystemPrompt,

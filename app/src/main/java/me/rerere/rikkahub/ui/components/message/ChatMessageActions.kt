@@ -238,6 +238,8 @@ fun ChatMessageActionsSheet(
     onShare: () -> Unit,
     onFork: () -> Unit,
     onSelectAndCopy: () -> Unit,
+    // 【消息引用 2026-09-22】宝长按消息选"引用"，把这条挂到输入框上方
+    onQuote: (() -> Unit)? = null,
     isFavorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
     onWebViewPreview: () -> Unit,
@@ -278,6 +280,35 @@ fun ChatMessageActionsSheet(
                         text = stringResource(R.string.select_and_copy),
                         style = MaterialTheme.typography.titleMedium,
                     )
+                }
+            }
+
+            // Quote（消息引用 2026-09-22）：把这条挂到输入框上方的引用条
+            if (onQuote != null) {
+                Card(
+                    onClick = {
+                        onDismissRequest()
+                        onQuote()
+                    },
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.MessageMultiple01,
+                            contentDescription = null,
+                            modifier = Modifier.padding(4.dp)
+                        )
+                        Text(
+                            text = "引用",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
                 }
             }
 

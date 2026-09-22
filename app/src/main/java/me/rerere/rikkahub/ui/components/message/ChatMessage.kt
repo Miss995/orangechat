@@ -145,6 +145,10 @@ fun ChatMessage(
     onClearTranslation: (UIMessage) -> Unit = {},
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
+    // 【消息引用 2026-09-22】长按菜单里选"引用"（上层负责把这条挂进输入框）
+    onQuote: (() -> Unit)? = null,
+    // 【消息引用 2026-09-22】这条消息引用的那一条（上层查好传进来，null = 没引用）
+    quotedMessage: UIMessage? = null,
 ) {
     val message = node.messages[node.selectIndex]
     val settings = LocalDisplaySettings.current
@@ -197,6 +201,10 @@ fun ChatMessage(
                     modifier = Modifier.weight(1f)
                 )
             }
+        }
+        // 【消息引用 2026-09-22】被引的那一条，画成小条挂在正文上方（点在它上面能跳回去）
+        if (quotedMessage != null) {
+            QuotedMessageChip(quoted = quotedMessage)
         }
         ProvideTextStyle(textStyle) {
             MessagePartsBlock(
@@ -262,6 +270,7 @@ fun ChatMessage(
             onSelectAndCopy = {
                 showSelectCopySheet = true
             },
+            onQuote = onQuote,
             isFavorite = isFavorite,
             onToggleFavorite = onToggleFavorite,
             onWebViewPreview = {
@@ -1129,3 +1138,50 @@ internal fun VoiceMessageBubble(
     }
 }
  
+/**
+ * 【消息引用 2026-09-22】被引消息的小条。
+ * 左边一竖道 + 发送者 + 摘要（最多两行），挂在正文上方。
+ * 宝引猫的、猫引宝的都走这一个。
+ */
+@Composable
+private fun QuotedMessageChip(quoted: UIMessage) {
+    val isUser = quoted.role == MessageRole.USER
+    val summary = quoted.parts
+        .filterIsInstance<UIMessagePart.Text>()
+        .joinToString(" ") { it.text }
+        .trim()
+        .ifBlank { "（没有文字内容）" }
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.widthIn(max = 280.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
+            )
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = if (isUser) "宝" else "橘仔",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}

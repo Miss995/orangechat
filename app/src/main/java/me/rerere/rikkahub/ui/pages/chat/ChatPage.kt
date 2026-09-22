@@ -395,7 +395,11 @@ private fun ChatPageContent(
                                 messageId = inputState.editingMessage!!,
                             )
                         } else {
-                            vm.handleMessageSend(inputState.getContents())
+                            vm.handleMessageSend(
+                                content = inputState.getContents(),
+                                // 【消息引用 2026-09-22】带上正在引用的那条（没引用就是 null）
+                                quotedMessageId = inputState.quotedMessageId,
+                            )
                             scope.launch {
                                 chatListState.requestScrollToItem(conversation.messageNodes.size.coerceAtMost(WINDOW_DISPLAY_SIZE) + 5)
                             }
@@ -430,7 +434,11 @@ private fun ChatPageContent(
                                 messageId = inputState.editingMessage!!,
                             )
                         } else {
-                            vm.handleMessageSend(content = inputState.getContents(), answer = false)
+                            vm.handleMessageSend(
+                                content = inputState.getContents(),
+                                answer = false,
+                                quotedMessageId = inputState.quotedMessageId,
+                            )
                             scope.launch {
                                 chatListState.requestScrollToItem(conversation.messageNodes.size.coerceAtMost(WINDOW_DISPLAY_SIZE) + 5)
                             }
@@ -488,6 +496,15 @@ private fun ChatPageContent(
                 onEdit = {
                     inputState.editingMessage = it.id
                     inputState.setContents(it.parts)
+                },
+                // 【消息引用 2026-09-22】长按选了"引用"→ 挂到输入框上方那条引用条
+                onQuote = {
+                    inputState.quotedMessageId = it.id
+                    inputState.quotedPreview = it.parts
+                        .filterIsInstance<UIMessagePart.Text>()
+                        .joinToString(" ") { p -> p.text }
+                        .trim()
+                        .take(120)
                 },
                 onForkMessage = {
                     scope.launch {

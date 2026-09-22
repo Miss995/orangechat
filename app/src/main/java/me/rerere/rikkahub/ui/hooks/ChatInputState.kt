@@ -19,6 +19,11 @@ class ChatInputState {
     val textContent = TextFieldState()
     var messageContent by mutableStateOf(listOf<UIMessagePart>())
     var editingMessage by mutableStateOf<Uuid?>(null)
+    // 【消息引用 2026-09-22】正在引用哪一条（输入框上方那条引用条的来源）。
+    // 发送时写进新消息的 quotedMessageId；和"编辑"互不干扰，但发完/清空时一并清掉。
+    var quotedMessageId by mutableStateOf<Uuid?>(null)
+    // 【消息引用 2026-09-22】被引消息的摘要文本，只给输入框上方那条条显示用，不参与发送。
+    var quotedPreview by mutableStateOf("")
     private var editingParts: List<UIMessagePart>? = null
     private var editingAttachmentUrls: Set<String> = emptySet()
 
@@ -28,6 +33,8 @@ class ChatInputState {
         editingMessage = null
         editingParts = null
         editingAttachmentUrls = emptySet()
+        quotedMessageId = null
+        quotedPreview = ""
     }
 
     fun isEditing() = editingMessage != null
