@@ -96,6 +96,7 @@ import me.rerere.rikkahub.data.ai.transformers.PromptInjectionTransformer
 import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
+import me.rerere.rikkahub.data.ai.transformers.QuotedMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.TimeReminderTransformer
 import me.rerere.rikkahub.data.ai.transformers.VoiceMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.WorkspaceReminderTransformer
@@ -437,40 +438,6 @@ class ChatService(
     }
 
     // ---- 发送消息 ----
-
-    /**
-     * 【消息引用 2026-09-22】把"这条在回复哪一条"翻译成模型看得见的背景。
-     *
-     * 只在发给模型的这份副本上改：不落库、不动历史前缀（被引的那条本来就在历史里，
-     * 这里补一份摘要贴在引用它的那条消息前面，模型才知道宝指的是哪一句）。
-     */
-    private fun applyQuotedMessageForModel(
-        messages: List<UIMessage>,
-        conversation: Conversation,
-    ): List<UIMessage> {
-        val lastUserIndex = messages.indexOfLast { it.role == MessageRole.USER }
-        if (lastUserIndex < 0) return messages
-        val target = messages[lastUserIndex]
-        val quotedId = target.quotedMessageId ?: return messages
-
-        val quoted = conversation.messageNodes
-            .flatMap { it.messages }
-            .firstOrNull { it.id == quotedId } ?: return messages
-
-        val quotedText = quoted.parts
-            .filterIsInstance<UIMessagePart.Text>()
-            .joinToString("\n") { it.text }
-            .trim()
-        if (quotedText.isBlank()) return messages
-
-        val who = if (quoted.role == MessageRole.USER) "宝" else "橘仔"
-        val header = UIMessagePart.Text(
-            "【引用·$who 的一条消息】\n$quotedText\n——以上是被引用的原文，下面是宝这次说的话。\n\n"
-        )
-
-        val patched = target.copy(parts = listOf(header) + target.parts)
-        return messages.toMutableList().also { it[lastUserIndex] = patched }
-    }
 
     fun sendMessage(conversationId: Uuid, content: List<UIMessagePart>, answer: Boolean = true, quotedMessageId: Uuid? = null) {
         if (content.isEmptyInputMessage()) return
@@ -1176,8 +1143,8 @@ class ChatService(
                         it
                     }
                 }.let { msgs ->
-                    // 【消息引用 2026-09-22】把被引的那条补进请求（只改请求副本，不落库、不动前缀）
-                    applyQuotedMessageForModel(msgs, conversation)
+                    // 【消息引用 2026-09-22】被引原文由 QuotedMessageTransformer 拼（只改请求，不落库）
+                    msgs
                 },
                 assistant = assistant,
                 conversationSystemPrompt = conversation.customSystemPrompt,
@@ -1194,6 +1161,8 @@ class ChatService(
                     addAll(inputTransformers)
                     add(templateTransformer)
                     add(workspaceReminderTransformer)
+                    // 【消息引用 2026-09-22】把被引原文拼进请求（挂在最后一条用户消息前，不落库）
+                    add(QuotedMessageTransformer)
                 },
                 outputTransformers = outputTransformers,
                 tools = buildList {
