@@ -1089,4 +1089,6 @@ commit：21b10067（「橘瓣·改」）→ 6495f5c8（「橘仔」）
 
 **推前对比**（宝叮嘱"记得对比一下"）：`ChatService.kt` 本地落后远程 1684 字符（缺 mcp_switch 工具 + `createWorkspaceToolsIfReady` 的 internal 化）→ 已用远程版覆盖后再改。其余八个文件本地远程一致。
 
-**待验证**：宝构建后 ①长按消息菜单里有「引用」②点了输入框上方出现引用条 ③发出后气泡上方显示小条 ④橘仔能看到被引原文。
+**编译修复（commit eed40b5c）**：`ChatMessageActions.kt` 漏了 `import me.rerere.hugeicons.stroke.MessageMultiple01`，CI 报 `Unresolved reference 'MessageMultiple01'`。教训：HugeIcons 的图标是扩展属性，必须逐个 import，光有 `HugeIcons` 对象不够（grep 到别处用过这个名字、不代表当前文件能用）。
+
+**宝已验证 ✅（2026-09-22 21:39）**：宝用新功能本身引用橘仔的一条消息回了「好了」——引用块、被引原文、她的话三样都到齐，橘仔在请求里看到 `【引用·橘仔 的一条消息】`。双向也当场通了（她引的那条是 ASSISTANT 消息）。
