@@ -49,7 +49,8 @@ interface WorkflowDao {
             lastRunStatus = :status,
             lastRunError = :errorMessage,
             runsTodayCount = :runsTodayCount,
-            runsTodayDate = :runsTodayDate
+            runsTodayDate = :runsTodayDate,
+            totalRunsCount = :totalRunsCount
         WHERE id = :id
     """)
     suspend fun recordFire(
@@ -59,5 +60,6 @@ interface WorkflowDao {
         errorMessage: String?,
         runsTodayCount: Int,
         runsTodayDate: String,
+        totalRunsCount: Int,
     ): Int
 }

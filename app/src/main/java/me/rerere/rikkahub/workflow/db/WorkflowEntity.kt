@@ -40,6 +40,13 @@ data class WorkflowEntity(
     /** ISO local-date "yyyy-MM-dd" for daily-cap rollover. Empty string = never run. */
     @ColumnInfo(defaultValue = "''")
     val runsTodayDate: String = "",
+    /**
+     * Lifetime fire counter backing the per-workflow `maxTotalRuns` cap. Unlike
+     * [runsTodayCount] this one never rolls over. Room auto-migration adds the column
+     * with DEFAULT 0 — see AppDatabase AutoMigration(30 → 31).
+     */
+    @ColumnInfo(defaultValue = "0")
+    val totalRunsCount: Int = 0,
 )
 
 /**

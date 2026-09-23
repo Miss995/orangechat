@@ -172,6 +172,16 @@ object WorkflowJson {
                 "max_runs_per_day must be ${WorkflowConstants.MAX_RUNS_PER_DAY_FLOOR}..${WorkflowConstants.MAX_RUNS_PER_DAY_CEIL}")
         }
 
+        // Lifetime cap — a one-shot budget rather than a per-day one: once the count is
+        // reached the workflow switches itself off. For "run this N times and stop" without
+        // anyone having to remember to disable it afterwards.
+        val maxTotalRuns = obj["max_total_runs"]?.jsonPrimitive?.intOrNull
+        if (maxTotalRuns != null && (maxTotalRuns < WorkflowConstants.MAX_TOTAL_RUNS_FLOOR
+                    || maxTotalRuns > WorkflowConstants.MAX_TOTAL_RUNS_CEIL)) {
+            return ParseResult.Err("invalid_total_cap",
+                "max_total_runs must be ${WorkflowConstants.MAX_TOTAL_RUNS_FLOOR}..${WorkflowConstants.MAX_TOTAL_RUNS_CEIL}")
+        }
+
         sanityCheckTrigger(trigger)?.let { return it }
         for ((idx, c) in conditions.withIndex()) {
             sanityCheckCondition(c)?.let { return it.withIndex(idx, "condition") }
@@ -191,6 +201,7 @@ object WorkflowJson {
             actions = actions,
             cooldownSeconds = cooldown,
             maxRunsPerDay = maxRunsPerDay,
+            maxTotalRuns = maxTotalRuns,
             createdAtMs = obj["created_at_ms"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: now,
             updatedAtMs = now,
             authoringAssistantId = obj["authoring_assistant_id"]?.jsonPrimitive?.contentOrNull
@@ -221,6 +232,9 @@ object WorkflowJson {
             put("cooldown_seconds", JsonPrimitive(definition.cooldownSeconds))
             if (definition.maxRunsPerDay != null) {
                 put("max_runs_per_day", JsonPrimitive(definition.maxRunsPerDay))
+            }
+            if (definition.maxTotalRuns != null) {
+                put("max_total_runs", JsonPrimitive(definition.maxTotalRuns))
             }
             put("created_at_ms", JsonPrimitive(definition.createdAtMs.toString()))
             put("updated_at_ms", JsonPrimitive(definition.updatedAtMs.toString()))
@@ -262,6 +276,7 @@ object WorkflowJson {
         if (actions.isEmpty()) return null
         val cooldown = obj["cooldown_seconds"]?.jsonPrimitive?.intOrNull ?: 0
         val maxRunsPerDay = obj["max_runs_per_day"]?.jsonPrimitive?.intOrNull
+        val maxTotalRuns = obj["max_total_runs"]?.jsonPrimitive?.intOrNull
         val id = obj["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
             ?: kotlin.uuid.Uuid.random().toString()
         val now = System.currentTimeMillis()
@@ -275,6 +290,7 @@ object WorkflowJson {
             actions = actions,
             cooldownSeconds = cooldown,
             maxRunsPerDay = maxRunsPerDay,
+            maxTotalRuns = maxTotalRuns,
             createdAtMs = obj["created_at_ms"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: now,
             updatedAtMs = obj["updated_at_ms"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: now,
             authoringAssistantId = obj["authoring_assistant_id"]?.jsonPrimitive?.contentOrNull

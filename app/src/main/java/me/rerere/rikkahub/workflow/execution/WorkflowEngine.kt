@@ -178,6 +178,17 @@ class WorkflowEngine(
             }
         }
 
+        // Lifetime-cap gate (maxTotalRuns). Normally unreachable: recordFire flips `enabled`
+        // off the instant the cap is reached, so a trigger never gets this far. It stays as a
+        // belt-and-braces guard for a lost self-disable write (process death mid-fire, DB
+        // error) — and when it does catch something it retries the disable rather than merely
+        // skipping, so the next trigger short-circuits cheaply.
+        if (def.maxTotalRuns != null && entity.totalRunsCount >= def.maxTotalRuns) {
+            runCatching { repository.setEnabled(workflowId, enabled = false) }
+                .onFailure { Log.w(TAG, "lifetime cap: self-disable failed for $workflowId", it) }
+            return persistAndReturn(workflowId, firedAtMs, started, WorkflowRunStatus.SKIPPED_TOTAL_CAP, null, "", ledgerId)
+        }
+
         // Conditions
         if (def.conditions.isNotEmpty()) {
             val ctx = contextProvider.snapshot(
@@ -325,6 +336,12 @@ class WorkflowEngine(
         ledgerId: String,
     ): FireOutcome {
         val durationMs = (System.nanoTime() - startedNanos) / 1_000_000L
+        // The lifetime cap lives inside the definition JSON. Read it here so every persist
+        // path (SUCCESS / FAILED and each SKIPPED_*) can hand it to recordFire without
+        // threading a new parameter through all eight call sites. One extra row read per
+        // fire is negligible — workflow fires are low-frequency by design.
+        val maxTotalRuns = runCatching { repository.getById(workflowId)?.definition?.maxTotalRuns }
+            .getOrNull()
         runCatching {
             repository.recordFire(
                 workflowId = workflowId,
@@ -332,6 +349,7 @@ class WorkflowEngine(
                 status = status,
                 durationMs = durationMs,
                 errorMessage = error,
+                maxTotalRuns = maxTotalRuns,
             )
         }.onFailure { Log.w(TAG, "recordFire failed for $workflowId", it) }
         // Phase 24 — mirror the terminal outcome into the cross-pillar ledger. Every

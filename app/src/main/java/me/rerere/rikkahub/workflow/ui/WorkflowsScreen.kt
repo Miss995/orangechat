@@ -143,6 +143,11 @@ private fun WorkflowRow(
             when (loaded.entity.lastRunStatus) {
                 WorkflowRunStatus.SUCCESS.name -> "成功运行 · $ago"
                 WorkflowRunStatus.FAILED.name -> "运行失败 · $ago"
+                WorkflowRunStatus.SKIPPED_COOLDOWN.name -> "已跳过（还在冷却）· $ago"
+                WorkflowRunStatus.SKIPPED_CONDITIONS.name -> "已跳过（条件不满足）· $ago"
+                WorkflowRunStatus.SKIPPED_DAILY_CAP.name -> "已跳过（今天跑满了）· $ago"
+                WorkflowRunStatus.SKIPPED_TOTAL_CAP.name -> "已跳过（次数用完了）· $ago"
+                WorkflowRunStatus.SKIPPED_DISABLED.name -> "已跳过（当时关着）· $ago"
                 else -> "已跳过 · $ago"
             }
         }

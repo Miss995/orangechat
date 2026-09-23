@@ -29,6 +29,8 @@ data class WorkflowAction(
  *  - SKIPPED_CONDITIONS — at least one condition evaluated false
  *  - SKIPPED_COOLDOWN — fired inside cooldown window
  *  - SKIPPED_DAILY_CAP — daily cap reached
+ *  - SKIPPED_TOTAL_CAP — lifetime cap reached (normally the workflow disables itself at
+ *    the cap, so this only appears if the self-disable write was lost / raced)
  *  - SKIPPED_DISABLED — workflow toggle was off when trigger arrived (race-cleanup)
  */
 enum class WorkflowRunStatus {
@@ -37,6 +39,7 @@ enum class WorkflowRunStatus {
     SKIPPED_CONDITIONS,
     SKIPPED_COOLDOWN,
     SKIPPED_DAILY_CAP,
+    SKIPPED_TOTAL_CAP,
     SKIPPED_DISABLED,
 }
 
@@ -58,6 +61,13 @@ data class WorkflowDefinition(
     val cooldownSeconds: Int = 0,
     /** Max successful+failed fires per local-day. null = unlimited. */
     val maxRunsPerDay: Int? = null,
+    /**
+     * Lifetime fire cap. Counted like [maxRunsPerDay] (real fires only — SUCCESS/FAILED,
+     * skips never count) but never resets. Reaching it flips this workflow's `enabled`
+     * to false so later triggers short-circuit at the SKIPPED_DISABLED gate.
+     * null = unlimited (default — every pre-existing workflow keeps its behaviour).
+     */
+    val maxTotalRuns: Int? = null,
     val createdAtMs: Long = System.currentTimeMillis(),
     val updatedAtMs: Long = System.currentTimeMillis(),
     /**
@@ -92,6 +102,8 @@ object WorkflowConstants {
     const val MAX_COOLDOWN_S = 24 * 60 * 60 // 24h
     const val MAX_RUNS_PER_DAY_FLOOR = 1
     const val MAX_RUNS_PER_DAY_CEIL = 1000
+    const val MAX_TOTAL_RUNS_FLOOR = 1
+    const val MAX_TOTAL_RUNS_CEIL = 100_000
     const val MIN_GEOFENCE_RADIUS_M = 50
     const val MAX_GEOFENCE_RADIUS_M = 5000
     const val MAX_RUNS_HISTORY = 100

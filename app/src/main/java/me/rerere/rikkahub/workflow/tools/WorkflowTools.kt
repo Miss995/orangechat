@@ -112,7 +112,9 @@ fun workflowCreateTool(
                     put("type", "object")
                     put("description", "The workflow definition. Required keys: name, trigger, actions. " +
                         "Optional: description, enabled (default true), conditions (array), " +
-                        "cooldown_seconds (default 0), max_runs_per_day (default unlimited), id.")
+                        "cooldown_seconds (default 0), max_runs_per_day (default unlimited), " +
+                        "max_total_runs (default unlimited — a lifetime budget; once the count " +
+                        "is reached the workflow switches itself off), id.")
                 })
             },
             required = listOf("definition"),

@@ -137,6 +137,8 @@ class WorkflowRepository(
         status: WorkflowRunStatus,
         durationMs: Long,
         errorMessage: String?,
+        /** Lifetime cap read off the definition; when reached the row self-disables. */
+        maxTotalRuns: Int? = null,
         zoneId: ZoneId = ZoneId.systemDefault(),
     ) {
         val truncatedErr = errorMessage?.take(WorkflowConstants.MAX_ERROR_LENGTH)
@@ -157,6 +159,8 @@ class WorkflowRepository(
             current.runsTodayDate != today -> if (countsTowardCap) 1 else 0  // rolled over
             else -> current.runsTodayCount + (if (countsTowardCap) 1 else 0)
         }
+        // Lifetime counter: same "real fires only" rule, but never rolls over.
+        val newTotal = (current?.totalRunsCount ?: 0) + (if (countsTowardCap) 1 else 0)
         workflowDao.recordFire(
             id = workflowId,
             firedAtMs = firedAtMs,
@@ -164,8 +168,16 @@ class WorkflowRepository(
             errorMessage = truncatedErr,
             runsTodayCount = newCount,
             runsTodayDate = today,
+            totalRunsCount = newTotal,
         )
         workflowRunDao.trim(workflowId, WorkflowConstants.MAX_RUNS_HISTORY)
+        // Lifetime cap reached → flip `enabled` off, so later triggers short-circuit at the
+        // SKIPPED_DISABLED gate instead of loading the row and walking every gate for nothing.
+        // Only the disabling direction happens here; turning it back on stays a deliberate
+        // action (workflow_set_enabled / workflow_update).
+        if (maxTotalRuns != null && newTotal >= maxTotalRuns && (current?.enabled ?: false)) {
+            workflowDao.setEnabled(workflowId, enabled = false, updatedAtMs = System.currentTimeMillis())
+        }
     }
 
     /**
