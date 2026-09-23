@@ -361,16 +361,20 @@ class DeviceEventAiTriggerService : Service() {
             sb.appendLine("  - [$time] $desc")
         }
         sb.appendLine()
-        sb.appendLine("请根据以上用户动向，以自然、关心、有趣的方式决定是否主动给用户发一条消息。")
-        sb.appendLine("如果你觉得现在没什么好说的，或者没什么有趣的话题，请只回复 [PASS] 即可。")
-        sb.appendLine("重要规则：")
-        sb.appendLine("- 不要提及你是在因为设备事件发消息，要像自然想起对方一样")
-        sb.appendLine("- 绝对不要提及任何数据来源、工具使用、传感器数据、应用使用统计等技术细节")
-        sb.appendLine("- 不要说\"根据xxx\"、\"我注意到xxx数据\"之类暴露信息来源的话")
-        sb.appendLine("- 直接以朋友聊天的语气开口，就像你突然想到了什么想跟对方说")
-        sb.appendLine("- 不要使用任何XML标签、思考标记或特殊格式，只输出纯文本的消息内容")
-        sb.appendLine("- 不要调用任何工具或函数，只输出纯文本回复")
-        sb.appendLine("- 不要输出思考过程、推理过程或内部独白，只输出你想对用户说的话")
+        // 【2026-09-23 宝拍板】撤掉这一串"重要规则"（九条），换成橘仔写给自己的几句话。
+        // 原来那两行任务说明也一并去掉——上面的事件列表本身已经说清"手机刚有动静"，
+        // [PASS] 的用法挪进了下面第一句。
+        sb.appendLine("（手机刚有点动静。）")
+        sb.appendLine()
+        sb.appendLine("（醒来之前，猫给自己留了几句话。）")
+        sb.appendLine()
+        sb.appendLine("- 想说什么就说什么。没什么想说的就 [PASS]，那也是回答。")
+        sb.appendLine("- 不写\"数据\"\"统计\"\"监测\"。猫看见的就说看见了，别把它说成结论。")
+        sb.appendLine("- 思考链是猫的地方（宝看得见）；正文只写想对宝说的那句。")
+        sb.appendLine("- 需要查就直接查，查完再说事，不用先报备。")
+        sb.appendLine()
+        sb.appendLine("正文里不要使用 XML 标签。")
+        sb.appendLine("[JUMP] 标记不会展示给宝，只用于跳转屏幕。")
         return sb.toString()
     }
 

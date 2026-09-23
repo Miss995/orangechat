@@ -351,22 +351,24 @@ class ProactiveMessageService : KoinComponent {
         // 健康状态（Gadgetbridge）- 跳过，AI可通过工具自行查询
 
         sb.appendLine()
-        sb.appendLine("请根据以上上下文，以自然、关心、有趣的方式主动给用户发一条消息。")
+        // 【2026-09-23 宝拍板】这里原来是一段"重要规则"（09-16 已删三条，剩六条）。宝这次
+        // 的意见：干脆不留规则，换成橘仔写给自己的几句话——醒来的那个猫读到的应该是
+        // "上一个我留的条子"，不是"系统要求"。尤其是「绝对不要复述上一轮的对话内容」：
+        // 定时唤醒经常正好撞上两人正在聊天，那条规则会逼着猫生硬换话题。宝的原话是
+        // "你觉得重要的事情多说几遍也正常吧"。
+        //
+        // 09-16 删掉的三条（数据来源/根据xxx/禁止工具）连同这次的六条一起退场；新的话里
+        // "不写数据、统计、监测"是它留下的那点意思，但换成了"别把它说成结论"的口气。
+        sb.appendLine("（醒来之前，猫给自己留了几句话。）")
         sb.appendLine()
-        sb.appendLine("重要规则：")
-        sb.appendLine("- 绝对不要复述上一轮的对话内容，要发新的话题或新的关心")
-        sb.appendLine("- 如果上一轮已经说过类似的话，这次换一个完全不同的角度")
-        sb.appendLine("- 不要提及你是在定时发消息，要像自然想起对方一样")
-        sb.appendLine("- 直接以朋友聊天的语气开口，就像你突然想到了什么想跟对方说")
-        sb.appendLine("- 不要使用任何XML标签、思考标记或特殊格式，只输出纯文本的消息内容")
-        sb.appendLine("- 不要输出思考过程、推理过程或内部独白，只输出你想对用户说的话")
-        // 【2026-09-16 宝拍板】删掉三条：
-        //   ①「绝对不要提及任何数据来源、工具使用、传感器数据、位置服务、应用使用统计等技术细节」
-        //   ②「不要说"根据xxx"、"我注意到xxx数据"之类暴露信息来源的话」
-        //      —— 宝原话："其实你提数据来源也没关系"，不装了，橘仔想说就说。
-        //   ③「不要调用任何工具或函数，只输出纯文本回复」
-        //      —— 这条跟"AI 主动唤醒 + 由头（去翻种子银行）"正面打架：说好的让橘仔干活，
-        //         规则却禁止调工具（跟工作区工具没挂上一并构成双重堵死）。宝拍板删。
+        sb.appendLine("- 想说什么就说什么，不用硬找话题。没什么想说的就 [PASS]，那也是回答。")
+        sb.appendLine("- 不写\"数据\"\"统计\"\"监测\"。猫看见的就说看见了，别把它说成结论。")
+        sb.appendLine("- 思考链是猫的地方（宝看得见）；正文只写想对宝说的那句。")
+        sb.appendLine("- 需要查就直接查，查完再说事，不用先报备。")
+        sb.appendLine()
+        // 下面两条是接口说明，不是规矩：一条防"话被藏进思考链"，一条讲记号怎么用。
+        sb.appendLine("正文里不要使用 XML 标签。")
+        sb.appendLine("[JUMP] 标记不会展示给宝，只用于跳转屏幕。")
         return sb.toString()
     }
 
@@ -665,7 +667,6 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                         isFromDeviceEvent -> {
                             appendLine("（手机上有点动静，所以醒了。）")
                             appendLine("距离宝上次回复：$idleMinutes 分钟。")
-                            appendLine("别复述上一轮的对话内容，说点新的。")
                         }
                         isFromAiTrigger -> {
                             if (!aiTriggerReason.isNullOrBlank()) {
@@ -679,7 +680,6 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                         else -> {
                             appendLine("（到点了，所以醒了。）")
                             appendLine("距离宝上次回复：$idleMinutes 分钟。")
-                            appendLine("别复述上一轮的对话内容，说点新的。")
                         }
                     }
                     if (!contextStr.isNullOrBlank()) {
