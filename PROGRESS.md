@@ -1,3 +1,28 @@
+## 2026-09-23
+
+### commit 490e1c92 — 工作流新增 max_total_runs：终身次数上限 + 跑满自动关闭（宝 09-23 傍晚提，当晚做完推）
+
+**需求**（宝 18:19）：给工作流加一个「这次打开之后打算触发几次」的设置——把一个工作流先关着放着，要用的时候打开它，跑够 N 次它自己再关上。宝先确认橘仔手上有 `workflow_set_enabled`（能开关任意工作流），链路才成立。
+
+**实现（九处）**：
+1. `workflow/model/Workflow.kt`：`WorkflowDefinition` 加 `maxTotalRuns: Int? = null`；`WorkflowRunStatus` 加 `SKIPPED_TOTAL_CAP`；`WorkflowConstants` 加 `MAX_TOTAL_RUNS_FLOOR/CEIL`（1..100000）
+2. `workflow/model/WorkflowJson.kt`（四刀）：严格解析加 `max_total_runs` 校验 / 构造 / 序列化 / 宽松往返解析（读库那条路）
+3. `workflow/db/WorkflowEntity.kt`：加 `@ColumnInfo(defaultValue = "0") val totalRunsCount: Int = 0`
+4. `workflow/db/WorkflowDao.kt`：`recordFire` 加 `totalRunsCount` 参数 + SQL SET
+5. `workflow/repository/WorkflowRepository.kt`：`recordFire` 加 `maxTotalRuns` 参数；算 `newTotal`（同款「只算真跑」，但永不归零）；**撞上限时 `setEnabled(false)` ← 自关落在这里**
+6. `workflow/execution/WorkflowEngine.kt`：daily cap 后面加一道 lifetime cap 闸（兜底，自关写失败时重试关闭）；`persistAndReturn` 里读 definition 拿 `maxTotalRuns` 传给 recordFire（省得给八个调用点都加参数）
+7. `workflow/tools/WorkflowTools.kt`：工具描述加 `max_total_runs`
+8. `workflow/ui/WorkflowsScreen.kt`：设置页把每种跳过原因写清楚（冷却 / 条件不满足 / 今天跑满 / 次数用完 / 当时关着），不再一律显示「已跳过」
+9. `data/db/AppDatabase.kt`：`version = 30 → 31` + `AutoMigration(from = 30, to = 31)`
+
+**设计取舍**：不额外加闸，靠「记账那步顺手关」——跑到第 N 次时 `enabled` 变 false，下一次触发直接在 SKIPPED_DISABLED 短路，省掉加载和整轮 gate。引擎那道闸只做兜底（进程死在半路 / 写库失败）。
+**顺手做的**：Entity 加列走 Room AutoMigration（带 DEFAULT 0），不用手写迁移。
+
+**推前对比**：九个文件全部 `fetch_file.py` 拉远程 diff，唯一差异就是本次改动，无意外落后。
+
+**状态**：✅ 已推 main（490e1c92），待宝构建验证。
+**验证方式**：建一个 `max_total_runs: 2` 的工作流 → 手点两次 `workflow_run`（两次都应成功）→ 之后开关应自己拨回「关」，再触发会被挡在 SKIPPED_DISABLED。
+
 ## 2026-09-19
 
 ### commit 5f67390f — MCP 开关工具 mcp_switch：让 AI 自己启停 MCP 服务器（宝 09-19 上午拍板，当场做完推）
