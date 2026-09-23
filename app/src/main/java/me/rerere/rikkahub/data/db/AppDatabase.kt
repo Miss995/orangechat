@@ -78,7 +78,6 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutoMigration(from = 26, to = 27),
         AutoMigration(from = 27, to = 28),
         AutoMigration(from = 28, to = 29),
-        AutoMigration(from = 30, to = 31),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
