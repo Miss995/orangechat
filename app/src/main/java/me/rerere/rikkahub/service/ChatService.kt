@@ -1278,8 +1278,23 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             }.collect { chunk ->
                 when (chunk) {
                     is GenerationChunk.Messages -> {
-                        val updatedConversation = getConversationFlow(conversationId).value
-                            .updateCurrentMessages(chunk.messages)
+                        val currentConversationForChunk = getConversationFlow(conversationId).value
+                        // 【2026-09-24 召回留痕】传进来的 chunk.messages 取自"开始生成那一刻"的快照，
+                        // 那时门控/召回还没跑完，上面没有 recallDebug；而 updateCurrentMessages 是按 id
+                        // 整条替换的，会把界面上的小字抹掉。这里先把旧消息上的小字补回来再刷。
+                        val debugSource = currentConversationForChunk.currentMessages
+                            .lastOrNull { it.recallDebug != null }
+                        val patchedMessages = if (debugSource == null) {
+                            chunk.messages
+                        } else {
+                            val idx = chunk.messages.indexOfFirst { it.id == debugSource.id }
+                            if (idx < 0) chunk.messages
+                            else chunk.messages.toMutableList().also { list ->
+                                list[idx] = list[idx].copy(recallDebug = debugSource.recallDebug)
+                            }
+                        }
+                        val updatedConversation = currentConversationForChunk
+                            .updateCurrentMessages(patchedMessages)
                         updateConversation(conversationId, updatedConversation)
 
                         // 如果应用不在前台，发送 Live Update 通知
