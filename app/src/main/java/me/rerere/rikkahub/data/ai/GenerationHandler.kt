@@ -593,6 +593,10 @@ class GenerationHandler(
                             ?.let { me.rerere.rikkahub.data.service.QueryKeywordExtractor(apiKey = it.apiKey) }
                         // 【2026-09-24 召回留痕】改用带原因的 judge（needsRecall 壳保留，别处仍在用）
                         val gate = if (recallGate) null else MemoryIntentJudge.judge(queryText, judgeProvider)
+                        // 【2026-09-24 召回留痕】门控判"不需要召回"时也回报一句，界面才看得见"为什么没搜"
+                        if (gate != null && !gate.needs) {
+                            onRecallDebug?.invoke("门控：${gate.reason}（未召回） · 命中 0 条")
+                        }
                         if (gate?.needs == true) {
                             recallGateReason = gate.reason
                             onRecallGatePassed()
