@@ -1,3 +1,60 @@
+## 2026-09-24
+
+### commit 81bee010 — 召回留痕被流式刷新抹掉（宝当晚发现，当晚修完）
+
+**现象**（宝 21:26）：`7bb466b5` 那条做好后，小字"闪现一下又消失了，没有留下来"。
+
+**宝的两组对照（把范围锁死了，很关键）**：
+1. "先不把请求发出去" → 留痕一直留着；
+2. 肉眼看 → **AI 消息一出现，留痕立刻消失**，不是等到最后保存才没的。
+→ 因此跟 `saveConversation` 落库无关。
+
+**真凶 = 流式刷新的覆盖**：
+- `ChatService`（约 1135 行）取 `conversation.currentMessages` 当本次生成的快照传给 `generateText`，这份快照**取在召回之前**；
+- 门控/召回跑完 → `onRecallDebug`（约 1243 行）把 `recallDebug` 写回 session.state（此时界面能看到小字）；
+- 流式第一个 chunk 到达 → `is GenerationChunk.Messages` 分支用那份**没有 recallDebug 的快照**刷新消息；
+- 而 `Conversation.updateCurrentMessages`（`data/model/Conversation.kt:63`）是**按 message.id 找到同一条后整条替换**（`newMessages[idx] = message`）→ 小字被换成 null。
+
+**修法**：在 `GenerationChunk.Messages` 分支里，刷新前先把旧消息的 `recallDebug` 补回 `chunk.messages` 里同 id 的那条，再交给 `updateCurrentMessages`。只动这一处，没碰那个通用函数（它本来就是干粗活的，不该知道 recallDebug）。
+
+**状态**：✅ 已推 main（81bee010），宝当晚构建安装，实测留住了（22:30 截图："门控：回退词表不触发（未召回）· 命中 0 条"稳稳挂在她那条消息底下）。
+
+**环境备注**：`/workspace/orangechat-repo`（精简副本）**没有** `data/model/Conversation.kt`，该文件只在完整副本 `/workspace/repos/orangechat`（git 对象库已坏，`fatal: bad object HEAD`，只能读文件、不能 git 操作）。
+
+### commit 7bb466b5 — 召回留痕（门控/拆词/命中数写回用户消息）+ AI 拆词接回（宝 09-24 傍晚提，当晚推）
+
+**需求**（宝 18:27）：门控结果和拆词结果现在都不可见，要"装条线"把它们存下来；顺带确认"召回关键词"那部分到底在哪儿看（应用侧还是 Supabase）。
+勘察中发现更严重的问题：**AI 拆词那条链路早就断了**。
+
+**勘察结论（两条）**：
+1. `QueryKeywordExtractor`（AI 拆词）在整个仓库里**只有定义和一句注释、没有任何调用点** —— "向量优先 → AI 拆词兜底 → ngram 兜底"中间那截是断的，真跑的是 `ExternalMemoryService.buildSearchKeywords`（本地 ngram）。推测是 09-13~09-15 那几次搬家掉的。
+2. 门控（`MemoryIntentJudge.needsRecall`）只有一行 `Log.d` 结果，不落库；拆词**成功时一行日志都没有**。
+
+**实现（六个文件）**：
+1. `ai/ui/Message.kt`：`UIMessage` 加 `recallDebug: String? = null`（沿用 09-22 加 `quotedMessageId` 的加法，安全）
+2. `data/ai/MemoryIntentJudge.kt`：新增 `GateResult(needs, reason)` + `judge()`；`needsRecall` 改成调 `judge()` 的壳（行为不变，别处调用点零影响）
+3. `data/service/ExternalMemoryService.kt`（三处）：`vectorRecallEvents` 加 `onKeywords` 回调 + `keywordExtractor` 参数；拆词段改成 **AI 优先、失败/为空退 ngram**（`resolvedKeywords`）；关键词分改成复用同一套词（原先是两处各自 `buildSearchKeywords`，捞候选和评分用的词会打架）
+4. `data/ai/GenerationHandler.kt`（八处）：两层函数各加 `onRecallDebug` 参数；门控改用 `judge()` 拿原因；从门控那个硅基 provider 取 key 就地造 `QueryKeywordExtractor`（零额外配置）；召回完把「门控：… · 拆词：… · 命中 N 条」回调出去（**0 条也回报**）
+5. `service/ChatService.kt`：`generateText` 调用上挂 `onRecallDebug`，收到后用 `updateConversationState`（只改内存态）写回**最后一条用户消息**；紧随其后的 `saveConversation`（1273）会一并落库
+6. `ui/components/message/ChatMessage.kt`：用户消息正文下面加一行 `labelSmall` 浅灰小字
+
+**设计取舍**：
+- **拆词只在"向量候选不够"时才调**（`vecCount < count * 4`）。否则每次聊天都多跑一次网络请求（最慢 13 秒），又慢又费钱。想改成一贯拆，动那个条件即可。
+- 没走关键词路时，小字写"拆词：无（向量已够）"/"没走关键词路" —— **不拆也是信息**。
+- 存储选型：讨论过写 Supabase（能攒样本、能 SQL 查），宝判断"那边查也不方便"，最终定"直接挂消息上"。宝还提了"先落占位、后面补写"，与"搭生成结束那趟车"是同一件事，说法更清楚。
+- 落点时序：用户消息按发送就落库（宝说原本是请求前后落库，因界面一个显示 bug 改成发送即落）→ 召回发生在**请求发出之前**（比生成更早）→ 内存补写 → 生成结束那次保存带走。**更正**：此前把"召回"记成"生成时才发生"，是错的（memory 158 相关认知已改正）。
+
+**推前对比（重要）**：
+- 六个文件全部拉远程 diff。
+- **逮到一处坑**：本地 `ChatService.kt` 落后远程，缺 09-22「消息引用」那批改动（`QuotedMessageTransformer`、`sendMessage` 的 `quotedMessageId` 参数）—— 直接推会覆盖掉。改用远程版当基线，把回调重新加上再推。
+- 教训（补充 memory 162）：**两个副本各有新旧，不能按副本整体判断，每个文件都要单独 diff**。本次 GenerationHandler 本地是新、ChatService 本地是旧。
+
+**状态**：✅ 已推 main（7bb466b5），待宝构建验证。
+**验证方式**：
+1. 发一句会触发召回的话（带"记得 / 上次 / 什么来着"这类词），生成完后看**你那条消息下面**有没有一行浅灰小字：「门控：… · 拆词：… · 命中 N 条」
+2. 不触发召回时不显示。
+3. 日志环搜 `recallKeywords[AI]` / `recallKeywords[ngram]` / `recallKeywords[跳过(向量足:x)]`，可看每次走了哪条路。
+
 ## 2026-09-23
 
 ### commit 490e1c92 — 工作流新增 max_total_runs：终身次数上限 + 跑满自动关闭（宝 09-23 傍晚提，当晚做完推）
