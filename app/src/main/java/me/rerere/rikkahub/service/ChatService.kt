@@ -1236,6 +1236,28 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 },
                 pluginPromptInjections = pluginToolProvider.getPluginPromptInjections(),
                 conversationId = conversationId.toString(),
+                // 【2026-09-24 召回留痕】把门控 / 拆词 / 命中数写回这条用户消息，
+                // 界面会在消息下面画一行小字（宝要的"看得见"）。
+                // updateConversationState 只改内存态，紧随其后的 saveConversation 会一并落库。
+                onRecallDebug = { debug ->
+                    updateConversationState(conversationId) { conv ->
+                        val nodes = conv.messageNodes
+                        val lastUserIdx = nodes.indexOfLast { n ->
+                            n.messages.any { m -> m.role == MessageRole.USER }
+                        }
+                        if (lastUserIdx < 0) conv
+                        else conv.copy(
+                            messageNodes = nodes.mapIndexed { i, n ->
+                                if (i != lastUserIdx) n
+                                else n.copy(
+                                    messages = n.messages.map { m ->
+                                        if (m.role == MessageRole.USER) m.copy(recallDebug = debug) else m
+                                    }
+                                )
+                            }
+                        )
+                    }
+                },
             ).onCompletion {
                 // 取消 Live Update 通知
                 cancelLiveUpdateNotification(conversationId)

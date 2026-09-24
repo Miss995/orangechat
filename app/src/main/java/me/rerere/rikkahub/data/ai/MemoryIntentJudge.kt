@@ -66,23 +66,31 @@ object MemoryIntentJudge {
      * 判断用户消息是否需要召回记忆。
      * @param judgeProvider 硅基 provider（取外置库 embedding provider；null 时跳 LLM 直接回退词表）
      */
-    suspend fun needsRecall(text: String, judgeProvider: ProviderSetting?): Boolean {
-        if (text.isBlank()) return false
+    /** 门控结果（带原因，2026-09-24 召回留痕用） */
+    data class GateResult(val needs: Boolean, val reason: String)
+
+    /** 判断用户消息是否需要召回记忆（旧签名保留，行为不变）。 */
+    suspend fun needsRecall(text: String, judgeProvider: ProviderSetting?): Boolean =
+        judge(text, judgeProvider).needs
+
+    /** 同 needsRecall，但把"为什么这么判"一起带出来（界面留痕用）。 */
+    suspend fun judge(text: String, judgeProvider: ProviderSetting?): GateResult {
+        if (text.isBlank()) return GateResult(false, "空消息")
         // 1. 强回忆词快速过（省 LLM 调用）
-        if (STRONG_WORDS.any { text.contains(it) }) {
+        STRONG_WORDS.firstOrNull { text.contains(it) }?.let { hit ->
             Log.d(TAG, "gate: strong word hit")
-            return true
+            return GateResult(true, "强词命中「$hit」")
         }
         // 2. LLM 判断（硅基免费模型）
         val llm = judgeByLLM(text, judgeProvider)
         if (llm != null) {
             Log.d(TAG, "gate: llm judge = $llm")
-            return llm
+            return GateResult(llm, if (llm) "LLM 判要查" else "LLM 判不用查")
         }
         // 3. 回退旧词表（LLM 不可用/失败时保底）
         val fallback = fallbackHasSearchIntent(text)
         Log.w(TAG, "gate: llm unavailable, fallback = $fallback")
-        return fallback
+        return GateResult(fallback, if (fallback) "回退词表触发" else "回退词表不触发")
     }
 
     /** 调硅基免费模型判断；返回 null = 不可用/失败（走回退） */

@@ -150,6 +150,8 @@ class GenerationHandler(
         // 【窗口起点节拍 · 2026-09-11】懒加载窗口起点（ChatService.lazyWindowFirstIndex），
         // 由外门透传给内芯（generateInternal）的最近事件节拍器，详见内芯里的注释。
         windowFirstIndex: Int? = null,
+        // 【2026-09-24 召回留痕】把本次门控 / 拆词 / 命中数回传给上层（ChatService 补写到用户消息）
+        onRecallDebug: ((String) -> Unit)? = null,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -239,6 +241,7 @@ class GenerationHandler(
                     workspaceCwd = workspaceCwd,
                     recallGate = recallGatePassed,
                     onRecallGatePassed = { recallGatePassed = true },
+                    onRecallDebug = onRecallDebug,
                     windowFirstIndex = windowFirstIndex,
                 )
                 messages = messages.visualTransforms(
@@ -494,6 +497,8 @@ class GenerationHandler(
         workspaceCwd: String? = null,
         recallGate: Boolean = false,
         onRecallGatePassed: () -> Unit = {},
+        // 【2026-09-24 召回留痕】门控 / 拆词 / 命中数回传（见 generateText 同名参数）
+        onRecallDebug: ((String) -> Unit)? = null,
         // 【窗口起点节拍 · 2026-09-11】懒加载窗口起点在会话中的排名（ChatService.lazyWindowFirstIndex 传入）。
         // 原节拍判据用"窗口消息条数"，但窗口长度被 CONVERSATION_LOAD_WINDOW_SIZE 封顶后差值恒为 0~6
         // → 节拍器永远够不到 threshold、只剩 6h 兜底（详见下方判断处注释）。null = 调用方没传，回退旧判据。
@@ -527,6 +532,9 @@ class GenerationHandler(
         val ongoingEventsText = recentData.ongoingEventsText
         val selfNotesJson = recentData.selfNotesJson
         var recalledBlock: String? = null
+        // 【2026-09-24 召回留痕】本次门控原因 / 拆词结果（供界面小字）
+        var recallGateReason: String? = null
+        var recallKeywords: List<String>? = null
 
         val internalMessages = buildList {
             val system = buildString {
@@ -579,7 +587,14 @@ class GenerationHandler(
                         val judgeProvider = externalMemoryConfigs.firstNotNullOfOrNull { config ->
                             config.embeddingModelId?.let { settings.findModelById(it) }?.findProvider(settings.providers)
                         }
-                        if (!recallGate && MemoryIntentJudge.needsRecall(queryText, judgeProvider)) {
+                        // 【2026-09-24 AI 拆词接回】复用门控那个硅基 provider 的 key，零额外配置
+                        val keywordExtractor = (judgeProvider as? me.rerere.ai.provider.ProviderSetting.OpenAI)
+                            ?.takeIf { it.apiKey.isNotBlank() }
+                            ?.let { me.rerere.rikkahub.data.service.QueryKeywordExtractor(apiKey = it.apiKey) }
+                        // 【2026-09-24 召回留痕】改用带原因的 judge（needsRecall 壳保留，别处仍在用）
+                        val gate = if (recallGate) null else MemoryIntentJudge.judge(queryText, judgeProvider)
+                        if (gate?.needs == true) {
+                            recallGateReason = gate.reason
                             onRecallGatePassed()
                             // 时间定位：从用户消息解析时间范围（date_from/date_to），传给事件召回/OB 搜索
                             val timeRange = TimeRangeParser.parse(queryText)
@@ -615,6 +630,8 @@ class GenerationHandler(
                                                     dateFrom = timeRange.dateFrom,
                                                     dateTo = timeRange.dateTo,
                                                     queryText = queryText,
+                                                    onKeywords = { kws -> if (recallKeywords == null) recallKeywords = kws },
+                                                    keywordExtractor = keywordExtractor,
                                                 ).getOrDefault(emptyList())
                                                 val seenMsg = mutableSetOf<String>()
                                                 recalledEvents.forEach { event ->
@@ -657,6 +674,22 @@ class GenerationHandler(
                                     .mapIndexed { index, memory -> "${index + 1}. $memory" }
                                     .joinToString("\n")
                             }
+                            // 【2026-09-24 召回留痕】无论命中几条都回报（0 条也是信息）
+                            onRecallDebug?.invoke(
+                                buildString {
+                                    append("门控：").append(recallGateReason ?: "已过")
+                                    val kws = recallKeywords
+                                    append(" · 拆词：")
+                                    append(
+                                        when {
+                                            kws == null -> "没走关键词路"
+                                            kws.isEmpty() -> "无（向量已够）"
+                                            else -> kws.joinToString(", ")
+                                        }
+                                    )
+                                    append(" · 命中 ").append(allRecalled.size).append(" 条")
+                                }
+                            )
                         }
                     }
                 } catch (e: Exception) {

@@ -36,7 +36,11 @@ data class UIMessage(
     val translation: String? = null,
     // 【消息引用 2026-09-22】这条消息在回复哪一条（宝长按消息选"引用"）。
     // 只存被引消息的 id；正文仍在本条里，渲染时反查被引消息取摘要。
-    val quotedMessageId: Uuid? = null
+    val quotedMessageId: Uuid? = null,
+    // 【召回留痕 2026-09-24】这条用户消息触发召回时，门控与拆词的结果，供聊天界面在消息下面画一行小字。
+    // 例："门控：强词命中「记得」 · 拆词(AI)：轮椅, 医院 · 命中 3 条"
+    // 也用于排查"明明该想起来却没想起来"（memory 156）。
+    val recallDebug: String? = null
 ) {
     private fun appendChunk(chunk: MessageChunk): UIMessage {
         val choice = chunk.choices.getOrNull(0)

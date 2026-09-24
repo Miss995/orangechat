@@ -1344,6 +1344,10 @@ class ExternalMemoryService(
         dateFrom: String? = null,
         dateTo: String? = null,
         queryText: String? = null, // 原始查询文本（2026-08-29 三变量评分：关键词分用）
+        // 【2026-09-24 拆词留痕】onKeywords：把本次实际用到的关键词回传给上层（界面留痕）；
+        // keywordExtractor 非空时走"AI 优先"，为空/失败再退回 ngram。
+        onKeywords: ((List<String>) -> Unit)? = null,
+        keywordExtractor: QueryKeywordExtractor? = null,
     ): Result<List<ExternalMemoryEvent>> = withContext(Dispatchers.IO) {
         runCatching {
             // 2026-09-10 橘仔：候选改走服务端 RPC（库里算向量，返回不含 embedding，治 egress 超标）；
@@ -1352,8 +1356,30 @@ class ExternalMemoryService(
             // 【2026-09-16 双路召回】关键词路：ILIKE 搜 title/content，
             // 治「有精确词但语义不相似 → 进不了向量池 → 关键词分无从谈起」。
             // 必须在打分之前并入，这样这类事件才能和向量候选一起参与统一评分。
-            val kwCandidates = if (queryText.isNullOrBlank()) emptyList() else {
-                recallEventsByKeyword(assistantId, buildSearchKeywords(queryText)).getOrDefault(emptyList())
+            // 【2026-09-24 AI 拆词接回 + 留痕】拆词统一在这里做一次：AI 优先（更准），
+            // 失败/为空退回 ngram。只有向量候选不够时才花这次网络调用（够用就不烧钱）。
+            // 结果通过 onKeywords 回传给上层，用于界面留痕、排查"该想起来却没想起来"。
+            val vecCount = rpcCandidates?.size ?: 0
+            val needKeywords = !queryText.isNullOrBlank() && vecCount < count * 4
+            val aiKeywords = if (needKeywords && keywordExtractor != null) {
+                runCatching { keywordExtractor.extract(queryText!!) }.getOrDefault(emptyList())
+            } else emptyList()
+            val resolvedKeywords = when {
+                aiKeywords.isNotEmpty() -> aiKeywords
+                needKeywords -> buildSearchKeywords(queryText!!)
+                else -> emptyList()
+            }
+            if (!queryText.isNullOrBlank()) {
+                val wordSource = when {
+                    aiKeywords.isNotEmpty() -> "AI"
+                    needKeywords -> "ngram"
+                    else -> "跳过(向量足:$vecCount)"
+                }
+                AppLogBuffer.log(TAG, "recallKeywords[$wordSource]: $resolvedKeywords")
+                onKeywords?.invoke(resolvedKeywords)
+            }
+            val kwCandidates = if (resolvedKeywords.isEmpty()) emptyList() else {
+                recallEventsByKeyword(assistantId, resolvedKeywords).getOrDefault(emptyList())
             }
             val fallbackEvents = if (rpcCandidates.isNullOrEmpty() && kwCandidates.isEmpty()) {
                 AppLogBuffer.log(TAG, "vectorRecallEvents: RPC 候选为空，回退 queryAllEvents")
@@ -1379,7 +1405,7 @@ class ExternalMemoryService(
             // 2026-08-29 三变量召回评分（方案A：0.5×向量 + 0.3×关键词 + 0.2×时间，宝定）
             // 08-29 修正：①无时间词查询时间分=0（"上次/之前"是回溯查询，近因衰减抬最近事件帮倒忙）
             // ②关键词分只匹配 title+keywords（"提到"不算命中，"主题就是"才算；content 由向量分覆盖语义）
-            val queryKeywords = if (queryText.isNullOrBlank()) emptyList() else buildSearchKeywords(queryText)
+            val queryKeywords = resolvedKeywords
             val hasTimeRange = !dateFrom.isNullOrBlank() || !dateTo.isNullOrBlank()
             val scored = allEvents.mapNotNull { event ->
                 // 向量分：RPC 候选直接用服务端算好的 similarity；回退路径（带 embedding）才在本地算

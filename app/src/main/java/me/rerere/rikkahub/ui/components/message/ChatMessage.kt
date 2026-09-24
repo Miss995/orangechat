@@ -227,6 +227,18 @@ fun ChatMessage(
             }
         }
  
+        // 【2026-09-24 召回留痕】用户消息下面一行小字：本次门控 / 拆词 / 命中数。
+        // 只挂在自己发的消息上（门控和拆词本来就是拿这句话去做的）。
+        // 数据来自 UIMessage.recallDebug，由 ChatService 在召回后补写。
+        val recallDebugText = message.recallDebug
+        if (message.role == MessageRole.USER && !recallDebugText.isNullOrBlank()) {
+            Text(
+                text = recallDebugText,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+            )
+        }
+ 
         val showActions = if (lastMessage) {
             !loading
         } else {
