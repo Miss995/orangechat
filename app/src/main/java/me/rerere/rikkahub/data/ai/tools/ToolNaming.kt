@@ -54,6 +54,15 @@ object ToolNaming {
     }
 
     /**
+     * 【2026-09-25 · MCP 工具面实时刷新】判断一个最终工具名是不是 MCP 工具。
+     *
+     * 同一回合内 AI 用 mcp_switch 开了新服务器后，下一步请求要能立刻用上：
+     * GenerationHandler 每一步都用最新的 MCP 清单，把本轮开头那份里的 MCP
+     * 工具按前缀摘掉再并回来，就是靠这个判断。
+     */
+    fun isMcpToolName(name: String): Boolean = name.startsWith(MCP_PREFIX)
+
+    /**
      * 还原显示名
      *
      * 若以 mcp_ 或 plg_ 开头,按固定长度(前缀4 + 短键8 + 分隔符1 = 13)截掉头部,

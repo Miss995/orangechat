@@ -65,6 +65,7 @@ import me.rerere.rikkahub.data.ai.tools.buildSelfNoteWriteTool
 import me.rerere.rikkahub.data.ai.tools.buildQueryToolActionsTool
 import me.rerere.rikkahub.data.ai.tools.buildReadAppLogsTool
 import me.rerere.rikkahub.data.ai.tools.buildWriteFilesTool
+import me.rerere.rikkahub.data.ai.tools.ToolNaming
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.service.MemoryBankService
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -141,6 +142,10 @@ class GenerationHandler(
         assistant: Assistant,
         memories: List<AssistantMemory>? = null,
         tools: List<Tool> = emptyList(),
+        // 【2026-09-25 · MCP 工具面实时刷新】只重算 MCP 那一段的提供者。
+        // 传了它就每步取一次最新 MCP 清单（替掉 tools 里那份旧的），同一回合内用
+        // mcp_switch 开关服务器后下一步请求立刻生效；不传则行为跟以前完全一样。
+        mcpToolsProvider: (suspend () -> List<Tool>)? = null,
         maxSteps: Int = 256,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
         conversationSystemPrompt: String? = null,
@@ -182,6 +187,16 @@ class GenerationHandler(
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
  
+            // 【2026-09-25 · MCP 工具面实时刷新】MCP 那段每步重算：
+            // 同一回合内 AI 用 mcp_switch 开了服务器，下一步请求就能看到。
+            // 旧的 MCP 工具按名字前缀摘掉，其余（本地/系统/工作区/技能）原样复用；
+            // mcpToolsProvider 纯读内存快照，成本只有几十个对象的构造。
+            val extraTools = if (mcpToolsProvider != null) {
+                tools.filterNot { ToolNaming.isMcpToolName(it.name) } + mcpToolsProvider()
+            } else {
+                tools
+            }
+
             // 工具清单统一组装（2026-09-12 治本：与主动消息路径共用同一份，见 ToolAssembly.kt）
             val toolsInternal = buildAssistantTools(
                 context = context,
@@ -192,7 +207,7 @@ class GenerationHandler(
                 conversationRepo = conversationRepo,
                 favoriteRepo = favoriteRepo,
                 json = json,
-                extraTools = tools,
+                extraTools = extraTools,
                 slashCommandText = slashCommandText,
             ) 
             // Check if we have tool calls ready to continue after user interaction.

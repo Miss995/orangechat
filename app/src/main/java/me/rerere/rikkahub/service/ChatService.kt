@@ -1234,6 +1234,23 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                     // Plugin tools
                     addAll(pluginToolProvider.getTools())
                 },
+                // 【2026-09-25 · MCP 工具面实时刷新】只算 MCP 那一段，供每一步重算用。
+                // 上面 buildList 里那份 MCP 是"发送那一刻"的快照（第一轮照旧用它），
+                // 从第二轮起 GenerationHandler 会用这里的实时结果替掉它，于是同一回合内
+                // 用 mcp_switch 开关服务器后，下一步请求立刻生效，不用等下一回合。
+                mcpToolsProvider = {
+                    mcpManager.getAllAvailableTools().map { (serverId, tool) ->
+                        Tool(
+                            name = ToolNaming.buildMcpToolName(serverId, tool.name),
+                            description = tool.description ?: "",
+                            parameters = { tool.inputSchema },
+                            needsApproval = tool.needsApproval,
+                            execute = {
+                                mcpManager.callTool(serverId, tool.name, it.jsonObject)
+                            },
+                        )
+                    }
+                },
                 pluginPromptInjections = pluginToolProvider.getPluginPromptInjections(),
                 conversationId = conversationId.toString(),
                 // 【2026-09-24 召回留痕】把门控 / 拆词 / 命中数写回这条用户消息，
