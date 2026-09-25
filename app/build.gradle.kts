@@ -34,19 +34,10 @@ android {
         }
     }
 
-    splits {
-        abi {
-            // AppBundle tasks usually contain "bundle" in their name
-            //noinspection WrongGradleMethod
-            val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
-            isEnable = !isBuildingBundle
-            reset()
-            include("arm64-v8a")
-            // 不再额外打一个二合一包：那会让构建产物从 1 个变 3 个、
-            // artifact 涨到 250MB，每次下载都得整个拖下来。
-            isUniversalApk = false
-        }
-    }
+    // 【2026-09-25】ABI 拆分整块去掉。
+    // AGP 不允许 ndk.abiFilters 和 splits.abi 同时管芯片（报 Conflicting configuration），
+    // 而我们只要一个 arm64 包，本来也无需按 ABI 拆。只留 defaultConfig 里的 abiFilters，
+    // 产物就是单个 APK。
 
     val localProperties = Properties()
     val localPropertiesFile = rootProject.file("local.properties")
