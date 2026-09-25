@@ -59,8 +59,17 @@ object ToolNaming {
      * 同一回合内 AI 用 mcp_switch 开了新服务器后，下一步请求要能立刻用上：
      * GenerationHandler 每一步都用最新的 MCP 清单，把本轮开头那份里的 MCP
      * 工具按前缀摘掉再并回来，就是靠这个判断。
+     *
+     * 注意（2026-09-25 修）：不能只判 mcp_ 前缀。常驻的 mcp_switch 工具也是
+     * 这个开头，但它不是 MCP 服务器工具、不在 mcpManager 的清单里，一刀切
+     * 会把它摘掉（AI 一调就 Tool not found）。所以按真格式判：mcp_ + 8 位
+     * 十六进制短键 + _ + 原名，跟 toDisplayName 的判断保持一致。
      */
-    fun isMcpToolName(name: String): Boolean = name.startsWith(MCP_PREFIX)
+    fun isMcpToolName(name: String): Boolean =
+        name.length > HEADER_LENGTH &&
+            name.startsWith(MCP_PREFIX) &&
+            name.substring(MCP_PREFIX.length, MCP_PREFIX.length + SHORT_KEY_LENGTH)
+                .all { it in '0'..'9' || it in 'a'..'f' }
 
     /**
      * 还原显示名
