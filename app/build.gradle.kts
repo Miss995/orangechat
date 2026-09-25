@@ -29,7 +29,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            // 【2026-09-25】只留 arm64：手机就是这个架构，x86_64 是给模拟器的。
+            abiFilters += listOf("arm64-v8a")
         }
     }
 
@@ -40,8 +41,10 @@ android {
             val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
             isEnable = !isBuildingBundle
             reset()
-            include("arm64-v8a", "x86_64")
-            isUniversalApk = true
+            include("arm64-v8a")
+            // 不再额外打一个二合一包：那会让构建产物从 1 个变 3 个、
+            // artifact 涨到 250MB，每次下载都得整个拖下来。
+            isUniversalApk = false
         }
     }
 
