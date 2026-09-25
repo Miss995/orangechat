@@ -160,7 +160,7 @@ fun ChatMessageAssistantAvatar(
                         if (settings.displaySetting.showDateBelowName) {
                             Text(
                                 text = message.createdAt.toJavaLocalDateTime().toLocalString(),
-                                style = MaterialTheme.typography.titleSmall,
+                                style = MaterialTheme.typography.labelSmall,
                                 color = LocalContentColor.current.copy(alpha = 0.8f),
                                 maxLines = 1,
                             )
