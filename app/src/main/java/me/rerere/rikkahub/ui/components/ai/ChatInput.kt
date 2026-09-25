@@ -177,13 +177,15 @@ fun ChatInput(
     fun sendMessage() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
-        if (loading) onCancelClick() else onSendClick()
+        // 【插话 2026-09-25 宝的需求】输入框里有字时，即使猫在忙也按「发送」走：
+        // 宝能在猫干活的时候把话塞进来。空着才是「停止」。
+        if (loading && state.isEmpty()) onCancelClick() else onSendClick()
     }
 
     fun sendMessageWithoutAnswer() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
-        if (loading) onCancelClick() else onLongSendClick()
+        if (loading && state.isEmpty()) onCancelClick() else onLongSendClick()
     }
 
     var expand by remember { mutableStateOf(ExpandState.Collapsed) }
@@ -696,13 +698,16 @@ fun ChatInput(
                                             }
                                         )
                                 ) {
+                                    // 【插话 2026-09-25 宝的需求】输入框里有字时，按钮保持「发送」的样子，
+                                    // 哪怕猫正在忙。这样一眼就能看出「现在按下去是插话，不是打断」。
+                                    val showStop = loading && state.isEmpty()
                                     val containerColor = when {
-                                        loading -> MaterialTheme.colorScheme.errorContainer
+                                        showStop -> MaterialTheme.colorScheme.errorContainer
                                         state.isEmpty() -> MaterialTheme.colorScheme.surfaceContainerHigh
                                         else -> MaterialTheme.colorScheme.primary
                                     }
                                     val contentColor = when {
-                                        loading -> MaterialTheme.colorScheme.onErrorContainer
+                                        showStop -> MaterialTheme.colorScheme.onErrorContainer
                                         state.isEmpty() -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                                         else -> MaterialTheme.colorScheme.onPrimary
                                     }
@@ -711,7 +716,7 @@ fun ChatInput(
                                         shape = CircleShape,
                                         color = containerColor,
                                         content = {})
-                                    if (loading) {
+                                    if (showStop) {
                                         KeepScreenOn()
                                         Icon(
                                             imageVector = HugeIcons.Cancel01,

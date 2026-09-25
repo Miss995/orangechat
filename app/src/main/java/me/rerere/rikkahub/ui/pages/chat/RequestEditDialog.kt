@@ -59,6 +59,8 @@ fun RequestEditDialog(
     // 【2026-09-13】本次召回内容开关 + 展开状态
     var recallEnabled by remember(data) { mutableStateOf(data.recallEnabled) }
     var recallExpanded by remember { mutableStateOf(false) }
+    // 【临时附言 2026-09-25 宝的需求】手写一段话，拼到「系统消息注入」末尾，只对这一轮生效
+    var appendix by remember(data) { mutableStateOf(data.appendix) }
 
     Dialog(onDismissRequest = onCancel) {
         Surface(
@@ -269,6 +271,23 @@ fun RequestEditDialog(
                     }
                 }
                 HorizontalDivider()
+                // 【临时附言 2026-09-25 宝的需求】手写一小段，拼到「系统消息注入」末尾，
+                // 只对这一轮请求生效，不落库；留空就什么都不加。
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text(
+                        "临时附言（只对这次生效，不会保存）",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    OutlinedTextField(
+                        value = appendix,
+                        onValueChange = { appendix = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                            .heightIn(max = 120.dp),
+                        placeholder = { Text("写给这一轮的补充，留空就是不加") },
+                    )
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -286,6 +305,7 @@ fun RequestEditDialog(
                                     tools = tools,
                                     recall = data.recall,
                                     recallEnabled = recallEnabled,
+                                    appendix = appendix,
                                 )
                             )
                         },

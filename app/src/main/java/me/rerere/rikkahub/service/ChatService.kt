@@ -444,7 +444,15 @@ class ChatService(
         val tSend = System.currentTimeMillis()
 
         val session = getOrCreateSession(conversationId)
-        session.getJob()?.cancel()
+        // 【插话 2026-09-25 宝的需求】猫正在忙的时候，宝还能把话塞进来。
+        // 这种情况不取消当前这一轮（让它自然跑完），消息照样存下来，
+        // 但不在这里触发新的生成，免得两轮同时跑打架。
+        // 上半场方案：这一轮跑完不会自动接上；宝再说一句时，两句话会一起被看到。
+        val busyJob = session.getJob()
+        val isInterjection = busyJob?.isActive == true
+        if (!isInterjection) {
+            busyJob?.cancel()
+        }
 
         val job = appScope.launch {
             try {
@@ -639,7 +647,8 @@ class ChatService(
 
                 // 开始补全
                 AppLogBuffer.log(TAG, "sendMessage: about to generate at ${System.currentTimeMillis() - tSend}ms")
-                if (answer) {
+                // 【插话 2026-09-25】插话时不启动新一轮：当前那轮还在跑，等它自然收尾。
+                if (answer && !isInterjection) {
                     handleMessageComplete(conversationId)
                 }
 

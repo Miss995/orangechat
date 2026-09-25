@@ -65,6 +65,12 @@ object RequestEditController {
         // 关掉只剥【背景补充】，时间和时刻感保留（那两个是每轮都要的）。
         val recall: String? = null,
         val recallEnabled: Boolean = true,
+        /**
+         * 【临时附言 2026-09-25 宝的需求】请求编辑弹窗里手写的一段话，
+         * 拼到「系统消息注入」那一块的末尾，只对本次请求生效，不落库。
+         * 空着 = 什么都不加（请求跟以前完全一致，不打乱缓存前缀）。
+         */
+        val appendix: String = "",
     )
 
     private val _pending = MutableStateFlow<RequestEditData?>(null)
@@ -143,7 +149,7 @@ object RequestEditController {
         // 只剥那一段（时间和时刻感照常保留）；命中不了就原样返回，不冒风险。
         if (!edited.recallEnabled && !edited.recall.isNullOrBlank()) {
             val marker = "\n【背景补充】\n" + edited.recall
-            return result.map { msg ->
+            val stripped = result.map { msg ->
                 if (msg.role != MessageRole.USER) msg
                 else {
                     val text = msg.toText()
@@ -151,8 +157,29 @@ object RequestEditController {
                     else UIMessage.user(prompt = text.replace(marker, ""))
                 }
             }
+            return applyAppendix(stripped, edited.appendix)
         }
-        return result
+        return applyAppendix(result, edited.appendix)
+    }
+
+    /**
+     * 【临时附言 2026-09-25 宝的需求】把编辑框里手写的一段拼到「系统消息注入」块末尾。
+     * 只改发给模型的这份副本，不落库、不碰历史前缀（所以不打乱缓存）。
+     * 空着、或者找不到注入块时，原样返回。
+     */
+    private fun applyAppendix(messages: List<UIMessage>, appendix: String): List<UIMessage> {
+        if (appendix.isBlank()) return messages
+        val marker = "以下是系统消息注入:"
+        val idx = messages.indexOfLast {
+            it.role == MessageRole.USER && it.toText().startsWith(marker)
+        }
+        if (idx < 0) return messages
+        val old = messages[idx]
+        return messages.toMutableList().also {
+            it[idx] = UIMessage.user(
+                prompt = old.toText().trimEnd() + "\n【临时附言】" + appendix.trim()
+            )
+        }
     }
 
     /**
