@@ -164,9 +164,17 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
     }
 
     val chatListState = rememberLazyListState()
+    // 【2026-09-27 修】同一条跳转只处理一次：否则列表条数一变（发新消息）effect 会重跑，
+    // 又把视图拽回那条老消息。
+    val lastJumpNodeId = remember { mutableStateOf<Uuid?>(null) }
     LaunchedEffect(nodeId, conversation.messageNodes.size) {
-        if (!vm.chatListInitialized && conversation.messageNodes.isNotEmpty()) {
+        // 【2026-09-27 修·老消息跳转失效】原条件是 `!vm.chatListInitialized`，而 chatListInitialized
+        // 挂在 ChatVM 上、VM 按会话 ID 复用 —— 进过一次会话后该标记永久为 true，
+        // 于是「从搜索/收藏夹点某条消息跳回同一个会话」永远不执行（日志里连 jumpToNode 三条都不出现）。
+        // 改为：带 nodeId（跳转请求）时无条件执行；只有"无 nodeId 的首次滚到底"仍受该标记限制。
+        if (conversation.messageNodes.isNotEmpty() && (!vm.chatListInitialized || (nodeId != null && lastJumpNodeId.value != nodeId))) {
             if (nodeId != null) {
+                lastJumpNodeId.value = nodeId
                 val index = conversation.messageNodes.indexOfFirst { it.id == nodeId }
                 if (index >= 0) {
                     // 窗口剪切后，历史消息 index 需映射到窗口内；超出窗口则停在窗口开头
