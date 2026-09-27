@@ -1174,3 +1174,78 @@ commit：21b10067（「橘瓣·改」）→ 6495f5c8（「橘仔」）
 **编译修复（commit eed40b5c）**：`ChatMessageActions.kt` 漏了 `import me.rerere.hugeicons.stroke.MessageMultiple01`，CI 报 `Unresolved reference 'MessageMultiple01'`。教训：HugeIcons 的图标是扩展属性，必须逐个 import，光有 `HugeIcons` 对象不够（grep 到别处用过这个名字、不代表当前文件能用）。
 
 **宝已验证 ✅（2026-09-22 21:39）**：宝用新功能本身引用橘仔的一条消息回了「好了」——引用块、被引原文、她的话三样都到齐，橘仔在请求里看到 `【引用·橘仔 的一条消息】`。双向也当场通了（她引的那条是 ASSISTANT 消息）。
+
+### 2026-09-25 MCP 工具面实时刷新（commit 22791240）
+
+**需求**（宝 09-25 15:20 提）：同一回合内用 `mcp_switch` 开/关服务器后，本回合调它的工具仍报 not found，要等下一回合才生效。宝问能不能「用了那个工具之后就重建」，或者「每个请求都重建」。
+
+**勘察结论**：
+- 工具面有两份拼装：`ChatService.sendMessage` 里 `tools = buildList { ... }`（发送时算一次，含 MCP），`GenerationHandler` 循环里 `buildAssistantTools(extraTools = tools, ...)`（每步都调，但用的是外面传进来的死清单）。
+- `McpManager.getAllAvailableTools()` 纯本地：读 `settingsStore.settingsFlow.value` + 过滤 + flatMap，**不联网、不碰客户端** → 每步重算成本只有几十个对象的构造，可忽略。
+
+**实现（三处）**：
+1. `ToolNaming.kt`：新增 `fun isMcpToolName(name: String) = name.startsWith(MCP_PREFIX)`（MCP_PREFIX 是 private，必须走这个口子）。
+2. `GenerationHandler.kt`：`generateText` 加 `mcpToolsProvider: (suspend () -> List<Tool>)? = null`；循环里 `extraTools = if (mcpToolsProvider != null) tools.filterNot { ToolNaming.isMcpToolName(it.name) } + mcpToolsProvider() else tools`；`buildAssistantTools(extraTools = extraTools)`。**默认 null，不传的调用方（主动消息 / workflow / 小程序）行为完全不变。**
+3. `ChatService.kt`：`generateText(...)` 调用处补 `mcpToolsProvider = { mcpManager.getAllAvailableTools().map { ... } }`（buildList 里那份 MCP 保留，第一轮照旧用）。
+
+**顺带发现（未验证的隐患）**：`McpManager.getAllAvailableTools()` 和 `ChatService.handleSlashCommandDirect` 都取 `settings.getCurrentAssistant()`，不是「这条对话挂着的助手」；两者不一致时会拿错列表。**宝 09-25 更正**：9-01 那次 `/mcp` 不直执行的真因是「新窗口没打开 MCP + 输错命令」，与本条无关，所以这算隐患不算已证 bug。
+
+**待验证**：宝构建后，同一回合内用 `mcp_switch` 关掉再开回花园，立刻调 `list_notifications`。旧版报 not found，新版应该通。
+
+**环境备注**：老的 `~/.git-credentials` token 只对 git 有效，走 GitHub API 报 401；宝 09-25 新给一把 fine-grained PAT（Contents R+W），存 `/workspace/secrets/github_pat.txt`（600）。`fetch_file.py` / `push_via_api_multi.py` 已改成优先读它。
+
+### 2026-09-25 MCP 工具面修复 + 构建瘦身（commit 15fde68d / 21887db0）
+
+**① 15fde68d：`mcp_switch` 被自己人误伤，已修**
+
+- 现象：AI 调 `mcp_switch` 报 `Tool mcp_switch not found`（GenerationHandler.kt:435 的 `toolsInternal.find{...} ?: error(...)`）。
+- 真凶：当天上午 22791240 新增的 `ToolNaming.isMcpToolName(name) = name.startsWith("mcp_")` 一刀切前缀。`mcp_switch` 也是 `mcp_` 开头 → 每步循环里被 `filterNot` 摘掉；它又不在 `McpManager.getAllAvailableTools()` 的清单里，并回来时补不上 → 彻底消失。
+- 修法：判断精确到真格式（mcp_ + 8 位十六进制 + _ + 原名），与 `toDisplayName` 用同一把尺：
+
+```kotlin
+fun isMcpToolName(name: String): Boolean =
+    name.length > HEADER_LENGTH &&
+        name.startsWith(MCP_PREFIX) &&
+        name.substring(MCP_PREFIX.length, MCP_PREFIX.length + SHORT_KEY_LENGTH)
+            .all { it in '0'..'9' || it in 'a'..'f' }
+```
+
+- 自查：7 条用例（mcp_switch / mcp_658a2aa4_get_self / mcp_c115a23f_check_login_status / mcp_c8b9c6a8_start_game / write_files / workspace_shell / mcp_switch2）全部符合预期。
+- 教训：靠名字形状划分世界时，先问一句有没有同族异类。
+
+**② 21887db0：构建只打 arm64，artifact 瘦到 1/3**
+
+- 起因：宝下载 artifact 失败，且发现里面塞了三个 APK。
+- 真凶：`app/build.gradle.kts` 里 `abiFilters = [arm64-v8a, x86_64]` + `splits.abi.include = [arm64-v8a, x86_64]` + `isUniversalApk = true` → 一次产出 arm64 / x86_64 / 二合一 三个包。
+- 修法：abiFilters、splits.include 都只留 `arm64-v8a`，`isUniversalApk = false`。
+- ⚠️ 走 workflow 改不通：改 `.github/workflows/*.yml` 报 403 `Resource not accessible by personal access token`（这把 PAT 缺 Workflows 权限），所以从 `build.gradle.kts` 下手。
+- 影响：以后构建不再产 x86_64（模拟器）包；真机覆盖安装不受影响（包名 / 签名 / versionCode 均未动）。
+
+**待验证**：宝重跑构建后只下一个包（约 60MB），并确认同一回合内 `mcp_switch` 开关服务器后立刻可用。
+
+**③ 2fd53a62：补 ② 引入的构建失败**
+
+- 现象：21887db0 的构建挂在第 13 步 Build Debug APK，报
+  `Conflicting configuration : 'arm64-v8a' in ndk abiFilters cannot be present when splits abi filters are set : arm64-v8a`
+- 真因：AGP 不允许 `ndk.abiFilters` 和 `splits.abi` 同时限制 ABI。原配置能过，是因为 `isUniversalApk = true` 时两者配合；把二合一关掉后立刻冲突。
+- 修法：整个 `splits { abi { ... } }` 块删除，只留 `defaultConfig.ndk.abiFilters = ["arm64-v8a"]`。
+- 结果 ✅（2026-09-25 18:26 构建成功）：artifact 由 **250.1MB 降到 78.0MB**，只含一个包。
+- 教训：改 AGP 配置前先搞清哪两处管同一件事；只顾着改数值、没看它们之间的关系，就会把「能跑的旧配置」改成「跑不了的新配置」。
+
+### 2026-09-27 请求体指纹：给"缓存掉档"做笔录（commit 320404ed）
+
+**起因**（宝 09-27 上午）：宝发现每轮请求的缓存命中在 63.5K / 76K / 140K 之间跳，掉档那轮上下文总长还会整体变短（例：08:07 从 150.2K 掉到 142.4K；09:21 从 142.6K 直接掉到 86.6K）。按设计窗口是"攒一组裁一组"，不该这么勤，宝自己翻请求日志手工对照半天没看出差别。
+
+**做法**：新建 `data/ai/PromptFingerprinter.kt`，在 `RequestLoggingInterceptor` 读出完整 requestBody 之后调用。
+- 每次按 1000 字符切块、每块算短码，跟上一轮的短码列表从头逐块比；
+- 第一个对不上的块 = 断点，把断点前后各 110 字原文截下来；
+- 结果写进 `AppLogBuffer`，tag = `PromptDiff`（日志里筛这个词就能看）。
+
+**判读**：
+- 断点块号 ≈ 上轮块数 → 正常（尾部追加）；
+- 断点块号 << 上轮块数 → 异常（老内容被动过，缓存从这儿往后全废）；
+- 断点在 0 块 → 换了序列（切了对话），重置基准不报。
+
+**范围**：只处理 POST + body > 2000 字 + 含 `"messages"` 的请求，避免把别的 HTTP 请求当序列比。
+
+**状态**：已推 main（320404ed），待宝构建验证。
