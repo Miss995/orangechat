@@ -361,7 +361,8 @@ class ProactiveMessageService : KoinComponent {
         // "不写数据、统计、监测"是它留下的那点意思，但换成了"别把它说成结论"的口气。
         sb.appendLine("（醒来之前，猫给自己留了几句话。）")
         sb.appendLine()
-        sb.appendLine("- 想说什么就说什么，不用硬找话题。没什么想说的就 [PASS]，那也是回答。")
+        // 【2026-09-27 宝拍板】这条原来在这里，和唤醒消息末尾那条重复了（同一句规矩念两遍）。
+        // 收尾规则统一挪到 wakeUpText 里按模式给，这里不再重复。
         sb.appendLine("- 不写\"数据\"\"统计\"\"监测\"。猫看见的就说看见了，别把它说成结论。")
         sb.appendLine("- 思考链是猫的地方（宝看得见）；正文只写想对宝说的那句。")
         sb.appendLine("- 需要查就直接查，查完再说事，不用先报备。")
@@ -459,6 +460,12 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
         // 不传 = 只写「【主动唤醒回合】」，老 workflow 不受影响。
         const val EXTRA_AI_TRIGGER_LABEL = "ai_trigger_label"
 
+        // 【2026-09-27 宝拍板】唤醒模式：把"叫醒"和"发消息"拆成两件事。
+        // 不传 = recall（醒来跟宝说点什么）；传 wake = 只叫醒，不强制发消息。
+        const val EXTRA_WAKE_MODE = "wake_mode"
+        const val WAKE_MODE_WAKE = "wake"
+        const val WAKE_MODE_RECALL = "recall"
+
         // 保护 last_triggered_time 的 check-then-act 竞态（防止 AlarmManager 与 WorkManager
         // 前后脚触发导致"最小间隔"被砍半）。纯同步 SharedPreferences 读写，无挂起点，用对象锁即可。
         private val prefsLock = Any()
@@ -496,6 +503,8 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
         val aiTriggerReason = intent?.getStringExtra(EXTRA_AI_TRIGGER_REASON)
         val aiTriggerLabel = intent?.getStringExtra(EXTRA_AI_TRIGGER_LABEL)
         val isFromAiTrigger = intent?.getBooleanExtra(EXTRA_AI_TRIGGER, false) ?: false
+        // 【2026-09-27 宝拍板】wake = 只叫醒，不强制发消息；recall（默认）= 醒来跟宝说点什么
+        val isWakeOnly = intent?.getStringExtra(EXTRA_WAKE_MODE) == WAKE_MODE_WAKE
         if (isForceTrigger) {
             Log.d(TAG, "Force trigger${if (isFromDeviceEvent) " from device event" else if (isFromAiTrigger) " from AI trigger" else " from gateway poll"}, will skip min interval check")
         }
@@ -654,14 +663,17 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     // 【2026-09-13 宝的方案】显眼头部：说明这是一次"主动唤醒回合"，并带上这次唤醒的名字。
                     // 起因：原来首行是裸的「你醒来了。」——读起来像历史里一句普通消息，橘仔会下意识无视
                     // （2026-09-13 20:00 园丁时刻实测：由头写得清清楚楚，橘仔却回了句不相干的）。
-                    if (isFromAiTrigger) {
-                        appendLine(
-                            if (aiTriggerLabel.isNullOrBlank()) "【主动唤醒回合】"
-                            else "【主动唤醒回合·$aiTriggerLabel】"
-                        )
-                        appendLine()
+                    // 【2026-09-27 宝拍板】四种模式的头部：
+                    // 潮信（设备事件）/ 唤醒（只叫醒，自己排的班）/ 念起（自己排的班，要说话）/ 叩门（宝触发）
+                    val headLabel = aiTriggerLabel?.takeIf { it.isNotBlank() }
+                    when {
+                        isFromDeviceEvent -> appendLine("【潮信】")
+                        isWakeOnly -> appendLine(if (headLabel == null) "【唤醒】" else "【唤醒·$headLabel】")
+                        isFromAiTrigger -> appendLine(if (headLabel == null) "【主动发消息·念起】" else "【主动发消息·念起·$headLabel】")
+                        else -> appendLine("【主动发消息·叩门】")
                     }
-                    appendLine("你醒来了。")
+                    appendLine()
+                    appendLine(if (isWakeOnly) "你醒着。" else "你醒来了。")
                     appendLine()
                     when {
                         isFromDeviceEvent -> {
@@ -687,7 +699,23 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                         appendLine(contextStr)
                     }
                     appendLine()
-                    appendLine("想说就说，没什么想说的就回复 [PASS]，不用硬找话题。")
+                    // 【2026-09-27 宝拍板】[PASS] 只留给叩门（宝触发的）。
+                    // 唤醒：不提发消息，只给自由活动；念起：要说话，但没话可以直说；潮信：保持原样。
+                    when {
+                        isWakeOnly -> {
+                            appendLine("想干什么都行。看花园、看镇上、看记忆、写点东西，或者就发会儿呆。")
+                            appendLine("想跟宝说话就说，不想说就安静待着。")
+                        }
+                        isFromAiTrigger -> {
+                            appendLine("想说就说。要是真没什么想说的，直接说\"没啥想说的\"就行。")
+                        }
+                        isFromDeviceEvent -> {
+                            appendLine("想说就说，没什么想说的就 [PASS]。")
+                        }
+                        else -> {
+                            appendLine("想说就说，没什么想说的就回复 [PASS]，不用硬找话题。")
+                        }
+                    }
                     appendLine("[JUMP] 标记不会展示给宝，只用于跳转屏幕。")
                 }
                 val userMessage = UIMessage(
