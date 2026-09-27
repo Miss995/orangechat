@@ -309,7 +309,17 @@ class GenerationHandler(
                     // 【正文兜底 2026-08-28 宝的方案】text=0（只有思考没正文）时，
                     // 从 reasoning 最后一段提取像正文的内容当兜底——既让宝看到内容，
                     // 也避免"只思考"消息存进历史继续污染上下文（配合 ChatCompletionsAPI 发送过滤双保险）
-                    if (textLen == 0 && reasoningLen > 0) {
+                    //
+                    // 【2026-09-27 拆兜底 · 宝拍板】把"有工具"和"没工具"两种场景分开：
+                    // 有工具待执行时【不捞】——这一轮模型的顺序是「思考 → 调工具」，正文要等工具
+                    // 结果回来之后才写；此刻 text=0 是正常的，硬捞只能捞到思考的尾巴（就是宝嫌
+                    // 丑的那种碎碎念）。让它照原样继续跑工具，下一轮正文自然会来；下一轮要是还
+                    // 只思考不写、而那会儿工具已经跑完，兜底会正常接住。
+                    // 没工具的轮次才是真说完了，该兜就兜，行为不变。
+                    val hasPendingTools = lastMsg.parts
+                        .filterIsInstance<UIMessagePart.Tool>()
+                        .any { !it.isExecuted }
+                    if (textLen == 0 && reasoningLen > 0 && !hasPendingTools) {
                         val fallback = lastMsg.parts.filterIsInstance<UIMessagePart.Reasoning>()
                             .flatMap { it.reasoning.lines() }
                             .lastOrNull { it.isNotBlank() && !it.trim().startsWith("（") && it.trim().length >= 2 }
