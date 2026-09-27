@@ -35,6 +35,9 @@ object PromptFingerprinter {
     @Volatile private var lastHashes: IntArray = IntArray(0)
     @Volatile private var lastBlocks: Int = 0
     @Volatile private var lastLength: Int = 0
+    // 2026-09-27 三改：把上一轮的原文也留着 —— 出断点时把"上轮同位置"一起打出来，
+    // 两边并排看，就知道那块到底被改成了什么。（只留一份，下轮整体替换，旧的交给 GC）
+    @Volatile private var lastBody: String = ""
 
     /**
      * 对比本次请求体与上一次，返回一行给人看的结论；不需要报的时候返回 null。
@@ -55,10 +58,12 @@ object PromptFingerprinter {
         val prev = lastHashes
         val prevBlocks = lastBlocks
         val prevLen = lastLength
+        val prevBody = lastBody   // 上一轮原文（断点对照用，取完就换新的）
 
         lastHashes = hashes
         lastBlocks = blocks
         lastLength = body.length
+        lastBody = body
 
         if (prev.isEmpty()) {
             return "基准已建：${blocks} 块 / ${body.length} 字符 · ${bodyShape(body)} · 开头：${headSnippet(body)}"
@@ -84,6 +89,16 @@ object PromptFingerprinter {
             .replace("\r", "")
             .replace("\n", "\\n")
 
+        // 上一轮同一位置的原文（同样截 110 字），拿来跟本轮并排看
+        val prevSnippet = if (prevBody.isEmpty() || from >= prevBody.length) {
+            "(上轮原文已丢)"
+        } else {
+            prevBody.substring(from, minOf(to, prevBody.length))
+                .replace("\\", "\\\\")
+                .replace("\r", "")
+                .replace("\n", "\\n")
+        }
+
         val verdict = when {
             idx == prevBlocks && idx < blocks -> "尾部追加"
             idx == blocks && blocks < prevBlocks -> "本轮变短（有内容被移出）"
@@ -91,7 +106,7 @@ object PromptFingerprinter {
             else -> "老内容被改动"
         }
 
-        return "断点 块#$idx（上轮共 $prevBlocks 块 / $prevLen 字符，本轮 $blocks 块 / ${body.length} 字符）· $verdict · 本轮${bodyShape(body)} · 约第 $pos 字符处：$snippet"
+        return "断点 块#$idx（上轮共 $prevBlocks 块 / $prevLen 字符，本轮 $blocks 块 / ${body.length} 字符）· $verdict · 本轮${bodyShape(body)} · 约第 $pos 字符处 本轮：$snippet ｜ 上轮：$prevSnippet"
     }
 
     /** 主动清空基准（换对话 / 调试用） */
@@ -99,6 +114,7 @@ object PromptFingerprinter {
         lastHashes = IntArray(0)
         lastBlocks = 0
         lastLength = 0
+        lastBody = ""
     }
 
     /** 请求体的"长相"：消息条数 + 内嵌图片张数（用来分辨是哪条链路） */
