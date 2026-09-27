@@ -183,6 +183,11 @@ class GenerationHandler(
         // 【正文空重试 2026-09-12 宝拍板】模型只出思考、没出正文（text=0）时自动重发一次。
         // 整个生成流程只重试一次；重试还失败就保持原样（走兜底显示思考链）。
         var emptyTextRetried = false
+
+        // 【2026-09-27 补 · 宝的担心】这一整个回合里有没有调过工具。
+        // 调过工具就不重发：工具来回本来就多，最后一轮要是没写完，不该把整个回合重开一遍
+        // （那是双倍的钱）。只有"从头到尾没碰过工具"的回合才保留重发——那种是真的一句话都没说成。
+        var anyToolCallThisTurn = false
  
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -340,7 +345,8 @@ class GenerationHandler(
                     // 【正文空重试 2026-09-12 宝拍板】
                     // fallbackUsed = 模型只出了思考、没出正文（这一轮走了上面的兜底）。
                     // 这时自动重发一次：重试成功就是正常回复；还失败就保持原样（显示思考链兜底）。
-                    if (fallbackUsed && !emptyTextRetried) {
+                    // 【2026-09-27 补】再加一道：本回合调过工具就不重发（见 anyToolCallThisTurn）。
+                    if (fallbackUsed && !emptyTextRetried && !anyToolCallThisTurn) {
                         emptyTextRetried = true
                         AppLogBuffer.log("GEN_RESULT", "text=0 自动重试一次（去掉空回复重新生成）")
                         messages = messages.slice(0 until messages.lastIndex)
@@ -350,6 +356,9 @@ class GenerationHandler(
                     // no tool calls, break
                     break
                 }
+
+                // 【2026-09-27 补】走到这里说明本回合有工具要跑——记下，后面就不许重发了。
+                anyToolCallThisTurn = true
  
                 // Check for tools that need approval
                 var hasPendingApproval = false
