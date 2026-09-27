@@ -39,7 +39,9 @@ class RequestLoggingInterceptor : Interceptor {
             if (request.method == "POST" && b.length > 2000 && b.contains("\"model\"") && b.contains("\"messages\"")) {
                 try {
                     PromptFingerprinter.diff(b)?.let { report ->
-                        AppLogBuffer.log("PromptDiff", request.url.encodedPath + " · " + report)
+                        // 2026-09-27 橘仔：连 host 一起记 —— 猫的聊天走 DeepSeek，打工（识图/向量/拆词）走硅基，
+                        // 只记 path 会混成一条序列分不清是谁
+                        AppLogBuffer.log("PromptDiff", request.url.host + request.url.encodedPath + " · " + report)
                     }
                 } catch (_: Throwable) {
                 }
