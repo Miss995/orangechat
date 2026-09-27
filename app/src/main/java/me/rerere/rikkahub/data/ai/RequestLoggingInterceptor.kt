@@ -36,10 +36,10 @@ class RequestLoggingInterceptor : Interceptor {
         // 2026-09-27 橘仔：请求体指纹 —— 给"缓存掉档"做笔录（日志筛 PromptDiff 可查）
         // 只处理聊天请求（POST + 体积够大 + 含 messages），避免把别的 HTTP 请求当序列比
         requestBody?.let { b ->
-            if (request.method == "POST" && b.length > 2000 && b.contains("\"messages\"")) {
+            if (request.method == "POST" && b.length in 2000..2_000_000 && b.contains("\"model\"") && b.contains("\"messages\"")) {
                 try {
                     PromptFingerprinter.diff(b)?.let { report ->
-                        AppLogBuffer.log("PromptDiff", report)
+                        AppLogBuffer.log("PromptDiff", request.url.encodedPath + " · " + report)
                     }
                 } catch (_: Throwable) {
                 }
