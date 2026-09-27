@@ -129,14 +129,19 @@ class McpManager(
                         Log.i(TAG, "to_add: $toAdd")
                         Log.i(TAG, "to_remove: $toRemove")
                         AppLogBuffer.log(TAG, "cfg-diff: add=" + toAdd.map { it.commonOptions.name } + " remove=" + toRemove.map { it.commonOptions.name })
-                        toAdd.forEach { cfg ->
-                            appScope.launch {
+                        // 【2026-09-27 修】先移除、再新增，而且串行等完。
+                        // 原来两边都是 fire-and-forget：关掉又马上打开时，移除还在路上，
+                        // addClient 第一行 removeClient + 后面的 checkDifferent 会认定"没变化"，
+                        // 于是不重建；随后移除才跑完 → 连接没了也不会回来（只能重启 App）。
+                        appScope.launch {
+                            toRemove.forEach { cfg ->
+                                runCatching { removeClient(cfg) }
+                                    .onFailure { it.printStackTrace() }
+                            }
+                            toAdd.forEach { cfg ->
                                 runCatching { addClient(cfg) }
                                     .onFailure { it.printStackTrace() }
                             }
-                        }
-                        toRemove.forEach { cfg ->
-                            appScope.launch { removeClient(cfg) }
                         }
                     }.onFailure {
                         it.printStackTrace()
@@ -398,6 +403,13 @@ class McpManager(
 
         if (currentAttempt > MAX_RECONNECT_ATTEMPTS) {
             Log.w(TAG, "Max reconnect attempts reached for ${config.commonOptions.name}")
+            // 【2026-09-27 补】这条以前只进 logcat，App 里看不到；现在也写进日志环，
+            // 以后 read_app_logs 筛 McpManager 就能查出"哪个服务器悄悄死了"。
+            AppLogBuffer.log(
+                TAG,
+                "reconnect-giveup: " + config.commonOptions.name +
+                    " 连续 " + MAX_RECONNECT_ATTEMPTS + " 次重连失败，连接不再自动恢复（需重启 App）"
+            )
             appScope.launch {
                 setStatus(config, McpStatus.Error("连接断开，已达最大重连次数"))
             }
