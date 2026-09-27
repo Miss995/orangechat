@@ -369,7 +369,8 @@ class ProactiveMessageService : KoinComponent {
         sb.appendLine()
         // 下面两条是接口说明，不是规矩：一条防"话被藏进思考链"，一条讲记号怎么用。
         sb.appendLine("正文里不要使用 XML 标签。")
-        sb.appendLine("[JUMP] 标记不会展示给宝，只用于跳转屏幕。")
+        // 【2026-09-27 宝拍板】[JUMP] 那行原来在这里，跟唤醒消息末尾那条重复了（每张截图里都出现两遍）。
+        // 收尾的接口说明统一留在 wakeUpText 那边，这里不再重复。
         return sb.toString()
     }
 
