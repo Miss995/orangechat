@@ -92,7 +92,7 @@ fun SettingProactiveMessagePage(vm: SettingVM = koinInject()) {
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             LargeFlexibleTopAppBar(
-                title = { Text("主动消息") },
+                title = { Text("唤醒与主动消息") },
                 navigationIcon = { BackButton() },
                 scrollBehavior = scrollBehavior,
             )
@@ -106,7 +106,7 @@ fun SettingProactiveMessagePage(vm: SettingVM = koinInject()) {
             item {
                 CardGroup {
                     item(
-                        headlineContent = { Text("启用主动消息") },
+                        headlineContent = { Text("启用主动消息与唤醒") },
                         supportingContent = { Text("开启后AI立即主动发一条消息，之后按设定间隔循环") },
                         trailingContent = {
                             Switch(
@@ -253,9 +253,9 @@ fun SettingProactiveMessagePage(vm: SettingVM = koinInject()) {
             item {
                 CardGroup {
                     item(
-                        headlineContent = { Text("激进模式") },
+                        headlineContent = { Text("激进模式（潮信）") },
                         supportingContent = {
-                            Text("开启后，每次手机切换应用、开屏锁屏、回到桌面都会触发 AI 思考。AI 会根据用户的手机动向自主决定是否主动发消息或切屏。\n\n可以独立开启，不需要同时开启主动消息。\n\n这是一个常驻前台服务，会持续小幅耗电。需要开启使用情况访问权限。\n\nAI 大多数时候会选择 [PASS] 跳过，只在觉得有话要说时才会发消息。")
+                            Text("（手机有动静就醒来看看，提示词里这次唤醒叫「潮信」。）\n\n开启后，每次手机切换应用、开屏锁屏、回到桌面都会触发 AI 思考。AI 会根据用户的手机动向自主决定是否主动发消息或切屏。\n\n可以独立开启，不需要同时开启主动消息。\n\n这是一个常驻前台服务，会持续小幅耗电。需要开启使用情况访问权限。\n\nAI 大多数时候会选择 [PASS] 跳过，只在觉得有话要说时才会发消息。")
                         },
                         trailingContent = {
                             Switch(
