@@ -1976,8 +1976,16 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 【缓存对齐 2026-08-26】窗口裁剪组大小 = 对话关联 assistant 的 contextGroupSize（设置里"多少条一组"），
         // 与 limitContext 组对齐保持同步；读不到/异常回退默认 4
         val windowGroupSize = runCatching {
-            settingsStore.settingsFlow.first().assistants
-                .firstOrNull { it.id == toSave.assistantId }?.contextGroupSize
+            val allAssistants = settingsStore.settingsFlow.first().assistants
+            val matched = allAssistants.firstOrNull { it.id == toSave.assistantId }
+            // 【2026-09-28 排查】宝设置的是 6，但 PromptDiff 显示每轮按 4 条推，怀疑这里没读到。
+            // 打完这行日志，跑一轮就能看见实际用的是几、有没有匹配上助手。
+            AppLogBuffer.log(
+                TAG,
+                "WINDOW_GS target=${toSave.assistantId} matched=${matched?.id} gs=${matched?.contextGroupSize} " +
+                    "nodes=${toSave.messageNodes.size} all=${allAssistants.joinToString("|") { "${it.id}=${it.contextGroupSize}" }}"
+            )
+            matched?.contextGroupSize
                 ?: DEFAULT_WINDOW_GROUP_SIZE
         }.getOrDefault(DEFAULT_WINDOW_GROUP_SIZE).coerceAtLeast(1)
 
