@@ -1249,3 +1249,32 @@ fun isMcpToolName(name: String): Boolean =
 **范围**：只处理 POST + body > 2000 字 + 含 `"messages"` 的请求，避免把别的 HTTP 请求当序列比。
 
 **状态**：已推 main（320404ed），待宝构建验证。
+
+## 2026-09-29 · 同回合只追加 + 插件工具面每步重算 + PromptDiff 逐字符定位（2063e509）
+
+**起因**（宝 09-29 凌晨）：宝发现缓存掉到 86.7k。PromptDiff 日志三条断点（00:59:00 / 00:59:22 / 01:04:58）分别落在**猫自己的思考链**、**最近事件+工作区注入**、**工具结果**三处；且"本轮"与"上轮"打印的片段看着一字不差却判了"老内容被改动"；消息条数 45 → 41，掉 4 条。
+
+**排查结论**：
+1. **"掉 4 条"结掉** —— 宝算的账：裁 6 条（gs=6 正常工作）+ 追加 2 条（一条 AI 消息、一条工具结果）= 净 −4。裁剪本身没问题。
+2. **组大小悬案结案** —— WINDOW_GS 日志（c509364f）实测：target 与 matched 同一个 ID、`gs=6`，"认错助手、静默按 4 裁"的怀疑排除。代码没动。
+3. **"看着一样却被判改动"的原因** —— PromptDiff 取值是 `pos = idx * CHUNK`（**块起点**）前后各 110 字；块是 1000 字一块，差异落在块中间时，截出来的片段两边当然一样。宝的猜测成立。
+
+**改动（四文件八处）**：
+1. **同回合只追加**（宝的方案，`ChatService.kt`）
+   - `saveConversation` 加 `val turnInFlight = sessions[conversationId]?.getJob()?.isActive == true`；
+   - 第一段（更新 lazyWindowFirstIndex）加 `&& !turnInFlight`；
+   - 第二段（内存态裁剪 windowState）加 `if (turnInFlight) toSave`（回合中一个字不丢）；
+   - `sendMessage` 的 `session.setJob(job)` 后挂 `job.invokeOnCompletion { appScope.launch { ... saveConversation ... } }` 补一次收尾保存（那时 job 已 not active，闸放开，该裁的裁掉）。
+   - 目的：回合内前缀只往后追加，历史一个字不动。
+2. **插件工具面每步重算**（`ToolNaming.kt` / `GenerationHandler.kt` / `ChatService.kt`）
+   - ToolNaming 加 `isPluginToolName`（判据同 MCP：`plg_` + 8 位 hex + `_`；不能一刀切前缀，否则会把常驻的 `plugin_switch` 摘掉）；
+   - GenerationHandler 加 `pluginToolsProvider: (suspend () -> List<Tool>)? = null`；`extraTools` 改成两段一起摘旧并回（MCP + 插件）；
+   - ChatService 的 generateText 调用处传 `pluginToolsProvider = { pluginToolProvider.getTools() }`。
+3. **PromptDiff 逐字符定位**（`PromptFingerprinter.kt`）
+   - 不再拿块起点当断点：从块起点往后逐字符比到第一个不同处，`pos` 即真断点；
+   - 报告加"分岔在第 N 字符处（共同前缀 N 字符）"，共同前缀 ≈ 这一轮理论上能命中的量。
+
+**工作区事故（又一次，已避）**：`/workspace/repos/orangechat` 的 `GenerationHandler.kt` 是旧的（缺 9-28 的 MemTrace 埋点与 95d591c1 的换条节拍改动），拉远程 diff 才发现。教训重申：**改文件前先 fetch 远程 + diff**。
+
+**状态**：已推 main（2063e509），待宝构建验证。
+**验证方式**：① 同一回合内 `plugin_switch` 开关插件后立刻调用；② 新 PromptDiff 日志带"分岔在第 N 字符处"；③ 缓存掉档次数是否明显变少。
