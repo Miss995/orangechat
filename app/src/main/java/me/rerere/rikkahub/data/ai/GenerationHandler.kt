@@ -146,6 +146,11 @@ class GenerationHandler(
         // 传了它就每步取一次最新 MCP 清单（替掉 tools 里那份旧的），同一回合内用
         // mcp_switch 开关服务器后下一步请求立刻生效；不传则行为跟以前完全一样。
         mcpToolsProvider: (suspend () -> List<Tool>)? = null,
+        // 【2026-09-29 · 插件工具面实时刷新】跟 MCP 同一套做法：
+        // 传了它就每步取一次最新插件清单（替掉 tools 里那份旧的），同一回合内用
+        // plugin_switch 开关插件后，下一步请求立刻生效；不传则行为跟以前完全一样。
+        // 插件没有助手级设置，启停就是全局的，所以这里直接取全量。
+        pluginToolsProvider: (suspend () -> List<Tool>)? = null,
         maxSteps: Int = 256,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
         conversationSystemPrompt: String? = null,
@@ -199,8 +204,11 @@ class GenerationHandler(
             // 同一回合内 AI 用 mcp_switch 开了服务器，下一步请求就能看到。
             // 旧的 MCP 工具按名字前缀摘掉，其余（本地/系统/工作区/技能）原样复用；
             // mcpToolsProvider 纯读内存快照，成本只有几十个对象的构造。
-            val extraTools = if (mcpToolsProvider != null) {
-                tools.filterNot { ToolNaming.isMcpToolName(it.name) } + mcpToolsProvider()
+            val extraTools = if (mcpToolsProvider != null || pluginToolsProvider != null) {
+                tools.filterNot {
+                    ToolNaming.isMcpToolName(it.name) || ToolNaming.isPluginToolName(it.name)
+                } + (mcpToolsProvider?.invoke() ?: emptyList()) +
+                    (pluginToolsProvider?.invoke() ?: emptyList())
             } else {
                 tools
             }

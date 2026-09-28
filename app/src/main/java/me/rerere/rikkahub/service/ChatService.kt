@@ -660,6 +660,22 @@ class ChatService(
             }
         }
         session.setJob(job)
+
+        // 【同回合只追加 · 2026-09-29】job 跑完那一刻补一次收尾保存：
+        // 这时 job 已不再 active，上面那道"回合内不裁"的闸自然放开，该裁的条数
+        // 会在这一次裁掉。回合内全程只追加，历史一个字不动。
+        job.invokeOnCompletion {
+            appScope.launch {
+                try {
+                    val conv = sessions[conversationId]?.state?.value ?: return@launch
+                    if (conv.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE + 1) {
+                        saveConversation(conversationId, conv)
+                    }
+                } catch (e: Throwable) {
+                    Log.w(TAG, "post-turn trim save failed, conversationId=$conversationId", e)
+                }
+            }
+        }
     }
 
     // ---- 添加主动消息 ----
@@ -1326,6 +1342,11 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                             },
                         )
                     }
+                },
+                // 【2026-09-29 · 插件工具面实时刷新】跟 mcpToolsProvider 同一套：
+                // 同一回合内用 plugin_switch 开关插件后，下一步请求立刻生效。
+                pluginToolsProvider = {
+                    pluginToolProvider.getTools()
                 },
                 pluginPromptInjections = pluginToolProvider.getPluginPromptInjections(),
                 conversationId = conversationId.toString(),
@@ -2083,7 +2104,12 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         }
 
         // 更新懒加载窗口边界
-        if (isWindowState) {
+        // 【同回合只追加 · 2026-09-29 宝的需求】一个回合里（这个会话的生成 job 还在跑）
+        // 不重组历史：只往后追加，裁剪推迟到回合结束那一次保存。
+        // 起因：回合中间裁一次，内存态整体前移，下一次请求看到的历史就跟着变了，
+        // 前缀从那一段断开、缓存整段作废（PromptDiff 报"老内容被改动"的那类）。
+        val turnInFlight = sessions[conversationId]?.getJob()?.isActive == true
+        if (isWindowState && !turnInFlight) {
             // 窗口版：内存窗口前移了 dropped 条（takeLast 丢弃的），窗口起点跟着前移
             // 【缓存对齐 2026-08-26】攒一组裁一组：overflow≤groupSize 不裁（窗口 300~300+groupSize 浮动），
             // overflow>groupSize 只裁 groupSize 的倍数条 → 配合 limitContext 总量对齐，裁剪前后起点同一条消息；
@@ -2106,7 +2132,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 内存态保持窗口轻量：无论调用方传的是窗口版还是全量，都只保留最近 N 条，
         // 后续流式更新/重组只碰窗口内节点 → 长对话不再每次更新都全量遍历
         // 【缓存对齐 2026-08-26】攒一组裁一组：只有 overflow>groupSize 才裁，且裁 groupSize 的倍数条（窗口 300~300+groupSize 浮动）
-        val windowState = if (windowGroupSize <= 1) {
+        val windowState = if (turnInFlight) {
+            // 回合中：内存态一个字不丢，只追加（裁剪留到回合结束补刀那次）
+            toSave
+        } else if (windowGroupSize <= 1) {
             if (toSave.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE) {
                 toSave.copy(messageNodes = toSave.messageNodes.takeLast(CONVERSATION_LOAD_WINDOW_SIZE))
             } else {

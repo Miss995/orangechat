@@ -81,7 +81,12 @@ object PromptFingerprinter {
             return "序列切换（首块即不同），基准已重置：${blocks} 块 / ${body.length} 字符 · ${bodyShape(body)} · 开头：${headSnippet(body)}"
         }
 
-        val pos = idx * CHUNK
+        // 【2026-09-29 宝的要求】块起点不等于断点：块是 1000 字一块，真正不同的是块中间
+        // 某一位，拿块起点截出来的片段两边看着一模一样，看不出改在哪。
+        // 这里从块起点往后逐字符比到第一个不同处：pos 就是真正的分岔点，
+        // 也等于「两边共同前缀的字符数」（约等于这一轮理论上能命中的量）。
+        var pos = idx * CHUNK
+        while (pos < body.length && pos < prevBody.length && body[pos] == prevBody[pos]) pos++
         val from = maxOf(0, pos - CONTEXT_CHARS)
         val to = minOf(body.length, pos + CONTEXT_CHARS)
         val snippet = body.substring(from, to)
@@ -106,7 +111,7 @@ object PromptFingerprinter {
             else -> "老内容被改动"
         }
 
-        return "断点 块#$idx（上轮共 $prevBlocks 块 / $prevLen 字符，本轮 $blocks 块 / ${body.length} 字符）· $verdict · 本轮${bodyShape(body)} · 约第 $pos 字符处 本轮：$snippet ｜ 上轮：$prevSnippet"
+        return "断点 块#$idx（上轮共 $prevBlocks 块 / $prevLen 字符，本轮 $blocks 块 / ${body.length} 字符）· $verdict · 本轮${bodyShape(body)} · 分岔在第 $pos 字符处（共同前缀 $pos 字符）本轮：$snippet ｜ 上轮：$prevSnippet"
     }
 
     /** 主动清空基准（换对话 / 调试用） */

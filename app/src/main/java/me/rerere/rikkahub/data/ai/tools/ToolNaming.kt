@@ -72,6 +72,22 @@ object ToolNaming {
                 .all { it in '0'..'9' || it in 'a'..'f' }
 
     /**
+     * 【2026-09-29 · 插件工具面实时刷新】判断一个最终工具名是不是插件工具。
+     *
+     * 跟 isMcpToolName 同一个道理：插件工具也是"每步重算"的那一段。同一回合内
+     * 用 plugin_switch 开/关插件后，下一步请求要立刻生效，就得靠这个判断把
+     * 本轮开头那份里的插件工具按前缀摘掉、再并回最新的。
+     *
+     * 判据同样按真格式：plg_ + 8 位十六进制 + _ + 原名。不能只判 plg_ 前缀——
+     * 常驻的 plugin_switch 工具不是插件工具，一刀切会把它摘掉（门就锁在屋里了）。
+     */
+    fun isPluginToolName(name: String): Boolean =
+        name.length > HEADER_LENGTH &&
+            name.startsWith(PLUGIN_PREFIX) &&
+            name.substring(PLUGIN_PREFIX.length, PLUGIN_PREFIX.length + SHORT_KEY_LENGTH)
+                .all { it in '0'..'9' || it in 'a'..'f' }
+
+    /**
      * 还原显示名
      *
      * 若以 mcp_ 或 plg_ 开头,按固定长度(前缀4 + 短键8 + 分隔符1 = 13)截掉头部,
