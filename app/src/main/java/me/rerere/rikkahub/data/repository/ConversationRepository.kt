@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.data.repository
 
 import android.database.sqlite.SQLiteBlobTooBigException
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import android.util.Log
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
@@ -277,14 +278,21 @@ class ConversationRepository(
      *                         为 null 时保持原行为（全量 diff，消失即删除）。
      */
     suspend fun updateConversation(conversation: Conversation, windowFirstIndex: Int? = null) {
+        // 【2026-09-29 排查 · 窗口版保存为什么半秒】在保存链路各段插计时点，跑一轮看日志
+        // （筛 ConvRepo）就知道那几百毫秒归谁。
+        // 重点看 upsert=N/M：N 接近 M 就说明"内容比较"每轮把窗口内几乎全部判成变过，
+        // 后面的写库与全文索引重建就都是白干。
+        val __t0 = System.currentTimeMillis()
         try {
             database.withTransaction {
                 conversationDAO.update(
                     conversationToConversationEntity(conversation)
                 )
+                val __tA = System.currentTimeMillis()
 
                 // 只查 id，不碰 messages 列，避免因个别行 blob 过大导致这里直接抛异常
                 val existingIds = messageNodeDAO.getNodeIdsOfConversation(conversation.id.toString())
+                val __tB = System.currentTimeMillis()
                 // existingIds 按 node_index ASC 排序 → 前 windowFirstIndex 个是窗口外历史（受保护）
                 val protectedCount = windowFirstIndex?.coerceAtLeast(0) ?: 0
                 val protectedIds = if (protectedCount > 0) {
@@ -314,6 +322,7 @@ class ConversationRepository(
                         emptyMap()
                     }
                 }
+                val __tC = System.currentTimeMillis()
                 val existingNodeIndexById: Map<String, Int> = existingById.mapValues { it.value.nodeIndex }
                 val maxExistingNodeIndex = existingNodeIndexById.values.maxOrNull() ?: -1
                 val newEntities = conversation.messageNodes.mapIndexed { index, node ->
@@ -336,6 +345,7 @@ class ConversationRepository(
                         selectIndex = node.selectIndex
                     )
                 }
+                val __tD = System.currentTimeMillis()
                 val newById = newEntities.associateBy { it.id }
 
                 // 只处理真正发生变化的 node：内容/顺序(nodeIndex)/selectIndex 有任何不同才写库；
@@ -345,6 +355,7 @@ class ConversationRepository(
                 }
                 // 窗口版保存时，窗口外历史（protectedIds）即使不在传入列表中也不删除
                 val toDeleteIds = (existingIds - newById.keys) - protectedIds
+                val __tE = System.currentTimeMillis()
 
                 if (toDeleteIds.isNotEmpty()) {
                     messageNodeDAO.deleteByIds(toDeleteIds.toList())
@@ -352,6 +363,7 @@ class ConversationRepository(
                 if (toUpsert.isNotEmpty()) {
                     messageNodeDAO.insertAll(toUpsert)
                 }
+                val __tF = System.currentTimeMillis()
 
                 val changedNodeIds = toUpsert.map { it.id }.toSet() + toDeleteIds
                 if (changedNodeIds.isNotEmpty()) {
@@ -363,6 +375,16 @@ class ConversationRepository(
                         currentNodes = conversation.messageNodes,
                     )
                 }
+                val __tG = System.currentTimeMillis()
+                AppLogBuffer.log(
+                    "ConvRepo",
+                    "profile total=${__tG - __t0}ms | upd=${__tA - __t0} " +
+                        "readIds=${__tB - __tA}(${existingIds.size}) " +
+                        "readNodes=${__tC - __tB}(${idsNeedCompare.size}) " +
+                        "encode=${__tD - __tC} cmp=${__tE - __tD} " +
+                        "write=${__tF - __tE}(${toUpsert.size}/${newEntities.size},del=${toDeleteIds.size}) " +
+                        "fts=${__tG - __tF} | win=${windowFirstIndex != null} nodes=${conversation.messageNodes.size}"
+                )
             }
         } catch (e: Exception) {
             Log.e(TAG, "updateConversation failed, conversationId=${conversation.id}", e)
