@@ -65,7 +65,6 @@ import me.rerere.rikkahub.data.ai.tools.buildSelfNoteWriteTool
 import me.rerere.rikkahub.data.ai.tools.buildQueryToolActionsTool
 import me.rerere.rikkahub.data.ai.tools.buildReadAppLogsTool
 import me.rerere.rikkahub.data.ai.tools.buildWriteFilesTool
-import me.rerere.rikkahub.data.ai.tools.ToolNaming
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.service.MemoryBankService
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -142,10 +141,6 @@ class GenerationHandler(
         assistant: Assistant,
         memories: List<AssistantMemory>? = null,
         tools: List<Tool> = emptyList(),
-        // 【2026-09-25 · MCP 工具面实时刷新】只重算 MCP 那一段的提供者。
-        // 传了它就每步取一次最新 MCP 清单（替掉 tools 里那份旧的），同一回合内用
-        // mcp_switch 开关服务器后下一步请求立刻生效；不传则行为跟以前完全一样。
-        mcpToolsProvider: (suspend () -> List<Tool>)? = null,
         maxSteps: Int = 256,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
         conversationSystemPrompt: String? = null,
@@ -178,30 +173,18 @@ class GenerationHandler(
 
         // 召回门控状态：一次生成流程（多步 agent 循环）只触发一次记忆召回，
         // 二次请求不再重复判断/注入，避免工具步骤反复召回破坏前缀稳定。
+        memTrace("1-entry", messages)
+
         var recallGatePassed = false
  
         // 【正文空重试 2026-09-12 宝拍板】模型只出思考、没出正文（text=0）时自动重发一次。
         // 整个生成流程只重试一次；重试还失败就保持原样（走兜底显示思考链）。
         var emptyTextRetried = false
-
-        // 【2026-09-27 补 · 宝的担心】这一整个回合里有没有调过工具。
-        // 调过工具就不重发：工具来回本来就多，最后一轮要是没写完，不该把整个回合重开一遍
-        // （那是双倍的钱）。只有"从头到尾没碰过工具"的回合才保留重发——那种是真的一句话都没说成。
-        var anyToolCallThisTurn = false
  
         for (stepIndex in 0 until maxSteps) {
+            memTrace("2-step$stepIndex", messages)
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
  
-            // 【2026-09-25 · MCP 工具面实时刷新】MCP 那段每步重算：
-            // 同一回合内 AI 用 mcp_switch 开了服务器，下一步请求就能看到。
-            // 旧的 MCP 工具按名字前缀摘掉，其余（本地/系统/工作区/技能）原样复用；
-            // mcpToolsProvider 纯读内存快照，成本只有几十个对象的构造。
-            val extraTools = if (mcpToolsProvider != null) {
-                tools.filterNot { ToolNaming.isMcpToolName(it.name) } + mcpToolsProvider()
-            } else {
-                tools
-            }
-
             // 工具清单统一组装（2026-09-12 治本：与主动消息路径共用同一份，见 ToolAssembly.kt）
             val toolsInternal = buildAssistantTools(
                 context = context,
@@ -212,7 +195,7 @@ class GenerationHandler(
                 conversationRepo = conversationRepo,
                 favoriteRepo = favoriteRepo,
                 json = json,
-                extraTools = extraTools,
+                extraTools = tools,
                 slashCommandText = slashCommandText,
             ) 
             // Check if we have tool calls ready to continue after user interaction.
@@ -314,17 +297,7 @@ class GenerationHandler(
                     // 【正文兜底 2026-08-28 宝的方案】text=0（只有思考没正文）时，
                     // 从 reasoning 最后一段提取像正文的内容当兜底——既让宝看到内容，
                     // 也避免"只思考"消息存进历史继续污染上下文（配合 ChatCompletionsAPI 发送过滤双保险）
-                    //
-                    // 【2026-09-27 拆兜底 · 宝拍板】把"有工具"和"没工具"两种场景分开：
-                    // 有工具待执行时【不捞】——这一轮模型的顺序是「思考 → 调工具」，正文要等工具
-                    // 结果回来之后才写；此刻 text=0 是正常的，硬捞只能捞到思考的尾巴（就是宝嫌
-                    // 丑的那种碎碎念）。让它照原样继续跑工具，下一轮正文自然会来；下一轮要是还
-                    // 只思考不写、而那会儿工具已经跑完，兜底会正常接住。
-                    // 没工具的轮次才是真说完了，该兜就兜，行为不变。
-                    val hasPendingTools = lastMsg.parts
-                        .filterIsInstance<UIMessagePart.Tool>()
-                        .any { !it.isExecuted }
-                    if (textLen == 0 && reasoningLen > 0 && !hasPendingTools) {
+                    if (textLen == 0 && reasoningLen > 0) {
                         val fallback = lastMsg.parts.filterIsInstance<UIMessagePart.Reasoning>()
                             .flatMap { it.reasoning.lines() }
                             .lastOrNull { it.isNotBlank() && !it.trim().startsWith("（") && it.trim().length >= 2 }
@@ -345,8 +318,7 @@ class GenerationHandler(
                     // 【正文空重试 2026-09-12 宝拍板】
                     // fallbackUsed = 模型只出了思考、没出正文（这一轮走了上面的兜底）。
                     // 这时自动重发一次：重试成功就是正常回复；还失败就保持原样（显示思考链兜底）。
-                    // 【2026-09-27 补】再加一道：本回合调过工具就不重发（见 anyToolCallThisTurn）。
-                    if (fallbackUsed && !emptyTextRetried && !anyToolCallThisTurn) {
+                    if (fallbackUsed && !emptyTextRetried) {
                         emptyTextRetried = true
                         AppLogBuffer.log("GEN_RESULT", "text=0 自动重试一次（去掉空回复重新生成）")
                         messages = messages.slice(0 until messages.lastIndex)
@@ -356,9 +328,6 @@ class GenerationHandler(
                     // no tool calls, break
                     break
                 }
-
-                // 【2026-09-27 补】走到这里说明本回合有工具要跑——记下，后面就不许重发了。
-                anyToolCallThisTurn = true
  
                 // Check for tools that need approval
                 var hasPendingApproval = false
@@ -924,6 +893,8 @@ class GenerationHandler(
                 addAll(model.customBodies)
             }
         )
+        memTrace("3-send stream=$stream", finalMessages)
+
         if (stream) {
             aiLoggingManager.addLog(
                 AILogging.Generation(
@@ -1104,6 +1075,34 @@ private fun <T> Flow<T>.throttleLatest(periodMillis: Long): Flow<T> {
     }
 }
  
+/**
+ * 【内存追踪 2026-09-28】给"发请求时崩"定位用。
+ * 报错都发生在请求那一刻，但不知道是哪一段把堆吃掉的。
+ * 在请求链路几个节点各打一次堆占用 + 本轮消息体量（含图片张数与 url 总长，
+ * 用来区分图片是 file:// 路径还是内联 base64），崩的那回就能看出是哪段涨的。
+ * read_app_logs filter "MemTrace" 可全量回放。
+ */
+private fun memTrace(stage: String, messages: List<UIMessage>? = null) {
+    runCatching {
+        val rt = Runtime.getRuntime()
+        val usedMb = (rt.totalMemory() - rt.freeMemory()) / 1048576L
+        val maxMb = rt.maxMemory() / 1048576L
+        val detail = messages?.let { msgs ->
+            var textLen = 0
+            var imgCount = 0
+            var imgUrlLen = 0
+            for (m in msgs) for (p in m.parts) when (p) {
+                is UIMessagePart.Text -> textLen += p.text.length
+                is UIMessagePart.Reasoning -> textLen += p.reasoning.length
+                is UIMessagePart.Image -> { imgCount++; imgUrlLen += p.url.length }
+                else -> {}
+            }
+            " msgs=${msgs.size} text=$textLen img=$imgCount imgUrlLen=$imgUrlLen"
+        } ?: ""
+        AppLogBuffer.log("MemTrace", "$stage heap=${usedMb}/${maxMb}MB$detail")
+    }
+}
+
 /**
  * 构建代码块提示 - 告知AI代码文件命名和ZIP打包功能
  */
