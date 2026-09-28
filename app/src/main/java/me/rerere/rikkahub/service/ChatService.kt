@@ -1242,6 +1242,73 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                     )
                     // Plugin tools
                     addAll(pluginToolProvider.getTools())
+                    // 插件开关 (2026-09-28 宝拍板): 让 AI 自己启停插件。
+                    // 跟 mcp_switch 一样常驻、故意不挂 LocalToolOption（门锁在里面）。
+                    // 插件没有助手级设置，启停就是全局的。
+                    // ⚠️ 2026-09-28 深夜补：这条曾经只挂在 ToolSurfaceBuilder（那条路只服务小应用/工作流），
+                    // 聊天这边看不见 —— 现在补上 ChatService 这一份。
+                    add(
+                        me.rerere.rikkahub.data.ai.tools.createPluginSwitchTool(
+                            listPlugins = {
+                                val pm = org.koin.java.KoinJavaComponent
+                                    .getKoin().get<me.rerere.rikkahub.plugin.manager.PluginManager>()
+                                pm.awaitInitialization()
+                                pm.plugins.value.map { p ->
+                                    me.rerere.rikkahub.data.ai.tools.PluginEntry(
+                                        id = p.manifest.id,
+                                        name = p.manifest.name,
+                                        enabled = p.isEnabled,
+                                        toolCount = p.manifest.tools.size,
+                                    )
+                                }
+                            },
+                            onSetEnabled = { id, enabled ->
+                                val pm = org.koin.java.KoinJavaComponent
+                                    .getKoin().get<me.rerere.rikkahub.plugin.manager.PluginManager>()
+                                pm.togglePlugin(id, enabled)
+                                val on = pm.plugins.value.count { it.isEnabled }
+                                "已保存。现在开着 $on 个插件。"
+                            },
+                        )
+                    )
+                    // 激进模式开关 (2026-09-28 宝拍板): 让 AI 自己开一段、用完关掉。
+                    // 它是常驻前台服务，所以 onSetEnabled 里要真的去 start/stop；
+                    // 跟"主动消息"互斥这一点跟设置页保持一致。
+                    add(
+                        me.rerere.rikkahub.data.ai.tools.createAggressiveModeTool(
+                            currentState = {
+                                settingsStore.settingsFlow.first().proactiveMessageSetting.aggressiveModeEnabled
+                            },
+                            onSetEnabled = { enabled ->
+                                try {
+                                    settingsStore.update { s ->
+                                        val pms = s.proactiveMessageSetting
+                                        s.copy(
+                                            proactiveMessageSetting = if (enabled) {
+                                                pms.copy(aggressiveModeEnabled = true, enabled = false)
+                                            } else {
+                                                pms.copy(aggressiveModeEnabled = false)
+                                            }
+                                        )
+                                    }
+                                    if (enabled) {
+                                        me.rerere.rikkahub.data.service.ProactiveMessageService.cancel(context)
+                                        val intent = android.content.Intent(
+                                            context,
+                                            me.rerere.rikkahub.data.service.DeviceEventAiTriggerService::class.java,
+                                        )
+                                        context.startForegroundService(intent)
+                                        "已开启，常驻服务已起。"
+                                    } else {
+                                        me.rerere.rikkahub.data.service.DeviceEventAiTriggerService.stop(context)
+                                        "已关闭，服务已停。"
+                                    }
+                                } catch (e: Exception) {
+                                    "设置改过了，但服务操作失败：${e.message ?: e.javaClass.simpleName}"
+                                }
+                            },
+                        )
+                    )
                 },
                 // 【2026-09-25 · MCP 工具面实时刷新】只算 MCP 那一段，供每一步重算用。
                 // 上面 buildList 里那份 MCP 是"发送那一刻"的快照（第一轮照旧用它），
