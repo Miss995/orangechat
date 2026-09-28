@@ -793,9 +793,15 @@ class GenerationHandler(
             } else 0
             val surfacingMsg = if (ctxMessages.size > SelfNoteSurfacing.SLOT_INDEX) {
                 val gs = gsCfg.coerceAtLeast(1)
+                // 【2026-09-28 宝发现 · 橘仔修】换条节拍从"一组"改成"一整轮"。
+                // 原写法除 gs(=6)：浮现每 6 条就换一条 → 五次里四次是白换、白碎前缀；
+                // 且它的起跳点与请求裁剪差几条，现象就是"上个回合浮现换、下个回合才裁剪"。
+                // 改成除"上下文条数"（=窗口滚满一整轮，默认 30）→ 与裁剪同拍。
+                val surfacingCycle =
+                    if (assistant.contextMessageSize > 0) assistant.contextMessageSize else gs
                 SelfNoteSurfacing.buildMessage(
                     json = selfNotesJson,
-                    tick = ((windowFirstIndex ?: 0) + ctxStartInMemory).toLong() / gs,
+                    tick = ((windowFirstIndex ?: 0) + ctxStartInMemory).toLong() / surfacingCycle,
                 )
             } else null
             if (surfacingMsg != null) {

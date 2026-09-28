@@ -639,12 +639,17 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 val tools = buildTools(settings, assistant, model, conversationId.toString())
                 // 【2026-09-16 第二刀 · ③】取数段搬到 MemoryInjector，与聊天侧共用同一份
                 // 主动消息没有窗口上下文：messagesCount=0 + windowFirstIndex=null（走 6h/跨天兜底）
+                // 【2026-09-28 修正】persistBaseline=false：上面那两个 0/null 会让差值变负数、
+                // 被判为"必刷"，每次醒来都把聊天侧的节拍基准（msgCount/threshold/windowFirst）
+                // 重写一遍 → 聊天侧下回合节拍错位一格（宝发现"浮现换了、裁剪却不在同一回合"）。
+                // 这里只刷新文本，节拍基准留给聊天侧自己记。
                 val recentData = MemoryInjector.fetchRecentEvents(
                     context = this@ProactiveMessageTriggerService,
                     assistant = assistant,
                     settings = settings,
                     messagesCount = 0,
                     windowFirstIndex = null,
+                    persistBaseline = false,
                 )
                 val systemPrompt = buildSystemPrompt(
                     assistant = assistant,

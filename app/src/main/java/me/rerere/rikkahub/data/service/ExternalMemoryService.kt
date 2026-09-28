@@ -726,7 +726,10 @@ class ExternalMemoryService(
     suspend fun recallEventsByVector(
         assistantId: String,
         queryEmbedding: List<Float>,
-        matchCount: Int = 200,
+        // 【2026-09-28 宝发现 · 橘仔修】200 → 80：Supabase egress 超标（8.44/5GB，10-09 硬期限），
+        // 召回每次拉 200 条事件全文是最大头；降到 80 直接砍掉六成流量。
+        // 后面还要从这堆候选里筛出 5 条，80 条仍有 16 倍余量，且远超"触发 AI 拆词"的阈值（count*4=20）。
+        matchCount: Int = 80,
     ): Result<List<ExternalMemoryEvent>> = withContext(Dispatchers.IO) {
         runCatching {
             val url = config.supabaseUrl.trimEnd('/')
@@ -1352,7 +1355,7 @@ class ExternalMemoryService(
         runCatching {
             // 2026-09-10 橘仔：候选改走服务端 RPC（库里算向量，返回不含 embedding，治 egress 超标）；
             // RPC 不可用/无结果时回退老的全表路径，保证召回不挂。
-            val rpcCandidates = recallEventsByVector(assistantId, queryEmbedding, matchCount = 200).getOrNull()
+            val rpcCandidates = recallEventsByVector(assistantId, queryEmbedding, matchCount = 80).getOrNull()
             // 【2026-09-16 双路召回】关键词路：ILIKE 搜 title/content，
             // 治「有精确词但语义不相似 → 进不了向量池 → 关键词分无从谈起」。
             // 必须在打分之前并入，这样这类事件才能和向量候选一起参与统一评分。

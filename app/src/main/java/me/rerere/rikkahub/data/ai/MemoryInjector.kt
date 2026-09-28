@@ -160,6 +160,13 @@ object MemoryInjector {
         settings: Settings,
         messagesCount: Int,
         windowFirstIndex: Int?,
+        // 【2026-09-28 宝发现 · 橘仔修】节拍基准是否落账。
+        // 主动消息侧没有窗口上下文，只能传 messagesCount=0 + windowFirstIndex=null，
+        // 于是 msgDelta = 0 - 上次值 = 负数，被判为"必刷" → 每次醒来都把共享的
+        // msgCount / threshold / windowFirst 重写一遍；聊天侧下一回合读到被清零的账，
+        // 节拍错位一格（现象：浮现换了、裁剪却没跟上，不在同一回合）。
+        // 传 false = 这次只刷新文本内容，不碰节拍基准（聊天侧的账留给聊天侧记）。
+        persistBaseline: Boolean = true,
     ): RecentEventsResult {
         var recentEventsText: String? = null
         var ongoingEventsText: String? = null
@@ -342,18 +349,22 @@ object MemoryInjector {
                         if (refreshed) {
                             // 拉到新货：更新缓存文本 + 重置基准（新的 30 条周期从当前窗口起点起算）
                             cacheEditor.putString(cacheKey, recentEventsText)
-                                .putLong("${cacheKey}_msgCount", msgCountNow.toLong())
-                                .putInt("${cacheKey}_threshold", 30)
-                            if (windowFirstIndex != null) cacheEditor.putInt("${cacheKey}_windowFirst", windowFirstIndex)
-                        } else {
-                            // 没拉到新货（云端批次没吐完/内容没变）：不碰缓存文本（前缀不变 = 不掉缓存），
-                            // 只重置时间兜底 + 阈值升级（30→36→42）；42 必拉封顶后重置新周期
-                            if (threshold >= 42) {
+                            if (persistBaseline) {
                                 cacheEditor.putLong("${cacheKey}_msgCount", msgCountNow.toLong())
                                     .putInt("${cacheKey}_threshold", 30)
                                 if (windowFirstIndex != null) cacheEditor.putInt("${cacheKey}_windowFirst", windowFirstIndex)
-                            } else {
-                                cacheEditor.putInt("${cacheKey}_threshold", threshold + 6)
+                            }
+                        } else {
+                            // 没拉到新货（云端批次没吐完/内容没变）：不碰缓存文本（前缀不变 = 不掉缓存），
+                            // 只重置时间兜底 + 阈值升级（30→36→42）；42 必拉封顶后重置新周期
+                            if (persistBaseline) {
+                                if (threshold >= 42) {
+                                    cacheEditor.putLong("${cacheKey}_msgCount", msgCountNow.toLong())
+                                        .putInt("${cacheKey}_threshold", 30)
+                                    if (windowFirstIndex != null) cacheEditor.putInt("${cacheKey}_windowFirst", windowFirstIndex)
+                                } else {
+                                    cacheEditor.putInt("${cacheKey}_threshold", threshold + 6)
+                                }
                             }
                         }
                         cacheEditor.apply()
