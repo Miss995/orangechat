@@ -86,6 +86,7 @@ val appModule = module {
             filesManager = get(),
             skillManager = get(),
             pluginToolProvider = get(),
+            pluginManager = get(),
             workspaceRepository = get(),
             json = get(),
             memoryRepository = get(),

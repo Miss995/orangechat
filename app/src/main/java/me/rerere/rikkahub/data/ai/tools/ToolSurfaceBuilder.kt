@@ -19,6 +19,9 @@ import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.data.service.DeviceEventAiTriggerService
+import me.rerere.rikkahub.data.service.ProactiveMessageService
+import me.rerere.rikkahub.plugin.manager.PluginManager
 import me.rerere.rikkahub.plugin.provider.PluginToolProvider
 
 /**
@@ -39,6 +42,7 @@ class ToolSurfaceBuilder(
     private val filesManager: FilesManager,
     private val skillManager: SkillManager,
     private val pluginToolProvider: PluginToolProvider,
+    private val pluginManager: PluginManager,
     private val workspaceRepository: WorkspaceRepository,
     private val json: Json,
     private val memoryRepository: MemoryRepository,
@@ -117,5 +121,65 @@ class ToolSurfaceBuilder(
             )
         )
         addAll(pluginToolProvider.getTools())
+
+        // 插件开关 (2026-09-28 宝拍板): 让 AI 自己启停插件。
+        // 跟 mcp_switch 一样，故意不挂 LocalToolOption —— 一旦被关掉就再也
+        // 没办法自己打开（门锁在里面）。插件没有助手级设置，启停就是全局的。
+        add(
+            createPluginSwitchTool(
+                listPlugins = {
+                    pluginManager.awaitInitialization()
+                    pluginManager.plugins.value.map { p ->
+                        PluginEntry(
+                            id = p.manifest.id,
+                            name = p.manifest.name,
+                            enabled = p.isEnabled,
+                            toolCount = p.manifest.tools.size,
+                        )
+                    }
+                },
+                onSetEnabled = { id, enabled ->
+                    pluginManager.togglePlugin(id, enabled)
+                    val on = pluginManager.plugins.value.count { it.isEnabled }
+                    "已保存。现在开着 $on 个插件。"
+                },
+            )
+        )
+
+        // 激进模式开关 (2026-09-28 宝拍板): 让 AI 自己开一段、用完关掉。
+        // 它是常驻前台服务，所以 onSetEnabled 里要真的去 start/stop 那个 Service，
+        // 光改设置不生效。跟"主动消息"互斥这一点跟设置页保持一致。
+        add(
+            createAggressiveModeTool(
+                currentState = {
+                    settingsStore.settingsFlow.first().proactiveMessageSetting.aggressiveModeEnabled
+                },
+                onSetEnabled = { enabled ->
+                    try {
+                        settingsStore.update { s ->
+                            val pm = s.proactiveMessageSetting
+                            s.copy(
+                                proactiveMessageSetting = if (enabled) {
+                                    pm.copy(aggressiveModeEnabled = true, enabled = false)
+                                } else {
+                                    pm.copy(aggressiveModeEnabled = false)
+                                }
+                            )
+                        }
+                        if (enabled) {
+                            ProactiveMessageService.cancel(context)
+                            val intent = android.content.Intent(context, DeviceEventAiTriggerService::class.java)
+                            context.startForegroundService(intent)
+                            "已开启，常驻服务已起。"
+                        } else {
+                            DeviceEventAiTriggerService.stop(context)
+                            "已关闭，服务已停。"
+                        }
+                    } catch (e: Exception) {
+                        "设置改过了，但服务操作失败：${e.message ?: e.javaClass.simpleName}"
+                    }
+                },
+            )
+        )
     }
 }
