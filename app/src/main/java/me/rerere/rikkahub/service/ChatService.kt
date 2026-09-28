@@ -143,14 +143,6 @@ internal const val CONVERSATION_LOAD_WINDOW_SIZE = 300  // internal（2026-09-12
  */
 private const val DEFAULT_WINDOW_GROUP_SIZE = 4
 
-// 【2026-09-29 · 回合内不裁带来的膨胀余量】
-// 「同回合只追加」上线后，一个回合里消息不再攒一组就裁，而是一路往后加
-// （每轮工具调用 +2 条）。原来"窗口版"的判定上限是 窗口+两组（312），
-// 回合里涨过它就会被误判成"全量传入" → 走全量保存分支（窗口外几千条历史
-// 全判为删除 + 索引重建，同步事务）→ 落库卡死（宝 09-29 凌晨实测）。
-// 真全量传入是几千条，远大于此；回合内的膨胀最多几十条，留 400 足够。
-private const val TURN_INFLIGHT_SLACK = 400
-
 data class ChatError(
     val id: Uuid = Uuid.random(),
     val title: String? = null,
@@ -668,22 +660,6 @@ class ChatService(
             }
         }
         session.setJob(job)
-
-        // 【同回合只追加 · 2026-09-29】job 跑完那一刻补一次收尾保存：
-        // 这时 job 已不再 active，上面那道"回合内不裁"的闸自然放开，该裁的条数
-        // 会在这一次裁掉。回合内全程只追加，历史一个字不动。
-        job.invokeOnCompletion {
-            appScope.launch {
-                try {
-                    val conv = sessions[conversationId]?.state?.value ?: return@launch
-                    if (conv.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE + 1) {
-                        saveConversation(conversationId, conv)
-                    }
-                } catch (e: Throwable) {
-                    Log.w(TAG, "post-turn trim save failed, conversationId=$conversationId", e)
-                }
-            }
-        }
     }
 
     // ---- 添加主动消息 ----
@@ -2046,6 +2022,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 再走窗口版保存——防止窗口版 diff 把窗口外历史当成"消失"删掉。
         // 修复点①：getConversationById 带 loadLimit(300)，不再全量加载——大对话不再 OOM
         // 修复点②：合并结果继续走下方正常保存流程（不递归）——db 历史 <150 条时不再无限递归栈溢出
+        val __saveT0 = System.currentTimeMillis()
         var toSave = conversation
         val guardWindowFirstIndex = lazyWindowFirstIndex[conversationId]
         if (exists && guardWindowFirstIndex != null && toSave.messageNodes.size < CONVERSATION_LOAD_WINDOW_SIZE / 2) {
@@ -2102,7 +2079,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 恒成立（groupSize≥1），真全量传入（几千条）仍远超窗口+两组 → 全量分支不受影响。
         val isWindowState = windowFirstIndex != null &&
             toSave.messageNodes.size <= CONVERSATION_LOAD_WINDOW_SIZE +
-                windowGroupSize * 2 + TURN_INFLIGHT_SLACK
+                windowGroupSize * 2
         val effectiveFirstIndex = if (isWindowState) windowFirstIndex else null
 
         val updatedConversation = toSave.copy()
@@ -2113,12 +2090,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         }
 
         // 更新懒加载窗口边界
-        // 【同回合只追加 · 2026-09-29 宝的需求】一个回合里（这个会话的生成 job 还在跑）
-        // 不重组历史：只往后追加，裁剪推迟到回合结束那一次保存。
-        // 起因：回合中间裁一次，内存态整体前移，下一次请求看到的历史就跟着变了，
-        // 前缀从那一段断开、缓存整段作废（PromptDiff 报"老内容被改动"的那类）。
-        val turnInFlight = sessions[conversationId]?.getJob()?.isActive == true
-        if (isWindowState && !turnInFlight) {
+        if (isWindowState) {
             // 窗口版：内存窗口前移了 dropped 条（takeLast 丢弃的），窗口起点跟着前移
             // 【缓存对齐 2026-08-26】攒一组裁一组：overflow≤groupSize 不裁（窗口 300~300+groupSize 浮动），
             // overflow>groupSize 只裁 groupSize 的倍数条 → 配合 limitContext 总量对齐，裁剪前后起点同一条消息；
@@ -2138,13 +2110,19 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 (updatedConversation.messageNodes.size - CONVERSATION_LOAD_WINDOW_SIZE).coerceAtLeast(0)
         }
 
+        val __took = System.currentTimeMillis() - __saveT0
+        if (__took > 300) {
+            AppLogBuffer.log(
+                TAG,
+                "saveConv SLOW ${__took}ms size=${toSave.messageNodes.size} win=$isWindowState " +
+                    "eff=${effectiveFirstIndex ?: -1} busy=${sessions[conversationId]?.getJob()?.isActive == true}"
+            )
+        }
+
         // 内存态保持窗口轻量：无论调用方传的是窗口版还是全量，都只保留最近 N 条，
         // 后续流式更新/重组只碰窗口内节点 → 长对话不再每次更新都全量遍历
         // 【缓存对齐 2026-08-26】攒一组裁一组：只有 overflow>groupSize 才裁，且裁 groupSize 的倍数条（窗口 300~300+groupSize 浮动）
-        val windowState = if (turnInFlight) {
-            // 回合中：内存态一个字不丢，只追加（裁剪留到回合结束补刀那次）
-            toSave
-        } else if (windowGroupSize <= 1) {
+        val windowState = if (windowGroupSize <= 1) {
             if (toSave.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE) {
                 toSave.copy(messageNodes = toSave.messageNodes.takeLast(CONVERSATION_LOAD_WINDOW_SIZE))
             } else {
