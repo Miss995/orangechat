@@ -143,6 +143,14 @@ internal const val CONVERSATION_LOAD_WINDOW_SIZE = 300  // internal（2026-09-12
  */
 private const val DEFAULT_WINDOW_GROUP_SIZE = 4
 
+// 【2026-09-29 · 回合内不裁带来的膨胀余量】
+// 「同回合只追加」上线后，一个回合里消息不再攒一组就裁，而是一路往后加
+// （每轮工具调用 +2 条）。原来"窗口版"的判定上限是 窗口+两组（312），
+// 回合里涨过它就会被误判成"全量传入" → 走全量保存分支（窗口外几千条历史
+// 全判为删除 + 索引重建，同步事务）→ 落库卡死（宝 09-29 凌晨实测）。
+// 真全量传入是几千条，远大于此；回合内的膨胀最多几十条，留 400 足够。
+private const val TURN_INFLIGHT_SLACK = 400
+
 data class ChatError(
     val id: Uuid = Uuid.random(),
     val title: String? = null,
@@ -2093,7 +2101,8 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 放宽为「窗口+两组」：正常发消息最大=窗口上限+1 条新消息=301+groupSize ≤ 300+2*groupSize
         // 恒成立（groupSize≥1），真全量传入（几千条）仍远超窗口+两组 → 全量分支不受影响。
         val isWindowState = windowFirstIndex != null &&
-            toSave.messageNodes.size <= CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize * 2
+            toSave.messageNodes.size <= CONVERSATION_LOAD_WINDOW_SIZE +
+                windowGroupSize * 2 + TURN_INFLIGHT_SLACK
         val effectiveFirstIndex = if (isWindowState) windowFirstIndex else null
 
         val updatedConversation = toSave.copy()
