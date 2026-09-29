@@ -204,7 +204,8 @@ class GenerationHandler(
         // 不冻的话：工具结果是作为单独一条追加进 messages 的，条数一涨、凑满 gs 的倍数，
         // limitContext 的起点就往前跳一组 —— 表现就是"工具调用那个回合上下文被裁"（宝当晚实测）。
         // 回合边界不用判断：这个函数调一次就是一个回合，返回即结束。
-        var frozenCtxStart: Int? = null
+        // 起点存在这个容器里（-1 = 还没算），随每次调用传给内芯 generateInternal。
+        val ctxStartHolder = intArrayOf(-1)
 
         for (stepIndex in 0 until maxSteps) {
             memTrace("2-step$stepIndex", messages)
@@ -285,6 +286,7 @@ class GenerationHandler(
                     onRecallDebug = onRecallDebug,
                     windowFirstIndex = windowFirstIndex,
                     surfacingScroll = surfacingScroll,
+                    ctxStartHolder = ctxStartHolder,
                 )
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,
@@ -561,6 +563,9 @@ class GenerationHandler(
         windowFirstIndex: Int? = null,
         // 【浮现节拍 · 2026-09-29】累计滚动条数（见 generateText 同名参数）
         surfacingScroll: Long? = null,
+        // 【上下文窗口冻结 · 2026-09-29】上下文窗口起点容器（-1 = 还没算）。
+        // 由外层 generateText 的回合循环持有并传入，一个回合共用同一个起点。
+        ctxStartHolder: IntArray? = null,
     ) {
         // ===== 斜杠命令模式（2026-09-01 宝拍板：用户消息以 / 开头 = 直接执行工具，复用 AI 工具链路不做 UI）=====
         // 检测最后一条用户消息是否以 "/" 开头：是则进入命令模式，AI 解析命令调对应工具执行，结果直接展示。
@@ -796,11 +801,11 @@ class GenerationHandler(
             // 之后每一步都用同一个起点往末尾取 —— 这样前缀不动，回合内的工具结果照样进得去。
             val ctxCap = assistant.contextMessageSize
             val ctxGs = assistant.contextGroupSize.coerceAtLeast(1)
-            val ctxStart = frozenCtxStart ?: (
+            val ctxStart = ctxStartHolder?.get(0)?.takeIf { it >= 0 } ?: (
                 if (ctxCap > 0 && messages.size > ctxCap) {
                     (messages.size - ctxCap) - (messages.size % ctxGs)
                 } else 0
-                ).also { frozenCtxStart = it }
+                ).also { ctxStartHolder?.set(0, it) }
             val ctxMessages = if (ctxStart > 0 && ctxStart < messages.size) {
                 messages.drop(ctxStart)
             } else {
@@ -809,8 +814,8 @@ class GenerationHandler(
             // 【上下文窗口冻结 · 2026-09-29 验证日志】跑一轮看 start 是否全程不变。
             AppLogBuffer.log(
                 "CTXWIN",
-                "step=$stepIndex N=${messages.size} start=$ctxStart ctx=${ctxMessages.size} " +
-                    "cms=$ctxCap gs=$ctxGs frozen=${frozenCtxStart != null}"
+                "N=${messages.size} start=$ctxStart ctx=${ctxMessages.size} " +
+                    "cms=$ctxCap gs=$ctxGs holder=${ctxStartHolder != null}"
             )
             // 【浮现相位对齐 · 2026-09-14 宝发现】轮换序号必须与「上下文换组」同源，否则每 6 条掉两次缓存。
             //
