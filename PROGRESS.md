@@ -1404,3 +1404,45 @@ val trimAllowed = lastNodeIsUser ||
 139da479 报 `Unresolved reference 'frozenCtxStart' / 'stepIndex'`。错因：算窗口那段（787 行）在 **generateInternal**（538 行起）里，而猫把 `var frozenCtxStart` 声明在了外层 **generateText**（136 行起，202 是它的回合循环）里 —— 两个函数，作用域不通。同时日志里的 `stepIndex` 在 generateInternal 里也不存在。
 修法：改成 `val ctxStartHolder = intArrayOf(-1)`（外层循环前），在 248 行的 `generateInternal(...)` 调用里作为 `ctxStartHolder = ctxStartHolder` 传入，generateInternal 签名加 `ctxStartHolder: IntArray? = null`。使用处 `ctxStartHolder?.get(0)?.takeIf { it >= 0 } ?: (算).also { ctxStartHolder?.set(0, it) }`。日志去掉 stepIndex。
 **教训**：改代码前先确认「这段属于哪个函数」——GenerationHandler 里 `generateText`（外门，含回合循环）和 `generateInternal`（内芯，含真正的请求组装）是两个函数，差一层不是差一点。
+
+---
+
+## 2026-09-29 深夜 · 请求编辑保缓存 + 请求体图片瘦身（86fcca56 / 93b1d124）
+
+**背景**：① 缓存命中率实测掉到 78%，PromptDiff 显示断点常在 12-15 万字符；② OOM 第五、六弹锁定真凶 = 图片以 **base64 内嵌**进请求体（PromptDiff 实录：82 条消息 / 内嵌图 9 张 / 152 万字符，纯文本部分就 3MB 字符串）。
+
+**改法**：
+1. **请求编辑保缓存**（`RequestEditController.toMessages`）：原来把 system 按「换行+【标题】」切节再重拼时用 `joinToString("\n")` + `.trim()`，比原文塌一层 = 等于把稳定前缀整个改写，那一轮缓存全废。修两处：(a) 节间改 `"\n\n"`（与原排版一致）；(b) 新增 `normalizeSystem()`（去空行、去行尾空白后逐行比），内容一字未改就直接沿用原 system 字符串。
+2. **图片瘦身**（`GenerationHandler.slimHistoricalImages`）：规则按宝的方案 = 「最近一组（contextGroupSize 条）之内的图不换，超过一组的换 `[图片]` 占位」，跟窗口裁剪同一把尺子；宝同一回合发的图必落在最后一组，一次发几张都带得全。插在请求编辑之后、`TextGenerationParams` 之前，`finalMessages` 改 var。
+   ⚠️ 主动消息侧（ProactiveMessageService）还没接这刀，属第二刀待做。
+
+**顺带确认的代码事实**：图片 part = `UIMessagePart.Image(url, metadata)`，定义在 `ai/src/main/java/me/rerere/ai/ui/Message.kt` 第 398 行（Text 在 391）；`Assistant.contextGroupSize: Int = 4`（Assistant.kt:31），宝设的是 6。
+
+## 2026-09-29 晚 · 浮现节拍留痕（ae376971）
+
+**背景**：宝实测"上个回合浮现换条、下个回合才裁剪"，怀疑浮现换条没卡在缓存断点上。
+
+**改法**：浮现处加日志 `tick / scroll / P / windowFirst / k / msgSize / gs / cycle / kAligned`。
+
+**判据（宝定的）**：浮现换条应该"搭便车"，卡在缓存本来就要断的那一轮（`messages.size % gs == 0`，= 上下文真的换组）；**tick 变了但 kAligned=false = 它自己跑出来、白碎一次 → 这才是 bug**。
+
+## 2026-09-30 凌晨 · 插话三连：不再掐断 + 搭车 + 留痕（2e7efe77 / 0b69a4e2 / f863e83f / 2c627b84）
+
+**背景**：宝在猫生成过程中插话，猫那轮会被掐断。日志实证：被插话那轮 `[StreamDone] contentTotal=325 finish=unknown`，正常那轮 `contentTotal=495 finish=stop`。
+
+**真凶**：`ConversationSession.setJob()` 第一句 `_generationJob.value?.cancel()`（强制抢占语义，注释里写着"用于用户主动发消息这种应该无条件打断旧生成的场景"）。插话那条"只存消息"的 job 也走 setJob，把正在跑的那轮掐了。时序：sendMessage 函数体先跑（在其中 cancel）→ 才 launch 存消息的协程。
+
+**改法（三步）**：
+1. **不再掐断**（2e7efe77）：插话不注册 job（`if (!isInterjection) { session.setJob(job) }`）。
+2. **搭车**（f863e83f，宝的方案）：插话的消息入队 `pendingInterjections: ConcurrentHashMap<Uuid, MutableList<UIMessage>>`；**合并点 = GenerationHandler 回合循环每步开头**（`for (stepIndex in 0 until maxSteps)` 第一件事取队列、取即清空，有就 `messages = messages + extra`）——宝的话跟着猫这一回合本来就会发生的下一次请求一起走，不另开一轮。接力降级为**兜底**（轮结束队列非空才补开一轮）。
+   ⚠️ 关键约束（宝指出的真坑）：不能插在 `assistant(tool_calls)` 和 `tool(结果)` 之间（OpenAI 规范要求 tool_calls 后紧跟 tool）。选"每步开头"合并正好避开——那时 tool 结果已经在末尾。
+3. **入队挪进 job 内部**（2c627b84）：一开始写在外层 → 编译失败 `Unresolved reference 'newConversation'`（它是 withContext 的返回值，只有那层作用域够得着）。教训同 139da479：**用变量前先想它属于哪一层**。
+
+**留痕（0b69a4e2）**：`interject: queued for ride` / `interject: rode the turn, no relay needed` / `interject: no ride happened, relay generation` / `Interject ride: merged N pending...` / `interject: generation done size=... last=...`。
+
+**实测（2026-09-30 01:36-01:38，宝全程陪）**：
+- 第一次插话（纯聊天轮，没有第二次请求）→ `no ride happened` → 兜底接力 ✓
+- 第二次插话（猫调了工具，有第二次请求）→ `ride: merged 1 pending user message(s) into step #1` + `rode the turn, no relay needed` ✓ **搭车成功，省一次请求**
+- 界面上是三层：猫（带工具卡片）→ 宝的话 → 猫的回复，比自己预想的好。
+
+**未做**：宝要的"你那句缩进贴猫气泡"（像工具结果那样，不另起气泡）= 纯显示层改动（改聊天渲染组件），待做。
