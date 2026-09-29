@@ -680,12 +680,17 @@ class ChatService(
             // 正在跑的那轮），改成"等当前那轮跑完，再自动接上插话"。
             pendingInterjection.add(conversationId)
             val previousJob = busyJob
+            // 【插话丢条排查 2026-09-30】插话这条链路以前全程无声，宝看到的"多一次请求/没留痕"都查不到出处。
+            AppLogBuffer.log(TAG, "interject: queued conv=$conversationId (wait previous job)")
             appScope.launch {
                 runCatching { previousJob?.join() }
                 // 让当前那轮的收尾（落库等）写完再接手
                 kotlinx.coroutines.delay(300)
                 if (pendingInterjection.remove(conversationId)) {
+                    AppLogBuffer.log(TAG, "interject: relay generation start conv=$conversationId")
                     runCatching { handleMessageComplete(conversationId) }
+                } else {
+                    AppLogBuffer.log(TAG, "interject: relay skipped (entry gone) conv=$conversationId")
                 }
             }
         }
@@ -1450,6 +1455,13 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 saveConversation(conversationId, latest)
                 latest
             }
+            // 【插话丢条排查 2026-09-30】收尾时报一次条数和最后一条的角色：
+            // 配合 interject 日志，判断宝插的那条有没有在这轮收尾时被盖掉。
+            AppLogBuffer.log(
+                TAG,
+                "interject: generation done size=${finalConversation.messageNodes.size}" +
+                    " last=${finalConversation.currentMessages.lastOrNull()?.role}"
+            )
 
             // 自动唤起网易云音乐：扫描刚完成的 assistant 文本中的 orpheus:// scheme
             try {
