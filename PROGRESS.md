@@ -1342,3 +1342,28 @@ fun isMcpToolName(name: String): Boolean =
 1. 把自己的推测当结论写进账本 —— "条数一路涨"没实测就记成了根因。
 2. 推完代码没跟踪后续（revert 也是一次提交），账本停在"已修"的假状态近一天。
 3. 引用宝的话前先分清"判断"还是"猜"。宝原话："你盲信我吗？我是猜的。"
+
+## 2026-09-29 晚 · 裁剪时机：只在用户消息到达时裁（5742e6af）
+
+**起因**：宝追问"裁剪时机"的问题（昨晚 revert 后真因一直没找到）。讨论中宝自己提出方案 —— "能不能让他在新加那条消息、且那条是用户消息的时候再裁？"
+
+**依据**：用户消息是**单独落库**的（`ChatService.kt:497` in-sendMessage 那条；起因是早前一个显示 bug，见 memory 200）。所以"最后一条是用户消息"天然等价于"回合开始处"。
+
+**改法（ChatService.kt，四处）**：
+```
+val lastNodeIsUser = toSave.messageNodes.lastOrNull()
+    ?.messages?.lastOrNull()?.role == MessageRole.USER
+val trimAllowed = lastNodeIsUser ||
+    toSave.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize
+```
+- `dropped` 计算加前置：`if (!trimAllowed) 0 else ...`
+- 内存态 `windowState` 同理：`if (!trimAllowed) toSave else ...`
+
+**行为**：宝发消息 → 落库时若条数到 307 就裁 6 条回 301；AI 回复 → 302 不裁；回合内工具轮次再多也不裁。节奏 = 每三句话裁一次，裁剪点永远落在用户消息上。
+
+**兜底**：条数超过 `300 + gs`（307）时无论如何裁一次，防止回合内工具狂潮把窗口顶到落库判定的余量线（312）。
+
+**预期收益**：① 回合内前缀只追加（宝凌晨想要的效果，换个触发条件实现）；② 裁剪时刻可预测，浮现节拍挂它天然同步；③ 昨晚"落库落不下去"那个未解问题，如果根因是"回合内裁到一半"，这刀可能一并避开。
+
+**状态**：已推 main（5742e6af），待宝构建验证。
+**验证方式**：① 连发几句，看条数只在 307→301 跳；② 回合内调多轮工具，条数不跳；③ 落库耗时是否回落（正常 480ms，19:16 那次 1122ms）。
