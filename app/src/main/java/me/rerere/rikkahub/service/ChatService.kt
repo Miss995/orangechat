@@ -2090,6 +2090,14 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 windowGroupSize * 2
         val effectiveFirstIndex = if (isWindowState) windowFirstIndex else null
 
+        // 【裁剪时机 · 2026-09-29 宝的方案】只在"最后一条是用户消息"时裁，让裁剪永远落在
+        // 回合边界上（回合里那几条绝不被碰）。兜底：条数超过窗口+一组（307）时无论如何裁一次，
+        // 防止回合内工具狂潮把窗口顶到落库判定的余量线（312）。
+        val lastNodeIsUser = toSave.messageNodes.lastOrNull()
+            ?.messages?.lastOrNull()?.role == MessageRole.USER
+        val trimAllowed = lastNodeIsUser ||
+            toSave.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize
+
         val updatedConversation = toSave.copy()
         if (!exists) {
             conversationRepo.insertConversation(updatedConversation)
@@ -2104,7 +2112,9 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             // overflow>groupSize 只裁 groupSize 的倍数条 → 配合 limitContext 总量对齐，裁剪前后起点同一条消息；
             // groupSize≤1 = 按条裁剪（旧行为）
             val overflow = (toSave.messageNodes.size - CONVERSATION_LOAD_WINDOW_SIZE).coerceAtLeast(0)
-            val dropped = if (windowGroupSize <= 1) {
+            val dropped = if (!trimAllowed) {
+                0
+            } else if (windowGroupSize <= 1) {
                 overflow
             } else if (overflow > windowGroupSize) {
                 overflow - (overflow % windowGroupSize)
@@ -2138,7 +2148,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 内存态保持窗口轻量：无论调用方传的是窗口版还是全量，都只保留最近 N 条，
         // 后续流式更新/重组只碰窗口内节点 → 长对话不再每次更新都全量遍历
         // 【缓存对齐 2026-08-26】攒一组裁一组：只有 overflow>groupSize 才裁，且裁 groupSize 的倍数条（窗口 300~300+groupSize 浮动）
-        val windowState = if (windowGroupSize <= 1) {
+        val windowState = if (!trimAllowed) {
+            // 【裁剪时机 · 2026-09-29】回合中不裁内存态：只追加
+            toSave
+        } else if (windowGroupSize <= 1) {
             if (toSave.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE) {
                 toSave.copy(messageNodes = toSave.messageNodes.takeLast(CONVERSATION_LOAD_WINDOW_SIZE))
             } else {
