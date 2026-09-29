@@ -6,6 +6,8 @@
 
 package me.rerere.rikkahub.ui.pages.chat
 
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.ArrowDown01
@@ -381,12 +383,14 @@ private fun ChatListNormal(
                 // 【插话贴猫 · 2026-09-30】判据：她这条在她前一条猫消息"完成之前"发的 = 插话
                 // （搭车和接力都是这个特征）。纯显示层算，不碰数据层。
                 val prevNode = displayNodes.getOrNull(index - 1)
+                val prevFinishedAt = prevNode?.currentMessage?.finishedAt
+                val tz = TimeZone.currentSystemDefault()
                 val isInterjection =
                     node.currentMessage.role == MessageRole.USER &&
                         prevNode?.currentMessage?.role == MessageRole.ASSISTANT &&
-                        prevNode.currentMessage.finishedAt?.let { fin ->
-                            node.currentMessage.createdAt.isBefore(fin)
-                        } == true
+                        prevFinishedAt != null &&
+                        node.currentMessage.createdAt.toInstant(tz) <
+                        prevFinishedAt.toInstant(tz)
                 Column {
                     ListSelectableItem(
                         key = node.id,
