@@ -845,10 +845,25 @@ class GenerationHandler(
                 // 改成除"上下文条数"（=窗口滚满一整轮，默认 30）→ 与裁剪同拍。
                 val surfacingCycle =
                     if (assistant.contextMessageSize > 0) assistant.contextMessageSize else gs
+                // 【2026-09-30 宝的判据】浮现换条应该"搭便车"：卡在缓存本来就要断的那一轮
+                // （= 上下文真的换组那一轮，messages.size % gs == 0），才不会额外多花钱。
+                // 现在没有留痕，判不出它到底是"准时换"还是"自己跑了"。这里把两组数一起打出来：
+                //   tick/scroll = 换条依据（累计滚动条数优先，回退旧算法）
+                //   kAligned = 这一轮上下文是否真的换组（缓存本来就要断）
+                // tick 变了但 kAligned=false → 就是自己跑出来、白碎一次。
+                val surfacingP = (windowFirstIndex ?: 0) + ctxStartInMemory
+                val surfacingTick = (surfacingScroll ?: surfacingP.toLong()) / surfacingCycle
+                AppLogBuffer.log(
+                    "Surfacing",
+                    "tick=$surfacingTick scroll=${surfacingScroll ?: -1L} P=$surfacingP" +
+                        " windowFirst=${windowFirstIndex ?: -1} k=$ctxStartInMemory" +
+                        " msgSize=${messages.size} gs=$gsCfg cycle=$surfacingCycle" +
+                        " kAligned=${gsCfg > 1 && messages.size % gsCfg == 0}"
+                )
                 SelfNoteSurfacing.buildMessage(
                     json = selfNotesJson,
                     // 【2026-09-29】换了依据：优先用累计滚动条数（重开不变）；没传时回退旧算法。
-                    tick = (surfacingScroll ?: ((windowFirstIndex ?: 0) + ctxStartInMemory).toLong()) / surfacingCycle,
+                    tick = surfacingTick,
                 )
             } else null
             if (surfacingMsg != null) {
