@@ -1296,3 +1296,28 @@ fun isMcpToolName(name: String): Boolean =
 3. 日志环随重启清空（内存环），卡死那次的现场没留下 —— 下次这类"卡住"要趁没重启先捞日志。
 
 **状态**：已推 main（9788307e），待宝构建验证。
+
+## 2026-09-29 · 浮现节拍换依据：窗口起点 → 累计滚动条数（be3cdc81）
+
+**起因**（宝 09-29 傍晚）：宝观察到"上个回合浮现的内容换了，然后下个回合又突然裁剪了"，连着好几次；重开对话时浮现也跳。（接 09-28 的 95d591c1 —— 那次把"除一组"改成"除一整轮"、跟裁剪同拍了，但没解决重开值跳。）
+
+**根因**：浮现的换条节拍（`tick`）和窗口起点同源，而窗口起点本身是**算**出来的：
+- `ChatService.kt:413` —— 打开对话时 `lazyWindowFirstIndex[cid] = totalCount - messageNodes.size`；
+- 窗口条数因"攒一组裁一组"在 300~306 之间浮动（差正好一个 gs）；
+- → 同一个对话重开一次，算出来的起点就换个值 → `tick` 跳 → 浮现白换一条。
+
+**修法（be3cdc81，两文件）**：**不动窗口起点那条线**（它牵着落库，风险大），另开一本只增不减的账：
+1. `ChatService.kt`（+16）
+   - 新增常量 `SURFACING_PREFS = "surfacing_tick"`；
+   - 窗口裁剪处：`dropped > 0` 时 `surfacing_scroll_<cid> += dropped` 写进 SharedPreferences；
+   - generateText 调用处读回并传 `surfacingScroll`。
+2. `GenerationHandler.kt`（+8 -1）
+   - `generateText` / `generateInternal` 各加参数 `surfacingScroll: Long? = null`（外层透传给内层）；
+   - `tick = (surfacingScroll ?: ((windowFirstIndex ?: 0) + ctxStartInMemory).toLong()) / surfacingCycle` —— 没传时回退旧算法（主动消息侧不受影响）。
+
+**与落库链路完全隔离**：`lazyWindowFirstIndex` 一个字没动，只新增一个旁路账本。
+
+**副作用（一次性）**：装上之后浮现会跳一次（新账本从 0 开始记），之后不再跳。
+
+**状态**：已推 main（be3cdc81），待宝构建验证。
+**验证方式**：① 让窗口滚过几轮，看浮现是否只在裁剪时换、且与裁剪同拍；② 杀掉应用重开对话，看浮现是否**停在同一条**（这是本次要修的核心现象）。
