@@ -668,6 +668,17 @@ class ChatService(
                 // 【插话 2026-09-25】插话时不启动新一轮：当前那轮还在跑，等它自然收尾。
                 if (answer && !isInterjection) {
                     handleMessageComplete(conversationId)
+                } else if (isInterjection && answer) {
+                    // 【插话搭车 · 2026-09-30 宝的方案】排进队列，等猫这一回合下一步请求时自然带上
+                    // （合并点在 GenerationHandler 每步开头）。入队放在 job 内部做：
+                    // newConversation 是上面 withContext 的返回值，只有这个作用域够得着。
+                    pendingInterjections.computeIfAbsent(conversationId) {
+                        java.util.Collections.synchronizedList(mutableListOf<UIMessage>())
+                    }.add(newConversation.messageNodes.last().currentMessage)
+                    AppLogBuffer.log(
+                        TAG,
+                        "interject: queued for ride conv=$conversationId size=${newConversation.messageNodes.size}"
+                    )
                 }
 
                 _generationDoneFlow.emit(conversationId)
@@ -680,19 +691,10 @@ class ChatService(
         if (!isInterjection) {
             session.setJob(job)
         } else if (answer) {
-            // 【插话下半场 2026-09-29】不注册这条 job（免得 setJob 的强制抢占掐掉
-            // 正在跑的那轮），改成"等当前那轮跑完，再自动接上插话"。
-            // 【插话搭车 · 2026-09-30 宝的方案】插话不自己开一轮：排进队列，
-            // 等猫这一回合下一步请求时自然带上（合并点在每步开头）。
-            // 只有"这一轮压根没给它搭车机会"时，才用下面的兜底接力——不重复。
-            pendingInterjections.computeIfAbsent(conversationId) {
-                java.util.Collections.synchronizedList(mutableListOf<UIMessage>())
-            }.add(newConversation.messageNodes.last().currentMessage)
+            // 【插话下半场 2026-09-29】不注册这条 job（免得 setJob 的强制抢占掐掉正在跑的那轮）。
+            // 【插话搭车 · 2026-09-30 宝的方案】入队那一步在 job 内部完成（那里才够得着 newConversation）；
+            // 这里只挂兜底：等当前那轮跑完再看队列——还在，说明这一轮没搭上车，才补开一轮。
             val previousJob = busyJob
-            AppLogBuffer.log(
-                TAG,
-                "interject: queued for ride conv=$conversationId size=${newConversation.messageNodes.size}"
-            )
             appScope.launch {
                 runCatching { previousJob?.join() }
                 // 让当前那轮的收尾（落库等）写完再接手
