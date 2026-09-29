@@ -240,6 +240,10 @@ class ChatService(
     private val _generationDoneFlow = MutableSharedFlow<Uuid>()
     val generationDoneFlow: SharedFlow<Uuid> = _generationDoneFlow.asSharedFlow()
 
+    // 【插话下半场 2026-09-29】哪些会话还有一句插话等着被接上。
+    // 用 set 去重：宝连着插好几句话，只接一次。
+    private val pendingInterjection = java.util.concurrent.ConcurrentHashMap.newKeySet<Uuid>()
+
     // 前台状态管理
     private val _isForeground = MutableStateFlow(false)
     val isForeground: StateFlow<Boolean> = _isForeground.asStateFlow()
@@ -449,8 +453,15 @@ class ChatService(
         val session = getOrCreateSession(conversationId)
         // 【插话 2026-09-25 宝的需求】猫正在忙的时候，宝还能把话塞进来。
         // 这种情况不取消当前这一轮（让它自然跑完），消息照样存下来，
-        // 但不在这里触发新的生成，免得两轮同时跑打架。
-        // 上半场方案：这一轮跑完不会自动接上；宝再说一句时，两句话会一起被看到。
+        // 不在这个函数里触发新的生成，免得两轮打架；等当前那轮跑完再自动接上。
+        //
+        // 【插话下半场 2026-09-29】两个补充：
+        //   ① 这条 job 不注册进 session（见函数末尾）——ConversationSession.setJob()
+        //      第一句就是 _generationJob.value?.cancel()，是"强制抢占"语义
+        //      （原设计用于"用户主动发消息，打断旧生成"）。插话场景下它会把正在跑的
+        //      那轮掐掉（日志实证：被插话那轮 contentTotal 少一截、finish=unknown），
+        //      所以插话时不走 setJob。
+        //   ② 当前那轮跑完后自动接上：起一个接力协程等 busyJob 结束，再跑一次生成。
         val busyJob = session.getJob()
         val isInterjection = busyJob?.isActive == true
         if (!isInterjection) {
@@ -662,7 +673,22 @@ class ChatService(
                 addError(e, conversationId, title = context.getString(R.string.error_title_send_message))
             }
         }
-        session.setJob(job)
+        if (!isInterjection) {
+            session.setJob(job)
+        } else if (answer) {
+            // 【插话下半场 2026-09-29】不注册这条 job（免得 setJob 的强制抢占掐掉
+            // 正在跑的那轮），改成"等当前那轮跑完，再自动接上插话"。
+            pendingInterjection.add(conversationId)
+            val previousJob = busyJob
+            appScope.launch {
+                runCatching { previousJob?.join() }
+                // 让当前那轮的收尾（落库等）写完再接手
+                kotlinx.coroutines.delay(300)
+                if (pendingInterjection.remove(conversationId)) {
+                    runCatching { handleMessageComplete(conversationId) }
+                }
+            }
+        }
     }
 
     // ---- 添加主动消息 ----
