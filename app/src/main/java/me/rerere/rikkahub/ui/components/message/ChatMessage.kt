@@ -149,6 +149,10 @@ fun ChatMessage(
     onQuote: (() -> Unit)? = null,
     // 【消息引用 2026-09-22】这条消息引用的那一条（上层查好传进来，null = 没引用）
     quotedMessage: UIMessage? = null,
+    // 【插话贴猫 · 2026-09-30】宝在猫生成过程中插的那句：不占自己的气泡，
+    // 跟猫同侧、缩进、不带头像，像工具结果那样贴在前一条猫消息底下。
+    // 判据（上层算好传进来）：她这条的 createdAt 早于前一条猫消息的 finishedAt。
+    isInterjection: Boolean = false,
 ) {
     val message = node.messages[node.selectIndex]
     val settings = LocalDisplaySettings.current
@@ -176,11 +180,15 @@ fun ChatMessage(
     val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
     Column(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start,
+        modifier = modifier
+            .fillMaxWidth()
+            // 【插话贴猫 · 2026-09-30】插话往里缩一点，视觉上贴着上面那条猫消息
+            .then(if (isInterjection) Modifier.padding(start = 40.dp) else Modifier),
+        horizontalAlignment = if (!isInterjection && message.role == MessageRole.USER) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        if (!message.parts.isEmptyUIMessage()) {
+        // 插话不画头像行（头像跟方向一样会"跳"，跟工具结果看齐）
+        if (!isInterjection && !message.parts.isEmptyUIMessage()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth(),

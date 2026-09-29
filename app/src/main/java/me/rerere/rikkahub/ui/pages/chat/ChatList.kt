@@ -378,6 +378,15 @@ private fun ChatListNormal(
                 items = displayNodes,
                 key = { index, item -> item.id },
             ) { index, node ->
+                // 【插话贴猫 · 2026-09-30】判据：她这条在她前一条猫消息"完成之前"发的 = 插话
+                // （搭车和接力都是这个特征）。纯显示层算，不碰数据层。
+                val prevNode = displayNodes.getOrNull(index - 1)
+                val isInterjection =
+                    node.currentMessage.role == MessageRole.USER &&
+                        prevNode?.currentMessage?.role == MessageRole.ASSISTANT &&
+                        prevNode.currentMessage.finishedAt?.let { fin ->
+                            node.currentMessage.createdAt.isBefore(fin)
+                        } == true
                 Column {
                     ListSelectableItem(
                         key = node.id,
@@ -440,6 +449,8 @@ private fun ChatListNormal(
                                     .firstOrNull { m -> m.id == qid }
                             },
                             lastMessage = index == displayNodes.lastIndex,
+                            // 【插话贴猫 · 2026-09-30】这一条是插话 → 画成贴着猫的样子
+                            isInterjection = isInterjection,
                         )
                     }
                 }
