@@ -130,6 +130,9 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
 
+/** 浮现节拍账本（SharedPreferences 名）· 2026-09-29 */
+private const val SURFACING_PREFS = "surfacing_tick"
+
 /**
  * 【懒加载窗口 2026-08-25】打开对话时只加载最近 N 条消息节点到内存。
  * 长对话（几千条）不再全量加载，流式更新/重组只碰窗口内的少量节点 → 大窗口不卡。
@@ -1161,6 +1164,11 @@ class ChatService(
                 // 【窗口起点节拍 · 2026-09-11】把懒加载窗口起点传给最近事件节拍器：
                 // 用"窗口往前滚了多少条"当判据，替代被封顶的"窗口条数差值"（详见 GenerationHandler 注释）
                 windowFirstIndex = lazyWindowFirstIndex[conversationId],
+                // 【浮现节拍 · 2026-09-29】累计滚动条数：只增不减，重开按存的值读回。
+                // 替代 windowFirstIndex 当浮现换条依据 —— 后者重开时会随窗口条数浮动。
+                surfacingScroll = context
+                    .getSharedPreferences(SURFACING_PREFS, Application.MODE_PRIVATE)
+                    .getLong("surfacing_scroll_$conversationId", 0L),
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {
@@ -2104,6 +2112,14 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 0
             }
             lazyWindowFirstIndex[conversationId] = (windowFirstIndex ?: 0) + dropped
+            // 【浮现节拍 · 2026-09-29】累计滚动条数：只增不减。
+            // 窗口条数在 300~306 浮动，重开时 lazyWindowFirstIndex 会重算、值跳，
+            // 浮现不能跟着跳，所以另存一本只增不减的账。
+            if (dropped > 0) {
+                val sp = context.getSharedPreferences(SURFACING_PREFS, Application.MODE_PRIVATE)
+                val key = "surfacing_scroll_$conversationId"
+                sp.edit().putLong(key, sp.getLong(key, 0L) + dropped).apply()
+            }
         } else {
             // 全量版/新对话：窗口起点 = 总条数 - 窗口大小
             lazyWindowFirstIndex[conversationId] =

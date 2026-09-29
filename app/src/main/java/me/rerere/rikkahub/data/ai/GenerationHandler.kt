@@ -160,6 +160,9 @@ class GenerationHandler(
         // 【窗口起点节拍 · 2026-09-11】懒加载窗口起点（ChatService.lazyWindowFirstIndex），
         // 由外门透传给内芯（generateInternal）的最近事件节拍器，详见内芯里的注释。
         windowFirstIndex: Int? = null,
+        // 【浮现节拍 · 2026-09-29】累计滚动条数（ChatService 从 SharedPreferences 读回）。
+        // 浮现换条专用：只增不减、重开不变；为空时回退旧的 (windowFirstIndex + ctxStart) 算法。
+        surfacingScroll: Long? = null,
         // 【2026-09-24 召回留痕】把本次门控 / 拆词 / 命中数回传给上层（ChatService 补写到用户消息）
         onRecallDebug: ((String) -> Unit)? = null,
     ): Flow<GenerationChunk> = flow {
@@ -274,6 +277,7 @@ class GenerationHandler(
                     onRecallGatePassed = { recallGatePassed = true },
                     onRecallDebug = onRecallDebug,
                     windowFirstIndex = windowFirstIndex,
+                    surfacingScroll = surfacingScroll,
                 )
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,
@@ -548,6 +552,8 @@ class GenerationHandler(
         // 原节拍判据用"窗口消息条数"，但窗口长度被 CONVERSATION_LOAD_WINDOW_SIZE 封顶后差值恒为 0~6
         // → 节拍器永远够不到 threshold、只剩 6h 兜底（详见下方判断处注释）。null = 调用方没传，回退旧判据。
         windowFirstIndex: Int? = null,
+        // 【浮现节拍 · 2026-09-29】累计滚动条数（见 generateText 同名参数）
+        surfacingScroll: Long? = null,
     ) {
         // ===== 斜杠命令模式（2026-09-01 宝拍板：用户消息以 / 开头 = 直接执行工具，复用 AI 工具链路不做 UI）=====
         // 检测最后一条用户消息是否以 "/" 开头：是则进入命令模式，AI 解析命令调对应工具执行，结果直接展示。
@@ -809,7 +815,8 @@ class GenerationHandler(
                     if (assistant.contextMessageSize > 0) assistant.contextMessageSize else gs
                 SelfNoteSurfacing.buildMessage(
                     json = selfNotesJson,
-                    tick = ((windowFirstIndex ?: 0) + ctxStartInMemory).toLong() / surfacingCycle,
+                    // 【2026-09-29】换了依据：优先用累计滚动条数（重开不变）；没传时回退旧算法。
+                    tick = (surfacingScroll ?: ((windowFirstIndex ?: 0) + ctxStartInMemory).toLong()) / surfacingCycle,
                 )
             } else null
             if (surfacingMsg != null) {
