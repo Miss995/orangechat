@@ -132,11 +132,22 @@ object RequestEditController {
         if (edited == null) return original
         val result = mutableListOf<UIMessage>()
         // 重组 system：只拼接启用的分节
+        // 【2026-09-29 橘仔】节与节之间补空行（原来只补一个 "\n"）——重拼出来会比原文"塌"一层，
+        // 等于把稳定前缀整个改写，那一轮的缓存全废。
         val systemText = edited.sections.filter { it.enabled }
-            .joinToString("\n") { it.content }
+            .joinToString("\n\n") { it.content }
             .trim()
+        // 【2026-09-29 橘仔 · 保缓存】如果这次编辑实际上一字未改（只是弹了窗、原样确认），
+        // 就直接沿用原始 system 字符串：前缀差一个字符，后面几万 token 就全部重算。
+        val originalSystem = original.firstOrNull { it.role == MessageRole.SYSTEM }
         if (systemText.isNotBlank()) {
-            result.add(UIMessage.system(prompt = systemText))
+            if (originalSystem != null &&
+                normalizeSystem(systemText) == normalizeSystem(originalSystem.toText())
+            ) {
+                result.add(originalSystem)
+            } else {
+                result.add(UIMessage.system(prompt = systemText))
+            }
         }
         // 历史消息：按启用的顺序保留
         val originalHistory = original.filter { it.role != MessageRole.SYSTEM }
@@ -167,6 +178,16 @@ object RequestEditController {
      * 只改发给模型的这份副本，不落库、不碰历史前缀（所以不打乱缓存）。
      * 空着、或者找不到注入块时，原样返回。
      */
+    /**
+     * 【2026-09-29 橘仔 · 保缓存】比较两份 system 的"实际内容"：去掉空行、去掉行尾空白后逐行比。
+     * 用来判断这次请求编辑到底动没动内容——没动就别重组，前缀一个字都别改。
+     */
+    private fun normalizeSystem(text: String): String =
+        text.lineSequence()
+            .map { it.trimEnd() }
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+
     private fun applyAppendix(messages: List<UIMessage>, appendix: String): List<UIMessage> {
         if (appendix.isBlank()) return messages
         val marker = "以下是系统消息注入:"
