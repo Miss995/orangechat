@@ -1382,3 +1382,20 @@ val trimAllowed = lastNodeIsUser ||
 **验证**：新包装上后，日志筛 `TRIM`，看 `lastIsUser` 是不是恒为 true（除非撞 312）。
 
 **另一件确认（同日）**：WINDOW_GS 日志证实宝设的 gs=6 被正确读到（target 与 matched 同一串 id）。之前"每轮掉 4 条"的疑惑，是旁边挂着的另外两个助手（它们设的是 4），不是这条对话。
+
+## 2026-09-29 晚 · 上下文窗口冻结（139da479）
+
+**背景**：宝澄清"我说的裁是**上下文窗口**，不是对话框窗口"（口径之前没统一，猫一直在改另一个）。
+
+**真因**：`GenerationHandler.generateText` 里算上下文起点那行（787）在**工具循环内**（循环从 202 开始）。工具结果是作为单独一条追加进 messages 的，条数一涨、凑满 gs 的倍数，起点公式 `(N - cms) - (N % gs)` 就往前跳一组 → 窗口里最旧那批换内容 → 前缀断。表现就是"工具调用那个回合上下文被裁"。
+
+**宝的关键贡献**：① 一开始就分清"上下文窗口"和"对话框窗口"是两回事 ② 指出工具结果算单独一条（所以条数会涨）③ 问"你怎么判断一整个回合"——答案是 generateText 调一次就是一回合，边界不用判断。
+
+**改法**：
+1. `var frozenCtxStart: Int? = null` 放在循环外（202 行前）。
+2. 787 处：第一刀按原公式算一次并冻住；之后每步都用同一个起点 `messages.drop(start)`（取到末尾、不截断）→ 前缀不动，工具结果照样进得去。
+3. 加 `CTXWIN` 日志：`step= N= start= ctx= cms= gs= frozen=`，跑一轮看 start 是否全程不变。
+
+**验证**：新包装上后日志筛 `CTXWIN`，同一个回合的多个 step 里 start 应该是同一个数。
+
+**推前 diff**：scripts/fetch_remote.py 已不在（列了 scripts/ 只剩 fetch_file.py，它只覆盖不比对），改用 python urllib 直接拉远程到 /workspace/tmp/ 再 diff，确认只有本次改动、无夹带。
