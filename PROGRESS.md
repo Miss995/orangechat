@@ -1399,3 +1399,8 @@ val trimAllowed = lastNodeIsUser ||
 **验证**：新包装上后日志筛 `CTXWIN`，同一个回合的多个 step 里 start 应该是同一个数。
 
 **推前 diff**：scripts/fetch_remote.py 已不在（列了 scripts/ 只剩 fetch_file.py，它只覆盖不比对），改用 python urllib 直接拉远程到 /workspace/tmp/ 再 diff，确认只有本次改动、无夹带。
+
+**⚠️ 2026-09-29 晚 · 139da479 编译失败 → 17f68dca 修复**
+139da479 报 `Unresolved reference 'frozenCtxStart' / 'stepIndex'`。错因：算窗口那段（787 行）在 **generateInternal**（538 行起）里，而猫把 `var frozenCtxStart` 声明在了外层 **generateText**（136 行起，202 是它的回合循环）里 —— 两个函数，作用域不通。同时日志里的 `stepIndex` 在 generateInternal 里也不存在。
+修法：改成 `val ctxStartHolder = intArrayOf(-1)`（外层循环前），在 248 行的 `generateInternal(...)` 调用里作为 `ctxStartHolder = ctxStartHolder` 传入，generateInternal 签名加 `ctxStartHolder: IntArray? = null`。使用处 `ctxStartHolder?.get(0)?.takeIf { it >= 0 } ?: (算).also { ctxStartHolder?.set(0, it) }`。日志去掉 stepIndex。
+**教训**：改代码前先确认「这段属于哪个函数」——GenerationHandler 里 `generateText`（外门，含回合循环）和 `generateInternal`（内芯，含真正的请求组装）是两个函数，差一层不是差一点。
