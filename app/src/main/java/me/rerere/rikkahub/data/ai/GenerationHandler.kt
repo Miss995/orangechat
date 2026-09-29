@@ -944,7 +944,7 @@ class GenerationHandler(
         // === 请求编辑模式：发送前拦截，交给用户手动控制上下文 ===
         // 【2026-09-17】后台触发的回合（定时发送）跳过：界面上没人在，弹出来只会卡死
         val bypassRequestEdit = RequestEditController.consumeBypass()
-        val finalMessages: List<UIMessage>
+        var finalMessages: List<UIMessage>
         var effectiveTools = tools
         if (settings.requestEditMode && internalMessages.isNotEmpty() && !bypassRequestEdit) {
             val editData = RequestEditController.toEditData(
@@ -962,7 +962,13 @@ class GenerationHandler(
         } else {
             finalMessages = internalMessages
         }
- 
+
+        // 【2026-09-29 宝+橘仔】请求体瘦身：把"一组之外"的历史图片换成 [图片] 占位。
+        // 病根：图以 base64 内嵌进请求（一张能顶二十几万字符），既把内存顶爆（OOM 真凶），也把 token 烧穿。
+        // 规则（宝 2026-09-29 定）：最近一组（contextGroupSize 条）之内的图原样带上，更早的换占位——
+        // 跟窗口裁剪同一把尺子；她同一个回合发的图必然落在最后一组里，所以一次发几张都带得全。
+        finalMessages = slimHistoricalImages(finalMessages, assistant.contextGroupSize)
+
         var messages: List<UIMessage> = messages
         val params = TextGenerationParams(
             model = model,
@@ -1298,3 +1304,43 @@ private fun chatSessionDurationText(messages: List<UIMessage>, nowSec: Long): St
 private fun msgEpochSecond(msg: UIMessage): Long? = runCatching {
     msg.createdAt.toInstant(TimeZone.currentSystemDefault()).epochSeconds
 }.getOrNull()
+
+/**
+ * 【2026-09-29 宝+橘仔】请求体瘦身：把"一组之外"的历史图片换成 [图片] 占位。
+ *
+ * 病根：图片以 base64 内嵌进请求，一张能顶二十几万字符
+ * （PromptDiff 实测：82 条消息 / 9 张内嵌图 / 152 万字符）。
+ * 一来把内存顶爆（OOM 真凶），二来每轮都把这些字符重新算一遍钱。
+ *
+ * 规则（宝 2026-09-29 定的）：**最近一组（contextGroupSize 条）之内的图不换，超过一组的换占位**——
+ * 跟窗口裁剪用同一把尺子；她同一个回合发的图一定落在最后一组里，所以一次发几张都带得全。
+ */
+private fun slimHistoricalImages(messages: List<UIMessage>, groupSize: Int): List<UIMessage> {
+    if (messages.isEmpty()) return messages
+    val gs = if (groupSize > 0) groupSize else 6
+    val keepFrom = (messages.size - gs).coerceAtLeast(0)
+    var changed = false
+    val result = ArrayList<UIMessage>(messages.size)
+    messages.forEachIndexed { index, msg ->
+        if (index >= keepFrom) {
+            result.add(msg)
+        } else {
+            var touched = false
+            val newParts: List<UIMessagePart> = msg.parts.map { part ->
+                if (part is UIMessagePart.Image) {
+                    touched = true
+                    UIMessagePart.Text("[图片]")
+                } else {
+                    part
+                }
+            }
+            if (touched) {
+                changed = true
+                result.add(msg.copy(parts = newParts))
+            } else {
+                result.add(msg)
+            }
+        }
+    }
+    return if (changed) result else messages
+}
