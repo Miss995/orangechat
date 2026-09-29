@@ -2091,12 +2091,13 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         val effectiveFirstIndex = if (isWindowState) windowFirstIndex else null
 
         // 【裁剪时机 · 2026-09-29 宝的方案】只在"最后一条是用户消息"时裁，让裁剪永远落在
-        // 回合边界上（回合里那几条绝不被碰）。兜底：条数超过窗口+一组（307）时无论如何裁一次，
-        // 防止回合内工具狂潮把窗口顶到落库判定的余量线（312）。
+        // 回合边界上（回合里那几条绝不被碰）。兜底：条数顶到落库判定的余量线（312）时无论如何
+        // 裁一次，防止回合内工具狂潮把窗口顶爆。门槛放这么高是因为 307 太低：工具回合涨到 307
+        // 时兜底会替主判据做决定，又变成"回合内裁"（宝当晚实测发现）。
         val lastNodeIsUser = toSave.messageNodes.lastOrNull()
             ?.messages?.lastOrNull()?.role == MessageRole.USER
         val trimAllowed = lastNodeIsUser ||
-            toSave.messageNodes.size > CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize
+            toSave.messageNodes.size >= CONVERSATION_LOAD_WINDOW_SIZE + windowGroupSize * 2
 
         val updatedConversation = toSave.copy()
         if (!exists) {
@@ -2126,6 +2127,11 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             // 窗口条数在 300~306 浮动，重开时 lazyWindowFirstIndex 会重算、值跳，
             // 浮现不能跟着跳，所以另存一本只增不减的账。
             if (dropped > 0) {
+                AppLogBuffer.log(
+                    TAG,
+                    "TRIM dropped=$dropped size=${toSave.messageNodes.size} " +
+                        "lastIsUser=$lastNodeIsUser allowed=$trimAllowed gs=$windowGroupSize"
+                )
                 val sp = context.getSharedPreferences(SURFACING_PREFS, Application.MODE_PRIVATE)
                 val key = "surfacing_scroll_$conversationId"
                 sp.edit().putLong(key, sp.getLong(key, 0L) + dropped).apply()
