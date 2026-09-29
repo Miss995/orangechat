@@ -198,7 +198,14 @@ class GenerationHandler(
         // 调过工具就不重发：工具来回本来就多，最后一轮要是没写完，不该把整个回合重开一遍
         // （那是双倍的钱）。只有"从头到尾没碰过工具"的回合才保留重发——那种是真的一句话都没说成。
         var anyToolCallThisTurn = false
- 
+
+        // 【上下文窗口冻结 · 2026-09-29 宝的方案】上下文窗口的起点，只在这一次 generateText
+        // （= 一个完整回合，工具循环全在里面）的开头算一次，循环里每一步都用它。
+        // 不冻的话：工具结果是作为单独一条追加进 messages 的，条数一涨、凑满 gs 的倍数，
+        // limitContext 的起点就往前跳一组 —— 表现就是"工具调用那个回合上下文被裁"（宝当晚实测）。
+        // 回合边界不用判断：这个函数调一次就是一个回合，返回即结束。
+        var frozenCtxStart: Int? = null
+
         for (stepIndex in 0 until maxSteps) {
             memTrace("2-step$stepIndex", messages)
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -784,7 +791,27 @@ class GenerationHandler(
             // 【2026-09-13 自指区浮现】在上下文第 7 条位置插一条"很久以前的我写过的话"。
             // 位置固定（index 6 = 第一组结尾）：裁剪发生时它跟着回原位 → 前缀稳定、不碎缓存；
             // 内容按窗口起点轮换（每裁一组换一条）；只在这里造，不进 Conversation、不落库（宝的红线）。
-            val ctxMessages = messages.limitContext(assistant.contextMessageSize, assistant.contextGroupSize)
+            // 【上下文窗口冻结 · 2026-09-29】起点冻在回合开头。
+            // 第一刀按原公式算（(N - cms) - (N % gs)，与 limitContext 对齐）；
+            // 之后每一步都用同一个起点往末尾取 —— 这样前缀不动，回合内的工具结果照样进得去。
+            val ctxCap = assistant.contextMessageSize
+            val ctxGs = assistant.contextGroupSize.coerceAtLeast(1)
+            val ctxStart = frozenCtxStart ?: (
+                if (ctxCap > 0 && messages.size > ctxCap) {
+                    (messages.size - ctxCap) - (messages.size % ctxGs)
+                } else 0
+                ).also { frozenCtxStart = it }
+            val ctxMessages = if (ctxStart > 0 && ctxStart < messages.size) {
+                messages.drop(ctxStart)
+            } else {
+                messages
+            }
+            // 【上下文窗口冻结 · 2026-09-29 验证日志】跑一轮看 start 是否全程不变。
+            AppLogBuffer.log(
+                "CTXWIN",
+                "step=$stepIndex N=${messages.size} start=$ctxStart ctx=${ctxMessages.size} " +
+                    "cms=$ctxCap gs=$ctxGs frozen=${frozenCtxStart != null}"
+            )
             // 【浮现相位对齐 · 2026-09-14 宝发现】轮换序号必须与「上下文换组」同源，否则每 6 条掉两次缓存。
             //
             // 系统里有两个会让前缀断掉的节拍器：
