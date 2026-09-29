@@ -242,7 +242,11 @@ class ChatService(
 
     // 【插话下半场 2026-09-29】哪些会话还有一句插话等着被接上。
     // 用 set 去重：宝连着插好几句话，只接一次。
-    private val pendingInterjection = java.util.concurrent.ConcurrentHashMap.newKeySet<Uuid>()
+    // 【插话搭车 · 2026-09-30 宝的方案】宝插的话：按会话排队，等猫这一回合下一步请求时并进去
+    // （合并点在"每一步开头"，那时 tool 结果已经挂在末尾，所以不会插进 tool_calls 和 tool 之间）。
+    // 取即清空：提供方用 remove，同一句不会被并进第二步。
+    private val pendingInterjections =
+        java.util.concurrent.ConcurrentHashMap<Uuid, MutableList<UIMessage>>()
 
     // 前台状态管理
     private val _isForeground = MutableStateFlow(false)
@@ -678,19 +682,28 @@ class ChatService(
         } else if (answer) {
             // 【插话下半场 2026-09-29】不注册这条 job（免得 setJob 的强制抢占掐掉
             // 正在跑的那轮），改成"等当前那轮跑完，再自动接上插话"。
-            pendingInterjection.add(conversationId)
+            // 【插话搭车 · 2026-09-30 宝的方案】插话不自己开一轮：排进队列，
+            // 等猫这一回合下一步请求时自然带上（合并点在每步开头）。
+            // 只有"这一轮压根没给它搭车机会"时，才用下面的兜底接力——不重复。
+            pendingInterjections.computeIfAbsent(conversationId) {
+                java.util.Collections.synchronizedList(mutableListOf<UIMessage>())
+            }.add(newConversation.messageNodes.last().currentMessage)
             val previousJob = busyJob
-            // 【插话丢条排查 2026-09-30】插话这条链路以前全程无声，宝看到的"多一次请求/没留痕"都查不到出处。
-            AppLogBuffer.log(TAG, "interject: queued conv=$conversationId (wait previous job)")
+            AppLogBuffer.log(
+                TAG,
+                "interject: queued for ride conv=$conversationId size=${newConversation.messageNodes.size}"
+            )
             appScope.launch {
                 runCatching { previousJob?.join() }
                 // 让当前那轮的收尾（落库等）写完再接手
                 kotlinx.coroutines.delay(300)
-                if (pendingInterjection.remove(conversationId)) {
-                    AppLogBuffer.log(TAG, "interject: relay generation start conv=$conversationId")
+                val leftover = pendingInterjections.remove(conversationId)
+                if (!leftover.isNullOrEmpty()) {
+                    // 队列还在 = 这一轮没有第二次请求，宝那句没人接 → 兜底起一轮
+                    AppLogBuffer.log(TAG, "interject: no ride happened, relay generation conv=$conversationId")
                     runCatching { handleMessageComplete(conversationId) }
                 } else {
-                    AppLogBuffer.log(TAG, "interject: relay skipped (entry gone) conv=$conversationId")
+                    AppLogBuffer.log(TAG, "interject: rode the turn, no relay needed conv=$conversationId")
                 }
             }
         }
@@ -1200,6 +1213,9 @@ class ChatService(
                 surfacingScroll = context
                     .getSharedPreferences(SURFACING_PREFS, Application.MODE_PRIVATE)
                     .getLong("surfacing_scroll_$conversationId", 0L),
+                // 【插话搭车 · 2026-09-30】取即清空：这一回合每步请求前看一眼排队中的插话，
+                // 有就并进去（宝的话跟着猫的下一口气走），取完队列空 = 兜底接力不会再补一轮。
+                pendingInterjections = { pendingInterjections.remove(conversationId) ?: emptyList() },
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {

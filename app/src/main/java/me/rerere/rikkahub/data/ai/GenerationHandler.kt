@@ -163,6 +163,11 @@ class GenerationHandler(
         // 【浮现节拍 · 2026-09-29】累计滚动条数（ChatService 从 SharedPreferences 读回）。
         // 浮现换条专用：只增不减、重开不变；为空时回退旧的 (windowFirstIndex + ctxStart) 算法。
         surfacingScroll: Long? = null,
+        // 【插话搭车 · 2026-09-30 宝的方案】本回合排队中的用户消息（宝在猫生成过程中插的话）。
+        // 每步发请求之前取一次：有就并进这一步的请求——宝的话跟着猫的下一口气出去，不用另开一轮。
+        // 约定：取的动作同时清空队列（由提供方 remove 实现），所以同一句不会被并进第二步。
+        // 取不到 = 没有插话，行为与以前完全一致。
+        pendingInterjections: (() -> List<UIMessage>)? = null,
         // 【2026-09-24 召回留痕】把本次门控 / 拆词 / 命中数回传给上层（ChatService 补写到用户消息）
         onRecallDebug: ((String) -> Unit)? = null,
     ): Flow<GenerationChunk> = flow {
@@ -208,6 +213,16 @@ class GenerationHandler(
         val ctxStartHolder = intArrayOf(-1)
 
         for (stepIndex in 0 until maxSteps) {
+            // 【插话搭车 · 2026-09-30 宝的方案】每步开始前取一次排队中的用户消息。
+            // 取到就并进这一步的请求：宝插的话跟着猫的下一口气走，不用等整轮跑完另开一轮。
+            // 取的动作由提供方清空（remove），所以同一句不会被并进第二步。
+            pendingInterjections?.invoke()?.takeIf { it.isNotEmpty() }?.let { extra ->
+                messages = messages + extra
+                AppLogBuffer.log(
+                    "Interject",
+                    "ride: merged ${extra.size} pending user message(s) into step #$stepIndex"
+                )
+            }
             memTrace("2-step$stepIndex", messages)
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
  
