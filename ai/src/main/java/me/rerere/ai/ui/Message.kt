@@ -384,7 +384,9 @@ fun ToolApprovalState.canResumeToolExecution(): Boolean {
 
 @Serializable
 sealed class UIMessagePart {
-    abstract val metadata: JsonObject?
+    // 【插话定位 · 2026-09-30】由 val 改 var：各子类本来就是 `override var metadata`，
+    // 基类写成 val 会让"通过基类引用给 metadata 打标记"编译不过。
+    abstract var metadata: JsonObject?
 
     @Serializable
     @SerialName("text")
