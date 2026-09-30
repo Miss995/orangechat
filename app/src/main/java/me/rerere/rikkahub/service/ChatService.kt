@@ -134,6 +134,20 @@ private const val TAG = "ChatService"
 private const val SURFACING_PREFS = "surfacing_tick"
 
 /**
+ * 窗口快照账本（SharedPreferences 名）· 2026-09-30 宝的方案。
+ *
+ * 记「上次这个对话的窗口装了多少条」，重开照它拉，不写死 300。
+ *
+ * 治的是：窗口条数本来在 300~306 之间浮动（攒一组裁一组），重开时固定拉 300 条
+ * 会把这个浮动静默收圆 → 窗口起点跟着挪 0~6 条 → 请求体真变了 → 缓存从那断一次。
+ * 存了这个数，重开的窗口跟重开前一模一样，起点不动，缓存不断。
+ */
+private const val WINDOW_SNAPSHOT_PREFS = "window_snapshot"
+
+/** 快照夹取上界：正常浮动不会超过 300+20，防全量传入之类的异常值把窗口撑大 */
+private const val WINDOW_SNAPSHOT_MAX_SLACK = 20
+
+/**
  * 【懒加载窗口 2026-08-25】打开对话时只加载最近 N 条消息节点到内存。
  * 长对话（几千条）不再全量加载，流式更新/重组只碰窗口内的少量节点 → 大窗口不卡。
  * 显示只取最后 200 条（ChatList.WINDOW_DISPLAY_SIZE），这里多留余量给 AI 上下文取用。
@@ -417,7 +431,21 @@ class ChatService(
         getOrCreateSession(conversationId) // 确保 session 存在
         // 总是从数据库重新加载最新数据，确保能显示主动消息等新内容
         // 【懒加载窗口】只加载最近 CONVERSATION_LOAD_WINDOW_SIZE 条，长对话打开不再全量加载
-        val conversation = conversationRepo.getConversationById(conversationId, CONVERSATION_LOAD_WINDOW_SIZE)
+        // 【窗口快照 · 2026-09-30 宝的方案】条数不写死 300，照上次存的拉：
+        // 窗口在 300~306 浮动，收圆会让请求体起点挪 0~6 条、白断一次缓存。
+        val savedWindowSize = context
+            .getSharedPreferences(WINDOW_SNAPSHOT_PREFS, Application.MODE_PRIVATE)
+            .getInt("window_size_$conversationId", CONVERSATION_LOAD_WINDOW_SIZE)
+            .coerceIn(
+                CONVERSATION_LOAD_WINDOW_SIZE,
+                CONVERSATION_LOAD_WINDOW_SIZE + WINDOW_SNAPSHOT_MAX_SLACK
+            )
+        val conversation = conversationRepo.getConversationById(conversationId, savedWindowSize)
+        // 【窗口快照 · 2026-09-30】验证用：看读到的快照和实际拉到的条数
+        AppLogBuffer.log(
+            TAG,
+            "WIN_SNAP conv=$conversationId saved=$savedWindowSize loaded=${conversation?.messageNodes?.size ?: -1}"
+        )
         if (conversation != null) {
             // 记录懒加载窗口边界：窗口第一条 node 在数据库中的 nodeIndex（保存时合并窗口外历史用）
             val totalCount = conversationRepo.getMessageNodeCount(conversationId.toString())
@@ -2239,6 +2267,15 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             toSave
         }
         updateConversation(conversationId, windowState)
+        // 【窗口快照 · 2026-09-30 宝的方案】把这一轮最终的窗口条数记下来，
+        // 下次重开照它拉，条数不收圆、起点不挪、缓存不断。
+        // 只在窗口态记：全量传入那条路的条数不可信（虽然读取侧有夹取兜底）。
+        if (isWindowState) {
+            context.getSharedPreferences(WINDOW_SNAPSHOT_PREFS, Application.MODE_PRIVATE)
+                .edit()
+                .putInt("window_size_$conversationId", windowState.messageNodes.size)
+                .apply()
+        }
     }
 
     // ---- 翻译消息 ----
