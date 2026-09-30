@@ -1210,11 +1210,23 @@ class ChatService(
                 // 【窗口起点节拍 · 2026-09-11】把懒加载窗口起点传给最近事件节拍器：
                 // 用"窗口往前滚了多少条"当判据，替代被封顶的"窗口条数差值"（详见 GenerationHandler 注释）
                 windowFirstIndex = lazyWindowFirstIndex[conversationId],
-                // 【浮现节拍 · 2026-09-29】累计滚动条数：只增不减，重开按存的值读回。
-                // 替代 windowFirstIndex 当浮现换条依据 —— 后者重开时会随窗口条数浮动。
+                // 【浮现节拍 · 2026-09-30 宝纠正】读的是"请求体起点 k 往前跳的累计量"。
+                // 旧版读的是窗口裁剪累计（数错了量：窗口裁剪时请求体一个字没变，浮现白碎）。
+                // 写回交给 GenerationHandler 的 onSurfacingAdvance 回调 —— 只有那边算得出 k。
                 surfacingScroll = context
                     .getSharedPreferences(SURFACING_PREFS, Application.MODE_PRIVATE)
-                    .getLong("surfacing_scroll_$conversationId", 0L),
+                    .getLong("surfacing_scroll_k_$conversationId", 0L),
+                surfacingLastK = context
+                    .getSharedPreferences(SURFACING_PREFS, Application.MODE_PRIVATE)
+                    .getLong("surfacing_lastk_$conversationId", -1L)
+                    .takeIf { it >= 0 }?.toInt(),
+                onSurfacingAdvance = { newScroll, newK ->
+                    context.getSharedPreferences(SURFACING_PREFS, Application.MODE_PRIVATE)
+                        .edit()
+                        .putLong("surfacing_scroll_k_$conversationId", newScroll)
+                        .putLong("surfacing_lastk_$conversationId", newK.toLong())
+                        .apply()
+                },
                 // 【插话搭车 · 2026-09-30】取即清空：这一回合每步请求前看一眼排队中的插话，
                 // 有就并进去（宝的话跟着猫的下一口气走），取完队列空 = 兜底接力不会再补一轮。
                 pendingInterjections = { pendingInterjections.remove(conversationId) ?: emptyList() },
@@ -2188,9 +2200,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                     "TRIM dropped=$dropped size=${toSave.messageNodes.size} " +
                         "lastIsUser=$lastNodeIsUser allowed=$trimAllowed gs=$windowGroupSize"
                 )
-                val sp = context.getSharedPreferences(SURFACING_PREFS, Application.MODE_PRIVATE)
-                val key = "surfacing_scroll_$conversationId"
-                sp.edit().putLong(key, sp.getLong(key, 0L) + dropped).apply()
+                // 【2026-09-30 宝纠正】这里不再给浮现记账了。
+                // 这个位置能拿到的是"窗口裁掉多少条"，而浮现该对齐的是请求体起点 k 的跳。
+                // 窗口裁剪时 windowFirst +dropped、k -dropped 正好抵消，请求体一个字没变，
+                // 记账在这儿等于让浮现跟着一个假节拍走（详见 GenerationHandler 浮现段注释）。
             }
         } else {
             // 全量版/新对话：窗口起点 = 总条数 - 窗口大小

@@ -160,9 +160,14 @@ class GenerationHandler(
         // 【窗口起点节拍 · 2026-09-11】懒加载窗口起点（ChatService.lazyWindowFirstIndex），
         // 由外门透传给内芯（generateInternal）的最近事件节拍器，详见内芯里的注释。
         windowFirstIndex: Int? = null,
-        // 【浮现节拍 · 2026-09-29】累计滚动条数（ChatService 从 SharedPreferences 读回）。
-        // 浮现换条专用：只增不减、重开不变；为空时回退旧的 (windowFirstIndex + ctxStart) 算法。
+        // 【浮现节拍 · 2026-09-30 宝纠正】累计跳量（ChatService 从 SharedPreferences 读回）。
+        // 记的是【请求体起点 k 往前跳的累计量】，不是窗口裁掉多少条。
+        // 07-29 那版记错了量：浮现该对齐的是请求体的断点（k 跳），不是窗口裁剪（它和 k 正好抵消，请求体没变）。
         surfacingScroll: Long? = null,
+        // 【浮现节拍 · 2026-09-30】上一轮见到的请求体起点 k。用来判断这轮 k 有没有往前跳。
+        surfacingLastK: Int? = null,
+        // 【浮现节拍 · 2026-09-30】k 变了就回传（新的累计值, 新的 k），由 ChatService 落盘。
+        onSurfacingAdvance: ((Long, Int) -> Unit)? = null,
         // 【插话搭车 · 2026-09-30 宝的方案】本回合排队中的用户消息（宝在猫生成过程中插的话）。
         // 每步发请求之前取一次：有就并进这一步的请求——宝的话跟着猫的下一口气出去，不用另开一轮。
         // 约定：取的动作同时清空队列（由提供方 remove 实现），所以同一句不会被并进第二步。
@@ -301,6 +306,8 @@ class GenerationHandler(
                     onRecallDebug = onRecallDebug,
                     windowFirstIndex = windowFirstIndex,
                     surfacingScroll = surfacingScroll,
+                    surfacingLastK = surfacingLastK,
+                    onSurfacingAdvance = onSurfacingAdvance,
                     ctxStartHolder = ctxStartHolder,
                 )
                 messages = messages.visualTransforms(
@@ -576,8 +583,10 @@ class GenerationHandler(
         // 原节拍判据用"窗口消息条数"，但窗口长度被 CONVERSATION_LOAD_WINDOW_SIZE 封顶后差值恒为 0~6
         // → 节拍器永远够不到 threshold、只剩 6h 兜底（详见下方判断处注释）。null = 调用方没传，回退旧判据。
         windowFirstIndex: Int? = null,
-        // 【浮现节拍 · 2026-09-29】累计滚动条数（见 generateText 同名参数）
+        // 【浮现节拍 · 2026-09-30 宝纠正】累计跳量（见 generateText 同名参数）
         surfacingScroll: Long? = null,
+        surfacingLastK: Int? = null,
+        onSurfacingAdvance: ((Long, Int) -> Unit)? = null,
         // 【上下文窗口冻结 · 2026-09-29】上下文窗口起点容器（-1 = 还没算）。
         // 由外层 generateText 的回合循环持有并传入，一个回合共用同一个起点。
         ctxStartHolder: IntArray? = null,
@@ -866,12 +875,25 @@ class GenerationHandler(
                 //   tick/scroll = 换条依据（累计滚动条数优先，回退旧算法）
                 //   kAligned = 这一轮上下文是否真的换组（缓存本来就要断）
                 // tick 变了但 kAligned=false → 就是自己跑出来、白碎一次。
-                val surfacingP = (windowFirstIndex ?: 0) + ctxStartInMemory
-                val surfacingTick = (surfacingScroll ?: surfacingP.toLong()) / surfacingCycle
+                // 【2026-09-30 宝纠正 · 橘仔改】换条依据 = 请求体起点 k 自己的跳。
+                // 旧版用 surfacingScroll（ChatService 在窗口裁剪时累加"裁掉多少条"）——
+                // 那个量数的是窗口：而窗口裁剪发生时 windowFirst +gs / k -gs 正好抵消，
+                // 请求体一个字没变，浮现却跟着换条 → 白碎一次缓存。宝今晚一句
+                // "窗口和上下文用的那个数好像不一样"点破。
+                val kNow = ctxStartInMemory
+                val lastK = surfacingLastK
+                var scrollNow = surfacingScroll ?: 0L
+                if (lastK != null && kNow != lastK) {
+                    // k 往前跳（= 上下文真换组，请求前缀本来就该断）才累加；
+                    // k 变小 = 重开窗口后重算，不累加（这正是 09-29 想治的"重开跳"）。
+                    if (kNow > lastK) scrollNow += (kNow - lastK).toLong()
+                    onSurfacingAdvance?.invoke(scrollNow, kNow)
+                }
+                val surfacingTick = scrollNow / surfacingCycle
                 AppLogBuffer.log(
                     "Surfacing",
-                    "tick=$surfacingTick scroll=${surfacingScroll ?: -1L} P=$surfacingP" +
-                        " windowFirst=${windowFirstIndex ?: -1} k=$ctxStartInMemory" +
+                    "tick=$surfacingTick scroll=$scrollNow lastK=${lastK ?: -1} k=$kNow" +
+                        " windowFirst=${windowFirstIndex ?: -1}" +
                         " msgSize=${messages.size} gs=$gsCfg cycle=$surfacingCycle" +
                         " kAligned=${gsCfg > 1 && messages.size % gsCfg == 0}"
                 )
