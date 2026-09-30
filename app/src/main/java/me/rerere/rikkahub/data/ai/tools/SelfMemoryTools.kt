@@ -111,9 +111,18 @@ fun buildSelfNoteQueryTool(config: ExternalMemory): Tool = Tool(
         val result = runCatching {
             val params = input.jsonObject
             val limit = (params["limit"]?.jsonPrimitive?.intOrNull ?: 5).coerceIn(1, 20)
-            val notes = newService(config).querySelfNotes(limit).getOrDefault(emptyList())
+            val queryResult = newService(config).querySelfNotes(limit)
+            // 【失败长得跟空一模一样 · 2026-09-30 橘仔自己种的种子，今天动手】
+            // 原来这里是 .getOrDefault(emptyList())：读取失败被吞掉，界面显示成"自指区还空着"，
+            // 安静得像真的空。09-24/09-26 两次就是这样骗过眼睛的。
+            // 规矩：空集（读到了，确实 0 条）和读取失败（没读到）必须是两种回答。
+            if (queryResult.isFailure) {
+                val e = queryResult.exceptionOrNull()
+                return@runCatching """{"success":false,"placeholder":"读取失败，不是空","error":"自指区没读到（这跟'空着'不是一回事）：${e?.javaClass?.simpleName ?: "未知异常"}: ${e?.message ?: e.toString()}"}"""
+            }
+            val notes = queryResult.getOrThrow()
             if (notes.isEmpty()) {
-                return@runCatching """{"success":true,"count":0,"tip":"自指区还空着。有想通的时刻/长出的心得时，用 self_note_write 写给未来的自己"}"""
+                return@runCatching """{"success":true,"count":0,"tip":"自指区确实空着（这次是读到了，返回 0 条）。有想通的时刻/长出的心得时，用 self_note_write 写给未来的自己"}"""
             }
             val items = buildJsonArray {
                 notes.forEach { n ->
@@ -169,7 +178,14 @@ fun buildCloseOngoingTool(config: ExternalMemory, assistantId: String): Tool = T
             if (keyword.isEmpty()) {
                 return@runCatching """{"success":false,"error":"title 不能为空——给个要闭合的事件标题关键词"}"""
             }
-            val closed = newService(config).closeOngoingEvent(assistantId, keyword).getOrDefault(emptyList())
+            val closedResult = newService(config).closeOngoingEvent(assistantId, keyword)
+            // 【失败长得跟空一模一样 · 2026-09-30】同 self_note_query 的毛病：读失败被吞成空列表，
+            // 然后报"没找到"。读不到 ≠ 没这条，两种回答要分开。
+            if (closedResult.isFailure) {
+                val e = closedResult.exceptionOrNull()
+                return@runCatching """{"success":false,"placeholder":"读取失败，不是没找到","error":"闭合没执行成功（这跟'找不到这条'不是一回事）：${e?.javaClass?.simpleName ?: "未知异常"}: ${e?.message ?: e.toString()}"}"""
+            }
+            val closed = closedResult.getOrThrow()
             if (closed.isEmpty()) {
                 return@runCatching """{"success":false,"error":"没找到标题匹配「$keyword」的 ongoing 事件（它可能已闭合，或关键词对不上）"}"""
             }
@@ -224,7 +240,13 @@ fun buildSetOngoingLevelTool(config: ExternalMemory, assistantId: String): Tool 
             if (keyword.isEmpty() || level !in listOf("important", "normal", "edge")) {
                 return@runCatching """{"success":false,"error":"title 和 level 都要给，level 只能是 important / normal / edge"}"""
             }
-            val changed = newService(config).setOngoingLevel(assistantId, keyword, level).getOrDefault(emptyList())
+            val changedResult = newService(config).setOngoingLevel(assistantId, keyword, level)
+            // 【失败长得跟空一模一样 · 2026-09-30】同族修法：读失败 ≠ 没这条
+            if (changedResult.isFailure) {
+                val e = changedResult.exceptionOrNull()
+                return@runCatching """{"success":false,"placeholder":"读取失败，不是没找到","error":"改档没执行成功（这跟'找不到这条'不是一回事）：${e?.javaClass?.simpleName ?: "未知异常"}: ${e?.message ?: e.toString()}"}"""
+            }
+            val changed = changedResult.getOrThrow()
             if (changed.isEmpty()) {
                 return@runCatching """{"success":false,"error":"没找到标题匹配「$keyword」的 ongoing 事件（可能已闭合，或关键词对不上）"}"""
             }
@@ -271,7 +293,13 @@ fun buildRecallOngoingTool(config: ExternalMemory, assistantId: String): Tool = 
         val result = runCatching {
             val params = input.jsonObject
             val keyword = params["keyword"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
-            val all = newService(config).fetchAllOngoing(assistantId).getOrDefault(emptyList())
+            val allResult = newService(config).fetchAllOngoing(assistantId)
+            // 【失败长得跟空一模一样 · 2026-09-30】同族修法：读失败 ≠ 一条都没有
+            if (allResult.isFailure) {
+                val e = allResult.exceptionOrNull()
+                return@runCatching """{"success":false,"placeholder":"读取失败，不是没有","error":"ongoing 名单没读到（这跟'一条都没有'不是一回事）：${e?.javaClass?.simpleName ?: "未知异常"}: ${e?.message ?: e.toString()}"}"""
+            }
+            val all = allResult.getOrThrow()
             val hits = (if (keyword.isEmpty()) all else all.filter { e ->
                 e.title.contains(keyword, true) || e.content.contains(keyword, true) ||
                     e.keywords.any { it.contains(keyword, true) }
