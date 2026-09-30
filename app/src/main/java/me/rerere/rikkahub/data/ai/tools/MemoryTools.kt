@@ -21,8 +21,6 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.model.AssistantMemory
-import me.rerere.rikkahub.utils.toLocalString
-import java.time.LocalDate
 
 fun buildMemoryTools(
     json: Json,
@@ -33,22 +31,20 @@ fun buildMemoryTools(
     Tool(
         name = "memory_tool",
         description = """
-            The memory tool stores long-term information across conversations.
-            Use `action` to control the operation: `create` (add), `edit` (update), `delete` (remove).
-            - No relevant record: `create` + `content`
-            - Existing relevant record: `edit` + `id` + `content`
-            - Outdated/irrelevant record: `delete` + `id`
-            Memories will automatically appear in the <memories> tag in later conversations.
-            Do not store sensitive information (e.g., ethnicity, religion, sexual orientation, political views, sex life, criminal records).
-            You may store: preferred name, preferences, plans, work-related notes, chat style preferences, first chat time, etc.
-            Do not show memory content directly in the conversation unless the user explicitly asks.
-            Today is ${LocalDate.now().toLocalString(true)}.
-            Similar memories should be merged; prefer updating existing records.
+            【长期记忆】跨对话保存你自己想一直记着的事。记忆会自动出现在后续对话的 <memories> 标签里，不用在正文复述。
 
-            Examples:
-            {"action":"create","content":"User prefers brief replies and is more active on weekends."}
-            {"action":"edit","id":12,"content":"User’s preferred name updated to “A-Xing”, prefers Chinese replies."}
-            {"action":"delete","id":7}
+            用法：无相关记录 → `create` + `content`；已有 → `edit` + `id` + `content`；过时或无关 → `delete` + `id`。
+
+            该记什么：
+            - 你自己长出来的规矩、心得、想通的事
+            - 宝的偏好、习惯、身体、日程、约定，她随口提过在意的细节
+            - 还在进行、需要持续跟进的事
+
+            什么时候记：想到就记，别攒着（攒着会忘，损失比一次写入大）。聊出结论时顺手落一条。已有条目就更新，别堆重复。
+
+            别记：跟咱家无关的别人隐私、明天就过期的琐事。
+
+            宝的话要收藏的走 heart_save（五感收藏夹），这儿放事实和规矩，两本别混。
         """.trimIndent(),
         parameters = {
             InputSchema.Obj(
