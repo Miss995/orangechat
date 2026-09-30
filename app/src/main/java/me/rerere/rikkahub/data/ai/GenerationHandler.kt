@@ -222,6 +222,32 @@ class GenerationHandler(
             // 取到就并进这一步的请求：宝插的话跟着猫的下一口气走，不用等整轮跑完另开一轮。
             // 取的动作由提供方清空（remove），所以同一句不会被并进第二步。
             pendingInterjections?.invoke()?.takeIf { it.isNotEmpty() }?.let { extra ->
+                // 【插话定位 · 2026-09-30】给"搭车这一刻的最后一个 part"打记号，再补一个空 Text 当隔断。
+                // 猫接下来写的正文会被追加进"最后一个 Text part"（见 Message.kt 的流式累加），
+                // 不隔断的话插话前后的正文会并成一段，显示层就没法把宝的话夹在中间。
+                // 隔断之后：正文A｜（宝的话）｜正文B，三段天然分开，显示层扫到 metadata 里的
+                // interject 标记，就知道宝的话该画在这一段后面。
+                val interjectIds = extra.map { it.id.toString() }
+                val lastAssistantIndex = messages.indexOfLast { it.role == MessageRole.ASSISTANT }
+                if (lastAssistantIndex >= 0) {
+                    val lastAssistant = messages[lastAssistantIndex]
+                    if (lastAssistant.parts.isNotEmpty()) {
+                        val parts = lastAssistant.parts.toMutableList()
+                        val anchor = parts[parts.lastIndex]
+                        anchor.metadata = buildJsonObject {
+                            anchor.metadata?.forEach { (key, value) -> put(key, value) }
+                            put("interject", interjectIds.joinToString(","))
+                        }
+                        parts.add(UIMessagePart.Text(""))
+                        messages = messages.toMutableList().also {
+                            it[lastAssistantIndex] = lastAssistant.copy(parts = parts)
+                        }
+                        AppLogBuffer.log(
+                            "Interject",
+                            "anchor: marked part[${parts.size - 2}] of assistant#${lastAssistantIndex}, ids=${interjectIds.joinToString(",")}"
+                        )
+                    }
+                }
                 messages = messages + extra
                 AppLogBuffer.log(
                     "Interject",

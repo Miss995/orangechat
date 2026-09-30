@@ -366,6 +366,26 @@ private fun ChatListNormal(
             result
         }
 
+        // 【插话定位 · 2026-09-30】预扫描：把"插话消息"按 id 收起来，交给猫那条消息渲染。
+        // 判据跟以前一致（她这条在她前一条猫消息完成之前发的 = 插话），区别是从此不再单独给它开气泡，
+        // 而是让猫的消息按 parts 里 metadata["interject"] 的锚点，把它画在正文中间。
+        val interjectionsById = remember(displayNodes) {
+            val tz = TimeZone.currentSystemDefault()
+            buildMap<String, UIMessage> {
+                displayNodes.forEachIndexed { index, node ->
+                    val prev = displayNodes.getOrNull(index - 1) ?: return@forEachIndexed
+                    val finishedAt = prev.currentMessage.finishedAt ?: return@forEachIndexed
+                    val msg = node.currentMessage
+                    if (msg.role == MessageRole.USER &&
+                        prev.currentMessage.role == MessageRole.ASSISTANT &&
+                        msg.createdAt.toInstant(tz) < finishedAt.toInstant(tz)
+                    ) {
+                        put(msg.id.toString(), msg)
+                    }
+                }
+            }
+        }
+
         LazyColumn(
             state = state,
             contentPadding = PaddingValues(16.dp) + PaddingValues(bottom = 32.dp + innerPadding.calculateBottomPadding()),
@@ -391,6 +411,9 @@ private fun ChatListNormal(
                         prevFinishedAt != null &&
                         node.currentMessage.createdAt.toInstant(tz) <
                         prevFinishedAt.toInstant(tz)
+                // 【插话定位 · 2026-09-30】插话不再自己画一条：它的内容由前一条猫消息
+                // 按锚点渲染（见 ChatMessage 的 interjections 参数）。这里留一个空 item。
+                if (isInterjection) return@itemsIndexed
                 Column {
                     ListSelectableItem(
                         key = node.id,
@@ -455,6 +478,7 @@ private fun ChatListNormal(
                             lastMessage = index == displayNodes.lastIndex,
                             // 【插话贴猫 · 2026-09-30】这一条是插话 → 画成贴着猫的样子
                             isInterjection = isInterjection,
+                            interjections = interjectionsById,
                         )
                     }
                 }

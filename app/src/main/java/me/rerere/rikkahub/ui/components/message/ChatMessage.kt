@@ -82,6 +82,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
@@ -153,6 +154,10 @@ fun ChatMessage(
     // 跟猫同侧、缩进、不带头像，像工具结果那样贴在前一条猫消息底下。
     // 判据（上层算好传进来）：她这条的 createdAt 早于前一条猫消息的 finishedAt。
     isInterjection: Boolean = false,
+    // 【插话定位 · 2026-09-30】插话锚点：parts 的 metadata["interject"] 里记的 id → 那条消息。
+    // 渲染到带锚点的 part 之后，就把宝的话画在正文中间（正文A｜她的话｜正文B），
+    // 不再走"独立气泡"那条路。判据和收集都在上层（ChatList）。
+    interjections: Map<String, UIMessage> = emptyMap(),
 ) {
     val message = node.messages[node.selectIndex]
     val settings = LocalDisplaySettings.current
@@ -769,6 +774,25 @@ private fun MessagePartsBlock(
                 }
             }
         }
+        // 【插话定位 · 2026-09-30】这一段尾巴上带了插话锚点 → 紧接着把宝的话画出来。
+        // 锚点在生成侧打（GenerationHandler 搭车那一刻），记的是宝那条消息的 id。
+        val anchorPart = when (block) {
+            is MessagePartBlock.ThinkingBlock -> when (val lastStep = block.steps.lastOrNull()) {
+                is ThinkingStep.ReasoningStep -> lastStep.reasoning
+                is ThinkingStep.ToolStep -> lastStep.tool
+                else -> null
+            }
+            is MessagePartBlock.ContentBlock -> block.part
+            else -> null
+        }
+        val anchorIds = (anchorPart?.metadata?.get("interject") as? JsonPrimitive)?.content
+        if (!anchorIds.isNullOrBlank()) {
+            anchorIds.split(",").forEach { anchorId ->
+                interjections[anchorId.trim()]?.let { interjected ->
+                    ChatMessageInterjectedMessage(message = interjected)
+                }
+            }
+        }
     }
  
     // Annotations (always rendered at the end)
@@ -1203,5 +1227,28 @@ private fun QuotedMessageChip(quoted: UIMessage) {
                 )
             }
         }
+    }
+}
+
+// 【插话定位 · 2026-09-30】宝在猫生成中间插的那句。
+// 嵌在猫的正文之间，上下各留一条缝，缩进一点、颜色淡一档，好跟猫自己的正文分开。
+@Composable
+private fun ChatMessageInterjectedMessage(message: UIMessage) {
+    val text = remember(message) {
+        message.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
+    }
+    if (text.isBlank()) return
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp)
+            .padding(vertical = 10.dp),
+    ) {
+        Text(
+            text = text,
+            style = LocalTextStyle.current.copy(
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+        )
     }
 }
