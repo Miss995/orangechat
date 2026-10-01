@@ -211,32 +211,41 @@ object MemoryInjector {
                 // 【窗口起点节拍 · 2026-09-11 宝发现·橘仔落实】原判据用"窗口消息条数"，但懒加载窗口长度被
                 // CONVERSATION_LOAD_WINDOW_SIZE 封顶（实测 300~306 浮动）→ 差值恒为 0~6，永远够不到
                 // threshold，节拍器从窗口封顶那天起就再没响过（只剩 6h 兜底）→ 下午事件归档了也注入不进来。
-                // 改用"懒加载窗口起点在会话中的排名"（ChatService.lazyWindowFirstIndex：打开对话时按
-                // totalCount - 窗口条数 算出，保存时 +dropped 单调前进，不受窗口长度封顶影响）——
-                // 它量的是"窗口往前滚了多少条"，正是"每滚 30 条拉一次"的原意。
-                val lastWindowFirst = prefs.getInt("${cacheKey}_windowFirst", Int.MIN_VALUE)
-                val msgDelta = if (windowFirstIndex != null) {
+                // 【节拍演进 · 两代】
+                // 第一代（2026-09-11 宝发现·橘仔落实）：原判据用"窗口消息条数"，但懒加载窗口长度被
+                // CONVERSATION_LOAD_WINDOW_SIZE 封顶（实测 300~306 浮动）→ 差值恒为 0~6，永远够不到
+                // threshold，节拍器从窗口封顶那天起就再没响过（只剩 6h 兜底）→ 下午事件归档了也注入不进来。
+                // 改成"懒加载窗口起点在会话中的排名"（lazyWindowFirstIndex），不受封顶影响。
+                // 第二代（2026-10-01）：窗口起点也不行 —— 窗口裁剪那一刻它是"假动"，见下。
+                // 【节拍源换代 · 2026-10-01 宝的判据，从浮现那条线搬过来】不再跟"窗口"。
+                //
+                // 系统里有两个会让前缀断掉的节拍器（原话见 GenerationHandler 浮现段注释）：
+                //   A. 请求体真的换一组 —— messages.size % gs == 0 时，请求体起点 k 跳 +gs；
+                //   B. 窗口裁剪 —— ChatService 让 windowFirstIndex += dropped，同时内存态丢掉最旧
+                //      dropped 条 → k -= dropped。两者正好抵消，请求体一个字没变
+                //      （这是 8-26"信息对齐"的设计目的，不是 bug）。
+                //
+                // 旧算式 (windowFirstIndex - lastWindowFirst + willDrop) 跟的是 B，
+                // 也就是那堆"看着在动、其实内容没变"的时刻 —— 所以它几乎每回合都响，把稳定前缀整个撕开。
+                //
+                // 正确的节拍源 = 请求体起点在全会话里的坐标 P = windowFirstIndex + k：
+                //   A 时 P += gs（内容真换了，该刷）；B 时 P 不变（内容没变，不刷）。
+                // 因为只有 k 那一跳会引起 P 变，原来那个 +willDrop 的预判也可以去掉了
+                // （它本来就是替 B 补账用的，现在 B 不进 P）。
+                // 与 GenerationHandler 浮现段的 tick 同源（memory 227 / 229）。
+                val lastP = prefs.getInt("${cacheKey}_p", Int.MIN_VALUE)
+                val pNow = if (windowFirstIndex != null) {
+                    val gs = (assistant.contextGroupSize).coerceAtLeast(1)
+                    val cms = assistant.contextMessageSize
+                    val kNow = if (cms > 0 && msgCountNow > cms && gs > 1) {
+                        (msgCountNow - cms) - (msgCountNow % gs)
+                    } else 0
+                    windowFirstIndex + kNow
+                } else null
+                val msgDelta = if (pNow != null) {
                     // 首次没有基准 → 必拉一次，顺便把基准建起来
-                    if (lastWindowFirst == Int.MIN_VALUE) Long.MAX_VALUE
-                    else {
-                        // 【缓存对齐修复 2026-09-12 宝发现】预判本回合保存阶段会裁掉多少条：
-                        // 裁剪在保存阶段（本回合生成之后）才发生，而这里读到的 windowFirstIndex 是
-                        // 上一回合末的值 → 不预判的话刷新永远比裁剪晚一回合：
-                        //   第 N 回合保存时裁组（窗口变 → 掉缓存）→ 第 N+1 回合 delta 才够、刷新注入（又掉）
-                        // 于是"连着两个回合掉缓存"（宝实测）。把"本回合将裁掉的条数"提前算进来，
-                        // 让刷新和裁剪落在同一回合，两个掉缓存的动作合并成一次。
-                        // 算法与 ChatService.saveConversation 完全一致（攒一组裁一组）：
-                        //   overflow = (生成后条数) - WINDOW；估算生成后条数 = 当前条数 + 1（AI 回复）
-                        //   overflow > groupSize 才裁，且只裁 groupSize 的倍数条；groupSize <= 1 = 按条裁
-                        val gs = (assistant.contextGroupSize).coerceAtLeast(1)  // 4 = ChatService.DEFAULT_WINDOW_GROUP_SIZE
-                        val overflowAfter = (msgCountNow + 1) - me.rerere.rikkahub.service.CONVERSATION_LOAD_WINDOW_SIZE
-                        val willDrop = if (gs <= 1) {
-                            overflowAfter.coerceAtLeast(0)
-                        } else if (overflowAfter > gs) {
-                            overflowAfter - (overflowAfter % gs)
-                        } else 0
-                        (windowFirstIndex - lastWindowFirst + willDrop).toLong()
-                    }
+                    if (lastP == Int.MIN_VALUE) Long.MAX_VALUE
+                    else (pNow - lastP).toLong()
                 } else {
                     // 回退旧判据（调用方没传排名：短会话/其他入口）
                     if (lastMsgCount >= 0L) msgCountNow - lastMsgCount else Long.MAX_VALUE
@@ -249,8 +258,8 @@ object MemoryInjector {
                 // 一飘回负数这里就判成"该拉"）。留证据，别靠猜。
                 AppLogBuffer.log(
                     TAG,
-                    "EventBeat winFirst=$windowFirstIndex" +
-                        " lastWinFirst=${if (lastWindowFirst == Int.MIN_VALUE) "unset" else lastWindowFirst}" +
+                    "EventBeat winFirst=$windowFirstIndex pNow=$pNow" +
+                        " lastP=${if (lastP == Int.MIN_VALUE) "unset" else lastP}" +
                         " delta=$msgDelta threshold=$threshold msgTriggered=$msgTriggered" +
                         " timeFallback=$timeFallback cacheEmpty=${recentEventsText == null} willFire=$willFire"
                 )
@@ -380,7 +389,8 @@ object MemoryInjector {
                             if (persistBaseline) {
                                 cacheEditor.putLong("${cacheKey}_msgCount", msgCountNow.toLong())
                                     .putInt("${cacheKey}_threshold", 30)
-                                if (windowFirstIndex != null) cacheEditor.putInt("${cacheKey}_windowFirst", windowFirstIndex)
+                                // 【2026-10-01】基准换成 P（请求体起点在全会话里的坐标）
+                                if (pNow != null) cacheEditor.putInt("${cacheKey}_p", pNow)
                             }
                         } else {
                             // 没拉到新货（云端批次没吐完/内容没变）：不碰缓存文本（前缀不变 = 不掉缓存），
@@ -389,7 +399,8 @@ object MemoryInjector {
                                 if (threshold >= 42) {
                                     cacheEditor.putLong("${cacheKey}_msgCount", msgCountNow.toLong())
                                         .putInt("${cacheKey}_threshold", 30)
-                                    if (windowFirstIndex != null) cacheEditor.putInt("${cacheKey}_windowFirst", windowFirstIndex)
+                                    // 【2026-10-01】基准换成 P（请求体起点在全会话里的坐标）
+                                    if (pNow != null) cacheEditor.putInt("${cacheKey}_p", pNow)
                                 } else {
                                     cacheEditor.putInt("${cacheKey}_threshold", threshold + 6)
                                 }
