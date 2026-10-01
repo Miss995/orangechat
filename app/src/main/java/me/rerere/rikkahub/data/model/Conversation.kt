@@ -81,7 +81,12 @@ data class Conversation(
                 newMessages[newMessages.indexOfFirst { it.id == message.id }] = message
             } else {
                 if (strayAppends.isNotEmpty()) strayAppends.append(' ')
-                strayAppends.append("#$index(had${node.messages.size})")
+                // 【细查 · 2026-10-02】把两边的身份都记下来：列表这条要进的是谁、
+                // 该格原来住的是谁。光看格号看不出差在哪，看 id 头一眼就明白。
+                strayAppends.append(
+                    "#$index(had${node.messages.size}:${node.messages.firstOrNull()?.id.toString().take(8)})" +
+                        "<-${message.id.toString().take(8)}(${message.role})"
+                )
                 newMessages.add(message)
                 newMessageIndex = newMessages.lastIndex
             }
