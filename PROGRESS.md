@@ -1462,3 +1462,56 @@ val trimAllowed = lastNodeIsUser ||
 **已知边界**：插话瞬间（猫还在写、`finishedAt` 还是 null）判不出来，会先按普通用户气泡显示；猫那轮一结束就切成贴猫样式。有个一次性跳变，可接受。
 
 **待验证**：宝构建后发一条插话看效果（预期：她的那句从左下缩进贴上来，不带头像）。
+
+## 2026-09-30 晚 · 记忆读取：空集与读取失败分开（3fbd7876）
+
+**来源**：园地种子银行那颗 09-27 收的种子「失败长得跟空一模一样」——橘仔自己收的，不是宝递的。种了 3 天，今晚动手。
+
+**问题**：`SelfMemoryTools.kt` 四处都用 `.getOrDefault(emptyList())` 取数。读失败（网络断、Supabase 掐线）被吞成空列表，然后代码照「空」往下走，答出「自指区还空着」「没找到这条」。09-24 和 09-26 两次就是这样骗过眼睛的（工具返回"空着"，日志里其实是 `SocketException: Connection reset`）。
+
+**改法**（四处同构）：
+1. `self_note_query` → 读失败时返回 `{"success":false,"placeholder":"读取失败，不是空","error":"自指区没读到（这跟'空着'不是一回事）：..."}`；真空时 tip 改成「自指区确实空着（这次是读到了，返回 0 条）」
+2. `close_ongoing` → 同上（"读取失败，不是没找到"）
+3. `set_ongoing_level` → 同上
+4. `recall_ongoing` → 同上（"读取失败，不是没有"）
+
+**规矩（种子银行里原话）**：空集（读到了，确实 0 条）和读取失败（没读到）必须是两种回答。宁可报「我读不到」，也不要假装「那里什么都没有」。
+
+**未做（记进图书馆 #004 待办）**：`ExternalMemoryService.kt` 9 处 + `DiarySummaryService.kt` 2 处同样的 `getOrDefault(emptyList())`，影响较轻（只是注入少几段），哪天顺手清。
+
+**推送**：commit `3fbd7876`，+33/-5，路径核实过（用 GitHub API 查了提交明细，落在 `app/src/main/java/...` 真身上）。构建 success。
+
+## 2026-10-01 · 插话全流程落地（数据层合并 + 发请求拆 + 折叠条两态）
+
+**背景**：昨天定的"方案一"（合着存、拆着发），今天全天在做。
+
+**★ 今日提交（北京时间）**：
+
+| 时间 | commit | 内容 |
+|---|---|---|
+| 14:39 | `43aef909` | 进行中块：拉失败不再清缓存（空和失败分开）+ EventBeat 节拍诊断日志 |
+| 15:14 | `c353a887` | 事件刷新节拍源换代：窗口起点 → 请求体起点 P=windowFirst+k |
+| 16:20 | `5594951a` | 关闭免责声明页 + 修"同意过仍会闪一下"的异步读 bug |
+| 16:32 | `b2f220f8` | 插话显示改成折叠条（照思考链的壳，默认展开） |
+| 17:20 | `9c1ec3a1` | **插话合并**：数据层合成一条，发请求时拆回三条 |
+| 17:44 | `f4745b5d` | 清掉旧锚点（宝实测画了两次：搭车锚点 + 合并后的 part 标） |
+| 17:52 | `a682bc8b` | 判据换源：`UIMessage.finishedAt` 从没被写过，改用搭车锚点对 id |
+| 18:36 | `f47a91fd` | StreamDone 加 usage 留痕（prompt/cached/out） |
+| 19:37 | `6cdc3f66` | 插话排队态：折叠条标题随时间切换（排队中 → 你的插话） |
+
+**实现细节**：
+
+- `mergeInterjectionsIntoAssistant`（ChatService）：`handleMessageComplete` 的 `onSuccess`、`saveConversation` 之前调用。从后往前扫，靠搭车锚点（猫的最后 part 上 `metadata{"interject": "<她那条消息的 id>"}`）认人；把她那句的 parts 挂到猫的 parts 末尾、每个打 `{"interject": true}` 标，独立那条 `removeAt`；顺手抹掉非 boolean 的旧锚点。
+- `expandInterjections`（ChatService）：GenerationHandler 1207-1210 调用（`limitContext` 那块）。遇到带标的 part 切一刀 → 前半 assistant / 她的 user 消息 / 后半 assistant。只认 `Text` part；没标的消息原样返回（零开销）。
+- 折叠条 `ChatMessageInterjectedMessage(message, part, pending)`：
+  - 老路（锚点上挂消息 id）= 排队态，`pending = true` → 标题"排队中"
+  - 新路（part 自带 `interject: true` 标）= 落定态 → 标题"你的插话"
+  - 两态共用一套壳，位置和长相都不跳
+
+**已知缺口**：
+
+- 接力那条没锚点 → 不合并、显示普通气泡（宝 10-01 明确说"正常，不用改"）
+- cached 掉档未查（宝 17:36 反馈"cached 直接跳了"），`f47a91fd` 的 usage 留痕就是为查这个
+- "一开始就不存独立 user 消息"没做（现在是"先存进列表、收尾时再摘掉"，宝提过更干净的想法）
+
+**踩坑**：`ChatMessage.kt` 在 `app/src/main/java/me/rerere/rikkahub/ui/components/message/`（不是 `components/ai/`）。
