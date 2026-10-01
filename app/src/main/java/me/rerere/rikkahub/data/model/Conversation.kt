@@ -14,6 +14,7 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.InstantSerializer
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -63,6 +64,13 @@ data class Conversation(
     fun updateCurrentMessages(messages: List<UIMessage>): Conversation {
         val newNodes = this.messageNodes.toMutableList()
 
+        // 【诊断 · 2026-10-02】正常情况下面这个循环永远不该走到 add 分支：
+        //   新消息 → index 位置是刚新建的节点、里面就是它自己 → 命中 if；
+        //   流式更新 → id 命中 if。
+        // 一旦走了 add，就说明"列表第 index 条"在"节点树第 index 格"里找不到家 = 两边错位。
+        // 错一格就会往后每格都塞一份副本 → 界面长出 <2/2> 分支。这里把现场记下来。
+        val strayAppends = StringBuilder()
+
         messages.forEachIndexed { index, message ->
             val node = newNodes
                 .getOrElse(index) { message.toMessageNode() }
@@ -72,6 +80,8 @@ data class Conversation(
             if (newMessages.any { it.id == message.id }) {
                 newMessages[newMessages.indexOfFirst { it.id == message.id }] = message
             } else {
+                if (strayAppends.isNotEmpty()) strayAppends.append(' ')
+                strayAppends.append("#$index(had${node.messages.size})")
                 newMessages.add(message)
                 newMessageIndex = newMessages.lastIndex
             }
@@ -87,6 +97,13 @@ data class Conversation(
             } else {
                 newNodes[index] = newNode
             }
+        }
+
+        if (strayAppends.isNotEmpty()) {
+            AppLogBuffer.log(
+                "ConvUpd",
+                "STRAY list=${messages.size} nodes=${this.messageNodes.size} at=$strayAppends"
+            )
         }
 
         return this.copy(
