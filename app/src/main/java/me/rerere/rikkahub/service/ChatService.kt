@@ -1469,17 +1469,21 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 when (chunk) {
                     is GenerationChunk.Messages -> {
                         val currentConversationForChunk = getConversationFlow(conversationId).value
+                        // 【插话合回 · 2026-10-01】回来的这份是"发出去那一版"，宝插的话被拆成了
+                        // 独立 user 消息（三截），而会话里那条早就合并过（一截）。先合回去再塞，
+                        // 否则按位置更新会多出一条、还会把前半顶掉（宝实测：一句显示两次 + 跳过）。
+                        val incoming = collapseInterjections(chunk.messages)
                         // 【2026-09-24 召回留痕】传进来的 chunk.messages 取自"开始生成那一刻"的快照，
                         // 那时门控/召回还没跑完，上面没有 recallDebug；而 updateCurrentMessages 是按 id
                         // 整条替换的，会把界面上的小字抹掉。这里先把旧消息上的小字补回来再刷。
                         val debugSource = currentConversationForChunk.currentMessages
                             .lastOrNull { it.recallDebug != null }
                         val patchedMessages = if (debugSource == null) {
-                            chunk.messages
+                            incoming
                         } else {
-                            val idx = chunk.messages.indexOfFirst { it.id == debugSource.id }
-                            if (idx < 0) chunk.messages
-                            else chunk.messages.toMutableList().also { list ->
+                            val idx = incoming.indexOfFirst { it.id == debugSource.id }
+                            if (idx < 0) incoming
+                            else incoming.toMutableList().also { list ->
                                 list[idx] = list[idx].copy(recallDebug = debugSource.recallDebug)
                             }
                         }
@@ -2232,19 +2236,30 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 continue
             }
             var buffer = mutableListOf<UIMessagePart>()
+            var cut = false
             for (part in msg.parts) {
                 if (isInterjectMarked(part)) {
+                    // 【插话可逆 · 2026-10-01】切出来的两截不能顶着同一个 id：
+                    // 刷新时 updateCurrentMessages 按 id 找，后半会把前半顶掉（宝实测"跳过"）。
+                    // 前半沿用原 id（合并后会话里就是它），后半必须换新 id。
                     if (buffer.isNotEmpty()) {
                         out.add(msg.copy(parts = buffer))
                         buffer = mutableListOf()
+                        cut = true
                     }
-                    // 只认文字；标记是内部记号，不进请求
+                    // 只认文字；正文里不带标记（模型看不见这个记号），但记号要跟着上路，
+                    // 好让流式回来时 collapseInterjections 认得出这句是宝插的。
                     val text = (part as? UIMessagePart.Text)?.text.orEmpty()
                     if (text.isNotBlank()) {
                         out.add(
                             UIMessage(
                                 role = MessageRole.USER,
-                                parts = listOf(UIMessagePart.Text(text))
+                                parts = listOf(
+                                    UIMessagePart.Text(
+                                        text = text,
+                                        metadata = JsonObject(mapOf("interject" to JsonPrimitive(true)))
+                                    )
+                                )
                             )
                         )
                     }
@@ -2252,7 +2267,32 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                     buffer.add(part)
                 }
             }
-            if (buffer.isNotEmpty()) out.add(msg.copy(parts = buffer))
+            if (buffer.isNotEmpty()) {
+                out.add(if (cut) msg.copy(id = Uuid.random(), parts = buffer) else msg.copy(parts = buffer))
+            }
+        }
+        return out
+    }
+
+    /**
+     * 【插话合回 · 2026-10-01】流式回传的 messages 是"发出去那一版"（宝的话被拆成了独立 user 消息），
+     * 而会话里那条早就合并过了。直接按位置塞回会话会错位——宝实测：同一句多出一条、正主被顶掉。
+     * 所以先合回原样：带 interject 记号的 user 消息挂回前一条 assistant，容器沿用前一条的 id。
+     * 一条记号都没有时原样返回（绝大多数请求走这条，零开销）。
+     */
+    private fun collapseInterjections(messages: List<UIMessage>): List<UIMessage> {
+        if (messages.none { msg -> msg.role == MessageRole.USER && msg.parts.any { isInterjectMarked(it) } }) {
+            return messages
+        }
+        val out = mutableListOf<UIMessage>()
+        for (msg in messages) {
+            val isInterjectUser = msg.role == MessageRole.USER && msg.parts.any { isInterjectMarked(it) }
+            val last = out.lastOrNull()
+            if (isInterjectUser && last != null && last.role == MessageRole.ASSISTANT) {
+                out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
+            } else {
+                out.add(msg)
+            }
         }
         return out
     }
