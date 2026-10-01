@@ -243,27 +243,55 @@ object MemoryInjector {
                 }
                 val timeFallback = nowMs - cacheTs > 6 * 60 * 60 * 1000L || lastRefreshDate != todayStr
                 val msgTriggered = msgDelta >= threshold.toLong() || msgDelta < 0L
-                if (recentEventsText == null || timeFallback || msgTriggered) {
+                val willFire = recentEventsText == null || timeFallback || msgTriggered
+                // 【2026-10-01 诊断】一次说清这轮刷新到底被谁触发。实测"每 3-4 分钟就刷一次"，
+                // 比设计的 30 条节拍密集得多；msgDelta < 0 是头号嫌疑（窗口起点重开会重算，
+                // 一飘回负数这里就判成"该拉"）。留证据，别靠猜。
+                AppLogBuffer.log(
+                    TAG,
+                    "EventBeat winFirst=$windowFirstIndex" +
+                        " lastWinFirst=${if (lastWindowFirst == Int.MIN_VALUE) "unset" else lastWindowFirst}" +
+                        " delta=$msgDelta threshold=$threshold msgTriggered=$msgTriggered" +
+                        " timeFallback=$timeFallback cacheEmpty=${recentEventsText == null} willFire=$willFire"
+                )
+                if (willFire) {
                     val service = me.rerere.rikkahub.data.service.ExternalMemoryService(recentConfigs.first())
                     val events = service.fetchRecentEvents(assistant.id.toString(), days = 3).getOrDefault(emptyList())
                     // 【注入分档 · 2026-09-11 宝+橘仔】章节总结（episode_summaries = 二次总结）：
                     // 远处的粗粒度用它顶——一天几章、每章 60~90 字，比把当天 90 条原始事件全塞进去省得多。
                     val episodes = service.fetchEpisodeSummaries(assistant.id.toString(), days = 3).getOrDefault(emptyList())
                     // 未闭合事件（ongoing=true）：进行中的长期状态（手伤恢复/吃药调药/进行中项目约定），不受 3 天窗口限制
-                    val ongoingEvents = service.fetchOngoingEvents(assistant.id.toString()).getOrDefault(emptyList())
-                    if (ongoingEvents.isNotEmpty()) {
-                        val ob = StringBuilder()
-                        ongoingEvents.forEach { e ->
-                            val tl = if (e.timeLabel.isNotBlank()) "〔${e.timeLabel} · ${e.sourceDate.substring(5).replace("-", "/")}〕" else ""
-                            ob.appendLine("$tl${e.title}：${e.content}")
+                    // 【2026-10-01 修 · 空和失败要分开】拉失败 ≠ 没有。
+                    // 原写法 fetchOngoingEvents(...).getOrDefault(emptyList()) 把"拉不到"和"真的没东西"合并成同一个空列表，
+                    // 于是网络一抖就走进 else 分支、连缓存一起 prefs.remove() —— 下一轮拿到 null，
+                    // buildMemoryBlock 里 `if (!ongoingEventsText.isNullOrBlank())` 判定整格不画。
+                    // 这一格坐在稳定前缀中间，一消失/一出现，后面约 17 万字符全部重算
+                    //（PromptDiff 实测：每 3-4 分钟翻一次，共同前缀死卡 143897）。
+                    // 现在：成功且空 → 清缓存（这才是"真的没有"）；拉失败 → 什么都不动，
+                    // ongoingEventsText 保持上面第 196 行从 prefs 读出来的缓存值。
+                    val ongoingResult = service.fetchOngoingEvents(assistant.id.toString())
+                    if (ongoingResult.isSuccess) {
+                        val ongoingEvents = ongoingResult.getOrDefault(emptyList())
+                        if (ongoingEvents.isNotEmpty()) {
+                            val ob = StringBuilder()
+                            ongoingEvents.forEach { e ->
+                                val tl = if (e.timeLabel.isNotBlank()) "〔${e.timeLabel} · ${e.sourceDate.substring(5).replace("-", "/")}〕" else ""
+                                ob.appendLine("$tl${e.title}：${e.content}")
+                            }
+                            ongoingEventsText = ob.toString()
+                            prefs.edit().putString("ongoing_events_${assistant.id}", ongoingEventsText).apply()
+                            AppLogBuffer.log(TAG, "Ongoing events refreshed: ${ongoingEvents.size} events")
+                        } else {
+                            ongoingEventsText = null
+                            prefs.edit().remove("ongoing_events_${assistant.id}").apply()
+                            AppLogBuffer.log(TAG, "Ongoing events: none（当前没有未闭合事件）")
                         }
-                        ongoingEventsText = ob.toString()
-                        prefs.edit().putString("ongoing_events_${assistant.id}", ongoingEventsText).apply()
-                        AppLogBuffer.log(TAG, "Ongoing events refreshed: ${ongoingEvents.size} events")
                     } else {
-                        ongoingEventsText = null
-                        prefs.edit().remove("ongoing_events_${assistant.id}").apply()
-                        AppLogBuffer.log(TAG, "Ongoing events: none（当前没有未闭合事件）")
+                        AppLogBuffer.log(
+                            TAG,
+                            "Ongoing events: fetch FAILED, keep cached（拉失败，沿用缓存，不清空）" +
+                                " cached=${if (ongoingEventsText.isNullOrBlank()) "none" else "${ongoingEventsText.length} chars"}"
+                        )
                     }
 
                     if (events.isNotEmpty()) {
