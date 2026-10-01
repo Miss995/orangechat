@@ -42,7 +42,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
@@ -115,7 +114,6 @@ import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
 import me.rerere.rikkahub.ui.pages.debug.DebugPage
 import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
-import me.rerere.rikkahub.ui.pages.disclaimer.DisclaimerPage
 import me.rerere.rikkahub.ui.pages.disclaimer.LegalPage
 import me.rerere.rikkahub.ui.pages.extensions.ExtensionsPage
 import me.rerere.rikkahub.ui.pages.extensions.ExternalMemoriesPage
@@ -344,26 +342,13 @@ class RouteActivity : ComponentActivity() {
     fun AppRoutes() {
         val toastState = rememberToasterState()
         val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
-        val scope = rememberCoroutineScope()
         val tts = rememberCustomTtsState()
 
-        // 首次启动：未同意免责声明时强制展示
-        if (!settings.disclaimerAccepted) {
-            DisclaimerPage(
-                onAccept = {
-                    scope.launch {
-                        settingsStore.update {
-                            it.copy(
-                                disclaimerAccepted = true,
-                                disclaimerAcceptedAt = (System.currentTimeMillis() / 1000).toInt()
-                            )
-                        }
-                    }
-                },
-                onDecline = { finish() }
-            )
-            return
-        }
+        // 【免责声明页关闭 · 2026-10-01 宝：一个人用，不要这个页】
+        // 原逻辑：if (!settings.disclaimerAccepted) { DisclaimerPage(...); return }
+        // 关掉的原因除了不要，还有个 bug：settings 是异步读的，第一帧读不到"已同意"，
+        // 默认值是 false，所以同意过的人每次冷启动都会先闪一下协议页再跳走。
+        // 直接删掉整段，一次都不会闪。
         val asr = rememberCustomAsrState()
         val eventBus = koinInject<AppEventBus>()
         val migrationState by DatabaseMigrationTracker.state.collectAsStateWithLifecycle()
