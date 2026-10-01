@@ -1118,7 +1118,15 @@ class GenerationHandler(
                 }
             } finally {
                 runCatching {
-                    AppLogBuffer.log("StreamDone", "contentTotal=$streamContentTotal finish=$streamFinishReason")
+                    // 【缓存命中留痕 · 2026-10-01】界面上那行"XX K tok（XX K cached）"是算出来的，
+                    // 日志环里没有；出问题（例如某轮 cached 只有 70K）时没处可查。
+                    // 这里把 API 报的 usage 落到 StreamDone 一并记下，filter "StreamDone" 即可。
+                    val u = messages.lastOrNull()?.usage
+                    AppLogBuffer.log(
+                        "StreamDone",
+                        "contentTotal=$streamContentTotal finish=$streamFinishReason" +
+                            " prompt=${u?.promptTokens ?: 0} cached=${u?.cachedTokens ?: 0} out=${u?.completionTokens ?: 0}"
+                    )
                 }
             }
         } else {
