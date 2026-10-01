@@ -91,6 +91,8 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowDown01
+import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.PlayCircle
@@ -1234,25 +1236,59 @@ private fun QuotedMessageChip(quoted: UIMessage) {
     }
 }
 
-// 【插话定位 · 2026-09-30】宝在猫生成中间插的那句。
-// 嵌在猫的正文之间，上下各留一条缝，缩进一点、颜色淡一档，好跟猫自己的正文分开。
+// 【插话折叠条 · 2026-10-01】照思考链的壳做：图标 + 一行小字 + 展开箭头，点开看原话。
+// 不套 ChainOfThought 那个 scope（它是内部建的，外面拿不到；硬包还会带上时间线竖杠）。
+// 默认展开：插话是宝正在说的话，藏起来还得点一下才看得见，反而不像在对话。
 @Composable
 private fun ChatMessageInterjectedMessage(message: UIMessage) {
     val text = remember(message) {
         message.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
     }
     if (text.isBlank()) return
+    var expanded by remember(message) { mutableStateOf(true) }
+    val accent = MaterialTheme.colorScheme.primary
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 12.dp)
-            .padding(vertical = 10.dp),
+            .padding(vertical = 4.dp),
     ) {
-        Text(
-            text = text,
-            style = LocalTextStyle.current.copy(
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            ),
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = !expanded }
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // 图标先用一个小圆点占位（跟思考链那朵橘瓣区分开），等挑好再换
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(accent),
+            )
+            Text(
+                text = stringResource(R.string.chat_message_interjected_label),
+                style = MaterialTheme.typography.titleSmall,
+                color = accent,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (expanded) {
+            Text(
+                text = text,
+                style = LocalTextStyle.current.copy(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+                modifier = Modifier.padding(start = 22.dp, top = 2.dp, bottom = 6.dp),
+            )
+        }
     }
 }
