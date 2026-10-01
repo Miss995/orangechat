@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 import kotlinx.datetime.TimeZone
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.datetime.toInstant
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tick01
@@ -367,21 +368,23 @@ private fun ChatListNormal(
         }
 
         // 【插话定位 · 2026-09-30】预扫描：把"插话消息"按 id 收起来，交给猫那条消息渲染。
-        // 判据跟以前一致（她这条在她前一条猫消息完成之前发的 = 插话），区别是从此不再单独给它开气泡，
-        // 而是让猫的消息按 parts 里 metadata["interject"] 的锚点，把它画在正文中间。
+        // 【判据换源 · 2026-10-01 宝实测后修】原来用 msg.createdAt < prev.finishedAt，
+        // 但 UIMessage.finishedAt 从来没被写过（代码只给 Reasoning part 写结束时间，
+        // 消息自己那个字段一直是 null），判据永远不成立。
+        // 换成锚点：搭车那一刻 GenerationHandler 在猫那条的 last part 上写了
+        // metadata{"interject": "<宝那条消息的 id>"}，拿它跟 msg.id 对，对上就是插话。
         val interjectionsById = remember(displayNodes) {
-            val tz = TimeZone.currentSystemDefault()
             buildMap<String, UIMessage> {
                 displayNodes.forEachIndexed { index, node ->
                     val prev = displayNodes.getOrNull(index - 1) ?: return@forEachIndexed
-                    val finishedAt = prev.currentMessage.finishedAt ?: return@forEachIndexed
                     val msg = node.currentMessage
-                    if (msg.role == MessageRole.USER &&
-                        prev.currentMessage.role == MessageRole.ASSISTANT &&
-                        msg.createdAt.toInstant(tz) < finishedAt.toInstant(tz)
-                    ) {
-                        put(msg.id.toString(), msg)
+                    if (msg.role != MessageRole.USER) return@forEachIndexed
+                    if (prev.currentMessage.role != MessageRole.ASSISTANT) return@forEachIndexed
+                    val anchored = prev.currentMessage.parts.any { part ->
+                        val v = part.metadata?.get("interject")
+                        v is JsonPrimitive && v.content.split(",").any { it.trim() == msg.id.toString() }
                     }
+                    if (anchored) put(msg.id.toString(), msg)
                 }
             }
         }
@@ -400,17 +403,10 @@ private fun ChatListNormal(
                 items = displayNodes,
                 key = { index, item -> item.id },
             ) { index, node ->
-                // 【插话贴猫 · 2026-09-30】判据：她这条在她前一条猫消息"完成之前"发的 = 插话
-                // （搭车和接力都是这个特征）。纯显示层算，不碰数据层。
-                val prevNode = displayNodes.getOrNull(index - 1)
-                val prevFinishedAt = prevNode?.currentMessage?.finishedAt
-                val tz = TimeZone.currentSystemDefault()
-                val isInterjection =
-                    node.currentMessage.role == MessageRole.USER &&
-                        prevNode?.currentMessage?.role == MessageRole.ASSISTANT &&
-                        prevFinishedAt != null &&
-                        node.currentMessage.createdAt.toInstant(tz) <
-                        prevFinishedAt.toInstant(tz)
+                // 【插话贴猫 · 2026-09-30】她这条是不是插话，直接查上面预扫描那张表。
+                // 【判据换源 · 2026-10-01】不再用 msg.createdAt < prev.finishedAt 那个走不通的判据
+                // （UIMessage.finishedAt 从没被写过），改查锚点表。
+                val isInterjection = interjectionsById.containsKey(node.currentMessage.id.toString())
                 // 【插话定位 · 2026-09-30】插话不再自己画一条：它的内容由前一条猫消息
                 // 按锚点渲染（见 ChatMessage 的 interjections 参数）。这里留一个空 item。
                 if (isInterjection) return@itemsIndexed

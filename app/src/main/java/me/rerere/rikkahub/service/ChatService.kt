@@ -2109,7 +2109,6 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
     private fun mergeInterjectionsIntoAssistant(conversation: Conversation): Conversation {
         val nodes = conversation.messageNodes
         if (nodes.size < 2) return conversation
-        val tz = TimeZone.currentSystemDefault()
         val result = nodes.toMutableList()
         var changed = false
         var i = result.size - 1
@@ -2118,12 +2117,23 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             val msg = node.messages.getOrNull(node.selectIndex)
             val prevNode = result[i - 1]
             val prevMsg = prevNode.messages.getOrNull(prevNode.selectIndex)
-            val prevFinished = prevMsg?.finishedAt
+            // 【判据换源 · 2026-10-01 宝实测后修】原判据是 msg.createdAt < prevMsg.finishedAt，
+            // 但 UIMessage.finishedAt 从来没被写过（代码只给 Reasoning part 写结束时间，
+            // 消息自己那个字段一直是 null），所以判据永远不成立、合并永远不发生。
+            // 换成搭车留下的锚点：GenerationHandler 在猫那条的 last part 上写了
+            // metadata{"interject": "<宝那条消息的 id>"}，拿它跟 msg.id 对，对上就是插话。
+            // 这个锚点是她插话那一刻留下的真痕迹，比时间准。
+            val anchorIds = prevMsg?.parts
+                ?.mapNotNull { (it.metadata?.get("interject") as? JsonPrimitive)?.content }
+                ?.filter { it != "true" }
+                ?.flatMap { it.split(",") }
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                .orEmpty()
             val isInterject = msg != null &&
                 msg.role == MessageRole.USER &&
                 prevMsg?.role == MessageRole.ASSISTANT &&
-                prevFinished != null &&
-                msg.createdAt.toInstant(tz) < prevFinished.toInstant(tz)
+                anchorIds.contains(msg.id.toString())
             if (isInterject && msg != null && prevMsg != null) {
                 val tagged = msg.parts.map { part ->
                     val oldMeta = part.metadata
