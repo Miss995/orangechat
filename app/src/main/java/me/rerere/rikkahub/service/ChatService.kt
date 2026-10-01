@@ -2285,29 +2285,14 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             return messages
         }
         val out = mutableListOf<UIMessage>()
-        var pendingMerge = false
         for (msg in messages) {
             val isInterjectUser = msg.role == MessageRole.USER && msg.parts.any { isInterjectMarked(it) }
-            if (isInterjectUser) {
-                val last = out.lastOrNull()
-                if (last != null && last.role == MessageRole.ASSISTANT) {
-                    out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
-                    pendingMerge = true
-                    continue
-                }
+            val last = out.lastOrNull()
+            if (isInterjectUser && last != null && last.role == MessageRole.ASSISTANT) {
+                out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
+            } else {
+                out.add(msg)
             }
-            // 紧跟在她那句后面的那条 assistant 是"猫的下半截"，也要并回同一条，
-            // 否则一条回复会被拆成两条（宝原话：我这两条正文被分开了）。
-            if (pendingMerge && msg.role == MessageRole.ASSISTANT) {
-                val last = out.lastOrNull()
-                if (last != null && last.role == MessageRole.ASSISTANT) {
-                    out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
-                    pendingMerge = false
-                    continue
-                }
-            }
-            pendingMerge = false
-            out.add(msg)
         }
         return out
     }
