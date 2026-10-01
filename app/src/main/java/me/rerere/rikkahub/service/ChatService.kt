@@ -2285,12 +2285,23 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             return messages
         }
         val out = mutableListOf<UIMessage>()
+        // 【合回补全 · 2026-10-02】上一版只合了"宝那句"，把切出来的**后半截**漏在外面当独立一条。
+        // 后果（STRAY 日志实录）：会话里那条是 1 条、回来却是 2 条 → 列表比节点树多 1 →
+        // updateCurrentMessages 按位置对齐时整体错位一格 → 每条消息都长出 <2/2> 分支。
+        // 每插一次话欠 1 条，攒起来就是"整段历史全有版本"。所以后半截也得并回去。
+        var justMerged = false
         for (msg in messages) {
             val isInterjectUser = msg.role == MessageRole.USER && msg.parts.any { isInterjectMarked(it) }
             val last = out.lastOrNull()
             if (isInterjectUser && last != null && last.role == MessageRole.ASSISTANT) {
                 out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
+                justMerged = true
+            } else if (justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT) {
+                // 紧跟在插话后面的那半截正文：并回同一条，别让它独立成条
+                out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
+                justMerged = false
             } else {
+                justMerged = false
                 out.add(msg)
             }
         }
