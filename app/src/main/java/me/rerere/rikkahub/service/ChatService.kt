@@ -2138,7 +2138,25 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                         else -> part
                     }
                 }
-                val mergedMsg = prevMsg.copy(parts = prevMsg.parts + tagged)
+                // 【旧锚点清理 · 2026-10-01】搭车那一刻在猫的 last part 上留过一个
+                // metadata{"interject": "<消息id串>"} 的锚点（上一版的画法）。合并之后
+                // 内容已经挂进来了、也带了 true 标，那个锚点就成了第二套记号 —— 同一处
+                // 会被画两次（宝实测截图：多出一条）。这里顺手把非 boolean 的锚点抹掉。
+                val cleanedParts = prevMsg.parts.map { part ->
+                    val meta = part.metadata ?: return@map part
+                    val v = meta["interject"]
+                    if (v is JsonPrimitive && v.content != "true") {
+                        val filtered = JsonObject(meta.filterKeys { it != "interject" })
+                        when (part) {
+                            is UIMessagePart.Text -> part.copy(metadata = filtered)
+                            is UIMessagePart.Image -> part.copy(metadata = filtered)
+                            else -> part
+                        }
+                    } else {
+                        part
+                    }
+                }
+                val mergedMsg = prevMsg.copy(parts = cleanedParts + tagged)
                 val newMessages = prevNode.messages.toMutableList().also { list ->
                     val idx = prevNode.selectIndex.coerceIn(0, list.size - 1)
                     list[idx] = mergedMsg
