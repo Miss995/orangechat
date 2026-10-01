@@ -1511,6 +1511,11 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 // 锚点只活在请求副本里，落库会话上不认它，所以合并要靠这本账。
                 val rodeIds = rodeInterjectIds.remove(conversationId).orEmpty()
                 latest = mergeInterjectionsIntoAssistant(latest, rodeIds)
+                // 【回写内存 · 2026-10-01 宝实测第二轮】只合并落库不够：界面读的是内存态
+                // （session.state.value），收尾不写回它，下一条回复一来列表重建，宝那句
+                // 又会从折叠条变回独立消息（宝原话："只有在你那条消息发出来之后才会跳回去"）。
+                // 这个 internal 的 updateConversation 只写内存、不落库、不重写 nodeIndex。
+                updateConversation(conversationId, latest)
                 saveConversation(conversationId, latest)
                 latest
             }
