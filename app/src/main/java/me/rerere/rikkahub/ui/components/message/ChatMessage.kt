@@ -797,7 +797,9 @@ private fun MessagePartsBlock(
         if (!anchorIds.isNullOrBlank() && anchorIds != "true") {
             anchorIds.split(",").forEach { anchorId ->
                 interjections[anchorId.trim()]?.let { interjected ->
-                    ChatMessageInterjectedMessage(message = interjected)
+                    // 【插话排队态 · 2026-10-01】走在老路上＝宝那条还在列表里、等着被并进去，
+                    // 所以标题写"排队中"；并进去之后走新路，标题换成"你的插话"。
+                    ChatMessageInterjectedMessage(message = interjected, pending = true)
                 }
             }
         }
@@ -1250,6 +1252,9 @@ private fun QuotedMessageChip(quoted: UIMessage) {
 private fun ChatMessageInterjectedMessage(
     message: UIMessage? = null,
     part: UIMessagePart? = null,
+    // 【插话排队态 · 2026-10-01】true＝宝发了、猫还没轮到（还在列表里等着被并）；
+    // false＝已经并进猫的回复里。两态共用这一套壳，标题跟着换，视觉上不跳。
+    pending: Boolean = false,
 ) {
     val text = remember(message, part) {
         when {
@@ -1285,7 +1290,10 @@ private fun ChatMessageInterjectedMessage(
                     .background(accent),
             )
             Text(
-                text = stringResource(R.string.chat_message_interjected_label),
+                text = stringResource(
+                    if (pending) R.string.chat_message_interjected_pending
+                    else R.string.chat_message_interjected_label
+                ),
                 style = MaterialTheme.typography.titleSmall,
                 color = accent,
                 modifier = Modifier.weight(1f),

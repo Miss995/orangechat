@@ -245,7 +245,8 @@
   <string name="chat_message_tool_call_label">Called tool %1$s</string>
   <string name="chat_message_tool_call_result">Call result</string>
   <string name="chat_message_tool_call_title">Tool Call</string>
-  <string name="chat_message_interjected_label">你说了一句</string>
+  <string name="chat_message_interjected_label">你的插话</string>
+  <string name="chat_message_interjected_pending">排队中</string>
   <string name="chat_message_tool_clipboard_read">Read clipboard</string>
   <string name="chat_message_tool_clipboard_write">Write clipboard</string>
   <string name="chat_message_tool_create_memory">Created memory</string>
