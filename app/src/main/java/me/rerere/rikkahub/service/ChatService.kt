@@ -250,6 +250,14 @@ class ChatService(
     private val pendingInterjections =
         java.util.concurrent.ConcurrentHashMap<Uuid, MutableList<UIMessage>>()
 
+    // 【插话搭车记账 · 2026-10-01】这一回合里真的被搭上车的插话消息 id。
+    // 提供方取队列时顺手写进来；收尾合并时读它。
+    // 为什么要这本账：搭车那一刻打的 metadata 记号只存在于"请求副本"里，
+    // 落库的会话上没有，合并按 metadata 去找永远找不到人（宝实测：折叠条一刷新就散、
+    // 日志里从来没有 merged）。账在本侧记，落库会话也认。
+    private val rodeInterjectIds =
+        java.util.concurrent.ConcurrentHashMap<Uuid, MutableList<String>>()
+
     // 前台状态管理
     private val _isForeground = MutableStateFlow(false)
     val isForeground: StateFlow<Boolean> = _isForeground.asStateFlow()
@@ -1234,7 +1242,17 @@ class ChatService(
                 },
                 // 【插话搭车 · 2026-09-30】取即清空：这一回合每步请求前看一眼排队中的插话，
                 // 有就并进去（宝的话跟着猫的下一口气走），取完队列空 = 兜底接力不会再补一轮。
-                pendingInterjections = { pendingInterjections.remove(conversationId) ?: emptyList() },
+                pendingInterjections = {
+                    val taken = pendingInterjections.remove(conversationId) ?: emptyList()
+                    // 【搭车记账 · 2026-10-01】取走的同时记一笔：这些 id 真的被并进去了。
+                    // 收尾合并时不靠 metadata 猜，直接读这本账。
+                    if (taken.isNotEmpty()) {
+                        rodeInterjectIds.computeIfAbsent(conversationId) {
+                            java.util.Collections.synchronizedList(mutableListOf<String>())
+                        }.addAll(taken.map { it.id.toString() })
+                    }
+                    taken
+                },
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {
@@ -1489,7 +1507,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 var latest = getConversationFlow(conversationId).value
                 // 【插话合并 · 2026-10-01】落库前先把宝插话的那条并进猫的回复里。
                 // 不并的话界面上是"两条并排"，皮（折叠条）贴在两条的骨架上，怎么调都像异物。
-                latest = mergeInterjectionsIntoAssistant(latest)
+                // 【搭车记账 · 2026-10-01】除了 metadata 锚点，再带上"这一回合真被搭过车的 id"：
+                // 锚点只活在请求副本里，落库会话上不认它，所以合并要靠这本账。
+                val rodeIds = rodeInterjectIds.remove(conversationId).orEmpty()
+                latest = mergeInterjectionsIntoAssistant(latest, rodeIds)
                 saveConversation(conversationId, latest)
                 latest
             }
@@ -2106,7 +2127,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
      *
      * 纯数据层，不碰 UI；从后往前扫一遍，只在收尾调一次。
      */
-    private fun mergeInterjectionsIntoAssistant(conversation: Conversation): Conversation {
+    private fun mergeInterjectionsIntoAssistant(
+        conversation: Conversation,
+        rodeIds: List<String> = emptyList(),
+    ): Conversation {
         val nodes = conversation.messageNodes
         if (nodes.size < 2) return conversation
         val result = nodes.toMutableList()
@@ -2130,10 +2154,13 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 ?.map { it.trim() }
                 ?.filter { it.isNotEmpty() }
                 .orEmpty()
+            // 【搭车记账 · 2026-10-01】两个来源取并集：metadata 锚点（老路，只存在于请求副本，
+            // 落库会话上不一定有），加上这一回合真被搭过车的 id（新路，来自 ChatService 的记账，
+            // 落库会话也认它）。宝实测的问题就是老路永远找不到人，所以必须带上新路。
             val isInterject = msg != null &&
                 msg.role == MessageRole.USER &&
                 prevMsg?.role == MessageRole.ASSISTANT &&
-                anchorIds.contains(msg.id.toString())
+                (anchorIds.contains(msg.id.toString()) || rodeIds.contains(msg.id.toString()))
             if (isInterject && msg != null && prevMsg != null) {
                 val tagged = msg.parts.map { part ->
                     val oldMeta = part.metadata
