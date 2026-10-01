@@ -43,6 +43,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.runBlocking
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import kotlinx.serialization.json.JsonObject
 import me.rerere.rikkahub.data.ai.AppLogBuffer
 import kotlinx.serialization.json.Json
@@ -132,20 +134,6 @@ private const val TAG = "ChatService"
 
 /** 浮现节拍账本（SharedPreferences 名）· 2026-09-29 */
 private const val SURFACING_PREFS = "surfacing_tick"
-
-/**
- * 窗口快照账本（SharedPreferences 名）· 2026-09-30 宝的方案。
- *
- * 记「上次这个对话的窗口装了多少条」，重开照它拉，不写死 300。
- *
- * 治的是：窗口条数本来在 300~306 之间浮动（攒一组裁一组），重开时固定拉 300 条
- * 会把这个浮动静默收圆 → 窗口起点跟着挪 0~6 条 → 请求体真变了 → 缓存从那断一次。
- * 存了这个数，重开的窗口跟重开前一模一样，起点不动，缓存不断。
- */
-private const val WINDOW_SNAPSHOT_PREFS = "window_snapshot"
-
-/** 快照夹取上界：正常浮动不会超过 300+20，防全量传入之类的异常值把窗口撑大 */
-private const val WINDOW_SNAPSHOT_MAX_SLACK = 20
 
 /**
  * 【懒加载窗口 2026-08-25】打开对话时只加载最近 N 条消息节点到内存。
@@ -431,21 +419,7 @@ class ChatService(
         getOrCreateSession(conversationId) // 确保 session 存在
         // 总是从数据库重新加载最新数据，确保能显示主动消息等新内容
         // 【懒加载窗口】只加载最近 CONVERSATION_LOAD_WINDOW_SIZE 条，长对话打开不再全量加载
-        // 【窗口快照 · 2026-09-30 宝的方案】条数不写死 300，照上次存的拉：
-        // 窗口在 300~306 浮动，收圆会让请求体起点挪 0~6 条、白断一次缓存。
-        val savedWindowSize = context
-            .getSharedPreferences(WINDOW_SNAPSHOT_PREFS, Application.MODE_PRIVATE)
-            .getInt("window_size_$conversationId", CONVERSATION_LOAD_WINDOW_SIZE)
-            .coerceIn(
-                CONVERSATION_LOAD_WINDOW_SIZE,
-                CONVERSATION_LOAD_WINDOW_SIZE + WINDOW_SNAPSHOT_MAX_SLACK
-            )
-        val conversation = conversationRepo.getConversationById(conversationId, savedWindowSize)
-        // 【窗口快照 · 2026-09-30】验证用：看读到的快照和实际拉到的条数
-        AppLogBuffer.log(
-            TAG,
-            "WIN_SNAP conv=$conversationId saved=$savedWindowSize loaded=${conversation?.messageNodes?.size ?: -1}"
-        )
+        val conversation = conversationRepo.getConversationById(conversationId, CONVERSATION_LOAD_WINDOW_SIZE)
         if (conversation != null) {
             // 记录懒加载窗口边界：窗口第一条 node 在数据库中的 nodeIndex（保存时合并窗口外历史用）
             val totalCount = conversationRepo.getMessageNodeCount(conversationId.toString())
@@ -1230,7 +1204,10 @@ class ChatService(
                     }
                 }.let { msgs ->
                     // 【消息引用 2026-09-22】被引原文由 QuotedMessageTransformer 拼（只改请求，不落库）
-                    msgs
+                    // 【插话还原 · 2026-10-01】合并后宝那句挂在猫的回复里（part 带 interject 标），
+                    // 发之前拆回来：猫的正文A ／ 宝的话（独立 user 消息）／ 猫的正文B。
+                    // 不拆的话模型会以为那句是它自己说的。
+                    expandInterjections(msgs)
                 },
                 assistant = assistant,
                 conversationSystemPrompt = conversation.customSystemPrompt,
@@ -1509,7 +1486,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             Logging.log(TAG, it.stackTraceToString())
         }.onSuccess {
             val finalConversation = session.saveMutex.withLock {
-                val latest = getConversationFlow(conversationId).value
+                var latest = getConversationFlow(conversationId).value
+                // 【插话合并 · 2026-10-01】落库前先把宝插话的那条并进猫的回复里。
+                // 不并的话界面上是"两条并排"，皮（折叠条）贴在两条的骨架上，怎么调都像异物。
+                latest = mergeInterjectionsIntoAssistant(latest)
                 saveConversation(conversationId, latest)
                 latest
             }
@@ -2115,6 +2095,114 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         }
     }
 
+    /**
+     * 【插话合并 · 2026-10-01】把宝插话的那条并进前一条猫的回复里。
+     *
+     * 判据跟显示层（ChatList）一致：她这条的 createdAt 早于前一条 assistant 的 finishedAt
+     * ＝ 她是在猫还没写完的时候发的。搭车和兜底接力都是这个特征。
+     *
+     * 合并方式：她那句的 parts 挂到猫那条末尾，每个 part 打上 interject 标；
+     * 独立那条从列表里删掉。发请求时会按标拆回三条（见 GenerationHandler）。
+     *
+     * 纯数据层，不碰 UI；从后往前扫一遍，只在收尾调一次。
+     */
+    private fun mergeInterjectionsIntoAssistant(conversation: Conversation): Conversation {
+        val nodes = conversation.messageNodes
+        if (nodes.size < 2) return conversation
+        val tz = TimeZone.currentSystemDefault()
+        val result = nodes.toMutableList()
+        var changed = false
+        var i = result.size - 1
+        while (i >= 1) {
+            val node = result[i]
+            val msg = node.messages.getOrNull(node.selectIndex)
+            val prevNode = result[i - 1]
+            val prevMsg = prevNode.messages.getOrNull(prevNode.selectIndex)
+            val prevFinished = prevMsg?.finishedAt
+            val isInterject = msg != null &&
+                msg.role == MessageRole.USER &&
+                prevMsg?.role == MessageRole.ASSISTANT &&
+                prevFinished != null &&
+                msg.createdAt.toInstant(tz) < prevFinished.toInstant(tz)
+            if (isInterject && msg != null && prevMsg != null) {
+                val tagged = msg.parts.map { part ->
+                    val oldMeta = part.metadata
+                    val newMeta = if (oldMeta == null) {
+                        JsonObject(mapOf("interject" to JsonPrimitive(true)))
+                    } else {
+                        JsonObject(oldMeta + ("interject" to JsonPrimitive(true)))
+                    }
+                    when (part) {
+                        is UIMessagePart.Text -> part.copy(metadata = newMeta)
+                        is UIMessagePart.Image -> part.copy(metadata = newMeta)
+                        else -> part
+                    }
+                }
+                val mergedMsg = prevMsg.copy(parts = prevMsg.parts + tagged)
+                val newMessages = prevNode.messages.toMutableList().also { list ->
+                    val idx = prevNode.selectIndex.coerceIn(0, list.size - 1)
+                    list[idx] = mergedMsg
+                }
+                result[i - 1] = prevNode.copy(messages = newMessages)
+                result.removeAt(i)
+                changed = true
+                AppLogBuffer.log(
+                    TAG,
+                    "interject: merged into assistant node idx=${i - 1} parts=${tagged.size}"
+                )
+            }
+            i--
+        }
+        return if (changed) conversation.copy(messageNodes = result) else conversation
+    }
+
+    /**
+     * 【插话还原 · 2026-10-01】合并后，宝插话的那句挂在猫的回复里（part 带 metadata{"interject": true}）。
+     * 发给模型前把它拎出来，切成：猫的正文A ／ 宝的话（独立 user 消息）／ 猫的正文B。
+     * 不拆的话模型会以为那句是它自己说的。
+     *
+     * 一条都没有记号时原样返回（绝大多数历史走这条，零开销）。
+     */
+    private fun expandInterjections(messages: List<UIMessage>): List<UIMessage> {
+        if (messages.none { msg -> msg.parts.any { isInterjectMarked(it) } }) return messages
+        val out = mutableListOf<UIMessage>()
+        for (msg in messages) {
+            if (msg.role != MessageRole.ASSISTANT) {
+                out.add(msg)
+                continue
+            }
+            var buffer = mutableListOf<UIMessagePart>()
+            for (part in msg.parts) {
+                if (isInterjectMarked(part)) {
+                    if (buffer.isNotEmpty()) {
+                        out.add(msg.copy(parts = buffer))
+                        buffer = mutableListOf()
+                    }
+                    // 只认文字；标记是内部记号，不进请求
+                    val text = (part as? UIMessagePart.Text)?.text.orEmpty()
+                    if (text.isNotBlank()) {
+                        out.add(
+                            UIMessage(
+                                role = MessageRole.USER,
+                                parts = listOf(UIMessagePart.Text(text))
+                            )
+                        )
+                    }
+                } else {
+                    buffer.add(part)
+                }
+            }
+            if (buffer.isNotEmpty()) out.add(msg.copy(parts = buffer))
+        }
+        return out
+    }
+
+    /** part 上有没有"这句是宝插进来的"记号。 */
+    private fun isInterjectMarked(part: UIMessagePart): Boolean {
+        val v = part.metadata?.get("interject") ?: return false
+        return v is JsonPrimitive && v.content == "true"
+    }
+
     suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
         val exists = conversationRepo.existsConversationById(conversation.id)
         if (!exists && conversation.title.isBlank() && conversation.messageNodes.isEmpty()) {
@@ -2267,15 +2355,6 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             toSave
         }
         updateConversation(conversationId, windowState)
-        // 【窗口快照 · 2026-09-30 宝的方案】把这一轮最终的窗口条数记下来，
-        // 下次重开照它拉，条数不收圆、起点不挪、缓存不断。
-        // 只在窗口态记：全量传入那条路的条数不可信（虽然读取侧有夹取兜底）。
-        if (isWindowState) {
-            context.getSharedPreferences(WINDOW_SNAPSHOT_PREFS, Application.MODE_PRIVATE)
-                .edit()
-                .putInt("window_size_$conversationId", windowState.messageNodes.size)
-                .apply()
-        }
     }
 
     // ---- 翻译消息 ----

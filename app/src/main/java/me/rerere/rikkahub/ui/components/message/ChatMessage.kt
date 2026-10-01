@@ -780,8 +780,9 @@ private fun MessagePartsBlock(
                 }
             }
         }
-        // 【插话定位 · 2026-09-30】这一段尾巴上带了插话锚点 → 紧接着把宝的话画出来。
-        // 锚点在生成侧打（GenerationHandler 搭车那一刻），记的是宝那条消息的 id。
+        // 【插话合并 · 2026-10-01】合并之后，宝那句话的 part 直接挂在猫的回复里，
+        // 每个 part 带 metadata{"interject": true}。渲染时不再拿 id 去别处找，
+        // 认这个记号就知道：到这儿收住猫的正文、把宝的话画成折叠条。
         val anchorPart = when (block) {
             is MessagePartBlock.ThinkingBlock -> when (val lastStep = block.steps.lastOrNull()) {
                 is ThinkingStep.ReasoningStep -> lastStep.reasoning
@@ -791,13 +792,18 @@ private fun MessagePartsBlock(
             is MessagePartBlock.ContentBlock -> block.part
             else -> null
         }
+        // 老路：锚点上挂的是一串消息 id（搭车那一刻打的，兼容合并前的历史数据）
         val anchorIds = (anchorPart?.metadata?.get("interject") as? JsonPrimitive)?.content
-        if (!anchorIds.isNullOrBlank()) {
+        if (!anchorIds.isNullOrBlank() && anchorIds != "true") {
             anchorIds.split(",").forEach { anchorId ->
                 interjections[anchorId.trim()]?.let { interjected ->
                     ChatMessageInterjectedMessage(message = interjected)
                 }
             }
+        }
+        // 新路：这个 part 自己就是宝插话的内容（合并后长这样）
+        if (anchorPart != null && isInterjectPart(anchorPart)) {
+            ChatMessageInterjectedMessage(part = anchorPart)
         }
     }
  
@@ -1239,13 +1245,23 @@ private fun QuotedMessageChip(quoted: UIMessage) {
 // 【插话折叠条 · 2026-10-01】照思考链的壳做：图标 + 一行小字 + 展开箭头，点开看原话。
 // 不套 ChainOfThought 那个 scope（它是内部建的，外面拿不到；硬包还会带上时间线竖杠）。
 // 默认展开：插话是宝正在说的话，藏起来还得点一下才看得见，反而不像在对话。
+// 两种来源：①合并前的历史数据给整条 UIMessage；②合并后给的是那个带记号的 part。
 @Composable
-private fun ChatMessageInterjectedMessage(message: UIMessage) {
-    val text = remember(message) {
-        message.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
+private fun ChatMessageInterjectedMessage(
+    message: UIMessage? = null,
+    part: UIMessagePart? = null,
+) {
+    val text = remember(message, part) {
+        when {
+            part is UIMessagePart.Text -> part.text
+            message != null -> message.parts
+                .filterIsInstance<UIMessagePart.Text>()
+                .joinToString("\n") { it.text }
+            else -> ""
+        }
     }
     if (text.isBlank()) return
-    var expanded by remember(message) { mutableStateOf(true) }
+    var expanded by remember(message, part) { mutableStateOf(true) }
     val accent = MaterialTheme.colorScheme.primary
     Column(
         modifier = Modifier
@@ -1291,4 +1307,10 @@ private fun ChatMessageInterjectedMessage(message: UIMessage) {
             )
         }
     }
+}
+
+/** 【插话合并 · 2026-10-01】这个 part 是不是宝插进来的那句（合并时打的 metadata{"interject": true}）。 */
+private fun isInterjectPart(part: UIMessagePart): Boolean {
+    val v = part.metadata?.get("interject") ?: return false
+    return v is JsonPrimitive && v.content == "true"
 }
