@@ -751,6 +751,9 @@ class ChatService(
                 // 让当前那轮的收尾（落库等）写完再接手
                 kotlinx.coroutines.delay(300)
                 val leftover = pendingInterjections.remove(conversationId)
+                // 【插话不落库 · 2026-10-02】队列被拿走，界面上的"排队中"也该撤
+                //（接下来由猫那条消息里的折叠条接管）
+                syncPendingInterjectionFlow()
                 if (!leftover.isNullOrEmpty()) {
                     // 队列还在 = 这一轮没有第二次请求，宝那句没人接 → 兜底起一轮
                     AppLogBuffer.log(TAG, "interject: no ride happened, relay generation conv=$conversationId")

@@ -792,18 +792,11 @@ private fun MessagePartsBlock(
             is MessagePartBlock.ContentBlock -> block.part
             else -> null
         }
-        // 老路：锚点上挂的是一串消息 id（搭车那一刻打的，兼容合并前的历史数据）
-        val anchorIds = (anchorPart?.metadata?.get("interject") as? JsonPrimitive)?.content
-        if (!anchorIds.isNullOrBlank() && anchorIds != "true") {
-            anchorIds.split(",").forEach { anchorId ->
-                interjections[anchorId.trim()]?.let { interjected ->
-                    // 【插话排队态 · 2026-10-01】走在老路上＝宝那条还在列表里、等着被并进去，
-                    // 所以标题写"排队中"；并进去之后走新路，标题换成"你的插话"。
-                    ChatMessageInterjectedMessage(message = interjected, pending = true)
-                }
-            }
-        }
-        // 新路：这个 part 自己就是宝插话的内容（合并后长这样）
+        // 【撤老路 · 2026-10-02 宝定的根治】以前这里还有第二条路：认"锚点里挂的消息 id"，
+        // 再从 interjections 表里把宝那句捞出来画（标题"排队中"）。那是"她的话还独立躺在会话里"
+        // 那个时代的画法。现在插话压根不进会话，排队态交给列表那边（读 ChatService 的流）负责，
+        // 这里只留一条路：part 自己带记号 = 已经并进来了。
+        // （两套记号并存会各画一遍——宝实测：同一句冒出三条。）
         if (anchorPart != null && isInterjectPart(anchorPart)) {
             ChatMessageInterjectedMessage(part = anchorPart)
         }
