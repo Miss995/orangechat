@@ -909,10 +909,14 @@ class GenerationHandler(
                 val kNow = ctxStartInMemory
                 val lastK = surfacingLastK
                 var scrollNow = surfacingScroll ?: 0L
-                if (lastK != null && kNow != lastK) {
+                // 【死锁修复 · 2026-10-02】原判据是 `lastK != null && kNow != lastK`，
+                // 而唯一的写回点（onSurfacingAdvance）就在这个 if 里面 —— lastK 初值 null，
+                // 于是永远进不去、永远不写，scroll 恒 0、浮现永远同一条（先有鸡还是先有蛋）。
+                // 实测：日志里 scroll=0 lastK=-1 从未变过。改成"第一次也记一笔"。
+                if (lastK != kNow) {
                     // k 往前跳（= 上下文真换组，请求前缀本来就该断）才累加；
                     // k 变小 = 重开窗口后重算，不累加（这正是 09-29 想治的"重开跳"）。
-                    if (kNow > lastK) scrollNow += (kNow - lastK).toLong()
+                    if (lastK != null && kNow > lastK) scrollNow += (kNow - lastK).toLong()
                     onSurfacingAdvance?.invoke(scrollNow, kNow)
                 }
                 val surfacingTick = scrollNow / surfacingCycle
