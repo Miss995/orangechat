@@ -124,10 +124,10 @@ private fun rememberReasoningState(reasoning: UIMessagePart.Reasoning): Pair<Rea
     return state to loading
 }
  
-@Composable
 /** 【流式降级 · 2026-10-02】生成中思考链只渲染尾部这么多字符（保住观感，把每次重排的开销压成常数）。 */
 private const val STREAMING_TAIL_CHARS = 800
 
+@Composable
 private fun ReasoningContent(
     reasoning: UIMessagePart.Reasoning,
     assistant: Assistant?,
