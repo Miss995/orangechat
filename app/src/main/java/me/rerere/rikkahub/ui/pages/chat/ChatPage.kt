@@ -111,8 +111,6 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
     val enableWebSearch by vm.enableWebSearch.collectAsStateWithLifecycle()
     val errors by vm.errors.collectAsStateWithLifecycle()
-    // 【插话不落库 · 2026-10-02】排队中的插话（插话没进会话，列表靠它画"排队中"折叠条）
-    val pendingInterjections by vm.pendingInterjections.collectAsStateWithLifecycle()
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
@@ -317,6 +315,8 @@ private fun ChatPageContent(
     jumpTargetIndex: Int? = null,
     onExitJump: () -> Unit = {},
 ) {
+    // 【插话不落库 · 2026-10-02】排队中的插话（插话没进会话，列表靠它画"排队中"折叠条）
+    val pendingInterjections by vm.pendingInterjections.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     var previewMode by rememberSaveable { mutableStateOf(false) }
