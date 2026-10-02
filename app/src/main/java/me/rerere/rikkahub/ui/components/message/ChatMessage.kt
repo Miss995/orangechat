@@ -161,6 +161,14 @@ fun ChatMessage(
     // 不再走"独立气泡"那条路。判据和收集都在上层（ChatList）。
     interjections: Map<String, UIMessage> = emptyMap(),
 ) {
+
+    // 【重建检测 · 2026-10-02】ChatMessage 层：计数从 1 重来 = 这个 item 被列表拆了重搭。
+    // 和 MessagePartsBlock 那条（MPB）对着看，就能分清是外面拆的还是里面拆的。
+    val __cmN = remember { intArrayOf(0) }
+    __cmN[0]++
+    if (__cmN[0] <= 3) {
+        AppLogBuffer.log("MessagePartsRender", "CM n=" + __cmN[0] + " role=" + node.currentMessage.role + " nodeId=" + node.id.toString().take(8))
+    }
     val message = node.messages[node.selectIndex]
     val settings = LocalDisplaySettings.current
     val textStyle = LocalTextStyle.current.copy(
