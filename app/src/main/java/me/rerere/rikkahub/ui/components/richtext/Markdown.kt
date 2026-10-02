@@ -201,10 +201,29 @@ private fun ASTNode.containsHtml(): Boolean {
     return children.any { it.containsHtml() }
 }
 
+// 【卡顿修复 · 2026-10-02】parseMarkdown 是纯函数（同 content 同结果），但它被调用的
+// 次数远超预期：MarkdownBlock 的 remember{} 初始化是同步跑在"组合阶段"的，流式期间
+// 列表每重建一次，主线程就要把整段内容重新解析一遍。加一层小缓存——工具结果、已完成的
+// 思考链、历史消息这些都是固定内容，第二次起直接命中，不再做词法/语法分析。
+private const val MARKDOWN_CACHE_MAX = 24
+private val markdownParseCache = HashMap<String, MarkdownParseResult>()
+private val markdownParseOrder = ArrayDeque<String>()
+
 private fun parseMarkdown(content: String): MarkdownParseResult {
+    synchronized(markdownParseCache) {
+        markdownParseCache[content]?.let { return it }
+    }
     val preprocessed = preProcess(content)
     val astTree = parser.buildMarkdownTreeFromString(preprocessed)
-    return MarkdownParseResult(preprocessed, astTree, astTree.containsHtml())
+    val result = MarkdownParseResult(preprocessed, astTree, astTree.containsHtml())
+    synchronized(markdownParseCache) {
+        if (markdownParseCache.size >= MARKDOWN_CACHE_MAX && markdownParseOrder.isNotEmpty()) {
+            markdownParseCache.remove(markdownParseOrder.removeFirst())
+        }
+        markdownParseCache[content] = result
+        markdownParseOrder.addLast(content)
+    }
+    return result
 }
 
 @Composable
