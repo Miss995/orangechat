@@ -45,6 +45,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import me.rerere.rikkahub.data.ai.AppLogBuffer
 import kotlinx.serialization.json.Json
@@ -2322,7 +2323,17 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 }
             }
             if (buffer.isNotEmpty()) {
-                out.add(if (cut) msg.copy(id = Uuid.random(), parts = buffer) else msg.copy(parts = buffer))
+                // 【合不回去的真凶 · 2026-10-02】这是切出来的后半截（带着新 id）。原来靠"紧跟在插话后面"
+                // 这个位置关系合回去，但那个条件常不成立（返回列表里往往没有她那条 USER），
+                // 于是它独立成条——宝看到的"猫的上半句和下半句分开、两个号"就是它。
+                // 这里给后半截自己盖个尾标，回来不靠邻居也能认出来。
+                val tailParts = if (cut) {
+                    val ti = buffer.indexOfFirst { it is UIMessagePart.Text }
+                    if (ti >= 0) {
+                        buffer.mapIndexed { i, p -> if (i == ti) markTextPart(p, "interjectTail", "true") else p }
+                    } else buffer
+                } else buffer
+                out.add(msg.copy(parts = tailParts))
             }
         }
         return out
@@ -2347,7 +2358,14 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         for (msg in messages) {
             val isInterjectUser = msg.role == MessageRole.USER && msg.parts.any { isInterjectMarked(it) }
             val last = out.lastOrNull()
+            val isInterjectTail = msg.role == MessageRole.ASSISTANT && hasTextMark(msg, "interjectTail")
             if (isInterjectUser && last != null && last.role == MessageRole.ASSISTANT) {
+                out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
+                justMerged = true
+            } else if (isInterjectTail && last != null && last.role == MessageRole.ASSISTANT) {
+                // 【认尾标 · 2026-10-02】切出来的后半截自带记号：只要它跟在一条 assistant 后面就并回去。
+                // 不依赖"返回值里有没有她那条 USER"——实测那个条件常不成立，于是后半独立成条
+                //（宝看到的"猫的上半句和下半句分开、两个号"）。
                 out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
                 justMerged = true
             } else if (justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT) {
@@ -2367,6 +2385,20 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         val v = part.metadata?.get("interject") ?: return false
         return v is JsonPrimitive && v.content == "true"
     }
+
+    /** 给文字 part 盖一个记号（切出来的后半截靠它被认出来）。 */
+    private fun markTextPart(part: UIMessagePart, key: String, value: String): UIMessagePart {
+        if (part !is UIMessagePart.Text) return part
+        val base = part.metadata
+        val map: MutableMap<String, JsonElement> =
+            if (base != null) base.toMutableMap() else mutableMapOf()
+        map[key] = JsonPrimitive(value)
+        return part.copy(metadata = JsonObject(map))
+    }
+
+    /** 这条消息里有没有某个记号（只看文字 part）。 */
+    private fun hasTextMark(msg: UIMessage, key: String): Boolean =
+        msg.parts.any { it is UIMessagePart.Text && it.metadata?.get(key) != null }
 
     suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
         val exists = conversationRepo.existsConversationById(conversation.id)
