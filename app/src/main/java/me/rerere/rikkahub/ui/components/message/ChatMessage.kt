@@ -376,6 +376,17 @@ private fun MessagePartsBlock(
     // 就把宝的话画在正文中间，由上层 ChatList 收集好传进来。
     interjections: Map<String, UIMessage> = emptyMap(),
 ) {
+    // 【卡顿定位 · 2026-10-02】重组计数 + 距上次的间隔：流式卡死时看它涨得多快、间隔多短。
+    // （和 MessagePartsRender 那条对着看，能分清"重组"和"重建"。）
+    val __mpbN = remember { intArrayOf(0) }
+    val __mpbT = remember { longArrayOf(0L) }
+    __mpbN[0]++
+    val __nowMs = System.currentTimeMillis()
+    val __gapMs = if (__mpbT[0] == 0L) 0L else __nowMs - __mpbT[0]
+    __mpbT[0] = __nowMs
+    if (__mpbN[0] % 20 == 0) {
+        AppLogBuffer.log("MessagePartsRender", "MPB n=" + __mpbN[0] + " gap=" + __gapMs + "ms parts=" + parts.size + " loading=" + loading)
+    }
     val context = LocalContext.current
     val contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
  
