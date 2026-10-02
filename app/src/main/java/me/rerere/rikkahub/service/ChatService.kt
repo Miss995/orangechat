@@ -2362,17 +2362,14 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // updateCurrentMessages 按位置对齐时整体错位一格 → 每条消息都长出 <2/2> 分支。
         // 每插一次话欠 1 条，攒起来就是"整段历史全有版本"。所以后半截也得并回去。
         var justMerged = false
+        var mergedCount = 0
         for (msg in messages) {
             val isInterjectUser = msg.role == MessageRole.USER && msg.parts.any { isInterjectMarked(it) }
             val last = out.lastOrNull()
             val isInterjectTail = msg.role == MessageRole.ASSISTANT && hasTextMark(msg, "interjectTail")
             if (isInterjectUser && last != null && last.role == MessageRole.ASSISTANT) {
-                val __before = last.parts.joinToString("|") { it.javaClass.simpleName }
                 out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
-                AppLogBuffer.log(
-                    TAG,
-                    "[Interject] collapse: her appended. before=[$__before] herParts=${msg.parts.size} outSize=${out.size} mergedIntoId=${last.id}"
-                )
+                mergedCount++
                 justMerged = true
             } else if (isInterjectTail && last != null && last.role == MessageRole.ASSISTANT) {
                 // 【认尾标 · 2026-10-02】切出来的后半截自带记号：只要它跟在一条 assistant 后面就并回去。
@@ -2388,6 +2385,12 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 justMerged = false
                 out.add(msg)
             }
+        }
+        // 【日志降频 · 2026-10-02】原来每合并一条就打一行：流式每秒推 10 次、一次 8 条
+        // → 每秒 80 行，把 500 条日志环刷爆（别的日志全被挤出去，排查时满屏都是它）。
+        // 改成每次调用只汇总一行。行为一字未改。
+        if (mergedCount > 0) {
+            AppLogBuffer.log(TAG, "[Interject] collapse: merged=$mergedCount in=${messages.size} out=${out.size}")
         }
         return out
     }
