@@ -162,13 +162,6 @@ fun ChatMessage(
     interjections: Map<String, UIMessage> = emptyMap(),
 ) {
 
-    // 【重建检测 · 2026-10-02】ChatMessage 层：计数从 1 重来 = 这个 item 被列表拆了重搭。
-    // 和 MessagePartsBlock 那条（MPB）对着看，就能分清是外面拆的还是里面拆的。
-    val __cmN = remember { intArrayOf(0) }
-    __cmN[0]++
-    if (__cmN[0] <= 3) {
-        AppLogBuffer.log("MessagePartsRender", "CM n=" + __cmN[0] + " role=" + node.currentMessage.role + " nodeId=" + node.id.toString().take(8))
-    }
     val message = node.messages[node.selectIndex]
     val settings = LocalDisplaySettings.current
     val textStyle = LocalTextStyle.current.copy(
@@ -384,18 +377,6 @@ private fun MessagePartsBlock(
     // 就把宝的话画在正文中间，由上层 ChatList 收集好传进来。
     interjections: Map<String, UIMessage> = emptyMap(),
 ) {
-    // 【卡顿定位 · 2026-10-02】重组计数 + 距上次的间隔：流式卡死时看它涨得多快、间隔多短。
-    // （和 MessagePartsRender 那条对着看，能分清"重组"和"重建"。）
-    val __mpbN = remember { intArrayOf(0) }
-    val __mpbT = remember { longArrayOf(0L) }
-    __mpbN[0]++
-    val __nowMs = System.currentTimeMillis()
-    val __gapMs = if (__mpbT[0] == 0L) 0L else __nowMs - __mpbT[0]
-    __mpbT[0] = __nowMs
-    // 【重建检测 · 2026-10-02】只打前三次：计数一直往上=普通重组；从 1 重新开始=被拆了重搭。
-    if (__mpbN[0] <= 3) {
-        AppLogBuffer.log("MessagePartsRender", "MPB n=" + __mpbN[0] + " gap=" + __gapMs + "ms parts=" + parts.size + " loading=" + loading + " role=" + role)
-    }
     val context = LocalContext.current
     val contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
  

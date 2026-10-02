@@ -240,16 +240,6 @@ private fun ChatListNormal(
     // 【插话不落库 · 2026-10-02】排队中的插话（画在最后一条消息下面）
     pendingInterjections: List<UIMessage> = emptyList(),
 ) {
-    // 【卡顿定位 · 2026-10-02】重组计数：流式卡死时看这个数涨得多快（每 20 次打一条，
-    // 免得日志本身变成负担）。数涨得快 = 每来一个字都在整列表重组。
-    val __recomp = remember { intArrayOf(0) }
-    __recomp[0]++
-    if (__recomp[0] % 20 == 0) {
-        AppLogBuffer.log(TAG, "RECOMP ChatListNormal n=${__recomp[0]} nodes=${conversation.messageNodes.size} loading=$loading")
-    }
-    // 【卡顿定位 · 2026-10-02】自动滚到底被触发了几次（流式期间内容一直长，
-    // 它可能被连着点很多次；每 10 次打一条）。
-    val __scrollHits = remember { intArrayOf(0) }
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
     var isRecentScroll by remember { mutableStateOf(false) }
@@ -342,22 +332,11 @@ private fun ChatListNormal(
             // 生成中（loading）保持跟随：流式更新时滚到底（瞬移。
             // 2026-08-26 回滚：animateScrollToItem 会挂起 collect 导致列表被钉死不能滑动）
             LaunchedEffect(state) {
-                var __lastScrollAt = 0L
                 snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect { visibleItemsInfo ->
                     if (!state.isScrollInProgress && loadingState) {
                         if (visibleItemsInfo.isAtBottom()) {
-                            // 【流式降级 · 2026-10-02】节流：流式期间内容每 100ms 长一次，
-                            // 若每次都请求"滚到底"，列表会被反复重排。150ms 内只响应一次。
-                            val __now = System.currentTimeMillis()
-                            if (__now - __lastScrollAt >= 150) {
-                                __lastScrollAt = __now
-                                val totalItems = state.layoutInfo.totalItemsCount
-                                __scrollHits[0]++
-                                if (__scrollHits[0] % 10 == 0) {
-                                    AppLogBuffer.log(TAG, "SCROLLHIT n=${__scrollHits[0]} total=$totalItems")
-                                }
-                                state.requestScrollToItem(totalItems + 10)
-                            }
+                            val totalItems = state.layoutInfo.totalItemsCount
+                            state.requestScrollToItem(totalItems + 10)
                         }
                     }
                 }
