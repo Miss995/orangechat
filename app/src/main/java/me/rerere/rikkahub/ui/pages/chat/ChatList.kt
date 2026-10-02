@@ -402,7 +402,16 @@ private fun ChatListNormal(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier
                 .fillMaxSize()
-                .hazeSource(state = hazeState)
+                .then(
+                    // 【卡顿修复 · 2026-10-02】只有真开了模糊效果才登记"可被模糊的背景"。
+                    // 原来是无条件挂 hazeSource：列表每次内容变化都要多画一遍到离屏缓冲，
+                    // 流式期间每 100ms 一次；而背景是纯白时糊跟不糊一个样，等于纯付钱。
+                    if (settings.displaySetting.enableBlurEffect) {
+                        Modifier.hazeSource(state = hazeState)
+                    } else {
+                        Modifier
+                    }
+                )
                 .padding(top = innerPadding.calculateTopPadding()),
         ) {
             itemsIndexed(
