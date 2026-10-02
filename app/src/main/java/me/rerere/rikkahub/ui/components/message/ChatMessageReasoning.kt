@@ -190,8 +190,10 @@ private fun ReasoningContent(
                 } else {
                     reasoning.reasoning
                 }
-                MarkdownBlock(
-                    content = tail,
+                // 【反查 · 2026-10-02】改回纯文本：17:54 那版为了保住格式换回了 Markdown，
+                // 现在怀疑那一换就是卡死的来源（流式期间每 100ms 重跑一次 Markdown 渲染管线）。
+                Text(
+                    text = tail,
                     style = thinkingStyle,
                     modifier = Modifier.fillMaxSize(),
                 )
