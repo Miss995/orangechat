@@ -399,7 +399,7 @@ private fun MessagePartsBlock(
                 is UIMessagePart.Text -> "T${part.text.length}"
                 is UIMessagePart.Reasoning -> "R${part.reasoning.length}"
                 is UIMessagePart.Tool -> "Tool"
-                else -> "?"
+                else -> part::class.simpleName ?: "?"
             }
         }
         val msg = "render loading=$loading parts=${parts.size} [$partTypes] text=$textLen reasoning=$reasoningLen role=$role"
