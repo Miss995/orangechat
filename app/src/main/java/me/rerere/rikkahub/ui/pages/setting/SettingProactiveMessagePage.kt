@@ -323,6 +323,31 @@ fun SettingProactiveMessagePage(vm: SettingVM = koinInject()) {
                                 Text("检测到切换应用/开关屏/回桌面等操作后，等待多少秒再让 AI 思考（期间的新操作会重新计时）。设多少就是精确多少秒，不是随机值。最小3秒。")
                             },
                         )
+                        // 【2026-10-03 橘仔加】"停留"触发（仅当激进模式开启时显示）
+                        item(
+                            headlineContent = { Text("同一应用停留多久算一笔 (分钟)") },
+                            supportingContent = {
+                                OutlinedTextField(
+                                    value = settings.proactiveMessageSetting.aggressiveDwellMinutes.toString(),
+                                    onValueChange = { value ->
+                                        val minutes = value.toIntOrNull()
+                                        if (minutes != null && minutes >= 0) {
+                                            vm.updateSettings(
+                                                settings.copy(
+                                                    proactiveMessageSetting = settings.proactiveMessageSetting.copy(
+                                                        aggressiveDwellMinutes = minutes
+                                                    )
+                                                )
+                                            )
+                                        }
+                                    },
+                                    placeholder = { Text("0") },
+                                    singleLine = true,
+                                    modifier = Modifier.padding(top = 8.dp),
+                                )
+                                Text("同一个 App 在前台连续停留超过这么多分钟，就记一笔「停留」，让 AI 醒来看看。跟上面那两种不是一类——切应用/开关屏说的是「人醒了」，这个说的是「人在那儿泡着」。锁屏会重置计时（人走了），橘瓣自己和桌面不算。设 0 = 关闭（默认）。")
+                            },
+                        )
                     }
                 }
             }

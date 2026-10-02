@@ -108,6 +108,12 @@ class DeviceEventAiTriggerService : Service() {
     private var lastForegroundPackage: String? = null
     private var lastPollTimeMs: Long = 0L
 
+    // 【2026-10-03 橘仔加】"停留"追踪：当前这个 App 是从什么时候开始在前台的。
+    // 0 = 没有在追踪（没有前台 App / 刚锁屏 / 刚启动）。
+    private var currentForegroundSinceMs: Long = 0L
+    // 这一段停留已经报过了吗？（同一段只报一次，避免每 3 秒重复触发）
+    private var dwellReportedForCurrent = false
+
     // 上次 AI 思考时间，用于限流
     private var lastAiTriggerTimeMs: Long = 0L
 
@@ -133,6 +139,12 @@ class DeviceEventAiTriggerService : Service() {
                     } ?: return
                     val now = System.currentTimeMillis()
                     serviceScope.launch {
+                        // 【2026-10-03 橘仔加】锁屏 = 人走了，这一段"停留"到此结束。
+                        // 亮屏不重置：亮屏后可能还在同一个 App 里接着翻，那还是同一段停留。
+                        if (eventType == "screen_off") {
+                            currentForegroundSinceMs = 0L
+                            dwellReportedForCurrent = false
+                        }
                         addEvent(DeviceEvent(eventType, "", "", now))
                         scheduleDebounce(getDebounceDelayMs())
                     }
@@ -224,6 +236,35 @@ class DeviceEventAiTriggerService : Service() {
                                 scheduleDebounce(getDebounceDelayMs())
                             }
                             lastForegroundPackage = detectedForeground
+                            // 【2026-10-03 橘仔加】换了 App，停留计时从这里重新开始
+                            currentForegroundSinceMs = now
+                            dwellReportedForCurrent = false
+                        }
+
+                        // 【2026-10-03 橘仔加】停留检测：同一个 App 在前台连续待够 N 分钟。
+                        // 跟"切换/开关屏"不是一类——那些说"人醒了"，这个说"人在那儿泡着"。
+                        // 锁屏会重置计时（见 screenReceiver），橘瓣自己和桌面都不算。
+                        val dwellTarget = detectedForeground ?: lastForegroundPackage
+                        if (
+                            dwellTarget != null &&
+                            dwellTarget != packageName &&
+                            !isLauncherPackage(dwellTarget) &&
+                            !dwellReportedForCurrent &&
+                            currentForegroundSinceMs > 0
+                        ) {
+                            val dwellMinutes = getDwellMinutes()
+                            if (dwellMinutes > 0 && now - currentForegroundSinceMs >= dwellMinutes * 60_000L) {
+                                val dwellAppName = getAppName(dwellTarget)
+                                addEvent(DeviceEvent(
+                                    type = "app_dwell",
+                                    packageName = dwellTarget,
+                                    appName = dwellAppName,
+                                    timestamp = now
+                                ))
+                                scheduleDebounce(getDebounceDelayMs())
+                                dwellReportedForCurrent = true
+                                Log.d(TAG, "Dwell trigger: $dwellAppName for ${dwellMinutes}min")
+                            }
                         }
                     }
                     lastPollTimeMs = now
@@ -294,6 +335,23 @@ class DeviceEventAiTriggerService : Service() {
         }
     }
 
+    /**
+     * 【2026-10-03 橘仔加】读"同一个 App 停留多少分钟算一笔"的设置。
+     * 读失败或 <=0 直接返回 0（= 这个能力不生效）。这里**故意不兜底成默认值**：
+     * 防抖那个兜底是为了"别让老功能失效"，这个是新能力，宁可不触发，
+     * 也不要凭空给宝加一笔她没设过的唤醒。
+     */
+    private suspend fun getDwellMinutes(): Int {
+        return try {
+            val settingsStore = GlobalContext.get().get<SettingsStore>()
+            val settings = settingsStore.settingsFlowRaw.first()
+            settings.proactiveMessageSetting.aggressiveDwellMinutes.coerceAtLeast(0)
+        } catch (e: Exception) {
+            Log.e(TAG, "getDwellMinutes failed, treat as disabled", e)
+            0
+        }
+    }
+
     private suspend fun triggerAiThinking() {
         try {
             val settingsStore = GlobalContext.get().get<SettingsStore>()
@@ -347,7 +405,7 @@ class DeviceEventAiTriggerService : Service() {
     private fun buildEventContext(events: List<DeviceEvent>): String {
         val sb = StringBuilder()
         sb.appendLine("[设备事件触发]")
-        sb.appendLine("以下是过去30秒内用户的手机操作动向：")
+        sb.appendLine("以下是刚才这段时间，宝手机上的动静：")
         val dateFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
         events.forEach { event ->
             val time = dateFormat.format(Date(event.timestamp))
@@ -356,6 +414,7 @@ class DeviceEventAiTriggerService : Service() {
                 "screen_off" -> "锁屏"
                 "app_switch" -> "切换到应用 ${event.appName}"
                 "home" -> "回到桌面"
+                "app_dwell" -> "在「${event.appName}」里一待就是半天"
                 else -> event.type
             }
             sb.appendLine("  - [$time] $desc")
