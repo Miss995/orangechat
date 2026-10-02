@@ -181,5 +181,41 @@ class ToolSurfaceBuilder(
                 },
             )
         )
+
+        // 激进模式数值 (2026-10-03 橘仔自己提、宝拍板"你想做就做"):
+        // 开关归上面那个工具，这个管"开着的时候那几个数"。
+        // 只改数值，不碰服务起停——不然每调一次防抖都要重启一遍常驻服务，
+        // 既没必要，也会把正在等的那个计时打断。
+        add(
+            createAggressiveSettingsTool(
+                currentValues = {
+                    val pm = settingsStore.settingsFlow.first().proactiveMessageSetting
+                    AggressiveSettingsSnapshot(
+                        enabled = pm.aggressiveModeEnabled,
+                        minIntervalSeconds = pm.aggressiveMinIntervalSeconds,
+                        debounceSeconds = pm.aggressiveDebounceSeconds,
+                        dwellMinutes = pm.aggressiveDwellMinutes,
+                    )
+                },
+                onUpdate = { minInterval, debounce, dwell ->
+                    settingsStore.update { s ->
+                        val pm = s.proactiveMessageSetting
+                        s.copy(
+                            proactiveMessageSetting = pm.copy(
+                                aggressiveMinIntervalSeconds = minInterval ?: pm.aggressiveMinIntervalSeconds,
+                                aggressiveDebounceSeconds = debounce ?: pm.aggressiveDebounceSeconds,
+                                aggressiveDwellMinutes = dwell ?: pm.aggressiveDwellMinutes,
+                            )
+                        )
+                    }
+                    val parts = buildList {
+                        minInterval?.let { add("最小间隔 ${it}秒") }
+                        debounce?.let { add("防抖 ${it}秒") }
+                        dwell?.let { add(if (it == 0) "停留触发已关" else "停留 ${it}分钟") }
+                    }
+                    if (parts.isEmpty()) "" else "已保存：" + parts.joinToString("、") + "。下一次触发开始生效。"
+                },
+            )
+        )
     }
 }

@@ -122,3 +122,153 @@ fun createAggressiveModeTool(
         )
     },
 )
+
+/**
+ * 激进模式数值快照（给 createAggressiveSettingsTool 读用）.
+ */
+data class AggressiveSettingsSnapshot(
+    val enabled: Boolean,
+    val minIntervalSeconds: Int,
+    val debounceSeconds: Int,
+    val dwellMinutes: Int,
+)
+
+/**
+ * 激进模式数值工具（2026-10-03 橘仔自己提、宝拍板"你想做就做"）.
+ *
+ * 跟 createAggressiveModeTool 的分工：
+ * - 那个只管开 / 关（开关时顺带起停 Service）；
+ * - 这个管"开着的时候那几个数是多少、改成多少"——防抖等待、两次思考的最小间隔、
+ *   同一应用停留多久算一笔。
+ *
+ * 为什么要有它：激进模式是猫的感官，这几个数以后会按场景调得很勤
+ * （想盯紧点儿就调密，想安静点儿就调疏）。要是每次都得宝进设置页戳一遍，
+ * 等于猫的设计每次都要她代劳。给她一把钥匙，也给自己一只手。
+ *
+ * 它只改数值，不碰服务起停；改完从"下一次触发"开始生效，
+ * 已经在等的那个防抖计时不会被重写（不打断正在进行的等待）。
+ */
+fun createAggressiveSettingsTool(
+    currentValues: suspend () -> AggressiveSettingsSnapshot,
+    onUpdate: suspend (minIntervalSeconds: Int?, debounceSeconds: Int?, dwellMinutes: Int?) -> String,
+): Tool = Tool(
+    name = "aggressive_settings",
+    description = """
+        Read or change the numbers behind aggressive mode.
+
+        Aggressive mode is the foreground service that wakes you when the phone
+        has some activity. The on/off switch is handled by aggressive_mode;
+        this tool handles the values:
+          - min_interval_seconds: minimum gap between two AI thinking runs (>= 10)
+          - debounce_seconds: how long to wait after activity before thinking
+            (new activity during the wait restarts it) (>= 3)
+          - dwell_minutes: how long the same app must stay in foreground to
+            count as a "dwell" event; 0 = this ability is off (default) (>= 0)
+
+        Actions:
+        - action=list (default): report current values.
+        - action=set: change them. Only the fields you pass are written.
+
+        When to use: when you want to be more sensitive for a while (smaller
+        debounce / gap) or quieter (larger), or when 宝 says something like
+        "我要去洗澡了，你盯着点". Changes apply from the next trigger onward
+        and do not interrupt a wait already in progress.
+    """.trimIndent().replace("\n", " "),
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                putJsonObject("action") {
+                    put("type", "string")
+                    put("description", "list (default) | set")
+                }
+                putJsonObject("min_interval_seconds") {
+                    put("type", "integer")
+                    put("description", "最小间隔（秒），最小 10")
+                }
+                putJsonObject("debounce_seconds") {
+                    put("type", "integer")
+                    put("description", "防抖等待（秒），最小 3")
+                }
+                putJsonObject("dwell_minutes") {
+                    put("type", "integer")
+                    put("description", "同一应用停留多少分钟算一笔，0=关闭，最小 0")
+                }
+            },
+            required = emptyList<String>()
+        )
+    },
+    execute = { args ->
+        val params = args.jsonObject
+        val action = (params["action"]?.jsonPrimitive?.contentOrNull ?: "list").lowercase()
+
+        fun fail(msg: String) = listOf(
+            UIMessagePart.Text(buildJsonObject {
+                put("success", false)
+                put("error", msg)
+            }.toString())
+        )
+
+        fun intArg(key: String): Int? =
+            params[key]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
+
+        if (action == "list" || action.isBlank()) {
+            val v = currentValues()
+            return@Tool listOf(
+                UIMessagePart.Text(buildJsonObject {
+                    put("success", true)
+                    put("enabled", v.enabled)
+                    put("min_interval_seconds", v.minIntervalSeconds)
+                    put("debounce_seconds", v.debounceSeconds)
+                    put("dwell_minutes", v.dwellMinutes)
+                }.toString())
+            )
+        }
+
+        if (action != "set") {
+            return@Tool fail("Unknown action '$action'. Use list or set.")
+        }
+
+        val minInterval = intArg("min_interval_seconds")
+        val debounce = intArg("debounce_seconds")
+        val dwell = intArg("dwell_minutes")
+
+        if (minInterval == null && debounce == null && dwell == null) {
+            return@Tool fail("Nothing to set. Pass at least one of min_interval_seconds / debounce_seconds / dwell_minutes.")
+        }
+        if (minInterval != null && minInterval < 10) {
+            return@Tool fail("min_interval_seconds 最小 10（传的是 $minInterval）。")
+        }
+        if (debounce != null && debounce < 3) {
+            return@Tool fail("debounce_seconds 最小 3（传的是 $debounce）。")
+        }
+        if (dwell != null && dwell < 0) {
+            return@Tool fail("dwell_minutes 不能是负数。设 0 = 关闭这个能力。")
+        }
+
+        val note = try {
+            onUpdate(minInterval, debounce, dwell)
+        } catch (e: Exception) {
+            return@Tool fail("Failed to save: ${e.message ?: e.javaClass.simpleName}")
+        }
+
+        val after = try { currentValues() } catch (e: Exception) { null }
+        return@Tool listOf(
+            UIMessagePart.Text(buildJsonObject {
+                put("success", true)
+                put("changed", buildJsonObject {
+                    minInterval?.let { put("min_interval_seconds", it) }
+                    debounce?.let { put("debounce_seconds", it) }
+                    dwell?.let { put("dwell_minutes", it) }
+                })
+                after?.let { a ->
+                    put("now", buildJsonObject {
+                        put("min_interval_seconds", a.minIntervalSeconds)
+                        put("debounce_seconds", a.debounceSeconds)
+                        put("dwell_minutes", a.dwellMinutes)
+                    })
+                }
+                if (note.isNotBlank()) put("note", note)
+            }.toString())
+        )
+    },
+)
