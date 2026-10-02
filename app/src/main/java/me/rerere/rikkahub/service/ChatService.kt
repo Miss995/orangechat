@@ -1516,11 +1516,14 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             }.collect { chunk ->
                 when (chunk) {
                     is GenerationChunk.Messages -> {
+                        val __t0 = System.currentTimeMillis()
                         val currentConversationForChunk = getConversationFlow(conversationId).value
+                        val __tA = System.currentTimeMillis()
                         // 【插话合回 · 2026-10-01】回来的这份是"发出去那一版"，宝插的话被拆成了
                         // 独立 user 消息（三截），而会话里那条早就合并过（一截）。先合回去再塞，
                         // 否则按位置更新会多出一条、还会把前半顶掉（宝实测：一句显示两次 + 跳过）。
                         val incoming = collapseInterjections(chunk.messages)
+                        val __tB = System.currentTimeMillis()
                         // 【2026-09-24 召回留痕】传进来的 chunk.messages 取自"开始生成那一刻"的快照，
                         // 那时门控/召回还没跑完，上面没有 recallDebug；而 updateCurrentMessages 是按 id
                         // 整条替换的，会把界面上的小字抹掉。这里先把旧消息上的小字补回来再刷。
@@ -1535,13 +1538,29 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                                 list[idx] = list[idx].copy(recallDebug = debugSource.recallDebug)
                             }
                         }
+                        val __tC = System.currentTimeMillis()
                         val updatedConversation = currentConversationForChunk
                             .updateCurrentMessages(patchedMessages)
                         updateConversation(conversationId, updatedConversation)
+                        val __tD = System.currentTimeMillis()
 
                         // 如果应用不在前台，发送 Live Update 通知
                         if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration && settings.displaySetting.enableLiveUpdateNotification) {
                             sendLiveUpdateNotification(conversationId, chunk.messages, senderName)
+                        }
+                        val __tE = System.currentTimeMillis()
+                        // 【卡顿定位 · 2026-10-02】流式每个 chunk 都要走这一整段。总耗 >50ms
+                        // 就在主线程上排长队（每秒约 10 个 chunk）。只在慢的时候打一行，
+                        // 拆开看是"取会话/合插话/补小字/更新/通知"哪一段吃掉了时间。
+                        run {
+                            val __total = __tE - __t0
+                            if (__total > 50) {
+                                AppLogBuffer.log(
+                                    TAG,
+                                    "CHUNKTIME total=${__total}ms getConv=${__tA - __t0} collapse=${__tB - __tA} " +
+                                        "patch=${__tC - __tB} update=${__tD - __tC} notify=${__tE - __tD} n=${chunk.messages.size}"
+                                )
+                            }
                         }
                     }
                 }
