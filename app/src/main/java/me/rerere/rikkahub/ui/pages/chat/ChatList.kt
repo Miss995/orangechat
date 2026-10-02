@@ -240,6 +240,28 @@ private fun ChatListNormal(
     // 【插话不落库 · 2026-10-02】排队中的插话（画在最后一条消息下面）
     pendingInterjections: List<UIMessage> = emptyList(),
 ) {
+    // 【卡顿定位 · 2026-10-02】逐帧耗时探针：withFrameNanos 每帧回调一次，
+    // 相邻两帧的间隔就是"上一帧主线程被占了多久"。只在生成中记，间隔 >200ms 才打一条。
+    // 有了它，就不用再猜"是不是某块渲染贵"，直接看那几十秒里时间碎在哪儿。
+    LaunchedEffect(loading) {
+        if (!loading) return@LaunchedEffect
+        var last = 0L
+        var frames = 0
+        var worst = 0L
+        while (true) {
+            withFrameNanos { now ->
+                if (last != 0L) {
+                    val gap = (now - last) / 1_000_000
+                    frames++
+                    if (gap > worst) worst = gap
+                    if (gap > 200) {
+                        AppLogBuffer.log(TAG, "SLOWFRAME gap=${gap}ms frame=$frames worst=$worst")
+                    }
+                }
+                last = now
+            }
+        }
+    }
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
     var isRecentScroll by remember { mutableStateOf(false) }
