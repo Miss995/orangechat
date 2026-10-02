@@ -384,8 +384,9 @@ private fun MessagePartsBlock(
     val __nowMs = System.currentTimeMillis()
     val __gapMs = if (__mpbT[0] == 0L) 0L else __nowMs - __mpbT[0]
     __mpbT[0] = __nowMs
-    if (__mpbN[0] % 20 == 0) {
-        AppLogBuffer.log("MessagePartsRender", "MPB n=" + __mpbN[0] + " gap=" + __gapMs + "ms parts=" + parts.size + " loading=" + loading)
+    // 【重建检测 · 2026-10-02】只打前三次：计数一直往上=普通重组；从 1 重新开始=被拆了重搭。
+    if (__mpbN[0] <= 3) {
+        AppLogBuffer.log("MessagePartsRender", "MPB n=" + __mpbN[0] + " gap=" + __gapMs + "ms parts=" + parts.size + " loading=" + loading + " role=" + role)
     }
     val context = LocalContext.current
     val contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
