@@ -2220,6 +2220,15 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 else -> part
             }
         }
+        // 【插话位置 · 2026-10-02 宝指出的排序问题】她插话时猫只写到一半，那句话该夹在
+        // "猫写到的位置"中间，而不是贴在整条末尾。位置信息没丢：搭车那刻 GenerationHandler
+        // 把锚点打在猫的某个 part 上（metadata{"interject": "<她的消息 id>"}），那就是
+        // "她插话时猫写到的最后一格"。按它插入；接力那种（猫已经写完了才插）没有锚点，
+        // 追加到末尾本来就是对的位置。
+        val anchorIdx = targetMsg.parts.indexOfFirst { part ->
+            val v = part.metadata?.get("interject")
+            v is JsonPrimitive && v.content != "true" && v.content.split(",").any { it.trim() in pendingIds }
+        }
         // 【旧锚点清理 · 2026-10-01 保留】搭车那刻在猫的 last part 上留过一串消息 id 的锚点（上一版的画法），
         // 跟合并后打的 part 标是两套记号，会各画一遍（宝实测截图：多出一条）。顺手把非 boolean 的抹掉。
         val cleanedParts = targetMsg.parts.map { part ->
@@ -2236,7 +2245,13 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 part
             }
         }
-        val mergedMsg = targetMsg.copy(parts = cleanedParts + tagged)
+        val mergedParts = if (anchorIdx >= 0) {
+            // 插在"她插话时猫写到的那个 part"后面
+            cleanedParts.take(anchorIdx + 1) + tagged + cleanedParts.drop(anchorIdx + 1)
+        } else {
+            cleanedParts + tagged
+        }
+        val mergedMsg = targetMsg.copy(parts = mergedParts)
         val newMessages = targetNode.messages.toMutableList().also { list ->
             val idx = targetNode.selectIndex.coerceIn(0, list.size - 1)
             list[idx] = mergedMsg
