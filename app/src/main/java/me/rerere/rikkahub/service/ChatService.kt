@@ -2190,7 +2190,14 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 所以不用再"从会话里找那条独立的 USER 消息 → 挂上来 → removeAt 删掉它"。
         // 这里只做一件事：把本回合记下的那几条（搭车的、接力的都在内）挂到最后一条猫的消息上。
         if (pending.isEmpty()) return conversation
-        val nodes = conversation.messageNodes
+        // 【兜底清理 · 2026-10-02】流式刷新偶尔会把她那句（请求里被拆成独立 USER 的那条）
+        // 写回会话，于是"挂载"之外还多出一条独立的。按 id 认人，先把它从会话里摘掉。
+        // （旧版是靠 removeAt 删；这版从源头不造，所以这里只兜"漏网写回"这一种。）
+        val pendingIds = pending.map { it.id.toString() }.toSet()
+        val nodes = conversation.messageNodes.filterNot { node ->
+            val m = node.currentMessage
+            m.role == MessageRole.USER && m.id.toString() in pendingIds
+        }
         val targetIndex = nodes.indexOfLast { it.currentMessage.role == MessageRole.ASSISTANT }
         if (targetIndex < 0) return conversation
         val targetNode = nodes[targetIndex]
