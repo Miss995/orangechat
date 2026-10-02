@@ -125,6 +125,9 @@ private fun rememberReasoningState(reasoning: UIMessagePart.Reasoning): Pair<Rea
 }
  
 @Composable
+/** 【流式降级 · 2026-10-02】生成中思考链只渲染尾部这么多字符（保住观感，把每次重排的开销压成常数）。 */
+private const val STREAMING_TAIL_CHARS = 800
+
 private fun ReasoningContent(
     reasoning: UIMessagePart.Reasoning,
     assistant: Assistant?,
@@ -177,12 +180,18 @@ private fun ReasoningContent(
             }
     ) {
         SelectionContainer {
-            // 【流式降级 · 2026-10-02】生成中跳过正则替换 + Markdown 解析，直接铺纯文本
-            // （跟正文同一套做法）。文字一个没少，只是省掉每 100ms 一次的全量重解析；
-            // 生成完成（loading=false）后自动切回 MarkdownBlock，最终显示效果不变。
+            // 【流式降级 · 2026-10-02】生成中只渲染尾巴（照样走 Markdown，只是截短）：
+            // 几万字的思考每 100ms 全量重解析是主线程卡死的来源；只画最后一段，
+            // 观感保住了（还是带格式的思考往下滚），每次开销也从 O(全文) 压到 O(尾巴)。
+            // 写完（loading=false）自动整篇恢复，显示效果不变。
             if (loading) {
-                Text(
-                    text = reasoning.reasoning,
+                val tail = if (reasoning.reasoning.length > STREAMING_TAIL_CHARS) {
+                    "…" + reasoning.reasoning.takeLast(STREAMING_TAIL_CHARS)
+                } else {
+                    reasoning.reasoning
+                }
+                MarkdownBlock(
+                    content = tail,
                     style = thinkingStyle,
                     modifier = Modifier.fillMaxSize(),
                 )
