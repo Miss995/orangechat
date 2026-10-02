@@ -131,6 +131,9 @@ private fun ReasoningContent(
     expandState: ReasoningCardState,
     scrollState: ScrollState,
     fadeHeight: Float,
+    // 【流式降级 · 2026-10-02】生成中也传下来：正文那边生成中只铺纯文本，
+    // 思考链一直走完整 Markdown 解析，长思考（几万字）下每 100ms 重解析一次 = 主线程堵死。
+    loading: Boolean = false,
 ) {
     val isPreview = expandState == ReasoningCardState.Preview
     val displaySettings = LocalDisplaySettings.current
@@ -174,15 +177,26 @@ private fun ReasoningContent(
             }
     ) {
         SelectionContainer {
-            MarkdownBlock(
-                content = reasoning.reasoning.replaceRegexes(
-                    assistant = assistant,
-                    scope = AssistantAffectScope.ASSISTANT,
-                    visual = true,
-                ),
-                style = thinkingStyle,
-                modifier = Modifier.fillMaxSize(),
-            )
+            // 【流式降级 · 2026-10-02】生成中跳过正则替换 + Markdown 解析，直接铺纯文本
+            // （跟正文同一套做法）。文字一个没少，只是省掉每 100ms 一次的全量重解析；
+            // 生成完成（loading=false）后自动切回 MarkdownBlock，最终显示效果不变。
+            if (loading) {
+                Text(
+                    text = reasoning.reasoning,
+                    style = thinkingStyle,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                MarkdownBlock(
+                    content = reasoning.reasoning.replaceRegexes(
+                        assistant = assistant,
+                        scope = AssistantAffectScope.ASSISTANT,
+                        visual = true,
+                    ),
+                    style = thinkingStyle,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
@@ -244,6 +258,7 @@ fun ChainOfThoughtScope.ChatMessageReasoningStep(
                 expandState = state.expandState,
                 scrollState = state.scrollState,
                 fadeHeight = fadeHeight,
+                loading = loading,
             )
         },
     )

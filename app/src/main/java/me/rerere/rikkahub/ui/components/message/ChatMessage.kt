@@ -448,10 +448,13 @@ private fun MessagePartsBlock(
             is MessagePartBlock.ThinkingBlock -> {
                 if (block.steps.isNotEmpty()) {
                     val isReasoningOnlyBlock = block.steps.fastAll { it is ThinkingStep.ReasoningStep }
+                    // 【流式降级 · 2026-10-02】生成中不做尺寸动画：内容每 100ms 变一次，
+                    // 动画会不停重启、每帧重新测量整块。写完（loading=false）再恢复。
                     ChainOfThought(
-                        modifier = Modifier.animateContentSize(),
+                        modifier = if (loading) Modifier else Modifier.animateContentSize(),
                         steps = block.steps,
                         collapsedAdaptiveWidth = isReasoningOnlyBlock,
+                        animateChanges = !loading,
                     ) { step ->
                         when (step) {
                             is ThinkingStep.ReasoningStep -> {

@@ -81,6 +81,9 @@ fun <T> ChainOfThought(
     steps: List<T>,
     collapsedVisibleCount: Int = 2,
     collapsedAdaptiveWidth: Boolean = false,
+    // 【流式降级 · 2026-10-02】生成中关掉尺寸动画：内容每 100ms 变一次，
+    // 动画会不停重启、每次都重算整块布局。写完（loading=false）再恢复。
+    animateChanges: Boolean = true,
     content: @Composable ChainOfThoughtScope.(T) -> Unit
 ) {
     val settings = LocalSettings.current
@@ -109,8 +112,15 @@ fun <T> ChainOfThought(
             Column(
                 modifier = Modifier
                     .padding(horizontal = 12.dp, vertical = 4.dp)
-                    .animateContentSize(
-                        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
+                    .then(
+                        // 【流式降级 · 2026-10-02】生成中不做尺寸动画（理由见 animateChanges 参数）。
+                        if (animateChanges) {
+                            Modifier.animateContentSize(
+                                animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
+                            )
+                        } else {
+                            Modifier
+                        }
                     ),
             ) {
                 val visibleSteps = if (expanded || !canCollapse) {
