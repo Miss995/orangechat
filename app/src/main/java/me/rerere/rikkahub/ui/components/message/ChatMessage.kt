@@ -502,9 +502,16 @@ private fun MessagePartsBlock(
                                 // 生成中（loading=true 且是 AI 消息）：用纯文本渲染，跳过 Markdown 解析/代码高亮/正则替换，
                                 // 避免流式更新时（100ms 一次）对超长消息全量重解析导致主线程卡顿（整页滑动掉帧）。
                                 // 生成完成 loading=false 后自动切回 MarkdownBlock 富文本，最终显示效果不变。
-                                if (role == MessageRole.ASSISTANT && loading) {
-                                    Text(text = displayText)
-                                } else if (role == MessageRole.USER) {
+                                // 【全妆 · 2026-10-02 宝要求】撤回 2026-08-18 的"生成中纯文本"降级，
+                                // 生成期间也走 MarkdownBlock（宝：想看全妆小猫）。
+                                // 当初加它是为了治"流式时对超长消息全量重解析、主线程卡顿"；
+                                // 但 10-02 查明真正的 13.8 秒凶手是 collapseInterjections 的刷屏日志
+                                //（每秒 80 行，已修 commit 2c59d879），这刀可以撤了。
+                                // ★ 要恢复"素颜"：把本行换回
+                                //   if (role == MessageRole.ASSISTANT && loading) {
+                                //       Text(text = displayText)
+                                //   } else if (role == MessageRole.USER) {
+                                if (role == MessageRole.USER) {
                                     // 【用户消息思考链 2026-09-01】<think>...</think> 段渲染成思考链卡片（跟 AI 一致灰色折叠），正文照常。
                                     val thinkSegments = remember(displayText) { displayText.splitThinkSegments() }
                                     Column(
