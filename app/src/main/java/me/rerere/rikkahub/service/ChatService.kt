@@ -258,6 +258,28 @@ class ChatService(
     private val rodeInterjectIds =
         java.util.concurrent.ConcurrentHashMap<Uuid, MutableList<String>>()
 
+    // 【插话不落库 · 2026-10-02 宝定的根治】收尾时要挂进猫那条的插话（入队即记，挂完清）。
+    // 跟 pendingInterjections 的区别：那本是"搭车队列"（被取走就清，用来判断要不要接力），
+    // 这本是"收尾要挂的东西"——不管搭没搭上车都要挂，接力那条也记在这里。
+    private val interjectedMessages =
+        java.util.concurrent.ConcurrentHashMap<Uuid, MutableList<UIMessage>>()
+
+    // 【插话不落库 · 2026-10-02】排队中的插话，给界面画"排队中"折叠条用。
+    // 插话不再进会话（内存/库都不进），界面就没有"独立那条"可读，改读这个流。
+    val pendingInterjectionFlow = kotlinx.coroutines.flow.MutableStateFlow<Map<Uuid, List<UIMessage>>>(emptyMap())
+
+    private fun syncPendingInterjectionFlow() {
+        pendingInterjectionFlow.value = pendingInterjections.entries.associate { (k, v) -> k to v.toList() }
+    }
+
+    /** sendMessage 里"插入消息"那一步的产物（原来用 Triple，插话那条不进会话后多带一个字段）。 */
+    private data class InsertResult(
+        val assistant: Assistant,
+        val processedContent: List<UIMessagePart>,
+        val insertedMessage: UIMessage,
+        val conversation: Conversation,
+    )
+
     // 前台状态管理
     private val _isForeground = MutableStateFlow(false)
     val isForeground: StateFlow<Boolean> = _isForeground.asStateFlow()
@@ -499,7 +521,7 @@ class ChatService(
 
                 // 读取最新状态 -> 追加用户消息 -> 落库，整体加锁。
                 // 防止跟同一时刻可能在跑的标题生成/建议生成/语音通话挂断反馈互相覆盖对方刚写入的消息。
-                val (assistant, processedContent, newConversation) = withContext(Dispatchers.IO) {
+                val insert = withContext(Dispatchers.IO) {
                     session.saveMutex.withLock {
                         val t0 = System.currentTimeMillis()
                         val latestConversation = session.state.value
@@ -507,23 +529,34 @@ class ChatService(
                             ?: settings.getCurrentAssistant()
                         val processedContent = preprocessUserInputParts(content, assistant)
 
-                        val newConversation = latestConversation.copy(
-                            messageNodes = latestConversation.messageNodes + UIMessage(
-                                role = MessageRole.USER,
-                                parts = processedContent,
-                                // 【消息引用 2026-09-22】这条在回复哪一条（宝长按消息选的"引用"）
-                                quotedMessageId = quotedMessageId,
-                            ).toMessageNode(),
+                        val insertedMessage = UIMessage(
+                            role = MessageRole.USER,
+                            parts = processedContent,
+                            // 【消息引用 2026-09-22】这条在回复哪一条（宝长按消息选的"引用"）
+                            quotedMessageId = quotedMessageId,
                         )
-                        // 【先显示再落库 2026-08-28】用户消息先进内存态 → UI 立刻显示（秒显）；
-                        // 落库（窗口 diff 读全量比较）可能慢（几百 ms~几秒），放后台感知不到。
-                        // saveConversation 内部最后会再 updateConversation 一次（裁剪成窗口态），最终状态一致。
-                        updateConversation(conversationId, newConversation)
-                        saveConversation(conversationId, newConversation)
-                        AppLogBuffer.log(TAG, "sendMessage: in-lock insert+save took=${System.currentTimeMillis() - t0}ms (size=${newConversation.messageNodes.size})")
-                        Triple(assistant, processedContent, newConversation)
+                        // 【插话不落库 · 2026-10-02 宝定的根治】插话不进会话（内存和库都不进）。
+                        // 它本来就是"挂在猫那条回复里的一段话"，存储层就不该有独立的一条。
+                        // 老路子：先造一条独立的 → 收尾合并 → 再删掉 → 显示层再靠锚点过滤；
+                        // 四层补丁谁漏谁冒（宝实测：重复显示、列表比节点树多一条 → 2/2 分支）。
+                        val newConversation = if (isInterjection) latestConversation else latestConversation.copy(
+                            messageNodes = latestConversation.messageNodes + insertedMessage.toMessageNode(),
+                        )
+                        if (!isInterjection) {
+                            // 【先显示再落库 2026-08-28】用户消息先进内存态 → UI 立刻显示（秒显）；
+                            // 落库（窗口 diff 读全量比较）可能慢（几百 ms~几秒），放后台感知不到。
+                            // saveConversation 内部最后会再 updateConversation 一次（裁剪成窗口态），最终状态一致。
+                            updateConversation(conversationId, newConversation)
+                            saveConversation(conversationId, newConversation)
+                        }
+                        AppLogBuffer.log(TAG, "sendMessage: in-lock insert+save took=${System.currentTimeMillis() - t0}ms (size=${newConversation.messageNodes.size}) interject=$isInterjection")
+                        InsertResult(assistant, processedContent, insertedMessage, newConversation)
                     }
                 }
+                val assistant = insert.assistant
+                val processedContent = insert.processedContent
+                val insertedMessage = insert.insertedMessage
+                val newConversation = insert.conversation
                 AppLogBuffer.log(TAG, "sendMessage: lock released at ${System.currentTimeMillis() - tSend}ms")
 
                 // 【语音情绪分析 V1 2026-09-04·宝的"情绪耳朵"】语音条上屏后后台调 Qwen3-Omni 听音频，
@@ -531,7 +564,8 @@ class ChatService(
                 // 「（语气：X，语速：Y）」尾巴喂 DeepSeek。fire-and-forget：不阻塞发送/生成主流程；
                 // 分析完成时若消息已被后续触发带走（无 tone），尾巴留空退回纯转述——不破坏缓存前缀。
                 runCatching {
-                    val addedMessage = newConversation.messageNodes.lastOrNull()?.messages?.firstOrNull()
+                    // 【插话不落库 · 2026-10-02】插话不进会话，这里的 last 会是猫那条 → 插话时跳过语音情绪分析
+                    val addedMessage = if (isInterjection) null else newConversation.messageNodes.lastOrNull()?.messages?.firstOrNull()
                     val voicePart = addedMessage?.parts?.filterIsInstance<UIMessagePart.VoiceMessage>()?.firstOrNull()
                     val asrProvider = settings.getSelectedASRProvider()
                     if (addedMessage != null && voicePart != null && voicePart.transcript.isNotBlank()
@@ -681,10 +715,17 @@ class ChatService(
                 } else if (isInterjection && answer) {
                     // 【插话搭车 · 2026-09-30 宝的方案】排进队列，等猫这一回合下一步请求时自然带上
                     // （合并点在 GenerationHandler 每步开头）。入队放在 job 内部做：
-                    // newConversation 是上面 withContext 的返回值，只有这个作用域够得着。
+                    // insertedMessage 是上面 withContext 的返回值，只有这个作用域够得着。
+                    // 【插话不落库 · 2026-10-02】入队的就是那条消息本身（它没进会话，不用再去 last() 里捞）
                     pendingInterjections.computeIfAbsent(conversationId) {
                         java.util.Collections.synchronizedList(mutableListOf<UIMessage>())
-                    }.add(newConversation.messageNodes.last().currentMessage)
+                    }.add(insertedMessage)
+                    // 【收尾要挂的账 · 2026-10-02】不管搭不搭得上车都得挂，所以入队这刻就记一笔
+                    //（接力那条也在这本账里，于是它也会被合并）
+                    interjectedMessages.computeIfAbsent(conversationId) {
+                        java.util.Collections.synchronizedList(mutableListOf<UIMessage>())
+                    }.add(insertedMessage)
+                    syncPendingInterjectionFlow()
                     AppLogBuffer.log(
                         TAG,
                         "interject: queued for ride conv=$conversationId size=${newConversation.messageNodes.size}"
@@ -1251,6 +1292,9 @@ class ChatService(
                             java.util.Collections.synchronizedList(mutableListOf<String>())
                         }.addAll(taken.map { it.id.toString() })
                     }
+                    // 【插话不落库 · 2026-10-02】队列被取走＝这些已搭上车，界面上的"排队中"该撤了
+                    //（接下来由猫那条消息里的折叠条接管）
+                    syncPendingInterjectionFlow()
                     taken
                 },
                 memories = if (assistant.useGlobalMemory) {
@@ -1513,8 +1557,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 // 不并的话界面上是"两条并排"，皮（折叠条）贴在两条的骨架上，怎么调都像异物。
                 // 【搭车记账 · 2026-10-01】除了 metadata 锚点，再带上"这一回合真被搭过车的 id"：
                 // 锚点只活在请求副本里，落库会话上不认它，所以合并要靠这本账。
-                val rodeIds = rodeInterjectIds.remove(conversationId).orEmpty()
-                latest = mergeInterjectionsIntoAssistant(latest, rodeIds)
+                // 【插话不落库 · 2026-10-02】合并改成读"入队那刻记的账"——不再靠锚点从会话里找人。
+                // 插话压根没进会话，所以这里只要拿到那几条消息本体，直接挂到猫那条上。
+                val pendingToMerge = interjectedMessages.remove(conversationId).orEmpty()
+                latest = mergeInterjectionsIntoAssistant(latest, pendingToMerge)
                 // 【回写内存 · 2026-10-01 宝实测第二轮】只合并落库不够：界面读的是内存态
                 // （session.state.value），收尾不写回它，下一条回复一来列表重建，宝那句
                 // 又会从折叠条变回独立消息（宝原话："只有在你那条消息发出来之后才会跳回去"）。
@@ -2138,86 +2184,60 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
      */
     private fun mergeInterjectionsIntoAssistant(
         conversation: Conversation,
-        rodeIds: List<String> = emptyList(),
+        pending: List<UIMessage> = emptyList(),
     ): Conversation {
+        // 【插话挂载 · 2026-10-02 宝定的根治】插话不再进会话（见 sendMessage 的 isInterjection 分支），
+        // 所以不用再"从会话里找那条独立的 USER 消息 → 挂上来 → removeAt 删掉它"。
+        // 这里只做一件事：把本回合记下的那几条（搭车的、接力的都在内）挂到最后一条猫的消息上。
+        if (pending.isEmpty()) return conversation
         val nodes = conversation.messageNodes
-        if (nodes.size < 2) return conversation
-        val result = nodes.toMutableList()
-        var changed = false
-        var i = result.size - 1
-        while (i >= 1) {
-            val node = result[i]
-            val msg = node.messages.getOrNull(node.selectIndex)
-            val prevNode = result[i - 1]
-            val prevMsg = prevNode.messages.getOrNull(prevNode.selectIndex)
-            // 【判据换源 · 2026-10-01 宝实测后修】原判据是 msg.createdAt < prevMsg.finishedAt，
-            // 但 UIMessage.finishedAt 从来没被写过（代码只给 Reasoning part 写结束时间，
-            // 消息自己那个字段一直是 null），所以判据永远不成立、合并永远不发生。
-            // 换成搭车留下的锚点：GenerationHandler 在猫那条的 last part 上写了
-            // metadata{"interject": "<宝那条消息的 id>"}，拿它跟 msg.id 对，对上就是插话。
-            // 这个锚点是她插话那一刻留下的真痕迹，比时间准。
-            val anchorIds = prevMsg?.parts
-                ?.mapNotNull { (it.metadata?.get("interject") as? JsonPrimitive)?.content }
-                ?.filter { it != "true" }
-                ?.flatMap { it.split(",") }
-                ?.map { it.trim() }
-                ?.filter { it.isNotEmpty() }
-                .orEmpty()
-            // 【搭车记账 · 2026-10-01】两个来源取并集：metadata 锚点（老路，只存在于请求副本，
-            // 落库会话上不一定有），加上这一回合真被搭过车的 id（新路，来自 ChatService 的记账，
-            // 落库会话也认它）。宝实测的问题就是老路永远找不到人，所以必须带上新路。
-            val isInterject = msg != null &&
-                msg.role == MessageRole.USER &&
-                prevMsg?.role == MessageRole.ASSISTANT &&
-                (anchorIds.contains(msg.id.toString()) || rodeIds.contains(msg.id.toString()))
-            if (isInterject && msg != null && prevMsg != null) {
-                val tagged = msg.parts.map { part ->
-                    val oldMeta = part.metadata
-                    val newMeta = if (oldMeta == null) {
-                        JsonObject(mapOf("interject" to JsonPrimitive(true)))
-                    } else {
-                        JsonObject(oldMeta + ("interject" to JsonPrimitive(true)))
-                    }
-                    when (part) {
-                        is UIMessagePart.Text -> part.copy(metadata = newMeta)
-                        is UIMessagePart.Image -> part.copy(metadata = newMeta)
-                        else -> part
-                    }
-                }
-                // 【旧锚点清理 · 2026-10-01】搭车那一刻在猫的 last part 上留过一个
-                // metadata{"interject": "<消息id串>"} 的锚点（上一版的画法）。合并之后
-                // 内容已经挂进来了、也带了 true 标，那个锚点就成了第二套记号 —— 同一处
-                // 会被画两次（宝实测截图：多出一条）。这里顺手把非 boolean 的锚点抹掉。
-                val cleanedParts = prevMsg.parts.map { part ->
-                    val meta = part.metadata ?: return@map part
-                    val v = meta["interject"]
-                    if (v is JsonPrimitive && v.content != "true") {
-                        val filtered = JsonObject(meta.filterKeys { it != "interject" })
-                        when (part) {
-                            is UIMessagePart.Text -> part.copy(metadata = filtered)
-                            is UIMessagePart.Image -> part.copy(metadata = filtered)
-                            else -> part
-                        }
-                    } else {
-                        part
-                    }
-                }
-                val mergedMsg = prevMsg.copy(parts = cleanedParts + tagged)
-                val newMessages = prevNode.messages.toMutableList().also { list ->
-                    val idx = prevNode.selectIndex.coerceIn(0, list.size - 1)
-                    list[idx] = mergedMsg
-                }
-                result[i - 1] = prevNode.copy(messages = newMessages)
-                result.removeAt(i)
-                changed = true
-                AppLogBuffer.log(
-                    TAG,
-                    "interject: merged into assistant node idx=${i - 1} parts=${tagged.size}"
-                )
+        val targetIndex = nodes.indexOfLast { it.currentMessage.role == MessageRole.ASSISTANT }
+        if (targetIndex < 0) return conversation
+        val targetNode = nodes[targetIndex]
+        val targetMsg = targetNode.currentMessage
+
+        // 宝那几句话的 parts 打上"这是插进来的"记号（界面认它就是折叠条）
+        val tagged = pending.flatMap { p -> p.parts }.map { part ->
+            val oldMeta = part.metadata
+            val newMeta = if (oldMeta == null) {
+                JsonObject(mapOf("interject" to JsonPrimitive(true)))
+            } else {
+                JsonObject(oldMeta + ("interject" to JsonPrimitive(true)))
             }
-            i--
+            when (part) {
+                is UIMessagePart.Text -> part.copy(metadata = newMeta)
+                is UIMessagePart.Image -> part.copy(metadata = newMeta)
+                else -> part
+            }
         }
-        return if (changed) conversation.copy(messageNodes = result) else conversation
+        // 【旧锚点清理 · 2026-10-01 保留】搭车那刻在猫的 last part 上留过一串消息 id 的锚点（上一版的画法），
+        // 跟合并后打的 part 标是两套记号，会各画一遍（宝实测截图：多出一条）。顺手把非 boolean 的抹掉。
+        val cleanedParts = targetMsg.parts.map { part ->
+            val meta = part.metadata ?: return@map part
+            val v = meta["interject"]
+            if (v is JsonPrimitive && v.content != "true") {
+                val filtered = JsonObject(meta.filterKeys { it != "interject" })
+                when (part) {
+                    is UIMessagePart.Text -> part.copy(metadata = filtered)
+                    is UIMessagePart.Image -> part.copy(metadata = filtered)
+                    else -> part
+                }
+            } else {
+                part
+            }
+        }
+        val mergedMsg = targetMsg.copy(parts = cleanedParts + tagged)
+        val newMessages = targetNode.messages.toMutableList().also { list ->
+            val idx = targetNode.selectIndex.coerceIn(0, list.size - 1)
+            list[idx] = mergedMsg
+        }
+        val result = nodes.toMutableList()
+        result[targetIndex] = targetNode.copy(messages = newMessages)
+        AppLogBuffer.log(
+            TAG,
+            "interject: merged ${pending.size} into assistant idx=$targetIndex parts=${tagged.size}"
+        )
+        return conversation.copy(messageNodes = result)
     }
 
     /**

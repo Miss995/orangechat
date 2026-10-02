@@ -118,6 +118,10 @@ class ChatVM(
     // 错误状态
     val errors: StateFlow<List<ChatError>> = chatService.errors
 
+    // 【插话不落库 · 2026-10-02】排队中的插话。插话不再进会话（内存/库都不进），
+    // 界面就没有"独立那条"可读，改读这个流画"排队中"折叠条。
+    val pendingInterjections: StateFlow<Map<Uuid, List<UIMessage>>> = chatService.pendingInterjectionFlow
+
     fun dismissError(id: Uuid) = chatService.dismissError(id)
 
     fun clearAllErrors() = chatService.clearAllErrors()

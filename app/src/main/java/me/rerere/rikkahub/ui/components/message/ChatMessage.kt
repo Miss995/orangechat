@@ -1249,7 +1249,7 @@ private fun QuotedMessageChip(quoted: UIMessage) {
 // 默认展开：插话是宝正在说的话，藏起来还得点一下才看得见，反而不像在对话。
 // 两种来源：①合并前的历史数据给整条 UIMessage；②合并后给的是那个带记号的 part。
 @Composable
-private fun ChatMessageInterjectedMessage(
+internal fun ChatMessageInterjectedMessage(
     message: UIMessage? = null,
     part: UIMessagePart? = null,
     // 【插话排队态 · 2026-10-01】true＝宝发了、猫还没轮到（还在列表里等着被并）；

@@ -108,6 +108,7 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.message.ChatMessage
+import me.rerere.rikkahub.ui.components.message.ChatMessageInterjectedMessage
 import me.rerere.rikkahub.ui.components.ui.ErrorCardsDisplay
 import me.rerere.rikkahub.ui.components.ui.ListSelectableItem
 import me.rerere.rikkahub.ui.components.ui.RabbitLoadingIndicator
@@ -152,6 +153,8 @@ fun ChatList(
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
     // 【消息引用 2026-09-22】长按消息 → 引用
     onQuote: (UIMessage) -> Unit = {},
+    // 【插话不落库 · 2026-10-02】排队中的插话（还没并进猫那条的，界面画"排队中"用）
+    pendingInterjections: List<UIMessage> = emptyList(),
 ) {
     AnimatedContent(
         targetState = previewMode,
@@ -198,6 +201,7 @@ fun ChatList(
                 jumpNodes = jumpNodes,
                 jumpTargetIndex = jumpTargetIndex,
                 onExitJump = onExitJump,
+                pendingInterjections = pendingInterjections,
             )
         }
     }
@@ -233,6 +237,8 @@ private fun ChatListNormal(
     jumpNodes: List<MessageNode>? = null,
     jumpTargetIndex: Int? = null,
     onExitJump: () -> Unit = {},
+    // 【插话不落库 · 2026-10-02】排队中的插话（画在最后一条消息下面）
+    pendingInterjections: List<UIMessage> = emptyList(),
 ) {
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
@@ -488,6 +494,12 @@ private fun ChatListNormal(
                         onSystemPromptChange = onConversationSystemPromptChange,
                     )
                 }
+            }
+
+            // 【插话不落库 · 2026-10-02】排队中的插话：它没进会话，界面上由这里补画。
+            // 标题走"排队中"；等收尾合并进猫那条之后，自然换成猫那边的"你的插话"折叠条。
+            items(pendingInterjections, key = { it.id }) { pending ->
+                ChatMessageInterjectedMessage(message = pending, pending = true)
             }
 
             if (loading) {
