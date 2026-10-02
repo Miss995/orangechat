@@ -2199,7 +2199,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         val pendingIds = pending.map { it.id.toString() }.toSet()
         val nodes = conversation.messageNodes.filterNot { node ->
             val m = node.currentMessage
-            m.role == MessageRole.USER && m.id.toString() in pendingIds
+            // 【认标不认 id · 2026-10-02】expandInterjections 拆出来那条 USER 的 id 是现场生成的，
+            // 跟账上的对不上 → 只认 id 会漏。带插话标的就是它，两个判据取并集。
+            m.role == MessageRole.USER &&
+                (m.id.toString() in pendingIds || m.parts.any { isInterjectMarked(it) })
         }
         val targetIndex = nodes.indexOfLast { it.currentMessage.role == MessageRole.ASSISTANT }
         if (targetIndex < 0) return conversation
@@ -2245,7 +2248,13 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 part
             }
         }
-        val mergedParts = if (anchorIdx >= 0) {
+        // 【别挂两次 · 2026-10-02】流式刷新那一步（collapseInterjections）可能**已经**把她的话
+        // 并进猫那条了；那种情况下收尾只能做清理，不能再挂一遍（挂了就是同一处两份——
+        // 宝实测：一条被合进去的壳 + 一条收尾又挂的）。
+        val alreadyMerged = targetMsg.parts.any { isInterjectMarked(it) }
+        val mergedParts = if (alreadyMerged) {
+            cleanedParts
+        } else if (anchorIdx >= 0) {
             // 插在"她插话时猫写到的那个 part"后面
             cleanedParts.take(anchorIdx + 1) + tagged + cleanedParts.drop(anchorIdx + 1)
         } else {
