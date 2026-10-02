@@ -2252,6 +2252,13 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 【别挂两次 · 2026-10-02】流式刷新那一步（collapseInterjections）可能**已经**把她的话
         // 并进猫那条了；那种情况下收尾只能做清理，不能再挂一遍（挂了就是同一处两份——
         // 宝实测：一条被合进去的壳 + 一条收尾又挂的）。
+        val __wzAlready = targetMsg.parts.any { isInterjectMarked(it) }
+        AppLogBuffer.log(
+            TAG,
+            "[Interject] finish: anchorIdx=$anchorIdx alreadyMerged=$__wzAlready parts=${targetMsg.parts.size} kinds=[${
+                targetMsg.parts.joinToString("|") { it.javaClass.simpleName }
+            }] pendingIds=${pendingIds.size}"
+        )
         val alreadyMerged = targetMsg.parts.any { isInterjectMarked(it) }
         val mergedParts = if (alreadyMerged) {
             cleanedParts
@@ -2360,7 +2367,12 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             val last = out.lastOrNull()
             val isInterjectTail = msg.role == MessageRole.ASSISTANT && hasTextMark(msg, "interjectTail")
             if (isInterjectUser && last != null && last.role == MessageRole.ASSISTANT) {
+                val __before = last.parts.joinToString("|") { it.javaClass.simpleName }
                 out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
+                AppLogBuffer.log(
+                    TAG,
+                    "[Interject] collapse: her appended. before=[$__before] herParts=${msg.parts.size} outSize=${out.size} mergedIntoId=${last.id}"
+                )
                 justMerged = true
             } else if (isInterjectTail && last != null && last.role == MessageRole.ASSISTANT) {
                 // 【认尾标 · 2026-10-02】切出来的后半截自带记号：只要它跟在一条 assistant 后面就并回去。
