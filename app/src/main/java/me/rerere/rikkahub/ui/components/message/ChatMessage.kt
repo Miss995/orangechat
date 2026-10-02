@@ -438,7 +438,11 @@ private fun MessagePartsBlock(
     }
  
     // Render parts in original order (group thinking/tool as chain-of-thought)
-    val groupedParts = remember(parts) { parts.groupMessageParts() }
+    // 【空气泡 · 2026-10-02】长度为 0 的文本 part 会占一个块、画出一个空泡
+    // （宝报"猫上下半句之间有个空气泡"）。渲染前滤掉；数据层不动——它进请求也只是 0 字节，不影响缓存。
+    val groupedParts = remember(parts) {
+        parts.filterNot { it is UIMessagePart.Text && it.text.isEmpty() }.groupMessageParts()
+    }
     groupedParts.fastForEach { block ->
         when (block) {
             is MessagePartBlock.ThinkingBlock -> {
