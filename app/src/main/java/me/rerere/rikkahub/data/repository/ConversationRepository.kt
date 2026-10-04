@@ -782,6 +782,27 @@ class ConversationRepository(
                 }
                 offset += pageSize
             }
+            // 【分支存量诊断 · 2026-10-04】列出还挂着多版本的消息格（界面上 <N/N> 里 N>1 的）。
+            // 清"插话错位欠下的存量分支"之前的现场勘察：看每格几版、各版的 id/角色/字数。
+            // 字数相同的版本极可能是错位塞进来的副本；字数不同的则是被切碎的半截。
+            run {
+                val multi = nodes.filter { it.messages.size > 1 }
+                if (multi.isNotEmpty()) {
+                    val detail = multi.take(12).joinToString(" ") { n ->
+                        val versions = n.messages.joinToString(",") { m ->
+                            val t = m.parts
+                                .filterIsInstance<UIMessagePart.Text>()
+                                .sumOf { it.text.length }
+                            "${m.id.toString().take(4)}:${m.role.name.take(1)}:$t"
+                        }
+                        "#${n.selectIndex}/${n.messages.size}[$versions]"
+                    }
+                    AppLogBuffer.log(
+                        "BranchScan",
+                        "conv=${conversationId.take(8)} nodes=${nodes.size} multi=${multi.size} detail=$detail"
+                    )
+                }
+            }
             nodes
         }
     }
