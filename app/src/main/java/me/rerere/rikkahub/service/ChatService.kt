@@ -2347,9 +2347,17 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             }
             result[ni] = node.copy(messages = newMessages)
         }
+        // 【数标 · 2026-10-04 宝实测】她在界面上看到"同一条猫消息下面画了两个折叠条"。
+        // 日志已证：数据层只入队一次、只合并一次。所以要么是这里挂了两次（parts 里真有两个带标的），
+        // 要么是渲染层画了两遍。把这几个数打出来定案：
+        //   marks = 每处被改的节点里，带 interject 标的部分有**几个**。
+        //   出现 =2 → ①（数据层真的两个）；全是 =1 → ②（问题在渲染层）。
+        val marks = plan.keys.joinToString(",") { ni ->
+            "#$ni=" + result.getOrNull(ni)?.currentMessage?.parts?.count { isInterjectMarked(it) }
+        }
         AppLogBuffer.log(
             TAG,
-            "interject: merged ${pending.size} into assistant（分 ${plan.size} 处）"
+            "interject: merged ${pending.size} into assistant（分 ${plan.size} 处）marks=$marks"
         )
         return conversation.copy(messageNodes = result)
     }
