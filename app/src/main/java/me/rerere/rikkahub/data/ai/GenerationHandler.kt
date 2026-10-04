@@ -1023,6 +1023,8 @@ class GenerationHandler(
                         val tl = hourToPeriodLabel(nowLdt.hour)
                         append("\n【时刻感】现在是$tl（${"%02d".format(nowLdt.hour)}:${"%02d".format(nowLdt.minute)}）")
                         append(chatSessionDurationText(messages, System.currentTimeMillis() / 1000L))
+                        // 【距上次聊天 · 2026-10-04 宝定的】取代退役的 <time_reminder> 那条。
+                        append(sinceLastUserMessageText(messages, System.currentTimeMillis() / 1000L))
                         // 背景补充（召回内容，2026-09-13 从 system 挪来的）
                         if (!recalledBlock.isNullOrBlank()) {
                             append("\n【背景补充】\n").append(recalledBlock)
@@ -1407,6 +1409,31 @@ private fun chatSessionDurationText(messages: List<UIMessage>, nowSec: Long): St
         minutes < 1 -> "，这场刚聊起来"
         minutes < 60 -> "，这场从 $startText 开始，聊了约 $minutes 分钟"
         else -> "，这场从 $startText 开始，聊了约 ${minutes / 60} 小时 ${minutes % 60} 分钟"
+    }
+}
+
+/**
+ * 【距上次聊天 · 2026-10-04 宝定的】取代退役的 TimeReminderTransformer 那条 <time_reminder>。
+ *
+ * 旧那条报的是"现在几点 + 间隔"，位置却在【历史最前面】——窗口一裁，首条就换人，
+ * 时间戳跟着换 → 从那儿往后整段重算（PromptDiff 实测：命中率掉到 41%，断点钉死在一处）。
+ *
+ * 这一句只报一个事实：她上一条消息离现在多久。位置在末尾那条注入块里（增量区），
+ * 会变也不伤前缀缓存。
+ */
+private fun sinceLastUserMessageText(messages: List<UIMessage>, nowSec: Long): String {
+    var lastUserSec: Long? = null
+    for (msg in messages) {
+        if (msg.role != MessageRole.USER) continue
+        val sec = msgEpochSecond(msg) ?: continue
+        lastUserSec = sec // 正序扫，最后留下的就是最新那条
+    }
+    val last = lastUserSec ?: return ""
+    val minutes = ((nowSec - last) / 60L).coerceAtLeast(0)
+    return when {
+        minutes < 1 -> "，宝刚说完"
+        minutes < 60 -> "，距上次聊天 $minutes 分钟"
+        else -> "，距上次聊天 ${minutes / 60} 小时 ${minutes % 60} 分钟"
     }
 }
 

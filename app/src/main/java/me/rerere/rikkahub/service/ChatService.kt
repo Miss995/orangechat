@@ -164,7 +164,12 @@ enum class ChatErrorSolution {
 
 private val inputTransformers by lazy {
     listOf(
-        TimeReminderTransformer,
+        // 【退役 · 2026-10-04 宝定的】TimeReminderTransformer 不再挂在这条链上。
+        // 它给"列表里第一条 USER"无条件插一条带"当前时间"的 <time_reminder>——窗口一裁首条就换人，
+        // 那条时间戳跟着换，而它坐在列表最前面 → 从那儿往后整段缓存全废
+        // （PromptDiff 实测：命中率掉到 41%，断点钉死在一处）。
+        // 现在改成：在末尾那条"系统消息注入"里报一句"距上次聊天 xx 分钟"（见 GenerationHandler）。
+        // 类本身和它的单测都留着不动，只是不再进这条链。
         PromptInjectionTransformer,
         PlaceholderTransformer,
         DocumentAsPromptTransformer,
