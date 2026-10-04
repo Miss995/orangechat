@@ -577,6 +577,18 @@ private fun ExportedChatMessage(
                                             tool = step.tool
                                         )
                                     }
+
+                                    // 【插话步骤 · 2026-10-04】加到 ThinkingStep 里的新类型：
+                                    // 宝插的那句话，导出时按普通文本渲染（别漏掉她说的话）。
+                                    // ⚠️ ThinkingStep 是 sealed，这里漏分支会直接编译不过。
+                                    is ThinkingStep.InterjectStep -> {
+                                        val t = (step.part as? UIMessagePart.Text)?.text
+                                        if (!t.isNullOrBlank()) {
+                                            ProvideTextStyle(MaterialTheme.typography.bodyMedium) {
+                                                Text(t)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
