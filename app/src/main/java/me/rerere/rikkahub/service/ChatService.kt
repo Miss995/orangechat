@@ -2259,101 +2259,113 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             m.role == MessageRole.USER &&
                 (m.id.toString() in pendingIds || m.parts.any { isInterjectMarked(it) })
         }
-        val targetIndex = nodes.indexOfLast { it.currentMessage.role == MessageRole.ASSISTANT }
-        if (targetIndex < 0) return conversation
-        val targetNode = nodes[targetIndex]
-        val targetMsg = targetNode.currentMessage
+        val lastAssistantIndex = nodes.indexOfLast { it.currentMessage.role == MessageRole.ASSISTANT }
+        if (lastAssistantIndex < 0) return conversation
 
-        // 【插话位置诊断 · 2026-10-04】宝实测"上半段插的话，挂到下半段结尾"。
-        // 这一行把关键事实记下来：每条插话的锚点落在**第几条**猫消息上（-1 = 没找到），
-        // 而收尾固定只往 targetIndex 那一条挂。两者不一致 = 位置错的原因。
+        // 【按锚点分发 · 2026-10-04 宝实测】原来固定挂到"会话里最后一条猫消息"（targetIndex），
+        // 锚点却打在"她插话那一刻猫写到的那条"上——两者常常不是同一条，于是锚点找不到，
+        // 退化成"追加末尾"（宝截图实证：她插在 A 之后，话挂到了后面那条 B 的尾巴上）。
+        // 现在逐条找它的锚点落在哪条猫消息上，各挂各的；找不到锚点的（接力，猫写完才插）
+        // 才归最后一条末尾——那本来就是它的正确位置。
+        fun anchorOfIn(msg: UIMessage, pid: String): Int =
+            msg.parts.indexOfFirst { part ->
+                val v = part.metadata?.get("interject")
+                v is JsonPrimitive && v.content != "true" &&
+                    v.content.split(",").any { it.trim() == pid }
+            }
+
+        // nodeIndex -> [(锚点在那条 parts 里的位置, 要插进去的 parts)]
+        val plan = LinkedHashMap<Int, MutableList<Pair<Int, List<UIMessagePart>>>>()
+        val orphans = mutableListOf<UIMessagePart>()
+
+        pending.forEach { p ->
+            val pid = p.id.toString()
+            val parts = p.parts.map { tagAsInterjectPart(it) }
+            var targetNi = -1
+            var anchorAt = -1
+            nodes.forEachIndexed { ni, node ->
+                if (targetNi >= 0) return@forEachIndexed
+                if (node.currentMessage.role != MessageRole.ASSISTANT) return@forEachIndexed
+                val ai = anchorOfIn(node.currentMessage, pid)
+                if (ai >= 0) {
+                    targetNi = ni
+                    anchorAt = ai
+                }
+            }
+            if (targetNi >= 0) {
+                plan.getOrPut(targetNi) { mutableListOf() }.add(anchorAt to parts)
+            } else {
+                orphans.addAll(parts)
+            }
+        }
+        if (orphans.isNotEmpty()) {
+            plan.getOrPut(lastAssistantIndex) { mutableListOf() }.add(Int.MAX_VALUE to orphans)
+        }
         AppLogBuffer.log(
             TAG,
-            "[Interject] merge: pending=${pending.size} nodes=${nodes.size} target=$targetIndex " +
-                "anchors=" + pending.joinToString(",") { p ->
-                    val pid = p.id.toString()
-                    val at = nodes.indexOfFirst { n ->
-                        n.currentMessage.role == MessageRole.ASSISTANT &&
-                            n.currentMessage.parts.any { pt ->
-                                val v = pt.metadata?.get("interject")
-                                v is JsonPrimitive && v.content != "true" &&
-                                    v.content.split(",").any { it.trim() == pid }
-                            }
-                    }
-                    "${pid.take(8)}@$at"
-                }
+            "[Interject] merge: pending=${pending.size} nodes=${nodes.size} last=$lastAssistantIndex " +
+                "plan=" + plan.entries.joinToString(",") { (k, v) -> "#$k×${v.sumOf { it.second.size }}" }
         )
 
-        // 宝那几句话的 parts 打上"这是插进来的"记号（界面认它就是折叠条）
-        val tagged = pending.flatMap { p -> p.parts }.map { part ->
-            val oldMeta = part.metadata
-            val newMeta = if (oldMeta == null) {
-                JsonObject(mapOf("interject" to JsonPrimitive(true)))
-            } else {
-                JsonObject(oldMeta + ("interject" to JsonPrimitive(true)))
-            }
-            when (part) {
-                is UIMessagePart.Text -> part.copy(metadata = newMeta)
-                is UIMessagePart.Image -> part.copy(metadata = newMeta)
-                else -> part
-            }
-        }
-        // 【插话位置 · 2026-10-02 宝指出的排序问题】她插话时猫只写到一半，那句话该夹在
-        // "猫写到的位置"中间，而不是贴在整条末尾。位置信息没丢：搭车那刻 GenerationHandler
-        // 把锚点打在猫的某个 part 上（metadata{"interject": "<她的消息 id>"}），那就是
-        // "她插话时猫写到的最后一格"。按它插入；接力那种（猫已经写完了才插）没有锚点，
-        // 追加到末尾本来就是对的位置。
-        val anchorIdx = targetMsg.parts.indexOfFirst { part ->
-            val v = part.metadata?.get("interject")
-            v is JsonPrimitive && v.content != "true" && v.content.split(",").any { it.trim() in pendingIds }
-        }
-        // 【旧锚点清理 · 2026-10-01 保留】搭车那刻在猫的 last part 上留过一串消息 id 的锚点（上一版的画法），
-        // 跟合并后打的 part 标是两套记号，会各画一遍（宝实测截图：多出一条）。顺手把非 boolean 的抹掉。
-        val cleanedParts = targetMsg.parts.map { part ->
-            val meta = part.metadata ?: return@map part
-            val v = meta["interject"]
-            if (v is JsonPrimitive && v.content != "true") {
-                val filtered = JsonObject(meta.filterKeys { it != "interject" })
-                when (part) {
-                    is UIMessagePart.Text -> part.copy(metadata = filtered)
-                    is UIMessagePart.Image -> part.copy(metadata = filtered)
-                    else -> part
-                }
-            } else {
-                part
-            }
-        }
-        // 【别挂两次 · 2026-10-02】流式刷新那一步（collapseInterjections）可能**已经**把她的话
-        // 并进猫那条了；那种情况下收尾只能做清理，不能再挂一遍（挂了就是同一处两份——
-        // 宝实测：一条被合进去的壳 + 一条收尾又挂的）。
-        val __wzAlready = targetMsg.parts.any { isInterjectMarked(it) }
-        AppLogBuffer.log(
-            TAG,
-            "[Interject] finish: anchorIdx=$anchorIdx alreadyMerged=$__wzAlready parts=${targetMsg.parts.size} kinds=[${
-                targetMsg.parts.joinToString("|") { it.javaClass.simpleName }
-            }] pendingIds=${pendingIds.size}"
-        )
-        val alreadyMerged = targetMsg.parts.any { isInterjectMarked(it) }
-        val mergedParts = if (alreadyMerged) {
-            cleanedParts
-        } else if (anchorIdx >= 0) {
-            // 插在"她插话时猫写到的那个 part"后面
-            cleanedParts.take(anchorIdx + 1) + tagged + cleanedParts.drop(anchorIdx + 1)
-        } else {
-            cleanedParts + tagged
-        }
-        val mergedMsg = targetMsg.copy(parts = mergedParts)
-        val newMessages = targetNode.messages.toMutableList().also { list ->
-            val idx = targetNode.selectIndex.coerceIn(0, list.size - 1)
-            list[idx] = mergedMsg
-        }
         val result = nodes.toMutableList()
-        result[targetIndex] = targetNode.copy(messages = newMessages)
+        plan.forEach { (ni, slots) ->
+            val node = result[ni]
+            val msg = node.currentMessage
+            // 顺手抹掉搭车那刻留的 id 锚点（旧记号，不抹会多画一遍）
+            val cleaned = msg.parts.map { stripInterjectAnchor(it) }
+            // 流式那半步可能已经合过（collapseInterjections）——那种只清理，不再挂一遍
+            val alreadyMerged = msg.parts.any { isInterjectMarked(it) }
+            val out = if (alreadyMerged) {
+                cleaned
+            } else {
+                val buf = mutableListOf<UIMessagePart>()
+                cleaned.forEachIndexed { i, part ->
+                    buf.add(part)
+                    slots.filter { it.first == i }.forEach { buf.addAll(it.second) }
+                }
+                // 锚点越界（那一格找不到了）或本来就是"接力" → 追加末尾，别丢
+                slots.filter { it.first >= cleaned.size }.forEach { buf.addAll(it.second) }
+                buf
+            }
+            val newMessages = node.messages.toMutableList().also { list ->
+                val idx = node.selectIndex.coerceIn(0, list.size - 1)
+                list[idx] = msg.copy(parts = out)
+            }
+            result[ni] = node.copy(messages = newMessages)
+        }
         AppLogBuffer.log(
             TAG,
-            "interject: merged ${pending.size} into assistant idx=$targetIndex parts=${tagged.size}"
+            "interject: merged ${pending.size} into assistant（分 ${plan.size} 处）"
         )
         return conversation.copy(messageNodes = result)
+    }
+
+    /** 【插话标 · 2026-10-04】把她的 part 打上 boolean 标（界面认它就是折叠条）。 */
+    private fun tagAsInterjectPart(part: UIMessagePart): UIMessagePart {
+        val oldMeta = part.metadata
+        val newMeta = if (oldMeta == null) {
+            JsonObject(mapOf("interject" to JsonPrimitive(true)))
+        } else {
+            JsonObject(oldMeta + ("interject" to JsonPrimitive(true)))
+        }
+        return when (part) {
+            is UIMessagePart.Text -> part.copy(metadata = newMeta)
+            is UIMessagePart.Image -> part.copy(metadata = newMeta)
+            else -> part
+        }
+    }
+
+    /** 【旧锚点清理 · 2026-10-01 保留】抹掉非 boolean 的 interject 锚点（会多画一遍）。 */
+    private fun stripInterjectAnchor(part: UIMessagePart): UIMessagePart {
+        val meta = part.metadata ?: return part
+        val v = meta["interject"]
+        if (v !is JsonPrimitive || v.content == "true") return part
+        val filtered = JsonObject(meta.filterKeys { it != "interject" })
+        return when (part) {
+            is UIMessagePart.Text -> part.copy(metadata = filtered)
+            is UIMessagePart.Image -> part.copy(metadata = filtered)
+            else -> part
+        }
     }
 
     /**
