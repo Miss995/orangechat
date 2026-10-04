@@ -274,6 +274,10 @@ class ChatService(
     @Volatile
     private var lastInterjectDupLogAt = 0L
 
+    // 【collapse 日志节流 · 2026-10-05】collapse 每秒被调十次、每次都吐一行，500 条的环五十秒就被冲干净，
+    // 收尾那几行 merge-* 留痕根本活不到排查的时候。改成每 30 次（约 3 秒）一行，给它们留出活路。
+    private var collapseLogTick = 0
+
     // 【插话不落库 · 2026-10-02】排队中的插话，给界面画"排队中"折叠条用。
     // 插话不再进会话（内存/库都不进），界面就没有"独立那条"可读，改读这个流。
     val pendingInterjectionFlow = kotlinx.coroutines.flow.MutableStateFlow<Map<Uuid, List<UIMessage>>>(emptyMap())
@@ -1630,6 +1634,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             Logging.log(TAG, "handleMessageComplete: $it")
             Logging.log(TAG, it.stackTraceToString())
         }.onSuccess {
+            AppLogBuffer.log(TAG, "[Interject] onSuccess entered conv=${conversationId.toString().take(8)}")
             val finalConversation = session.saveMutex.withLock {
                 var latest = getConversationFlow(conversationId).value
                 // 【插话合并 · 2026-10-01】落库前先把宝插话的那条并进猫的回复里。
@@ -2566,7 +2571,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // → 每秒 80 行，把 500 条日志环刷爆（别的日志全被挤出去，排查时满屏都是它）。
         // 改成每次调用只汇总一行。行为一字未改。
         if (mergedCount > 0) {
-            AppLogBuffer.log(TAG, "[Interject] collapse: merged=$mergedCount in=${messages.size} out=${out.size}")
+            collapseLogTick++
+            if (collapseLogTick % 30 == 0) {
+                AppLogBuffer.log(TAG, "[Interject] collapse: merged=$mergedCount in=${messages.size} out=${out.size} tick=$collapseLogTick")
+            }
         }
         return out
     }
