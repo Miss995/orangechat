@@ -1346,11 +1346,19 @@ internal fun ChatMessageInterjectedMessage(
                         )
                     }
                 }
+                // 【预览 · 2026-10-04 宝定的】标题带上内容开头半句：折叠条原来只写"你的插话"，
+                // 两条并排时长一模一样，看着像同一条被复制了两遍（宝截图实证）。
+                // 短的（≤14 字）原样放，长的截断加省略号，不硬凑。
+                val preview = remember(text) {
+                    val flat = text.trim().replace(Regex("\\s+"), " ")
+                    if (flat.length <= 14) flat else flat.take(14) + "…"
+                }
+                val labelBase = stringResource(
+                    if (pending) R.string.chat_message_interjected_pending
+                    else R.string.chat_message_interjected_label
+                )
                 Text(
-                    text = stringResource(
-                        if (pending) R.string.chat_message_interjected_pending
-                        else R.string.chat_message_interjected_label
-                    ),
+                    text = if (preview.isBlank()) labelBase else "$labelBase · $preview",
                     style = MaterialTheme.typography.titleSmall,
                     color = accent,
                     modifier = Modifier.weight(1f),

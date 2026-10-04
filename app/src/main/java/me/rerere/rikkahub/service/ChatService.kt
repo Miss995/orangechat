@@ -729,7 +729,11 @@ class ChatService(
                     syncPendingInterjectionFlow()
                     AppLogBuffer.log(
                         TAG,
-                        "interject: queued for ride conv=$conversationId size=${newConversation.messageNodes.size}"
+                        "interject: queued for ride conv=$conversationId " +
+                            "id=${insertedMessage.id.toString().take(8)} " +
+                            "len=" + insertedMessage.parts.filterIsInstance<UIMessagePart.Text>()
+                                .sumOf { it.text.length } +
+                            " size=${newConversation.messageNodes.size}"
                     )
                 }
 
@@ -2311,7 +2315,9 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         }
         AppLogBuffer.log(
             TAG,
-            "[Interject] merge: pending=${pending.size} nodes=${nodes.size} last=$lastAssistantIndex " +
+            "[Interject] merge: pending=${pending.size} " +
+                "ids=" + pending.joinToString(",") { it.id.toString().take(8) } +
+                " nodes=${nodes.size} last=$lastAssistantIndex " +
                 "plan=" + plan.entries.joinToString(",") { (k, v) -> "#$k×${v.sumOf { it.second.size }}" }
         )
 
