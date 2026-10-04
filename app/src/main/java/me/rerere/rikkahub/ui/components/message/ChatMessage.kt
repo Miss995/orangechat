@@ -445,24 +445,20 @@ private fun MessagePartsBlock(
     val groupedParts = remember(parts) {
         parts.filterNot { it is UIMessagePart.Text && it.text.isEmpty() }.groupMessageParts()
     }
-    // 【插话后那段思考链 · 2026-10-04 宝定的】这条消息里一旦出现过插话，
-    // 后面所有"纯思考"块都铺满宽度（工具块本来就是满的，只有纯思考块会自适应变窄）。
-    // ⚠️ 第一版判的是"前一个块是不是插话"——实测咬不中，因为分组是外部库做的、
-    // 看不到它的规则，猫对块顺序的假设错了。改用"见过插话没有"这个更粗但更稳的判据。
-    var sawInterject = false
-    groupedParts.fastForEachIndexed { index, block ->
-        val carriesInterject = anchorPartOf(block)?.let { isInterjectPart(it) } == true
+    // 【宽度统一 · 2026-10-04 宝定的】思考链折叠态原来会"按内容自适应"（收成一条窄标签），
+    // 宝要它跟工具块一样贴合其他块——不要自适应，一律铺满。
+    // （前两版想只让"插话后面那段"铺满：靠"前一个块是插话"「见过插话没有」都没咬中，
+    //  因为分组是外部库做的、看不到规则。索性不判了，全部铺满。）
+    groupedParts.fastForEach { block ->
         when (block) {
             is MessagePartBlock.ThinkingBlock -> {
                 if (block.steps.isNotEmpty()) {
-                    val isReasoningOnlyBlock = block.steps.fastAll { it is ThinkingStep.ReasoningStep }
-                    val followsInterject = sawInterject
                     // 【流式降级 · 2026-10-02】生成中不做尺寸动画：内容每 100ms 变一次，
                     // 动画会不停重启、每帧重新测量整块。写完（loading=false）再恢复。
                     ChainOfThought(
                         modifier = if (loading) Modifier else Modifier.animateContentSize(),
                         steps = block.steps,
-                        collapsedAdaptiveWidth = isReasoningOnlyBlock && !followsInterject,
+                        collapsedAdaptiveWidth = false,
                         animateChanges = !loading,
                     ) { step ->
                         when (step) {
@@ -472,7 +468,7 @@ private fun MessagePartsBlock(
                                         reasoning = step.reasoning,
                                         model = model,
                                         assistant = assistant,
-                                        collapsedAdaptiveWidth = isReasoningOnlyBlock,
+                                        collapsedAdaptiveWidth = false,
                                     )
                                 }
                             }
@@ -817,10 +813,8 @@ private fun MessagePartsBlock(
         // 那个时代的画法。现在插话压根不进会话，排队态交给列表那边（读 ChatService 的流）负责，
         // 这里只留一条路：part 自己带记号 = 已经并进来了。
         // （两套记号并存会各画一遍——宝实测：同一句冒出三条。）
-        if (carriesInterject) {
+        if (anchorPartOf(block)?.let { isInterjectPart(it) } == true) {
             ChatMessageInterjectedMessage(part = anchorPartOf(block))
-            // 后面的纯思考块要铺满（见循环开头那段注释）
-            sawInterject = true
         }
     }
  
@@ -1286,13 +1280,14 @@ internal fun ChatMessageInterjectedMessage(
     // 【默认折叠 · 2026-10-04 宝定的】原来是默认展开；她说里面装的就是她的话，收着更干净
     var expanded by remember(message, part) { mutableStateOf(false) }
     // 【配色 · 2026-10-04 宝定的】字和图标跟思考链同色（思考链用的是 secondary，
-    // 不是 primary）；背景用 surface（跟消息底色一档），不再用表面高亮那一档。
+    // 不是 primary）。背景用 surfaceContainerHigh：跟思考链同款"卡片色"。
+    // ⚠️ 别用 surface——那是聊天区底色本身，卡片会跟背景糊成一片（10-04 试过）。
     val accent = MaterialTheme.colorScheme.secondary
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        color = MaterialTheme.colorScheme.surface,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(16.dp),
     ) {
         Column(
