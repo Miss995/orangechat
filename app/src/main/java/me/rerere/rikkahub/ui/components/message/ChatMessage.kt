@@ -453,12 +453,16 @@ private fun MessagePartsBlock(
         when (block) {
             is MessagePartBlock.ThinkingBlock -> {
                 if (block.steps.isNotEmpty()) {
+                    // 【折叠态宽度 · 2026-10-04 收尾】纯思考块折叠时收成小窄条、含工具的块铺满
+                    // （原版行为）。插话已经住进思考链（InterjectStep），它跟前后的宽度天然一致，
+                    // 所以之前那版"一律铺满"的临时办法撤掉。
+                    val isReasoningOnlyBlock = block.steps.fastAll { it is ThinkingStep.ReasoningStep }
                     // 【流式降级 · 2026-10-02】生成中不做尺寸动画：内容每 100ms 变一次，
                     // 动画会不停重启、每帧重新测量整块。写完（loading=false）再恢复。
                     ChainOfThought(
                         modifier = if (loading) Modifier else Modifier.animateContentSize(),
                         steps = block.steps,
-                        collapsedAdaptiveWidth = false,
+                        collapsedAdaptiveWidth = isReasoningOnlyBlock,
                         animateChanges = !loading,
                     ) { step ->
                         when (step) {
@@ -468,7 +472,7 @@ private fun MessagePartsBlock(
                                         reasoning = step.reasoning,
                                         model = model,
                                         assistant = assistant,
-                                        collapsedAdaptiveWidth = false,
+                                        collapsedAdaptiveWidth = isReasoningOnlyBlock,
                                     )
                                 }
                             }
@@ -548,7 +552,7 @@ private fun MessagePartsBlock(
                                                                 UIMessagePart.Reasoning(reasoning = seg.content)
                                                             )
                                                         ),
-                                                        collapsedAdaptiveWidth = false,
+                                                        collapsedAdaptiveWidth = true,
                                                     ) { step ->
                                                         ChatMessageReasoningStep(
                                                             reasoning = step.reasoning,
