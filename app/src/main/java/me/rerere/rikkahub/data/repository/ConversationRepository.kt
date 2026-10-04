@@ -514,16 +514,51 @@ class ConversationRepository(
         }
     }
 
+    /** 【2026-10-04】重建索引时每页读多少格。分页读是为了绕开 12M 字符的预算闸。 */
+    private val REBUILD_INDEX_PAGE_SIZE = 40
+
     suspend fun rebuildAllIndexes(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
         try {
             messageFtsManager.deleteAll()
             val allIds = conversationDAO.getAllIds()
             val total = allIds.size
             allIds.forEachIndexed { index, id ->
-                val entity = conversationDAO.getConversationById(id) ?: return@forEachIndexed
-                val nodes = loadMessageNodes(entity.id)
-                val conversation = conversationEntityToConversation(entity, nodes)
-                messageFtsManager.indexConversation(conversation)
+                // 单个会话出问题不该拖垮整批（清空已经做了，中断就剩一片空）。
+                try {
+                    val entity = conversationDAO.getConversationById(id) ?: return@forEachIndexed
+                    // 【2026-10-04 修】不能整段读：loadMessageNodesRange 里有 12M 字符的预算闸
+                    // （9-17 治 OOM 加的），大会话一超就 break，只索引到开头那一截 ——
+                    // 表现就是"很久以前的能搜到、最近的搜不到"。改成分页读，那个闸就撞不到了。
+                    val nodeCount = messageNodeDAO.getNodeCountOfConversation(id)
+                    var offset = 0
+                    var firstPage = true
+                    while (offset < nodeCount) {
+                        val end = (offset + REBUILD_INDEX_PAGE_SIZE).coerceAtMost(nodeCount)
+                        val nodes = loadMessageNodesRange(id, offset, end)
+                        if (nodes.isNotEmpty()) {
+                            if (firstPage) {
+                                // 第一页：顺手清掉这个会话的旧索引，再按当前节点重建
+                                messageFtsManager.indexConversation(
+                                    conversationEntityToConversation(entity, nodes)
+                                )
+                                firstPage = false
+                            } else {
+                                // 后续页：按 node 增量写（不会动前面页已经写好的部分）
+                                messageFtsManager.reindexNodes(
+                                    conversationId = id,
+                                    conversationTitle = entity.title,
+                                    updateAt = Instant.ofEpochMilli(entity.updateAt),
+                                    changedNodeIds = nodes.map { it.id.toString() }.toSet(),
+                                    currentNodes = nodes,
+                                )
+                            }
+                        }
+                        if (end <= offset) break
+                        offset = end
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "rebuildAllIndexes: conversation failed, id=$id", e)
+                }
                 onProgress(index + 1, total)
             }
         } catch (e: Exception) {
