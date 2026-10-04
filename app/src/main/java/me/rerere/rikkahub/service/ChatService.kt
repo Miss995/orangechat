@@ -2533,18 +2533,18 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                         AppLogBuffer.log(TAG, "[Interject] DUP merge hadMarks=$hadMarks inMsg=${msg.parts.count { isInterjectMarked(it) }}")
                     }
                 }
-                out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
+                out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
                 mergedCount++
                 justMerged = true
             } else if (isInterjectTail && last != null && last.role == MessageRole.ASSISTANT) {
                 // 【认尾标 · 2026-10-02】切出来的后半截自带记号：只要它跟在一条 assistant 后面就并回去。
                 // 不依赖"返回值里有没有她那条 USER"——实测那个条件常不成立，于是后半独立成条
                 //（宝看到的"猫的上半句和下半句分开、两个号"）。
-                out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
+                out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
                 justMerged = true
             } else if (justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT) {
                 // 紧跟在插话后面的那半截正文：并回同一条，别让它独立成条
-                out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
+                out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
                 justMerged = false
             } else {
                 // 【漏网兜底 · 2026-10-05 宝实测】她的话没跟紧在猫消息后面（连着两条她的、或列表开头就是它）
@@ -2554,7 +2554,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 if (isInterjectUser) {
                     val backIdx = out.indexOfLast { it.role == MessageRole.ASSISTANT }
                     if (backIdx >= 0) {
-                        out[backIdx] = out[backIdx].copy(parts = out[backIdx].parts + msg.parts)
+                        out[backIdx] = out[backIdx].copy(parts = concatPartsReplacingInterject(out[backIdx].parts, msg.parts))
                         AppLogBuffer.log(TAG, "[Interject] collapse: stray user merged back to #$backIdx")
                     } else {
                         out.add(msg)
@@ -2581,8 +2581,28 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
 
     /** part 上有没有"这句是宝插进来的"记号。 */
     private fun isInterjectMarked(part: UIMessagePart): Boolean {
-        val v = part.metadata?.get("interject") ?: return false
-        return v is JsonPrimitive && v.content == "true"
+        // 【判据放宽 · 2026-10-05】原来只认 content=="true"。但搭车那侧（GenerationHandler）
+        // 写进去的是一串 id（"aaa,bbb"），于是"流式合回来的那份"根本不被认——
+        // merge-check 里 marksInMsg 永远 0，摘不掉旧份，两份就叠在一起。
+        // 改成"有这个 key 就算"：两条路写的都是这个 key，判据统一。
+        return part.metadata?.get("interject") != null
+    }
+
+    /**
+     * 【合回时给旧份让位 · 2026-10-05 宝实测的双份】
+     * 数据层收尾时已经把插话挂进会话那条猫消息了；接力重跑时流式那份又会合回来，
+     * 直接相加 = 同一个插话挂两份（宝看到的"一个折叠条、里面两遍"）。
+     * 规则：新来的这份带标，就先把旧的同类摘掉再放。新来的没标（比如只是尾截正文），原样相加。
+     */
+    private fun concatPartsReplacingInterject(
+        oldParts: List<UIMessagePart>,
+        newParts: List<UIMessagePart>
+    ): List<UIMessagePart> {
+        return if (newParts.any { isInterjectMarked(it) }) {
+            oldParts.filterNot { isInterjectMarked(it) } + newParts
+        } else {
+            oldParts + newParts
+        }
     }
 
     /** 给文字 part 盖一个记号（切出来的后半截靠它被认出来）。 */
