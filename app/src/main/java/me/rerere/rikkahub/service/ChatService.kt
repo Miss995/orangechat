@@ -2495,8 +2495,24 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
                 justMerged = false
             } else {
+                // 【漏网兜底 · 2026-10-05 宝实测】她的话没跟紧在猫消息后面（连着两条她的、或列表开头就是它）
+                // → 原来原样留下，它就作为独立消息被渲染层**再画一个折叠条**
+                //（宝看到的：数据层 marks 只有一个，界面上却有两个）。
+                // 现在往回找最近的一条猫消息合上去；实在没有才留原地。两条路都留痕，方便下次复查。
+                if (isInterjectUser) {
+                    val backIdx = out.indexOfLast { it.role == MessageRole.ASSISTANT }
+                    if (backIdx >= 0) {
+                        out[backIdx] = out[backIdx].copy(parts = out[backIdx].parts + msg.parts)
+                        AppLogBuffer.log(TAG, "[Interject] collapse: stray user merged back to #$backIdx")
+                    } else {
+                        out.add(msg)
+                        AppLogBuffer.log(TAG, "[Interject] collapse: stray user kept (no assistant before it)")
+                    }
+                    mergedCount++
+                } else {
+                    out.add(msg)
+                }
                 justMerged = false
-                out.add(msg)
             }
         }
         // 【日志降频 · 2026-10-02】原来每合并一条就打一行：流式每秒推 10 次、一次 8 条

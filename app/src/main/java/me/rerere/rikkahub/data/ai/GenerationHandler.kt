@@ -1023,8 +1023,8 @@ class GenerationHandler(
                         val tl = hourToPeriodLabel(nowLdt.hour)
                         append("\n【时刻感】现在是$tl（${"%02d".format(nowLdt.hour)}:${"%02d".format(nowLdt.minute)}）")
                         append(chatSessionDurationText(messages, System.currentTimeMillis() / 1000L))
-                        // 【距上次聊天 · 2026-10-04 宝定的】取代退役的 <time_reminder> 那条。
-                        append(sinceLastUserMessageText(messages, System.currentTimeMillis() / 1000L))
+                        // 【距上次聊天 · 2026-10-05 宝改的算法】量"她离开多久"，>15 分钟才报。
+                        append(sinceLastUserMessageText(messages))
                         // 背景补充（召回内容，2026-09-13 从 system 挪来的）
                         if (!recalledBlock.isNullOrBlank()) {
                             append("\n【背景补充】\n").append(recalledBlock)
@@ -1413,27 +1413,36 @@ private fun chatSessionDurationText(messages: List<UIMessage>, nowSec: Long): St
 }
 
 /**
- * 【距上次聊天 · 2026-10-04 宝定的】取代退役的 TimeReminderTransformer 那条 <time_reminder>。
+ * 【距上次聊天 · 2026-10-05 宝改的算法】取代退役的 TimeReminderTransformer 那条 <time_reminder>。
  *
  * 旧那条报的是"现在几点 + 间隔"，位置却在【历史最前面】——窗口一裁，首条就换人，
  * 时间戳跟着换 → 从那儿往后整段重算（PromptDiff 实测：命中率掉到 41%，断点钉死在一处）。
  *
- * 这一句只报一个事实：她上一条消息离现在多久。位置在末尾那条注入块里（增量区），
- * 会变也不伤前缀缓存。
+ * 【★ 为什么换成现在这个算法 · 2026-10-05 宝指出】
+ * 老写法是"最后一条 USER ↔ 现在"。可每条请求本来就是**她先发消息才触发**的 →
+ * 那个差值永远≈0，量出来的只是"这个回合跑了多久"，跟"她多久没说话"毫无关系。
+ * 现在改成：**猫最后一条回复 ↔ 她这一条消息**，量的才是"她离开多久"。
+ * 超过 15 分钟才报（跟"这场聊了多久"的断点同一条线）；不足 15 分钟返回空串，不加任何东西。
+ * 位置仍在末尾注入块里（增量区），会变也不伤前缀缓存。
  */
-private fun sinceLastUserMessageText(messages: List<UIMessage>, nowSec: Long): String {
+private fun sinceLastUserMessageText(messages: List<UIMessage>): String {
+    var lastAssistantSec: Long? = null
     var lastUserSec: Long? = null
     for (msg in messages) {
-        if (msg.role != MessageRole.USER) continue
         val sec = msgEpochSecond(msg) ?: continue
-        lastUserSec = sec // 正序扫，最后留下的就是最新那条
+        when (msg.role) {
+            MessageRole.ASSISTANT -> lastAssistantSec = sec
+            MessageRole.USER -> lastUserSec = sec
+            else -> Unit
+        }
     }
-    val last = lastUserSec ?: return ""
-    val minutes = ((nowSec - last) / 60L).coerceAtLeast(0)
+    val a = lastAssistantSec ?: return ""
+    val u = lastUserSec ?: return ""
+    val minutes = ((u - a) / 60L).coerceAtLeast(0)
+    if (minutes < 15) return ""
     return when {
-        minutes < 1 -> "，宝刚说完"
-        minutes < 60 -> "，距上次聊天 $minutes 分钟"
-        else -> "，距上次聊天 ${minutes / 60} 小时 ${minutes % 60} 分钟"
+        minutes < 60 -> "，距离上次聊天已经过了 $minutes 分钟"
+        else -> "，距离上次聊天已经过了 ${minutes / 60} 小时 ${minutes % 60} 分钟"
     }
 }
 
