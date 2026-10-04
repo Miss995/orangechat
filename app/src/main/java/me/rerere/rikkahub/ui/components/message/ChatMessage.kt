@@ -484,6 +484,18 @@ private fun MessagePartsBlock(
                                     )
                                 }
                             }
+
+                            // 【插话行 · 2026-10-04 宝定的】宝插的那句，作为思考链里的一行渲染——
+                            // 跟工具、思考同住一张卡片，宽度圆角天然一致。
+                            // embedded = true：不再自己包一层卡片（外面已经是 ChainOfThought 的卡）。
+                            is ThinkingStep.InterjectStep -> {
+                                key("interject-${step.part.hashCode()}") {
+                                    ChatMessageInterjectedMessage(
+                                        part = step.part,
+                                        embedded = true,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -805,17 +817,11 @@ private fun MessagePartsBlock(
                 }
             }
         }
-        // 【插话合并 · 2026-10-01】合并之后，宝那句话的 part 直接挂在猫的回复里，
-        // 每个 part 带 metadata{"interject": true}。渲染时不再拿 id 去别处找，
-        // 认这个记号就知道：到这儿收住猫的正文、把宝的话画成折叠条。
-        // 【撤老路 · 2026-10-02 宝定的根治】以前这里还有第二条路：认"锚点里挂的消息 id"，
-        // 再从 interjections 表里把宝那句捞出来画（标题"排队中"）。那是"她的话还独立躺在会话里"
-        // 那个时代的画法。现在插话压根不进会话，排队态交给列表那边（读 ChatService 的流）负责，
-        // 这里只留一条路：part 自己带记号 = 已经并进来了。
-        // （两套记号并存会各画一遍——宝实测：同一句冒出三条。）
-        if (anchorPartOf(block)?.let { isInterjectPart(it) } == true) {
-            ChatMessageInterjectedMessage(part = anchorPartOf(block))
-        }
+        // 【插话改走思考链 · 2026-10-04 宝定的】插话不再在这里单独渲染——它现在作为
+        // ThinkingStep.InterjectStep 收进思考链那张卡片（见上面的 ThinkingBlock 分支），
+        // 跟工具、思考同住一块，宽度天然一致。
+        // 留这段注释是为了记住：这里曾经有一条"认锚点单独画折叠条"的路，
+        // 两套并存会各画一遍（同一句冒出三条的教训）。排队态仍由列表那边负责。
     }
  
     // Annotations (always rendered at the end)
@@ -1266,6 +1272,10 @@ internal fun ChatMessageInterjectedMessage(
     // 【插话排队态 · 2026-10-01】true＝宝发了、猫还没轮到（还在列表里等着被并）；
     // false＝已经并进猫的回复里。两态共用这一套壳，标题跟着换，视觉上不跳。
     pending: Boolean = false,
+    // 【住进思考链 · 2026-10-04 宝定的】true＝已经在 ChainOfThought 那张卡片里面了，
+    // 只画这一行、不再自带 Surface（免得卡里套卡、宽度对不齐）；
+    // false＝独立显示（比如排队态），自己包一层卡片。
+    embedded: Boolean = false,
 ) {
     val text = remember(message, part) {
         when {
@@ -1280,16 +1290,11 @@ internal fun ChatMessageInterjectedMessage(
     // 【默认折叠 · 2026-10-04 宝定的】原来是默认展开；她说里面装的就是她的话，收着更干净
     var expanded by remember(message, part) { mutableStateOf(false) }
     // 【配色 · 2026-10-04 宝定的】字和图标跟思考链同色（思考链用的是 secondary，
-    // 不是 primary）。背景用 surfaceContainerHigh：跟思考链同款"卡片色"。
+    // 不是 primary）。独立显示时背景用 surfaceContainerHigh（跟思考链同款"卡片色"）。
     // ⚠️ 别用 surface——那是聊天区底色本身，卡片会跟背景糊成一片（10-04 试过）。
     val accent = MaterialTheme.colorScheme.secondary
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(16.dp),
-    ) {
+    // 【住进思考链 · 2026-10-04】embedded 时不包 Surface：外面已经是 ChainOfThought 那张卡了。
+    val inner: @Composable () -> Unit = {
         Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
         ) {
@@ -1349,23 +1354,21 @@ internal fun ChatMessageInterjectedMessage(
             }
         }
     }
-}
-
-/** 【插话挂载点 · 2026-10-04】一个块上挂着的 part——插话记号就打在它身上。
- *  折叠条的渲染、以及判断"下一段思考链要不要铺满"都用它。 */
-private fun anchorPartOf(block: MessagePartBlock): UIMessagePart? =
-    when (block) {
-        is MessagePartBlock.ThinkingBlock -> when (val lastStep = block.steps.lastOrNull()) {
-            is ThinkingStep.ReasoningStep -> lastStep.reasoning
-            is ThinkingStep.ToolStep -> lastStep.tool
-            else -> null
+    if (embedded) {
+        inner()
+    } else {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            inner()
         }
-        is MessagePartBlock.ContentBlock -> block.part
-        else -> null
     }
-
-/** 【插话合并 · 2026-10-01】这个 part 是不是宝插进来的那句（合并时打的 metadata{"interject": true}）。 */
-private fun isInterjectPart(part: UIMessagePart): Boolean {
-    val v = part.metadata?.get("interject") ?: return false
-    return v is JsonPrimitive && v.content == "true"
 }
+
+/** 【插话合并 · 2026-10-01】这个 part 是不是宝插进来的那句。
+ *  2026-10-04 起判据本体挪到 ChatMessageCot.kt（分组那边也要用），这里是薄转发。 */
+private fun isInterjectPart(part: UIMessagePart): Boolean = part.isInterjectPart()
