@@ -2268,7 +2268,23 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 【插话挂载 · 2026-10-02 宝定的根治】插话不再进会话（见 sendMessage 的 isInterjection 分支），
         // 所以不用再"从会话里找那条独立的 USER 消息 → 挂上来 → removeAt 删掉它"。
         // 这里只做一件事：把本回合记下的那几条（搭车的、接力的都在内）挂到最后一条猫的消息上。
-        if (pending.isEmpty()) return conversation
+        if (pending.isEmpty()) {
+            AppLogBuffer.log(TAG, "[Interject] merge-skip: pending empty")
+            return conversation
+        }
+        // 【两份溯源 · 2026-10-05】宝实测"发一个显示两个"。回看：入队只一次、collapse 那侧也有
+        // DUP 留痕但从未触发。所以两份要么是"挂载时挂了两次"，要么是"进来时就是两个 part"。
+        // 这行把源头交出来：入队几条、每条几个 part、每个 part 的类型和长度。
+        AppLogBuffer.log(
+            TAG,
+            "[Interject] merge-in: pending=${pending.size} " +
+                pending.joinToString("|") { p ->
+                    p.id.toString().take(8) + ":parts=" + p.parts.size + "(" +
+                        p.parts.joinToString(",") { part ->
+                            if (part is UIMessagePart.Text) "T${part.text.length}" else "X"
+                        } + ")"
+                }
+        )
         // 【兜底清理 · 2026-10-02】流式刷新偶尔会把她那句（请求里被拆成独立 USER 的那条）
         // 写回会话，于是"挂载"之外还多出一条独立的。按 id 认人，先把它从会话里摘掉。
         // （旧版是靠 removeAt 删；这版从源头不造，所以这里只兜"漏网写回"这一种。）
@@ -2338,6 +2354,13 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             val cleaned = msg.parts.map { stripInterjectAnchor(it) }
             // 流式那半步可能已经合过（collapseInterjections）——那种只清理，不再挂一遍
             val alreadyMerged = msg.parts.any { isInterjectMarked(it) }
+            // 【两份溯源 · 2026-10-05】收尾这一刻，那条猫消息上原本有几个标、几个 part。
+            // marksInMsg>0 但不该有 → 说明流式那侧已经写过一次（两份的来源就在这）。
+            AppLogBuffer.log(
+                TAG,
+                "[Interject] merge-check: ni=$ni alreadyMerged=$alreadyMerged " +
+                    "marksInMsg=${msg.parts.count { isInterjectMarked(it) }} partsInMsg=${msg.parts.size}"
+            )
             val out = if (alreadyMerged) {
                 cleaned
             } else {
