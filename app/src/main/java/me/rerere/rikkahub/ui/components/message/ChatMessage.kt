@@ -94,7 +94,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.hugeicons.stroke.File02
-import me.rerere.hugeicons.stroke.MessageAdd01
+import me.rerere.hugeicons.stroke.QuoteUp
 import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.PlayCircle
 import me.rerere.hugeicons.stroke.PauseCircle
@@ -1311,8 +1311,9 @@ internal fun ChatMessageInterjectedMessage(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // 【图标 · 2026-10-04】占位小圆点换成 MessageAdd01（消息+加号＝加进来说的一句），
-                // 放进跟思考链/工具块一样的 24dp 图标槽，横向纵向都能对上。
+                // 【图标 · 2026-10-04 定稿】引号（QuoteUp）＝「把你说的一句话引进来」。
+                // 跟旁边的橘瓣（思考）、终端（工具）凑成三格：不重样、同一路线条。
+                // 放在跟思考链/工具块一样的 24dp 图标槽里，横竖都能对上。
                 // ⚠️ 教训（10-04 白跑一次构建）：这些图标是扩展属性，用之前必须
                 // `import me.rerere.hugeicons.stroke.XXX` 逐个引进来，光有 HugeIcons 那个壳不够。
                 Box(
@@ -1320,7 +1321,7 @@ internal fun ChatMessageInterjectedMessage(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = HugeIcons.MessageAdd01,
+                        imageVector = HugeIcons.QuoteUp,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
                         tint = accent,
