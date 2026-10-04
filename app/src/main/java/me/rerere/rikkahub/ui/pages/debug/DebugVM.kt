@@ -134,6 +134,19 @@ class DebugVM(
         }
     }
 
+    /**
+     * 【分支存量清理 · 2026-10-04】把插话错位欠下的消息多版本收干净（每格只留该显示那版）。
+     */
+    fun compactMessageVersions() {
+        viewModelScope.launch {
+            runCatching {
+                conversationRepository.compactMessageVersions()
+            }.onFailure {
+                it.printStackTrace()
+            }
+        }
+    }
+
     private fun randomMessageText(index: Int, role: MessageRole): String {
         val fragments = listOf(
             "快速", "随机", "消息", "样例", "用于", "测试", "列表", "渲染", "滚动", "性能",

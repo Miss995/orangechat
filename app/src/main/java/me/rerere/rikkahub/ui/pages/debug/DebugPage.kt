@@ -247,6 +247,15 @@ private fun MainPage(vm: DebugVM) {
             Text("一键修复 nodeIndex（按时间重排）")
         }
 
+        Button(
+            onClick = {
+                vm.compactMessageVersions()
+                toaster.show("正在清理消息多版本（插话欠账）...")
+            }
+        ) {
+            Text("清理消息多版本（插话欠账）")
+        }
+
         HorizontalDivider()
 
         Text("Launch Stats", style = MaterialTheme.typography.labelMedium)

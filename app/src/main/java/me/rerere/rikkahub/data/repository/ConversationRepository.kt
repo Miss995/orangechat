@@ -457,6 +457,63 @@ class ConversationRepository(
         }
     }
 
+    /**
+     * 【分支存量清理 · 2026-10-04】把插话错位欠下的多版本收干净。
+     *
+     * 规则（宝 2026-10-04 确认过口径）：
+     *  ① 每格保底留 selectIndex 那版——界面上正在显示的那版。错位只会往后叠，
+     *     选中的那条始终是"当前该显示的结果"，内容是对的。
+     *  ② 其余版本里，"id 在本会话别的格子也出现过"的一律删——这是错位的铁证：
+     *     一个 id 只该住一格，它却出现在两处，说明有一条是从别处漏进来的复制品。
+     *  ③ 既没被选中、又独一份的留着不动——可能是编辑/重新生成留下的真版本，别误伤。
+     *
+     * 不动 FTS（正文没改），不动节点顺序（node.id 和 nodeIndex 都保持原样）。
+     */
+    suspend fun compactMessageVersions(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
+        try {
+            val allIds = conversationDAO.getAllIds()
+            val total = allIds.size
+            var totalDropped = 0
+            allIds.forEachIndexed { index, id ->
+                val nodes = loadMessageNodes(id)
+                if (nodes.any { it.messages.size > 1 }) {
+                    // 本会话内每个消息 id 出现了几次
+                    val idCount = mutableMapOf<String, Int>()
+                    nodes.forEach { node ->
+                        node.messages.forEach { m ->
+                            val k = m.id.toString()
+                            idCount[k] = (idCount[k] ?: 0) + 1
+                        }
+                    }
+                    var droppedHere = 0
+                    val compacted = nodes.map { node ->
+                        if (node.messages.size <= 1) return@map node
+                        val keepIdx = node.selectIndex.coerceIn(0, node.messages.lastIndex)
+                        val kept = node.messages[keepIdx]
+                        val others = node.messages.filterIndexed { i, m ->
+                            i != keepIdx && (idCount[m.id.toString()] ?: 0) <= 1
+                        }
+                        droppedHere += node.messages.size - 1 - others.size
+                        node.copy(messages = listOf(kept) + others, selectIndex = 0)
+                    }
+                    if (droppedHere > 0) {
+                        saveMessageNodes(id, compacted)
+                        totalDropped += droppedHere
+                        AppLogBuffer.log(
+                            "BranchFix",
+                            "conv=${id.take(8)} dropped=$droppedHere nodes=${nodes.size}"
+                        )
+                    }
+                }
+                onProgress(index + 1, total)
+            }
+            AppLogBuffer.log("BranchFix", "done: totalDropped=$totalDropped")
+        } catch (e: Exception) {
+            Log.e(TAG, "compactMessageVersions failed", e)
+            throw e
+        }
+    }
+
     suspend fun rebuildAllIndexes(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
         try {
             messageFtsManager.deleteAll()
