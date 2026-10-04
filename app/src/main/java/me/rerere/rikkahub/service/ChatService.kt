@@ -752,12 +752,20 @@ class ChatService(
                 // 让当前那轮的收尾（落库等）写完再接手
                 kotlinx.coroutines.delay(300)
                 val leftover = pendingInterjections.remove(conversationId)
-                // 【插话不落库 · 2026-10-02】队列被拿走，界面上的"排队中"也该撤
-                //（接下来由猫那条消息里的折叠条接管）
                 syncPendingInterjectionFlow()
                 if (!leftover.isNullOrEmpty()) {
                     // 队列还在 = 这一轮没有第二次请求，宝那句没人接 → 兜底起一轮
                     AppLogBuffer.log(TAG, "interject: no ride happened, relay generation conv=$conversationId")
+                    // 【接力修 · 2026-10-04 宝实测】把拿出来的插话放回队列，再起接力那一轮。
+                    // 原来只用不还，带出两个毛病：
+                    //   ① 接力那轮的请求里没有宝的话（模型压根看不到她说了什么）
+                    //   ② 取走时才记的"搭车账"（rodeInterjectIds）是空的 → 收尾找不到锚点，
+                    //      插话被兜底规则扔到最后一条末尾
+                    // 放回去之后，接力这轮会像平常一样把它取走并进请求、顺手记账——一次修好两个。
+                    pendingInterjections.computeIfAbsent(conversationId) {
+                        java.util.Collections.synchronizedList(mutableListOf<UIMessage>())
+                    }.addAll(leftover!!)
+                    syncPendingInterjectionFlow()
                     runCatching { handleMessageComplete(conversationId) }
                 } else {
                     AppLogBuffer.log(TAG, "interject: rode the turn, no relay needed conv=$conversationId")

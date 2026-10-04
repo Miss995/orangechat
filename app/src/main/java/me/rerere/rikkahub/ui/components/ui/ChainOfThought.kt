@@ -55,7 +55,8 @@ import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Sparkles
 import me.rerere.rikkahub.R
 
-private val LocalCardColor = staticCompositionLocalOf { Color.White }
+// 【2026-10-04】开成 internal：插话的图标槽要跟这里的图标一样垫一层卡片底色。
+internal val LocalCardColor = staticCompositionLocalOf { Color.White }
 
 /**
  * 以时间线/步骤卡片的形式展示一组思考过程。

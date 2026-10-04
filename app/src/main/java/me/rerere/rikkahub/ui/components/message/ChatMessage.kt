@@ -111,6 +111,7 @@ import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
 import me.rerere.rikkahub.ui.components.ui.ChainOfThought
 import me.rerere.rikkahub.ui.components.ui.Favicon
+import me.rerere.rikkahub.ui.components.ui.LocalCardColor
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.components.ui.toComposeColor
@@ -1320,12 +1321,22 @@ internal fun ChatMessageInterjectedMessage(
                     modifier = Modifier.width(24.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        imageVector = HugeIcons.QuoteUp,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = accent,
-                    )
+                    // 【图标槽 · 2026-10-04 宝定的】照抄思考链的槽：外面 20dp 垫一层卡片底色
+                    // （遮住背后的连线，也跟思考/工具块一样"图标后面有一块底"），里面图标 14dp。
+                    // 原来给的是裸的 16dp 图标——比旁边大一圈、又没底色，所以看着不齐。
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .background(LocalCardColor.current),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.QuoteUp,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = accent,
+                        )
+                    }
                 }
                 Text(
                     text = stringResource(
