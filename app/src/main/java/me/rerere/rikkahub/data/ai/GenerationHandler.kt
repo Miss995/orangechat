@@ -248,10 +248,30 @@ class GenerationHandler(
                         )
                     }
                 }
-                messages = messages + extra
+                // 【搭车的话补标 · 2026-10-04 宝实测】collapseInterjections 第一道门要求
+                // "列表里有带 interject 标的 USER"；搭车这条原来是把 extra 原样并进去、没打标，
+                // 于是那道门直接关掉，回来的"下半段"认不出该并回去 → 独立成条
+                //（宝截图：一次回复被拆成上下两条、中间还插个思考块，很突兀）。
+                // 这里在并进请求前把标打上；metadata 不进 API 请求体，只在本地的流式列表里活着，
+                // 正好是 collapse 要认的那份。
+                val taggedExtra = extra.map { m ->
+                    m.copy(parts = m.parts.map { part ->
+                        val base = part.metadata
+                        val meta = buildJsonObject {
+                            base?.forEach { (k, v) -> put(k, v) }
+                            put("interject", JsonPrimitive(true))
+                        }
+                        when (part) {
+                            is UIMessagePart.Text -> part.copy(metadata = meta)
+                            is UIMessagePart.Image -> part.copy(metadata = meta)
+                            else -> part
+                        }
+                    })
+                }
+                messages = messages + taggedExtra
                 AppLogBuffer.log(
                     "Interject",
-                    "ride: merged ${extra.size} pending user message(s) into step #$stepIndex"
+                    "ride: merged ${extra.size} pending user message(s) into step #$stepIndex (tagged)"
                 )
             }
             memTrace("2-step$stepIndex", messages)
