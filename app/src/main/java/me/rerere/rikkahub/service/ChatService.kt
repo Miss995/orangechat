@@ -2264,6 +2264,26 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         val targetNode = nodes[targetIndex]
         val targetMsg = targetNode.currentMessage
 
+        // 【插话位置诊断 · 2026-10-04】宝实测"上半段插的话，挂到下半段结尾"。
+        // 这一行把关键事实记下来：每条插话的锚点落在**第几条**猫消息上（-1 = 没找到），
+        // 而收尾固定只往 targetIndex 那一条挂。两者不一致 = 位置错的原因。
+        AppLogBuffer.log(
+            TAG,
+            "[Interject] merge: pending=${pending.size} nodes=${nodes.size} target=$targetIndex " +
+                "anchors=" + pending.joinToString(",") { p ->
+                    val pid = p.id.toString()
+                    val at = nodes.indexOfFirst { n ->
+                        n.currentMessage.role == MessageRole.ASSISTANT &&
+                            n.currentMessage.parts.any { pt ->
+                                val v = pt.metadata?.get("interject")
+                                v is JsonPrimitive && v.content != "true" &&
+                                    v.content.split(",").any { it.trim() == pid }
+                            }
+                    }
+                    "${pid.take(8)}@$at"
+                }
+        )
+
         // 宝那几句话的 parts 打上"这是插进来的"记号（界面认它就是折叠条）
         val tagged = pending.flatMap { p -> p.parts }.map { part ->
             val oldMeta = part.metadata
