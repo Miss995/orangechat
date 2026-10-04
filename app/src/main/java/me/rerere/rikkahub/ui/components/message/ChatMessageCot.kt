@@ -74,8 +74,21 @@ fun List<UIMessagePart>.groupMessageParts(): List<MessagePartBlock> {
 
             // 【插话不打断 · 2026-10-04 宝定的】宝插的那句跟着思考链走：
             // 不 flush、不另起一块，这样它和前后两段共用同一张卡片。
+            // 【同轮并排合成一条 · 2026-10-05 宝实测】她连着打两句时，数据里是两条独立 part（两个标），
+            // 原来一个标画一个条 → 两条内容一样的折叠条，看着像坏了。
+            // 渲染层把相邻的合成一条：文本用空行接起来，metadata 沿用后一条。数据层一个字不动。
             part is UIMessagePart.Text && part.isInterjectPart() -> {
-                currentThinkingSteps.add(ThinkingStep.InterjectStep(part))
+                val prevPart = (currentThinkingSteps.lastOrNull() as? ThinkingStep.InterjectStep)?.part
+                if (prevPart is UIMessagePart.Text) {
+                    val merged = UIMessagePart.Text(
+                        text = prevPart.text + "\n\n" + part.text,
+                        metadata = part.metadata,
+                    )
+                    currentThinkingSteps[currentThinkingSteps.lastIndex] =
+                        ThinkingStep.InterjectStep(merged)
+                } else {
+                    currentThinkingSteps.add(ThinkingStep.InterjectStep(part))
+                }
             }
 
             else -> {
