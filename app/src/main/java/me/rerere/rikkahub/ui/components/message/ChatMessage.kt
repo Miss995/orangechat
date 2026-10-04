@@ -444,17 +444,23 @@ private fun MessagePartsBlock(
     val groupedParts = remember(parts) {
         parts.filterNot { it is UIMessagePart.Text && it.text.isEmpty() }.groupMessageParts()
     }
-    groupedParts.fastForEach { block ->
+    groupedParts.fastForEachIndexed { index, block ->
         when (block) {
             is MessagePartBlock.ThinkingBlock -> {
                 if (block.steps.isNotEmpty()) {
                     val isReasoningOnlyBlock = block.steps.fastAll { it is ThinkingStep.ReasoningStep }
+                    // 【插话后那段思考链 · 2026-10-04 宝定的】纯思考块折叠态本来按内容自适应
+                    //（窄条），但"紧跟在插话后面"的那一段要跟工具块一样铺满——宝实测：
+                    // 上下两段思考宽窄不一，看着像两个东西。
+                    // 判据：前一个块上挂着插话 part（带 interject 记号）。
+                    val followsInterject = index > 0 &&
+                        (anchorPartOf(groupedParts[index - 1])?.let { isInterjectPart(it) } == true)
                     // 【流式降级 · 2026-10-02】生成中不做尺寸动画：内容每 100ms 变一次，
                     // 动画会不停重启、每帧重新测量整块。写完（loading=false）再恢复。
                     ChainOfThought(
                         modifier = if (loading) Modifier else Modifier.animateContentSize(),
                         steps = block.steps,
-                        collapsedAdaptiveWidth = isReasoningOnlyBlock,
+                        collapsedAdaptiveWidth = isReasoningOnlyBlock && !followsInterject,
                         animateChanges = !loading,
                     ) { step ->
                         when (step) {
@@ -804,15 +810,7 @@ private fun MessagePartsBlock(
         // 【插话合并 · 2026-10-01】合并之后，宝那句话的 part 直接挂在猫的回复里，
         // 每个 part 带 metadata{"interject": true}。渲染时不再拿 id 去别处找，
         // 认这个记号就知道：到这儿收住猫的正文、把宝的话画成折叠条。
-        val anchorPart = when (block) {
-            is MessagePartBlock.ThinkingBlock -> when (val lastStep = block.steps.lastOrNull()) {
-                is ThinkingStep.ReasoningStep -> lastStep.reasoning
-                is ThinkingStep.ToolStep -> lastStep.tool
-                else -> null
-            }
-            is MessagePartBlock.ContentBlock -> block.part
-            else -> null
-        }
+        val anchorPart = anchorPartOf(block)
         // 【撤老路 · 2026-10-02 宝定的根治】以前这里还有第二条路：认"锚点里挂的消息 id"，
         // 再从 interjections 表里把宝那句捞出来画（标题"排队中"）。那是"她的话还独立躺在会话里"
         // 那个时代的画法。现在插话压根不进会话，排队态交给列表那边（读 ChatService 的流）负责，
@@ -1258,9 +1256,11 @@ private fun QuotedMessageChip(quoted: UIMessage) {
     }
 }
 
-// 【插话折叠条 · 2026-10-01】照思考链的壳做：图标 + 一行小字 + 展开箭头，点开看原话。
-// 不套 ChainOfThought 那个 scope（它是内部建的，外面拿不到；硬包还会带上时间线竖杠）。
-// 默认展开：插话是宝正在说的话，藏起来还得点一下才看得见，反而不像在对话。
+// 【插话折叠条 · 2026-10-01 / 外观对齐思考链 · 2026-10-04 宝提的四条】
+// ①要有背景 ②宽度跟其他块一致 ③长得跟思考链一样（换文字+图标）④默认折叠。
+// 做法：外面套一个跟 ChainOfThought 同色的 Surface（surfaceContainerHigh + 圆角 16 + 内边距 12/4），
+// 里面那行照 ChainOfThoughtStepContent 的 label 排（图标槽 24dp + 8dp 间距 + 上下 8dp）。
+// 不直接套 ChainOfThought：它是给 ThinkingStep 用的泛型 scope，插话塞不进去，硬包还会带时间线竖杠。
 // 两种来源：①合并前的历史数据给整条 UIMessage；②合并后给的是那个带记号的 part。
 @Composable
 internal fun ChatMessageInterjectedMessage(
@@ -1280,56 +1280,87 @@ internal fun ChatMessageInterjectedMessage(
         }
     }
     if (text.isBlank()) return
-    var expanded by remember(message, part) { mutableStateOf(true) }
+    // 【默认折叠 · 2026-10-04 宝定的】原来是默认展开；她说里面装的就是她的话，收着更干净
+    var expanded by remember(message, part) { mutableStateOf(false) }
     val accent = MaterialTheme.colorScheme.primary
-    Column(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(16.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .clickable { expanded = !expanded }
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
         ) {
-            // 图标先用一个小圆点占位（跟思考链那朵橘瓣区分开），等挑好再换
-            Box(
+            Row(
                 modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(accent),
-            )
-            Text(
-                text = stringResource(
-                    if (pending) R.string.chat_message_interjected_pending
-                    else R.string.chat_message_interjected_label
-                ),
-                style = MaterialTheme.typography.titleSmall,
-                color = accent,
-                modifier = Modifier.weight(1f),
-            )
-            Icon(
-                imageVector = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (expanded) {
-            Text(
-                text = text,
-                style = LocalTextStyle.current.copy(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-                modifier = Modifier.padding(start = 22.dp, top = 2.dp, bottom = 6.dp),
-            )
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.small)
+                    .clickable { expanded = !expanded }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                // 【图标 · 2026-10-04】占位小圆点换成 MessageAdd01（消息+加号＝加进来说的一句），
+                // 放进跟思考链/工具块一样的 24dp 图标槽，横向纵向都能对上
+                Box(
+                    modifier = Modifier.width(24.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.MessageAdd01,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = accent,
+                    )
+                }
+                Text(
+                    text = stringResource(
+                        if (pending) R.string.chat_message_interjected_pending
+                        else R.string.chat_message_interjected_label
+                    ),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = accent,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (expanded) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 32.dp, top = 4.dp, bottom = 8.dp),
+                ) {
+                    Text(
+                        text = text,
+                        style = LocalTextStyle.current.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                }
+            }
         }
     }
 }
+
+/** 【插话挂载点 · 2026-10-04】一个块上挂着的 part——插话记号就打在它身上。
+ *  折叠条的渲染、以及判断"下一段思考链要不要铺满"都用它。 */
+private fun anchorPartOf(block: MessagePartBlock): UIMessagePart? =
+    when (block) {
+        is MessagePartBlock.ThinkingBlock -> when (val lastStep = block.steps.lastOrNull()) {
+            is ThinkingStep.ReasoningStep -> lastStep.reasoning
+            is ThinkingStep.ToolStep -> lastStep.tool
+            else -> null
+        }
+        is MessagePartBlock.ContentBlock -> block.part
+        else -> null
+    }
 
 /** 【插话合并 · 2026-10-01】这个 part 是不是宝插进来的那句（合并时打的 metadata{"interject": true}）。 */
 private fun isInterjectPart(part: UIMessagePart): Boolean {
