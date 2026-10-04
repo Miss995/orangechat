@@ -94,7 +94,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.hugeicons.stroke.File02
-import me.rerere.hugeicons.stroke.QuoteUp
+import me.rerere.hugeicons.stroke.ChatUser
 import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.PlayCircle
 import me.rerere.hugeicons.stroke.PauseCircle
@@ -1301,7 +1301,14 @@ internal fun ChatMessageInterjectedMessage(
     // 【住进思考链 · 2026-10-04】embedded 时不包 Surface：外面已经是 ChainOfThought 那张卡了。
     val inner: @Composable () -> Unit = {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            // 【对齐修 · 2026-10-04 宝实测】住在思考链里（embedded）时不能再加水平内边距：
+            // 外面 ChainOfThought 那一行本身没有水平 padding（水平是卡片给的），这里再加 12dp，
+            // 图标就比旁边的（橘瓣、终端）多缩一截、对不上那条竖线。独立显示时才需要它。
+            modifier = if (embedded) {
+                Modifier.padding(vertical = 4.dp)
+            } else {
+                Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+            },
         ) {
             Row(
                 modifier = Modifier
@@ -1312,8 +1319,9 @@ internal fun ChatMessageInterjectedMessage(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // 【图标 · 2026-10-04 定稿】引号（QuoteUp）＝「把你说的一句话引进来」。
-                // 跟旁边的橘瓣（思考）、终端（工具）凑成三格：不重样、同一路线条。
+                // 【图标 · 2026-10-04 二稿】ChatUser（气泡+人）＝「用户说的那一句」。
+                // 为什么不用引号：`“` 缩到 14dp 会变成歪歪的"66"（宝原话：我不行了）。
+                // 气泡左右对称，缩多小都不飘。
                 // 放在跟思考链/工具块一样的 24dp 图标槽里，横竖都能对上。
                 // ⚠️ 教训（10-04 白跑一次构建）：这些图标是扩展属性，用之前必须
                 // `import me.rerere.hugeicons.stroke.XXX` 逐个引进来，光有 HugeIcons 那个壳不够。
@@ -1331,7 +1339,7 @@ internal fun ChatMessageInterjectedMessage(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = HugeIcons.QuoteUp,
+                            imageVector = HugeIcons.ChatUser,
                             contentDescription = null,
                             modifier = Modifier.size(14.dp),
                             tint = accent,
