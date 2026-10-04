@@ -270,6 +270,10 @@ class ChatService(
     private val interjectedMessages =
         java.util.concurrent.ConcurrentHashMap<Uuid, MutableList<UIMessage>>()
 
+    // 【数标诊断节流 · 2026-10-05】排"一次插话显示两个折叠条"用，5 秒最多一行，免得把日志环刷爆。
+    @Volatile
+    private var lastInterjectDupLogAt = 0L
+
     // 【插话不落库 · 2026-10-02】排队中的插话，给界面画"排队中"折叠条用。
     // 插话不再进会话（内存/库都不进），界面就没有"独立那条"可读，改读这个流。
     val pendingInterjectionFlow = kotlinx.coroutines.flow.MutableStateFlow<Map<Uuid, List<UIMessage>>>(emptyMap())
@@ -2469,6 +2473,16 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         if (messages.none { msg -> msg.role == MessageRole.USER && msg.parts.any { isInterjectMarked(it) } }) {
             return messages
         }
+        // 【数标诊断 · 2026-10-05】宝实测"一次插话显示两个折叠条"。
+        // 先看这一轮里带标 user 有几条——>1 就是重复的来源。5 秒最多报一次。
+        val markedUsers = messages.count { it.role == MessageRole.USER && it.parts.any { isInterjectMarked(it) } }
+        if (markedUsers > 1) {
+            val nowDup = System.currentTimeMillis()
+            if (nowDup - lastInterjectDupLogAt > 5_000) {
+                lastInterjectDupLogAt = nowDup
+                AppLogBuffer.log(TAG, "[Interject] DUP markedUsers=$markedUsers in=${messages.size}")
+            }
+        }
         val out = mutableListOf<UIMessage>()
         // 【合回补全 · 2026-10-02】上一版只合了"宝那句"，把切出来的**后半截**漏在外面当独立一条。
         // 后果（STRAY 日志实录）：会话里那条是 1 条、回来却是 2 条 → 列表比节点树多 1 →
@@ -2481,6 +2495,16 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             val last = out.lastOrNull()
             val isInterjectTail = msg.role == MessageRole.ASSISTANT && hasTextMark(msg, "interjectTail")
             if (isInterjectUser && last != null && last.role == MessageRole.ASSISTANT) {
+                // 【数标诊断 · 2026-10-05】合之前那条猫消息里已有几个标——>0 说明"会话里已有 + 流式又来一条"，
+                // 合完就成了两个折叠条。5 秒最多报一次。
+                val hadMarks = last.parts.count { isInterjectMarked(it) }
+                if (hadMarks > 0) {
+                    val nowDup2 = System.currentTimeMillis()
+                    if (nowDup2 - lastInterjectDupLogAt > 5_000) {
+                        lastInterjectDupLogAt = nowDup2
+                        AppLogBuffer.log(TAG, "[Interject] DUP merge hadMarks=$hadMarks inMsg=${msg.parts.count { isInterjectMarked(it) }}")
+                    }
+                }
                 out[out.lastIndex] = last.copy(parts = last.parts + msg.parts)
                 mergedCount++
                 justMerged = true
