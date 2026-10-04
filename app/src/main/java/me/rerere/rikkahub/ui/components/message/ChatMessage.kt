@@ -493,6 +493,11 @@ private fun MessagePartsBlock(
                             part.text.replace(Regex("\\[zip:[^\\]]+\\]", RegexOption.IGNORE_CASE), "")
                         }
                         
+                        // 【插话不重复画 · 2026-10-04 宝实测】带插话标（metadata{"interject": true}）的
+                        // Text part 不该在这里当正文画——它的位置由下面 MessagePartsBlock 末尾那段
+                        // 折叠条渲染（isInterjectPart 那个检查）。不拦的话同一句会画两遍：
+                        // 一次当正文（左对齐白底，看着像"独立消息"），一次当折叠条。
+                        if (!isInterjectPart(part)) {
                         // 【防正文被吃 2026-08-22】key(loading)：生成完成（loading true→false）时强制重建渲染子树，
                         // 确保最后一批 parts（含正文）一定会被渲染——不依赖流式增量触发的最后一次重组
                         // （思考链渲染间隙里完成的正文不再静默消失，memory 91 的渲染竞态修复）。
@@ -670,6 +675,7 @@ private fun MessagePartsBlock(
                             }
                         }
                         } // key(loading)
+                        }
                     }
  
                     is UIMessagePart.Video -> {
