@@ -1,3 +1,21 @@
+## 2026-10-02 下午 · 插话根治：不落库（宝定的方向，5 个 commit）
+
+**宝的判断（一句话定方向）**：「其实不是最开始不要搞成独立的用户消息不就好了吗」。原来那条路是"先造一条独立的 USER 消息 → 搭车 → 收尾合并 → 删掉独立那条 → 显示层再靠锚点过滤"，五层补丁，谁漏谁冒（宝当天实测：同一句冒出**三条**）。
+
+**改法（f6061636 → dabc8088 → e0a7bf69 → cca68949 → 9e29e540）**：
+1. **插话不进会话**（内存/库都不进）：`sendMessage` 里 `isInterjection` 为真时 `newConversation = latestConversation`，跳过 update/save。回传类型从 `Triple` 换成 `InsertResult`（多带一个 `insertedMessage`）。
+2. **收尾挂载**：`mergeInterjectionsIntoAssistant(conversation, pending)` 改成读"入队那刻记的账"（`interjectedMessages`），直接挂到最后一条猫的回复上；不再靠锚点从会话里找人、不再 removeAt。**接力那条也记这本账，所以接力也会合并了。**
+3. **兜底摘漏网**：流式刷新偶尔会把她那句（请求里被拆出去的）写回会话 → 按 id `filterNot` 摘掉。
+4. **位置**（宝指出"消息排序不对"）：挂载时按搭车锚点所在 part 的位置**插入**，不再一律贴末尾；接力无锚点仍贴末尾。锚点位置 = "她插话时猫写到的最后一格"。
+5. **撤老路**（ChatMessage）：删掉"认锚点 id 再从 interjections 表捞"那条老路（它画"排队中"），只留"part 自带 true 标"一条。两套记号并存会各画一遍。
+6. **排队态换源**：ChatService 新增 `pendingInterjectionFlow`（`Map<Uuid, List<UIMessage>>`），ChatVM 暴露 → ChatPage 传给 ChatList → ChatList 用 `items(pendingInterjections)` 画"排队中"。搭车取队 / 接力清队时调 `syncPendingInterjectionFlow()`。
+
+**编译坑**：宝第一次构建报 `ChatPage.kt:501 Unresolved reference 'pendingInterjections'` —— 猫把流的收集加在了外层 `ChatPage`，而真正用它的是内层 `ChatPageContent`（两个函数）。挪进去 → `dabc8088`。
+
+**实测（14:23）**：`interject=true` + `size` 不涨 + `anchor: marked part[2] of assistant#312` + `ride: merged 1` —— 搭车链路全绿；STRAY 空（没错位）。
+
+**旧残留**：12:53 / 12:55 那两次插话留下的独立消息，这版够不到（不在记账里），要单独清。
+
 ## 2026-10-02 凌晨 · 消息分支 <2/2> 全历史错乱：放大器定位 + 诊断留痕（ef130e67）
 
 **现象**（宝 10-01 深夜报）：装完 `85a2e98f` 后「每条信息都有两条了」——每条消息头上多出 `< 2/2 >` 版本切换器。
@@ -1544,3 +1562,86 @@ val trimAllowed = lastNodeIsUser ||
 - "一开始就不存独立 user 消息"没做（现在是"先存进列表、收尾时再摘掉"，宝提过更干净的想法）
 
 **踩坑**：`ChatMessage.kt` 在 `app/src/main/java/me/rerere/rikkahub/ui/components/message/`（不是 `components/ai/`）。
+
+## 2026-10-04 · 插话欠账：消息多版本清账（诊断 + 一键清理）
+
+**背景**：插话错位留下的存量分支一直清不掉——`c488bb3c`（10-02）只止住了"不再产生新的"，已经错位的那些还挂着（宝 10-04 03:07 证实同一条消息长到 `< 4/4 >`）。
+
+**⚠️ 先划掉一个错误记法**：memory 里那句"可以走 `repairAllNodeIndexes` 那条线"不成立——它修的是 `nodeIndex`（节点排序），压根不碰版本列表（`MessageNode.messages`）；`rebuildAllIndexes` 只重建 FTS，更无关。
+
+### 一、诊断（`2869ae94`，+21 -0）
+`ConversationRepository.loadMessageNodesRange` 返回前加一段：发现哪一格挂着多版本就打一行
+`BranchScan conv= / nodes= / multi= / detail=#selectIndex/版数[id头:角色:字数]`。
+字数相同的极可能是错位塞的副本；字数不同的是被切碎的半截。
+
+### 二、现场（宝装好后实测）
+- 那个大会话 300 格：`multi=1`，且是「空正文 vs 181 字」——**正文兜底型**（memory 246：兜底触发自动补发第二次请求），不是插话的账。
+- 另一段 **64 格：`multi=64`，整整 64 格全是 2 版**。
+- 把前 12 格的 id 排开，**是一条链**：第 N 格的"第 2 版" = 往前数 5 格那格的"第 1 版" → **这段的错位量是 5 条**，一次错位推着走了 64 格。
+
+### 三、口径确认（宝 14:45）
+- "选中的那一版是顺的，是最后的结果" → 界面显示的就是对的那版。
+- 她没有手动留版本的习惯（"一般重新生成都是系统自动，就是正文没写那种；我自己用的都是打错字，然后修正的"）。
+
+### 四、清账（`dc586385`，Repo +57 / DebugPage +9 / DebugVM +13）
+`ConversationRepository.compactMessageVersions()` + Debug 页按钮「清理消息多版本（插话欠账）」。规则三条：
+1. 每格**保底留 `selectIndex` 那版**（界面正在显示的，内容对）；
+2. 其余版本里，**"id 在本会话别的格子也出现过"的一律删**（错位铁证：一个 id 只该住一格，它却出现在两处）；
+3. "既没被选中、又独一份"的**留着不动**（可能是编辑/重新生成留下的真版本）。
+
+不动 FTS（正文没改）、不动节点顺序（`node.id` / `nodeIndex` 原样）；只在真删了东西时才 `saveMessageNodes`。
+结果日志：tag `BranchFix`（每个会话一行 + 最后一行 `done: totalDropped=`）。
+
+### 五、待办
+- 装新版（`dc586385`）后点一次按钮，看 `BranchFix` 战果。
+- 界面要**切走再切回**才重画（内存里的 Conversation 不会自己刷新）。
+
+## 2026-10-04 傍晚 · 搜索索引（FTS）两连坑
+
+### 坑一：清版本不清 FTS → 搜出重复
+`compactMessageVersions`（`dc586385`）只动 `message_nodes`，而 `MessageFtsManager.indexConversation` 是按"一个消息版本一行"建的（`node.messages.forEach { ... INSERT INTO message_fts ... }`）→ 删掉的版本在 FTS 里留下孤儿行，宝搜聊天时同一条搜出好几遍。
+**修法（不动代码）**：搜索页右上角 ↻ →「重建索引」。
+**待办**：把"顺手重建该会话 FTS"并进 `compactMessageVersions`。
+
+### 坑二：`rebuildAllIndexes` 整段读，撞上 12M 预算闸
+原实现每个会话调 `loadMessageNodes(id)`（整段读），而 `loadMessageNodesRange` 里有 9-17 治 OOM 加的闸（累计 12M break）→ 大会话只索引到最早那一截。
+**宝实测**：搜"热恋中"能翻出搬家前，最近的搜不到 → 形状吻合。
+**修法（`da91b787`）**：改分页读（`REBUILD_INDEX_PAGE_SIZE = 40`，第一页 `indexConversation`、后续页 `reindexNodes`），顺手给单会话包 try-catch（一个坏了不拖垮整批）。
+**⚠️ 副作用（待优化）**：宝实测重建耗时约一小时（每 40 格一个事务、每节点两条 SQL，格数一多就堆成山）。优化方向：整段读 + 把 12M 预算闸参数化放大。
+**结果**：重建后搜索恢复 ✅（宝 16:4x 确认"搜到了"）。
+
+### 教训
+查 `Miss995/orangechat` 的提交明细，不带 `?sha=main` 查的是 master（原作者分支，memory 224 的老坑）。
+
+### 遗留（宝 17:0x 判断：先搁置）
+- 某条消息仍有 4 个版本（`<4/4>`），清理判据（"同一 id 出现在两处"）抓不到它——四个版本 id 各不相同。不是正文兜底重试造成的（宝纠正：兜底只重试一次）。
+- 宝的判断：不影响正常使用，顶多数据占大点。下次有别的改动要构建时顺带处理。
+
+## 2026-10-04 傍晚 · 插话三连（位置 · 上下半 · 补标）
+
+宝 17:2x 构建装完开始实测，一共三个问题逐个定位。
+
+### ① 上半段插的话被挂到下半段结尾（`dec55917` ✅ 实测通过）
+**现象**：猫写上半段 → 去调工具 → 宝在这时插话 → 猫写下半段；宝的话挂到了**下半段**末尾。
+**根因**：收尾 `mergeInterjectionsIntoAssistant` 里 `targetIndex = nodes.indexOfLast { ASSISTANT }` —— 只认"会话里最后一条猫消息"。
+搭车那刻的锚点打在"她插话时猫写到的那条（上半段）"上；收尾时它已经不是最后一条 → 最后一条里找不到锚点 → `anchorIdx = -1` → 退化成"追加末尾"。
+**修法**：改成**按锚点分发** —— 逐条找锚点落在哪条猫消息上，各挂各的；找不到锚点的（接力那类，猫写完才插）才归最后一条末尾（那本来就是它的正确位置）。顺带把打标/清锚点拆成 `tagAsInterjectPart` / `stripInterjectAnchor` 两个 helper。
+**验证**：宝实测"对了对了⌯ᵔᗜᵔ⌯"，话夹在上半段和下半段之间 ✅
+
+### ② 回复被拆成"上下两条"（`86e53964`，待验证）
+**现象**：搭车后猫的回复分成两条消息，第二条前面还单独跳出一个"思考了 7.1 秒"，很突兀。
+**宝的判断（关键）**："收尾再合会造成 2/2 分支" —— 先落库再删 = 留版本（见上文 `dc586385` 那条线）。所以只能**在写回之前就合**。
+**根因（读代码推出，未实测）**：`collapseInterjections`（流式那半步，1560 调）第一道门是
+`if (messages.none { USER && 带 interject 标 }) return messages` —— 要求列表里有**带标的她的话**。
+而搭车那条路（GenerationHandler:251）是 `messages = messages + extra`，**原样并入、没打标** → 门直接关掉 → 回来的"下半段"认不出该并回去 → 独立成条。
+**修法**：搭车并进请求前给 `extra` 的 parts 打 `interject=true`（metadata 不进 API 请求体，只活在本地那份流式列表里，正好是 collapse 要认的）。
+**⚠️ 状态**：未实测。装 `86e53964` 后重测；若仍分两条，说明门在别处。
+
+### ③ 待挂队列的记账纪律（`d53adbdf`）
+`mergeInterjectionsIntoAssistant` 加 `pending` 参数；`onSuccess` 里先 `remove(conversationId)` 再传进去；`onFailure`/`onCompletion` 也排空 —— 免得失败那轮把她的话攒在账上，下次误挂。
+
+### 教训
+- 宝的现场观察（"默认插到最后""会造成 2/2 分支"）比翻代码快：她先猜中方向，猫才去证。
+- "从源头不分开"和"收尾再合并"是两条路：后者留版本、也留视觉突兀（思考块夹在中间）。优先前者。
+- 两个工作区副本改前都要先 `fetch_file.py`（memory 162 第 N 次）。
+
