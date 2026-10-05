@@ -2596,7 +2596,15 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         if (mergedCount > 0) {
             collapseLogTick++
             if (collapseLogTick % 30 == 0) {
-                AppLogBuffer.log(TAG, "[Interject] collapse: merged=$mergedCount in=${messages.size} out=${out.size} tick=$collapseLogTick")
+                // 【合并后看 part · 2026-10-05】宝报"带工具的大块已经弹出来，插话一进去就没了"。
+                // 光看条数不够——这里把合完之后那条猫消息的 part 类型也打出来，
+                // 一眼看出 Tool 是被摘掉了、还是压根没合进来。
+                val mergedTail = out.lastOrNull { it.role == MessageRole.ASSISTANT }
+                AppLogBuffer.log(
+                    TAG,
+                    "[Interject] collapse: merged=$mergedCount in=${messages.size} out=${out.size} tick=$collapseLogTick " +
+                        "tail=" + (mergedTail?.parts?.joinToString("") { it::class.simpleName?.take(4) ?: "?" } ?: "-")
+                )
             }
         }
         return out
