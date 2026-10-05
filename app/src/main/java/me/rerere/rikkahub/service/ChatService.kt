@@ -273,6 +273,8 @@ class ChatService(
     // 【数标诊断节流 · 2026-10-05】排"一次插话显示两个折叠条"用，5 秒最多一行，免得把日志环刷爆。
     @Volatile
     private var lastInterjectDupLogAt = 0L
+    /** 【条数对账降频 · 2026-10-05】流式每秒约 10 个 chunk，5 秒最多报一行条数不符。 */
+    private var lastCountMismatchLogAt = 0L
 
     // 【collapse 日志节流 · 2026-10-05】collapse 每秒被调十次、每次都吐一行，500 条的环五十秒就被冲干净，
     // 收尾那几行 merge-* 留痕根本活不到排查的时候。改成每 30 次（约 3 秒）一行，给它们留出活路。
@@ -1599,6 +1601,27 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                             }
                         }
                         val __tC = System.currentTimeMillis()
+                        // 【条数对账 · 2026-10-05】插话错位调查（宝报"第二次请求之后，4 点之前的历史全被标了 2/2"）。
+                        // updateCurrentMessages 是"按位置对齐"的：两边条数一旦对不上，
+                        // 后面的格全部串位、每格都塞一份副本 → 整段历史长出 <2/2>。
+                        // 这里只报"合回后的条数 vs 会话格数"，差多少一眼看出错位的起点。
+                        if (patchedMessages.size != currentConversationForChunk.messageNodes.size) {
+                            val nowCnt = System.currentTimeMillis()
+                            if (nowCnt - lastCountMismatchLogAt > 5_000) {
+                                lastCountMismatchLogAt = nowCnt
+                                AppLogBuffer.log(
+                                    TAG,
+                                    "[Interject] COUNT incoming=${patchedMessages.size} " +
+                                        "nodes=${currentConversationForChunk.messageNodes.size} " +
+                                        "diff=${patchedMessages.size - currentConversationForChunk.messageNodes.size} " +
+                                        "inTail=" + patchedMessages.takeLast(4).joinToString(",") {
+                                            "${it.role.name.take(1)}${it.id.toString().take(6)}"
+                                        } + " nodeTail=" + currentConversationForChunk.messageNodes.takeLast(4).joinToString(",") {
+                                            "${it.currentMessage.role.name.take(1)}${it.currentMessage.id.toString().take(6)}"
+                                        }
+                                )
+                            }
+                        }
                         val updatedConversation = currentConversationForChunk
                             .updateCurrentMessages(patchedMessages)
                         updateConversation(conversationId, updatedConversation)
