@@ -218,6 +218,19 @@ class GenerationHandler(
         val ctxStartHolder = intArrayOf(-1)
 
         for (stepIndex in 0 until maxSteps) {
+            // 【看双份 · 2026-10-06】宝报"渲染是好的，请求发出去给的结果是两个"。
+            // 每步开头照一眼这一步要发的 USER：条数 + 最后几条的文本尾巴 + id 前 6 位。
+            // id 是关键 —— 展开出来的那条是现场新建的（新 id），原来那条带着旧 id，
+            // 同文本不同 id = 两份来自两条路；同 id = 同一条被塞了两次。
+            run {
+                val users = messages.filter { it.role == MessageRole.USER }
+                val tail = users.takeLast(4).joinToString(" | ") { m ->
+                    m.parts.filterIsInstance<UIMessagePart.Text>()
+                        .joinToString("") { it.text }
+                        .take(10).replace("\n", "⏎") + "(#${m.id.toString().take(6)})"
+                }
+                AppLogBuffer.log("Interject", "STEP#$stepIndex users=${users.size} tail=$tail")
+            }
             // 【插话搭车 · 2026-09-30 宝的方案】每步开始前取一次排队中的用户消息。
             // 取到就并进这一步的请求：宝插的话跟着猫的下一口气走，不用等整轮跑完另开一轮。
             // 取的动作由提供方清空（remove），所以同一句不会被并进第二步。
