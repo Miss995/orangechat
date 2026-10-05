@@ -2524,6 +2524,16 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                         TAG,
                         "[Interject] EXPAND text=${text.take(20)}@${text.length} marks=${msg.parts.count { isInterjectMarked(it) }} parts=${msg.parts.size}"
                     )
+                    // 【抓鬼3 · 2026-10-06】这条带标 part 是从哪儿来的：母消息的 id / 角色 /
+                    // 这条母消息身上一共带几个标 / 每个标的内容。用来回答"展开出来那条
+                    // 和她刚插的那条，是不是同一个源头"。
+                    AppLogBuffer.log(
+                        TAG,
+                        "[Interject] EXPAND-ORIGIN fromId=${msg.id.toString().take(8)} fromRole=${msg.role} " +
+                            "markCount=${msg.parts.count { isInterjectMarked(it) }} " +
+                            "markTexts=" + msg.parts.filter { isInterjectMarked(it) }
+                            .joinToString("|") { (it as? UIMessagePart.Text)?.text?.take(8).orEmpty() }
+                    )
                     if (text.isNotBlank()) {
                         out.add(
                             UIMessage(
