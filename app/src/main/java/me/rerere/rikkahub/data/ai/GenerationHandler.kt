@@ -236,7 +236,7 @@ class GenerationHandler(
                         val anchor = parts[parts.lastIndex]
                         anchor.metadata = buildJsonObject {
                             anchor.metadata?.forEach { (key, value) -> put(key, value) }
-                            put("interject", interjectIds.joinToString(","))
+                            put("interjectAnchor", interjectIds.joinToString(","))
                         }
                         parts.add(UIMessagePart.Text(""))
                         messages = messages.toMutableList().also {

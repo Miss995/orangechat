@@ -2356,7 +2356,9 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 才归最后一条末尾——那本来就是它的正确位置。
         fun anchorOfIn(msg: UIMessage, pid: String): Int =
             msg.parts.indexOfFirst { part ->
-                val v = part.metadata?.get("interject")
+                // 【拆 key · 2026-10-05】位置锚点改用 interjectAnchor；兼容旧数据（id 串曾写在 interject 里）。
+                val m = part.metadata
+                val v = m?.get("interjectAnchor") ?: m?.get("interject")
                 v is JsonPrimitive && v.content != "true" &&
                     v.content.split(",").any { it.trim() == pid }
             }
@@ -2462,9 +2464,11 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
     /** 【旧锚点清理 · 2026-10-01 保留】抹掉非 boolean 的 interject 锚点（会多画一遍）。 */
     private fun stripInterjectAnchor(part: UIMessagePart): UIMessagePart {
         val meta = part.metadata ?: return part
+        // 【拆 key · 2026-10-05】位置锚点搬到 interjectAnchor；兼容旧数据（id 串曾写在 interject 里），两种都抹。
         val v = meta["interject"]
-        if (v !is JsonPrimitive || v.content == "true") return part
-        val filtered = JsonObject(meta.filterKeys { it != "interject" })
+        val isOldIdStr = v is JsonPrimitive && v.content != "true"
+        if (!meta.containsKey("interjectAnchor") && !isOldIdStr) return part
+        val filtered = JsonObject(meta.filterKeys { key -> key != "interjectAnchor" && !(key == "interject" && isOldIdStr) })
         return when (part) {
             is UIMessagePart.Text -> part.copy(metadata = filtered)
             is UIMessagePart.Image -> part.copy(metadata = filtered)
@@ -2638,7 +2642,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // 写进去的是一串 id（"aaa,bbb"），于是"流式合回来的那份"根本不被认——
         // merge-check 里 marksInMsg 永远 0，摘不掉旧份，两份就叠在一起。
         // 改成"有这个 key 就算"：两条路写的都是这个 key，判据统一。
-        return part.metadata?.get("interject") != null
+        // 【拆 key · 2026-10-05】位置锚点已搬到 interjectAnchor，这个 key 从此只表示"这句是她的话"。
+        // 收窄回只认 true——宽判据会把带锚点的工具/正文误当内容拎走（宝实测两种都撞到）。
+        val v = part.metadata?.get("interject")
+        return v is JsonPrimitive && v.content == "true"
     }
 
     /**

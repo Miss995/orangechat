@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.ui.components.message
 
 import androidx.compose.ui.util.fastForEachIndexed
+import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.ai.ui.UIMessagePart
 
 /** 【插话记号 · 2026-10-01】这个 part 是不是宝插进来的那句（收尾合并时打的 metadata{"interject": true}）。
@@ -16,7 +17,10 @@ internal fun UIMessagePart.isInterjectPart(): Boolean {
     // 写进去的是一串 id（"aaa,bbb"），于是"她插的那句"在渲染层根本不被认——
     // 会被当普通正文画一遍，而且 else 分支顺手把思考链切断，工具块和插话分到两张卡上。
     // 跟数据层的 isInterjectMarked 统一成"有这个 key 就算"。
-    return metadata?.get("interject") != null
+    // 【拆 key · 2026-10-05】位置锚点已搬到 interjectAnchor，这个 key 只表示"这句是她的话"。
+    // 收窄回只认 true：宽判据会让带位置锚点的 part 被误当插话，把工具块和思考链切坏。
+    val v = metadata?.get("interject")
+    return v is JsonPrimitive && v.content == "true"
 }
 
 /**

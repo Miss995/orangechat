@@ -409,8 +409,10 @@ private fun ChatListNormal(
                     if (msg.role != MessageRole.USER) return@forEachIndexed
                     if (prev.currentMessage.role != MessageRole.ASSISTANT) return@forEachIndexed
                     val anchored = prev.currentMessage.parts.any { part ->
-                        val v = part.metadata?.get("interject")
-                        v is JsonPrimitive && v.content.split(",").any { it.trim() == msg.id.toString() }
+                        // 【拆 key · 2026-10-05】位置锚点改用 interjectAnchor；兼容旧数据。
+                        val m = part.metadata
+                        val v = m?.get("interjectAnchor") ?: m?.get("interject")
+                        v is JsonPrimitive && v.content != "true" && v.content.split(",").any { it.trim() == msg.id.toString() }
                     }
                     if (anchored) put(msg.id.toString(), msg)
                 }
