@@ -879,21 +879,24 @@ class ConversationRepository(
             // 字数相同的版本极可能是错位塞进来的副本；字数不同的则是被切碎的半截。
             run {
                 val multi = nodes.filter { it.messages.size > 1 }
-                if (multi.isNotEmpty()) {
-                    val detail = multi.take(12).joinToString(" ") { n ->
-                        val versions = n.messages.joinToString(",") { m ->
-                            val t = m.parts
-                                .filterIsInstance<UIMessagePart.Text>()
-                                .sumOf { it.text.length }
-                            "${m.id.toString().take(4)}:${m.role.name.take(1)}:$t"
-                        }
-                        "#${n.selectIndex}/${n.messages.size}[$versions]"
+                // 【定案诊断 · 2026-10-05】加 total / 请求区间 / 是否被预算闸截断。
+                // 判断"节点树是不是比真实少了几格"——少一格，界面就会整段错位长版本。
+                // 判据：total != nodes 或 truncated=true → 加载被截断，错位有了源头。
+                val detail = if (multi.isEmpty()) "" else " detail=" + multi.take(12).joinToString(" ") { n ->
+                    val versions = n.messages.joinToString(",") { m ->
+                        val t = m.parts
+                            .filterIsInstance<UIMessagePart.Text>()
+                            .sumOf { it.text.length }
+                        "${m.id.toString().take(4)}:${m.role.name.take(1)}:$t"
                     }
-                    AppLogBuffer.log(
-                        "BranchScan",
-                        "conv=${conversationId.take(8)} nodes=${nodes.size} multi=${multi.size} detail=$detail"
-                    )
+                    "#${n.selectIndex}/${n.messages.size}[$versions]"
                 }
+                AppLogBuffer.log(
+                    "BranchScan",
+                    "conv=${conversationId.take(8)} total=$totalCount req=$startOffset..$endOffsetExclusive " +
+                        "nodes=${nodes.size} decoded=$decodedChars truncated=$budgetExhausted " +
+                        "multi=${multi.size}$detail"
+                )
             }
             nodes
         }
