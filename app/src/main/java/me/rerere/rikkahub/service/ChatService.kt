@@ -2688,20 +2688,18 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
     }
 
     /**
-     * 【合回时给旧份让位 · 2026-10-05 宝实测的双份】
-     * 数据层收尾时已经把插话挂进会话那条猫消息了；接力重跑时流式那份又会合回来，
-     * 直接相加 = 同一个插话挂两份（宝看到的"一个折叠条、里面两遍"）。
-     * 规则：新来的这份带标，就先把旧的同类摘掉再放。新来的没标（比如只是尾截正文），原样相加。
+     * 【暂时只相加 · 2026-10-06 宝定的查案方式】
+     * 原版这里"新来的带标就先摘掉旧的同类"，用来治"同一句话挂两份"。
+     * 但宝实测：一次插三条 → 生成结束后只剩最后一条（前两条被后来的挤掉），
+     * 而且那两条从哪儿来的也查不到（早被摘没了）。
+     * 所以先把"摘旧的"这一步拿掉，让它只相加 —— 让两条都露出来，
+     * 用日志查清来源之后再决定怎么合。
      */
     private fun concatPartsReplacingInterject(
         oldParts: List<UIMessagePart>,
         newParts: List<UIMessagePart>
     ): List<UIMessagePart> {
-        return if (newParts.any { isInterjectMarked(it) }) {
-            oldParts.filterNot { isInterjectMarked(it) } + newParts
-        } else {
-            oldParts + newParts
-        }
+        return oldParts + newParts
     }
 
     /** 给文字 part 盖一个记号（切出来的后半截靠它被认出来）。 */
