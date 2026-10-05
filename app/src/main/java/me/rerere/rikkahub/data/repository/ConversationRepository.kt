@@ -27,6 +27,7 @@ import me.rerere.rikkahub.data.db.fts.MessageFtsManager
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.FavoriteDAO
 import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
+import me.rerere.rikkahub.data.db.dao.getDuplicatedMessageIds
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
 import me.rerere.rikkahub.data.files.FilesManager
@@ -475,35 +476,60 @@ class ConversationRepository(
             val total = allIds.size
             var totalDropped = 0
             allIds.forEachIndexed { index, id ->
-                val nodes = loadMessageNodes(id)
-                if (nodes.any { it.messages.size > 1 }) {
-                    // 本会话内每个消息 id 出现了几次
-                    val idCount = mutableMapOf<String, Int>()
-                    nodes.forEach { node ->
-                        node.messages.forEach { m ->
-                            val k = m.id.toString()
-                            idCount[k] = (idCount[k] ?: 0) + 1
+                // 【正经版 · 2026-10-05】不再"整段读"。
+                // 旧版第一句是 loadMessageNodes(id)：全量加载，而长会话（实测 21686 格）
+                // 会被 loadMessageNodesRange 里那道 12M 字符解码闸拦腰截断，只读到最早的一小截。
+                // 坏格全在最近那几百格里，压根扫不到 → 判断成"这条会话干净"→ 一个都不删。
+                //（宝 2026-10-04 实测"按下去没反应"，根因就在这里。）
+                //
+                // 新版把"找坏格"和"算 id 重复"都交给 SQLite，只把命中的那几格取出来处理：
+                //   ① getMultiVersionNodeIds：哪些格 messages 数组长度 > 1
+                //   ② getDuplicatedMessageIds：哪些 message id 在本会话里出现两次以上
+                // 两条都只走 JSON 长度函数 / json_each，不把内容搬进 Kotlin 内存，再长的会话也不怕。
+                val multiIds = messageNodeDAO.getMultiVersionNodeIds(id)
+                if (multiIds.isEmpty()) {
+                    onProgress(index + 1, total)
+                    return@forEachIndexed
+                }
+                val dupIds = messageNodeDAO.getDuplicatedMessageIds(id).toHashSet()
+                if (dupIds.isEmpty()) {
+                    onProgress(index + 1, total)
+                    return@forEachIndexed
+                }
+                var droppedHere = 0
+                // 只对命中的格取内容，分批拉，避免一次读太多
+                multiIds.chunked(200).forEach { chunk ->
+                    val entities = messageNodeDAO.getNodesByIds(chunk)
+                    val fixed = entities.mapNotNull { entity ->
+                        val messages = try {
+                            JsonInstant.decodeFromString<List<UIMessage>>(entity.messages)
+                        } catch (e: Exception) {
+                            return@mapNotNull null
                         }
-                    }
-                    var droppedHere = 0
-                    val compacted = nodes.map { node ->
-                        if (node.messages.size <= 1) return@map node
-                        val keepIdx = node.selectIndex.coerceIn(0, node.messages.lastIndex)
-                        val kept = node.messages[keepIdx]
-                        val others = node.messages.filterIndexed { i, m ->
-                            i != keepIdx && (idCount[m.id.toString()] ?: 0) <= 1
+                        if (messages.size <= 1) return@mapNotNull null
+                        val keepIdx = entity.selectIndex.coerceIn(0, messages.lastIndex)
+                        val rest = messages.filterIndexed { i, m ->
+                            i != keepIdx && m.id.toString() !in dupIds
                         }
-                        droppedHere += node.messages.size - 1 - others.size
-                        node.copy(messages = listOf(kept) + others, selectIndex = 0)
-                    }
-                    if (droppedHere > 0) {
-                        saveMessageNodes(id, compacted)
-                        totalDropped += droppedHere
-                        AppLogBuffer.log(
-                            "BranchFix",
-                            "conv=${id.take(8)} dropped=$droppedHere nodes=${nodes.size}"
+                        val lost = messages.size - 1 - rest.size
+                        if (lost <= 0) return@mapNotNull null
+                        droppedHere += lost
+                        // copy 会原样带上 id / conversationId / nodeIndex，REPLACE 不会打乱顺序
+                        entity.copy(
+                            messages = JsonInstant.encodeToString(listOf(messages[keepIdx]) + rest),
+                            selectIndex = 0
                         )
                     }
+                    if (fixed.isNotEmpty()) {
+                        messageNodeDAO.insertAll(fixed)
+                    }
+                }
+                if (droppedHere > 0) {
+                    totalDropped += droppedHere
+                    AppLogBuffer.log(
+                        "BranchFix",
+                        "conv=${id.take(8)} dropped=$droppedHere multiNodes=${multiIds.size} dupIds=${dupIds.size}"
+                    )
                 }
                 onProgress(index + 1, total)
             }

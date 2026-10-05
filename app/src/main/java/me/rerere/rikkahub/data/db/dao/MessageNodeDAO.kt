@@ -36,6 +36,32 @@ interface MessageNodeDAO {
     suspend fun getNodesByIds(ids: List<String>): List<MessageNodeEntity>
 
     /**
+     * 【分支清理 · 2026-10-05】只挑"多版本"的格（messages 数组长度 > 1），只返回 id。
+     *
+     * 用 json_array_length() 在 SQL 层判断，**不把 messages 内容带进 CursorWindow**，
+     * 因此既不会触发 SQLiteBlobTooBigException，也不吃 loadMessageNodesRange 里那道
+     * 12M 字符解码闸 —— 长会话也能一次问明白"哪些格坏着"。
+     */
+    @Query(
+        "SELECT id FROM message_node WHERE conversation_id = :conversationId " +
+            "AND json_array_length(messages) > 1"
+    )
+    suspend fun getMultiVersionNodeIds(conversationId: String): List<String>
+
+    /**
+     * 【分支清理 · 2026-10-05】统计"同一个 message id 在本会话里出现两次以上"的那些 id。
+     *
+     * 错位的铁证：一个 message id 只该住一格，它却出现在两处 ——
+     * 说明有一条是从别处漏进来的复制品，那条就是该清的。
+     * json_each 在 SQLite C 层展开，不把整会话内容搬进 Kotlin 内存。
+     *
+     * ⚠️ 必须走 @RawQuery：json_each() 是虚拟表，写在普通 @Query 里过不了 Room 编译期校验
+     *（本文件 getTokenStatsRaw 已经有同样的先例）。SQL 在文件末尾的扩展函数里拼。
+     */
+    @RawQuery
+    suspend fun getDuplicatedMessageIdsRaw(query: SupportSQLiteQuery): List<DuplicatedMessageId>
+
+    /**
      * 查某个对话下 node 的总行数。loadMessageNodes 用它提前知道总行数，
      * 这样在逐行重试跳过超大blob行时，能精确控制循环范围，
      * 不会因为"空结果"（可能是被跳过的超大行，也可能是真的到末尾）而误判提前退出。
@@ -98,6 +124,23 @@ data class MessageTokenStats(
 )
 
 data class MessageDayCount(val day: String, val count: Int)
+
+data class DuplicatedMessageId(val mid: String)
+
+/**
+ * 【分支清理 · 2026-10-05】哪些 message id 在本会话里出现了两次以上。
+ * 走 json_each 展开 messages 数组，全程在 SQLite C 层完成，不进 Kotlin 内存。
+ */
+suspend fun MessageNodeDAO.getDuplicatedMessageIds(conversationId: String): List<String> =
+    getDuplicatedMessageIdsRaw(
+        SimpleSQLiteQuery(
+            "SELECT json_extract(j.value, '$.id') AS mid " +
+                "FROM message_node mn, json_each(mn.messages) j " +
+                "WHERE mn.conversation_id = ? " +
+                "GROUP BY mid HAVING COUNT(*) > 1",
+            arrayOf(conversationId)
+        )
+    ).map { it.mid }
 
 // SQLite json_each() 展开 messages JSON 数组，json_extract() 提取 Token 字段并聚合
 private val TOKEN_STATS_SQL = SimpleSQLiteQuery(
