@@ -1073,6 +1073,12 @@ class GenerationHandler(
         // 跟窗口裁剪同一把尺子；她同一个回合发的图必然落在最后一组里，所以一次发几张都带得全。
         finalMessages = slimHistoricalImages(finalMessages, assistant.contextGroupSize)
 
+        // 【思考链瘦身 · 2026-10-05 宝提】把"最近 N 条之外"的历史思考链摘掉，别每轮都把它们发给模型。
+        // 动机两条：①思考链是请求体里最占地方的两类之一（另一类是工具结果），摘掉省 token；
+        // ②长回合里猫会被自己前面绕圈的思考形状带偏，摘掉旧的等于自动把形状洗掉。
+        // 规则跟图片瘦身同一把尺子，只是单位是"消息条数"（-1=全带，0=全不带，N=最近 N 条）。
+        finalMessages = slimHistoricalReasoning(finalMessages, assistant.reasoningContextDepth)
+
         var messages: List<UIMessage> = messages
         val params = TextGenerationParams(
             model = model,
@@ -1461,6 +1467,46 @@ private fun msgEpochSecond(msg: UIMessage): Long? = runCatching {
  * 规则（宝 2026-09-29 定的）：**最近一组（contextGroupSize 条）之内的图不换，超过一组的换占位**——
  * 跟窗口裁剪用同一把尺子；她同一个回合发的图一定落在最后一组里，所以一次发几张都带得全。
  */
+/**
+ * 【思考链瘦身 · 2026-10-05】把"最近 keepRecent 条消息"之外的 Reasoning part 全部摘掉。
+ *
+ * keepRecent 语义：
+ *   -1（默认）= 全带，一个字不摘，行为跟以前完全一样；
+ *    0        = 全不带，历史里一条思考链都不发给模型；
+ *    N > 0    = 只保留最近 N 条消息里的思考链（按消息条数算，跟 contextGroupSize 同一个量纲）。
+ *
+ * 为什么要留"最近 N 条"：多步工具调用时，模型要能看见自己上一步为什么决定去查某个东西，
+ * 全摘会让它在回合内"失忆"。摘掉的换成一段 [推理] 占位，保持 parts 结构不被破坏。
+ */
+private fun slimHistoricalReasoning(messages: List<UIMessage>, keepRecent: Int): List<UIMessage> {
+    if (messages.isEmpty() || keepRecent < 0) return messages
+    val keepFrom = (messages.size - keepRecent).coerceAtLeast(0)
+    var changed = false
+    val result = ArrayList<UIMessage>(messages.size)
+    messages.forEachIndexed { index, msg ->
+        if (index >= keepFrom) {
+            result.add(msg)
+        } else {
+            var touched = false
+            val newParts: List<UIMessagePart> = msg.parts.map { part ->
+                if (part is UIMessagePart.Reasoning) {
+                    touched = true
+                    UIMessagePart.Text("[推理]")
+                } else {
+                    part
+                }
+            }
+            if (touched) {
+                changed = true
+                result.add(msg.copy(parts = newParts))
+            } else {
+                result.add(msg)
+            }
+        }
+    }
+    return if (changed) result else messages
+}
+
 private fun slimHistoricalImages(messages: List<UIMessage>, groupSize: Int): List<UIMessage> {
     if (messages.isEmpty()) return messages
     val gs = if (groupSize > 0) groupSize else 6

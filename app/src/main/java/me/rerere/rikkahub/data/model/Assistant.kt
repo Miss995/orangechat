@@ -29,6 +29,7 @@ data class Assistant(
     val topP: Float? = null,
     val contextMessageSize: Int = 0,
     val contextGroupSize: Int = 4, // 上下文按组分批裁剪的组大小（2的倍数，0=按条裁剪）
+    val reasoningContextDepth: Int = -1, // 【思考链瘦身 · 2026-10-05】请求里带最近几条消息的思考链。-1=全带（默认，行为不变），0=全不带，N=最近 N 条
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
     val useGlobalMemory: Boolean = false, // 使用全局共享记忆而非助手隔离记忆

@@ -472,6 +472,31 @@ internal fun AssistantBasicContent(
             FormItem(
                 modifier = Modifier.padding(8.dp),
                 label = {
+                    Text("请求里带最近几条的思考链")
+                },
+                description = {
+                    Text("思考链是请求体里最占地方的两类之一。全带=行为跟以前一样；带得越少越省 token，但猫在多步工具调用中会记不住自己上一步为什么那么做。默认全带。")
+                }
+            ) {
+                val reasoningOptions = remember { listOf(-1, 0, 2, 4, 6, 8, 10, 20) }
+                Select(
+                    options = reasoningOptions,
+                    selectedOption = if (assistant.reasoningContextDepth in reasoningOptions) assistant.reasoningContextDepth else -1,
+                    onOptionSelected = { onUpdate(assistant.copy(reasoningContextDepth = it)) },
+                    optionToString = { value ->
+                        when (value) {
+                            -1 -> "全带（-1，默认）"
+                            0 -> "全不带（0）"
+                            else -> "最近 $value 条"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            HorizontalDivider()
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
                     Text(stringResource(R.string.assistant_page_stream_output))
                 },
                 description = {
