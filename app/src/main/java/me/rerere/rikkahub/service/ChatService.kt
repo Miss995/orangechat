@@ -2506,6 +2506,13 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                     // 只认文字；正文里不带标记（模型看不见这个记号），但记号要跟着上路，
                     // 好让流式回来时 collapseInterjections 认得出这句是宝插的。
                     val text = (part as? UIMessagePart.Text)?.text.orEmpty()
+                    // 【看双份 · 2026-10-06】宝报"请求里那句给她的话有两份"。
+                    // 展开这一步是"一条带标 part → 一条独立 USER"的唯一出口，先在这儿照一眼：
+                    // 吐出来的文本前 20 字 + 长度 + 这条猫消息里有几个带标 part。
+                    AppLogBuffer.log(
+                        TAG,
+                        "[Interject] EXPAND text=${text.take(20)}@${text.length} marks=${msg.parts.count { isInterjectMarked(it) }} parts=${msg.parts.size}"
+                    )
                     if (text.isNotBlank()) {
                         out.add(
                             UIMessage(
