@@ -566,6 +566,28 @@ class ChatService(
                             saveConversation(conversationId, newConversation)
                         }
                         AppLogBuffer.log(TAG, "sendMessage: in-lock insert+save took=${System.currentTimeMillis() - t0}ms (size=${newConversation.messageNodes.size}) interject=$isInterjection")
+                        // 【插话吞正文调查 · 2026-10-05】插话进来的那一刻，把当前那条猫消息的 parts
+                        // 抄一份。三处守门（条数对账 / 走错格 STRAY / 合回后的 tail）都没报警，
+                        // 而宝眼睛看见"插话之后猫的正文不见了" —— 丢的地方在守门射程外，得抓这一刻。
+                        if (isInterjection) {
+                            val head = newConversation.messageNodes.lastOrNull()?.messages?.lastOrNull()
+                            val desc = head?.parts?.joinToString("") { pt ->
+                                when (pt) {
+                                    is UIMessagePart.Text -> "T${pt.text.length}"
+                                    is UIMessagePart.Reasoning -> "R${pt.reasoning.length}"
+                                    is UIMessagePart.Tool -> "Tool"
+                                    else -> "?"
+                                }
+                            } ?: "-"
+                            val headText = head?.parts
+                                ?.filterIsInstance<UIMessagePart.Text>()
+                                ?.joinToString("") { it.text }
+                                ?.take(40) ?: "-"
+                            AppLogBuffer.log(
+                                TAG,
+                                "[Interject] AT-SEND nodes=${newConversation.messageNodes.size} role=${head?.role} parts=$desc headText=$headText"
+                            )
+                        }
                         InsertResult(assistant, processedContent, insertedMessage, newConversation)
                     }
                 }
