@@ -551,6 +551,17 @@ class ChatService(
                             // 【消息引用 2026-09-22】这条在回复哪一条（宝长按消息选的"引用"）
                             quotedMessageId = quotedMessageId,
                         )
+                        // 【抓鬼 · 2026-10-06】一次点击被处理了几次，看这里。
+                        // 两行同样的文本 = 客户端/入口把同一条送了两遍。
+                        run {
+                            val txt = processedContent.filterIsInstance<UIMessagePart.Text>()
+                                .joinToString("") { it.text }.trim()
+                            AppLogBuffer.log(
+                                TAG,
+                                "[Make] id=${insertedMessage.id} interject=$isInterjection " +
+                                    "len=${txt.length} text=${txt.take(24)}"
+                            )
+                        }
                         // 【插话不落库 · 2026-10-02 宝定的根治】插话不进会话（内存和库都不进）。
                         // 它本来就是"挂在猫那条回复里的一段话"，存储层就不该有独立的一条。
                         // 老路子：先造一条独立的 → 收尾合并 → 再删掉 → 显示层再靠锚点过滤；
