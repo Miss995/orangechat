@@ -2579,7 +2579,18 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                     val nowDup2 = System.currentTimeMillis()
                     if (nowDup2 - lastInterjectDupLogAt > 5_000) {
                         lastInterjectDupLogAt = nowDup2
-                        AppLogBuffer.log(TAG, "[Interject] DUP merge hadMarks=$hadMarks inMsg=${msg.parts.count { isInterjectMarked(it) }}")
+                        // 【看内容 · 2026-10-05 宝要】光知道"有几个标"不够，得看那几个标里装的是什么：
+                        // 是同一份被算了两遍，还是两份不同的东西叠着。
+                        val peek = { ps: List<UIMessagePart> ->
+                            ps.filter { isInterjectMarked(it) }.joinToString("|") { pt ->
+                                val t = (pt as? UIMessagePart.Text)?.text.orEmpty()
+                                t.take(10) + "@" + t.length
+                            }
+                        }
+                        AppLogBuffer.log(
+                            TAG,
+                            "[Interject] DUP merge had=$hadMarks old=[${peek(last.parts)}] new=[${peek(msg.parts)}]"
+                        )
                     }
                 }
                 out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
