@@ -285,6 +285,25 @@ class GenerationHandler(
                 // 她那条插话既在会话消息列表里（sendMessage 存的那份），又被这里 + taggedExtra
                 // 加了一遍 —— 同一条 id 出现两次。先按 id 把列表里已有的摘掉，再统一加 tagged。
                 val extraIds = extra.map { it.id }.toSet()
+                // 【抓鬼 · 2026-10-06】插话在请求里出现两份（点一次也这样）。这里 extra 已经
+                // 在手里，不再消费队列。照一眼：列表里有没有"和它文本一样"的 USER，各自的完整 id。
+                run {
+                    val texts = extra.map { m ->
+                        m.parts.filterIsInstance<UIMessagePart.Text>().joinToString("") { it.text }.trim()
+                    }.toSet()
+                    val hits = messages.mapIndexedNotNull { idx, m ->
+                        if (m.role != MessageRole.USER) null
+                        else {
+                            val t = m.parts.filterIsInstance<UIMessagePart.Text>().joinToString("") { it.text }.trim()
+                            if (t in texts) "  #$idx id=${m.id} ij=${m.parts.any { pt -> pt.metadata?.containsKey("interject") == true }}" else null
+                        }
+                    }
+                    AppLogBuffer.log(
+                        "Interject",
+                        "GHOST extra=[${extra.joinToString("; ") { it.id.toString() }}] sameInList=${hits.size}\n" +
+                            hits.joinToString("\n")
+                    )
+                }
                 val before = messages.size
                 messages = messages.filterNot { it.id in extraIds } + taggedExtra
                 AppLogBuffer.log(
