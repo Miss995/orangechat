@@ -85,7 +85,12 @@ data class Conversation(
                 // 该格原来住的是谁。光看格号看不出差在哪，看 id 头一眼就明白。
                 strayAppends.append(
                     "#$index(had${node.messages.size}:${node.messages.firstOrNull()?.id.toString().take(8)})" +
-                        "<-${message.id.toString().take(8)}(${message.role})"
+                        "<-${message.id.toString().take(8)}(${message.role}:" +
+                        // 【带 part 类型 · 2026-10-05】插话错位调查：跑错格的那条带了哪些 part？
+                        // 宝报"带工具的大块已经弹出来过、插话一进去就没了"。如果错位那条的 part 里
+                        // 有 Tool，就说明工具块没被删、只是被塞进了别的格（跟正文消失同一个机制）。
+                        message.parts.joinToString("") { it::class.simpleName?.take(4) ?: "?" } +
+                        ")"
                 )
                 newMessages.add(message)
                 newMessageIndex = newMessages.lastIndex
