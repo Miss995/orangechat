@@ -7,14 +7,16 @@
 package me.rerere.rikkahub.ui.components.message
 
 import androidx.compose.ui.util.fastForEachIndexed
-import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.ai.ui.UIMessagePart
 
 /** 【插话记号 · 2026-10-01】这个 part 是不是宝插进来的那句（收尾合并时打的 metadata{"interject": true}）。
  *  2026-10-04 从 ChatMessage.kt 挪出来共用（分组和渲染两边都要认它）。 */
 internal fun UIMessagePart.isInterjectPart(): Boolean {
-    val v = metadata?.get("interject") ?: return false
-    return v is JsonPrimitive && v.content == "true"
+    // 【判据统一 · 2026-10-05】原来只认 content=="true"。但搭车那侧（GenerationHandler）
+    // 写进去的是一串 id（"aaa,bbb"），于是"她插的那句"在渲染层根本不被认——
+    // 会被当普通正文画一遍，而且 else 分支顺手把思考链切断，工具块和插话分到两张卡上。
+    // 跟数据层的 isInterjectMarked 统一成"有这个 key 就算"。
+    return metadata?.get("interject") != null
 }
 
 /**
