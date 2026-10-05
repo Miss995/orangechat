@@ -281,10 +281,15 @@ class GenerationHandler(
                         }
                     })
                 }
-                messages = messages + taggedExtra
+                // 【去重 · 2026-10-06 宝截图为证】请求体里出现过两条一模一样的 user（53/54 相邻）。
+                // 她那条插话既在会话消息列表里（sendMessage 存的那份），又被这里 + taggedExtra
+                // 加了一遍 —— 同一条 id 出现两次。先按 id 把列表里已有的摘掉，再统一加 tagged。
+                val extraIds = extra.map { it.id }.toSet()
+                val before = messages.size
+                messages = messages.filterNot { it.id in extraIds } + taggedExtra
                 AppLogBuffer.log(
                     "Interject",
-                    "ride: merged ${extra.size} pending user message(s) into step #$stepIndex (tagged)"
+                    "ride: merged ${extra.size} pending user message(s) into step #$stepIndex (tagged) dedup=${before - messages.size + taggedExtra.size}"
                 )
             }
             memTrace("2-step$stepIndex", messages)
