@@ -75,14 +75,26 @@ import kotlin.math.roundToInt
 private val OVERLAY_TASK_REGEX =
     Regex("\\[指令\\s*([^\\]]*)\\]([\\s\\S]*?)\\[/指令\\]", RegexOption.IGNORE_CASE)
 
-/** 名字尾巴上的时长，如「背课文 · 15分」「喝水 20min」 */
-private val TAIL_DURATION_REGEX = Regex("[·•・\\-—]?\\s*(\\d+)\\s*(?:分|分钟|min|m)\\s*$")
+/** 名字尾巴上的时长，如「背课文 · 15分」「喝水 20min」「盯着 10秒」。
+ *  长的单位写前面，免得 s 抢了 sec 的位子。 */
+private val TAIL_DURATION_REGEX =
+    Regex("[·•・\\-—]?\\s*(\\d+)\\s*(分钟|分|min|m|秒钟|秒|sec|s)\\s*$")
 
 internal data class OverlayTask(
     val name: String,
     val content: String,
-    val minutes: Int?,
+    val seconds: Int?,
 )
+
+/** 「15分」→ 900，「10秒」→ 10。上限 6 小时。 */
+private fun parseDurationSeconds(numText: String, unit: String): Int? {
+    val num = numText.toIntOrNull() ?: return null
+    val sec = when {
+        unit.startsWith("秒") || unit.equals("s", true) || unit.startsWith("sec", true) -> num
+        else -> num * 60
+    }
+    return sec.takeIf { it in 1..21_600 }
+}
 
 /** 往前翻多少条 AI 消息之内算"当前任务"；太老的就不挂了 */
 private const val TASK_LOOKBACK = 12
@@ -116,7 +128,7 @@ internal fun findLatestTask(conversation: Conversation): OverlayTask? {
 
         val rawName = match.groupValues[1].trim()
         val dm = TAIL_DURATION_REGEX.find(rawName)
-        val minutes = dm?.groupValues?.getOrNull(1)?.toIntOrNull()?.takeIf { it in 1..600 }
+        val seconds = dm?.let { parseDurationSeconds(it.groupValues[1], it.groupValues[2]) }
         val name = (if (dm != null) rawName.substring(0, dm.range.first).trim() else rawName)
             .ifBlank { "小任务" }
 
@@ -124,7 +136,7 @@ internal fun findLatestTask(conversation: Conversation): OverlayTask? {
         return OverlayTask(
             name = name,
             content = match.groupValues[2].trim(),
-            minutes = minutes,
+            seconds = seconds,
         )
     }
     return null
@@ -142,7 +154,7 @@ fun TaskCardOverlay(
         if (loading) null else findLatestTask(conversation)
     }
     val key = task?.let { "${it.name}#${it.content.hashCode()}" }
-    val totalSec = (task?.minutes ?: 0) * 60
+    val totalSec = task?.seconds ?: 0
 
     var doneKey by remember(conversation.id) { mutableStateOf<String?>(null) }
     var collapsedKey by remember(conversation.id) { mutableStateOf<String?>(null) }
@@ -279,7 +291,7 @@ private fun TaskCard(
                         color = ink,
                         modifier = Modifier.weight(1f),
                     )
-                    if (task.minutes != null) {
+                    if (task.seconds != null) {
                         Text(
                             text = formatRemain(remainSec),
                             style = MaterialTheme.typography.labelMedium,
@@ -346,7 +358,11 @@ private fun TaskBubble(
                 }
             }
             Text(
-                text = if (totalSec > 0) "${(remainSec + 59) / 60}" else "任",
+                text = when {
+                    totalSec <= 0 -> "任"
+                    totalSec < 60 -> "${remainSec}s"
+                    else -> "${(remainSec + 59) / 60}"
+                },
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
