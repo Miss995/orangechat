@@ -273,6 +273,10 @@ class ChatService(
     // 【数标诊断节流 · 2026-10-05】排"一次插话显示两个折叠条"用，5 秒最多一行，免得把日志环刷爆。
     @Volatile
     private var lastInterjectDupLogAt = 0L
+    // 【分路 · 2026-10-06】DUP merge 原来跟 DUP 共用这一个时间戳。DUP（带标 user 数）
+    // 每 5 秒就满足条件打一次、把时间戳一直刷新，于是 DUP merge 这条"合到已有标上"的
+    // 关键证据永远轮不到 —— 埋了却没插电。单开一路。
+    private var lastInterjectMergeDupLogAt = 0L
     /** 【条数对账降频 · 2026-10-05】流式每秒约 10 个 chunk，5 秒最多报一行条数不符。 */
     private var lastCountMismatchLogAt = 0L
 
@@ -2616,8 +2620,8 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 val hadMarks = last.parts.count { isInterjectMarked(it) }
                 if (hadMarks > 0) {
                     val nowDup2 = System.currentTimeMillis()
-                    if (nowDup2 - lastInterjectDupLogAt > 5_000) {
-                        lastInterjectDupLogAt = nowDup2
+                    if (nowDup2 - lastInterjectMergeDupLogAt > 3_000) {
+                        lastInterjectMergeDupLogAt = nowDup2
                         // 【看内容 · 2026-10-05 宝要】光知道"有几个标"不够，得看那几个标里装的是什么：
                         // 是同一份被算了两遍，还是两份不同的东西叠着。
                         val peek = { ps: List<UIMessagePart> ->
