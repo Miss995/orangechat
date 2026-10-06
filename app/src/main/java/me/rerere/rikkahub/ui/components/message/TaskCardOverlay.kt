@@ -206,7 +206,7 @@ private fun TaskCard(
     onLongPress: () -> Unit,
 ) {
     // 宝定的配色：底纯白，字/线/图标走主题那个"卡片色"（淡紫）
-    val ink = MaterialTheme.colorScheme.surfaceContainerHigh
+    val ink = MaterialTheme.colorScheme.onSecondaryContainer
 
     Surface(
         modifier = Modifier
