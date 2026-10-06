@@ -364,6 +364,97 @@ private fun String.splitThinkSegments(): List<ThinkSegment> {
     return segments
 }
 
+/* ---------------------------------------------------------------------------
+ * 【小任务卡 · 2026-10-06 宝定的】
+ * 正文里写 [指令 名称]内容[/指令]，渲染时不在正文里露标记，而是原地换成一条
+ * "橘仔给的小任务 · 名称"的条（跟插话条一样撑满、不可展开）。
+ * 切分思路照抄上面的 splitThinkSegments（用户 think 那套）。
+ * ------------------------------------------------------------------------- */
+private sealed interface TaskSegment {
+    data class Task(val name: String, val content: String) : TaskSegment
+    data class Text(val content: String) : TaskSegment
+}
+
+private fun String.splitTaskSegments(): List<TaskSegment> {
+    if (isBlank()) return listOf(TaskSegment.Text(this))
+    val regex = Regex("\\[指令\\s*([^\\]]*)\\]([\\s\\S]*?)\\[/指令\\]", RegexOption.IGNORE_CASE)
+    val segments = mutableListOf<TaskSegment>()
+    var lastEnd = 0
+    for (match in regex.findAll(this)) {
+        if (match.range.first > lastEnd) {
+            segments.add(TaskSegment.Text(substring(lastEnd, match.range.first)))
+        }
+        segments.add(TaskSegment.Task(match.groupValues[1].trim(), match.groupValues[2]))
+        lastEnd = match.range.last + 1
+    }
+    if (lastEnd < length) {
+        segments.add(TaskSegment.Text(substring(lastEnd)))
+    }
+    if (segments.isEmpty()) segments.add(TaskSegment.Text(this))
+    return segments
+}
+
+@Composable
+private fun TaskStrip(name: String) {
+    val accent = MaterialTheme.colorScheme.secondary
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            imageVector = HugeIcons.ChatUser,
+            contentDescription = null,
+            tint = accent,
+            modifier = Modifier.size(14.dp),
+        )
+        Text(
+            text = if (name.isBlank()) "橘仔给的小任务" else "橘仔给的小任务 · $name",
+            style = LocalTextStyle.current.copy(color = accent, fontSize = 12.sp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** 正文渲染的公用小件：认出 [指令] 段就画任务条，其余照常走 Markdown。 */
+@Composable
+private fun TaskAwareBody(
+    text: String,
+    assistant: Assistant?,
+    scope: AssistantAffectScope,
+    onClickCitation: ((String) -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val segments = remember(text) { text.splitTaskSegments() }
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        segments.fastForEach { seg ->
+            when (seg) {
+                is TaskSegment.Task -> TaskStrip(name = seg.name)
+                is TaskSegment.Text -> {
+                    if (seg.content.isNotBlank()) {
+                        MarkdownBlock(
+                            content = seg.content.replaceRegexes(
+                                assistant = assistant,
+                                scope = scope,
+                                visual = true,
+                            ),
+                            onClickCitation = onClickCitation,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun MessagePartsBlock(
     assistant: Assistant?,
@@ -637,25 +728,20 @@ private fun MessagePartsBlock(
                                                         overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
                                                         bubbleAlpha = bubbleAlpha,
                                                     ) {
-                                                        MarkdownBlock(
-                                                            content = segment.replaceRegexes(
-                                                                assistant = assistant,
-                                                                scope = AssistantAffectScope.ASSISTANT,
-                                                                visual = true,
-                                                            ),
+                                                        TaskAwareBody(
+                                                            text = segment,
+                                                            assistant = assistant,
+                                                            scope = AssistantAffectScope.ASSISTANT,
                                                             onClickCitation = handleClickCitation,
                                                         )
                                                     }
                                                 } else {
-                                                    MarkdownBlock(
-                                                        content = segment.replaceRegexes(
-                                                            assistant = assistant,
-                                                            scope = AssistantAffectScope.ASSISTANT,
-                                                            visual = true,
-                                                        ),
+                                                    TaskAwareBody(
+                                                        text = segment,
+                                                        assistant = assistant,
+                                                        scope = AssistantAffectScope.ASSISTANT,
                                                         onClickCitation = handleClickCitation,
-                                                        modifier = Modifier
-                                                            .animateContentSize()
+                                                        modifier = Modifier.animateContentSize(),
                                                     )
                                                 }
                                             }
@@ -670,25 +756,19 @@ private fun MessagePartsBlock(
                                             overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
                                             bubbleAlpha = bubbleAlpha,
                                         ) {
-                                            MarkdownBlock(
-                                                content = displayText.replaceRegexes(
-                                                    assistant = assistant,
-                                                    scope = AssistantAffectScope.ASSISTANT,
-                                                    visual = true,
-                                                ),
+                                            TaskAwareBody(
+                                                text = displayText,
+                                                assistant = assistant,
+                                                scope = AssistantAffectScope.ASSISTANT,
                                                 onClickCitation = handleClickCitation,
                                             )
                                         }
                                     } else {
-                                        MarkdownBlock(
-                                            content = displayText.replaceRegexes(
-                                                assistant = assistant,
-                                                scope = AssistantAffectScope.ASSISTANT,
-                                                visual = true,
-                                            ),
+                                        TaskAwareBody(
+                                            text = displayText,
+                                            assistant = assistant,
+                                            scope = AssistantAffectScope.ASSISTANT,
                                             onClickCitation = handleClickCitation,
-                                            modifier = Modifier
-                                                .animateContentSize()
                                         )
                                     }
                                 }
