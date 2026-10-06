@@ -84,25 +84,50 @@ internal data class OverlayTask(
     val minutes: Int?,
 )
 
+/** 往前翻多少条 AI 消息之内算"当前任务"；太老的就不挂了 */
+private const val TASK_LOOKBACK = 12
+
+/**
+ * 【2026-10-06 晚修】原来只认"最后一条 AI 消息" —— 猫一开口说话，最后一条变成新消息，
+ * 卡片就跟着没了。改成往前翻几条；并且用回执反查：一个任务后面只要有
+ * 〔任务完成〕/〔任务到点〕，就算结掉（重启 App 也不会复活）。
+ */
 internal fun findLatestTask(conversation: Conversation): OverlayTask? {
-    val node = conversation.messageNodes.asReversed().firstOrNull {
-        it.currentMessage.role == MessageRole.ASSISTANT
-    } ?: return null
-    val text = node.currentMessage.parts
-        .filterIsInstance<UIMessagePart.Text>()
-        .joinToString("\n") { it.text }
-    val match = OVERLAY_TASK_REGEX.find(text) ?: return null
+    val nodes = conversation.messageNodes
+    if (nodes.isEmpty()) return null
 
-    val rawName = match.groupValues[1].trim()
-    val dm = TAIL_DURATION_REGEX.find(rawName)
-    val minutes = dm?.groupValues?.getOrNull(1)?.toIntOrNull()?.takeIf { it in 1..600 }
-    val name = if (dm != null) rawName.substring(0, dm.range.first).trim() else rawName
+    // 已经结掉的任务名（完成 / 倒计时到点都算）
+    val settled = nodes.asSequence()
+        .mapNotNull { taskReceiptText(it.currentMessage) }
+        .map { it.substringAfter("〕") }
+        .toSet()
 
-    return OverlayTask(
-        name = name.ifBlank { "小任务" },
-        content = match.groupValues[2].trim(),
-        minutes = minutes,
-    )
+    var seenAssistant = 0
+    for (i in nodes.indices.reversed()) {
+        val msg = nodes[i].currentMessage
+        if (msg.role != MessageRole.ASSISTANT) continue
+        seenAssistant += 1
+        if (seenAssistant > TASK_LOOKBACK) break
+
+        val text = msg.parts
+            .filterIsInstance<UIMessagePart.Text>()
+            .joinToString("\n") { it.text }
+        val match = OVERLAY_TASK_REGEX.find(text) ?: continue
+
+        val rawName = match.groupValues[1].trim()
+        val dm = TAIL_DURATION_REGEX.find(rawName)
+        val minutes = dm?.groupValues?.getOrNull(1)?.toIntOrNull()?.takeIf { it in 1..600 }
+        val name = (if (dm != null) rawName.substring(0, dm.range.first).trim() else rawName)
+            .ifBlank { "小任务" }
+
+        if (name in settled) continue        // 这条已经结过了 → 往前找更早的
+        return OverlayTask(
+            name = name,
+            content = match.groupValues[2].trim(),
+            minutes = minutes,
+        )
+    }
+    return null
 }
 
 @Composable
