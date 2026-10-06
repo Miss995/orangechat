@@ -2514,6 +2514,19 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
      */
     private fun expandInterjections(messages: List<UIMessage>): List<UIMessage> {
         if (messages.none { msg -> msg.parts.any { isInterjectMarked(it) } }) return messages
+        // 【形状快照 · 2026-10-06 宝要"找源头别去重"】展开的输入长什么样：
+        // 已经带标的话有几条（原样保留的那部分）、带标的猫消息有几条（会被切开的）。
+        // 输入里就已经有两条带标 user 的话，输出必然是两条 —— 源头就在这儿显形。
+        run {
+            val inA = messages.filter { m -> m.role == MessageRole.ASSISTANT && m.parts.any { isInterjectMarked(it) } }
+            val inU = messages.filter { m -> m.role == MessageRole.USER && m.parts.any { isInterjectMarked(it) } }
+            AppLogBuffer.log(
+                TAG,
+                "[Interject] EXPIN a=" + inA.size + " u=" + inU.size + " total=" + messages.size +
+                    " aIds=" + inA.joinToString(",") { m -> m.id.toString().take(6) + "x" + m.parts.count { isInterjectMarked(it) } } +
+                    " uIds=" + inU.joinToString(",") { m -> m.id.toString().take(6) }
+            )
+        }
         val out = mutableListOf<UIMessage>()
         for (msg in messages) {
             if (msg.role != MessageRole.ASSISTANT) {
