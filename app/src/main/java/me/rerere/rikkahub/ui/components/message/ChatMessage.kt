@@ -95,6 +95,7 @@ import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.ChatUser
+import me.rerere.hugeicons.stroke.Clipboard
 import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.PlayCircle
 import me.rerere.hugeicons.stroke.PauseCircle
@@ -407,7 +408,7 @@ private fun TaskStrip(name: String) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Icon(
-            imageVector = HugeIcons.ChatUser,
+            imageVector = HugeIcons.Clipboard,
             contentDescription = null,
             tint = accent,
             modifier = Modifier.size(14.dp),

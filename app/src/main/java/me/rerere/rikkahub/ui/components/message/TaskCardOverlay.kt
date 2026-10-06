@@ -203,7 +203,7 @@ private fun TaskCard(
                 onLongClick = { onLongPress() },
             ),
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surface,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 0.dp,
         shadowElevation = 6.dp,
     ) {
@@ -213,14 +213,14 @@ private fun TaskCard(
                 modifier = Modifier
                     .width(4.dp)
                     .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.primary),
+                    .background(MaterialTheme.colorScheme.secondary),
             )
             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = HugeIcons.Clipboard,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.secondary,
                         modifier = Modifier.size(14.dp),
                     )
                     Spacer(Modifier.width(6.dp))
@@ -234,7 +234,7 @@ private fun TaskCard(
                         Text(
                             text = formatRemain(remainSec),
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = MaterialTheme.colorScheme.secondary,
                         )
                     }
                 }
@@ -272,7 +272,7 @@ private fun TaskBubble(
             .clip(CircleShape)
             .clickable(onClick = onClick),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.primary,
+        color = MaterialTheme.colorScheme.secondary,
         shadowElevation = 6.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {
