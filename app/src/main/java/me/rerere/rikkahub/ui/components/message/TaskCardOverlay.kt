@@ -78,7 +78,7 @@ private val OVERLAY_TASK_REGEX =
 /** 名字尾巴上的时长，如「背课文 · 15分」「喝水 20min」「盯着 10秒」。
  *  长的单位写前面，免得 s 抢了 sec 的位子。 */
 private val TAIL_DURATION_REGEX =
-    Regex("[·•・\\-—]?\\s*(\\d+)\\s*(分钟|分|min|m|秒钟|秒|sec|s)\\s*$")
+    Regex("[·•・\\-—]?\\s*(\\d+)\\s*(小时|时|hour|hr|h|分钟|分|min|m|秒钟|秒|sec|s)\\s*$")
 
 internal data class OverlayTask(
     val name: String,
@@ -86,14 +86,16 @@ internal data class OverlayTask(
     val seconds: Int?,
 )
 
-/** 「15分」→ 900，「10秒」→ 10。上限 6 小时。 */
+/** 「15分」→ 900、「10秒」→ 10、「2小时」→ 7200。上限 24 小时。 */
 private fun parseDurationSeconds(numText: String, unit: String): Int? {
     val num = numText.toIntOrNull() ?: return null
     val sec = when {
         unit.startsWith("秒") || unit.equals("s", true) || unit.startsWith("sec", true) -> num
+        unit.startsWith("时") || unit.startsWith("hour", true) ||
+            unit.equals("h", true) || unit.startsWith("hr", true) -> num * 3600
         else -> num * 60
     }
-    return sec.takeIf { it in 1..21_600 }
+    return sec.takeIf { it in 1..86_400 }
 }
 
 /** 往前翻多少条 AI 消息之内算"当前任务"；太老的就不挂了 */
