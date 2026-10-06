@@ -110,15 +110,20 @@ internal fun findLatestTask(conversation: Conversation): OverlayTask? {
     val nodes = conversation.messageNodes
     if (nodes.isEmpty()) return null
 
-    // 已经结掉的任务名（完成 / 倒计时到点都算）
-    val settled = nodes.asSequence()
-        .mapNotNull { taskReceiptText(it.currentMessage) }
-        .map { it.substringAfter("〕") }
-        .toSet()
+    // 【2026-10-07 修】结掉的名字改成"随扫随收"：从后往前扫，先遇到的回执才算数。
+    // 原写法一次性收集全部回执名 → 比这条任务更早的旧回执也会把它一起结掉，
+    // 结果同名任务用过一次就永久失效。现在只有"比它新"的回执才能结掉它。
+    val settled = mutableSetOf<String>()
 
     var seenAssistant = 0
     for (i in nodes.indices.reversed()) {
         val msg = nodes[i].currentMessage
+        // 回执：只结掉比它更早的任务（继续往前扫才轮到那些任务）
+        val receipt = taskReceiptText(msg)
+        if (receipt != null) {
+            settled += receipt.substringAfter("〕")
+            continue
+        }
         if (msg.role != MessageRole.ASSISTANT) continue
         seenAssistant += 1
         if (seenAssistant > TASK_LOOKBACK) break
@@ -292,12 +297,14 @@ private fun TaskCard(
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = "橘仔给的小任务 · ${task.name}",
+                        style = MaterialTheme.typography.labelMedium,
                         color = ink,
                         modifier = Modifier.weight(1f),
                     )
                     if (task.seconds != null) {
                         Text(
                             text = formatRemain(remainSec),
+                            style = MaterialTheme.typography.labelMedium,
                             color = accentSoft,
                         )
                     }
@@ -305,11 +312,13 @@ private fun TaskCard(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = task.content,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = ink,
                 )
                 Spacer(Modifier.height(9.dp))
                 Text(
                     text = "左滑完成 · 右滑收掉",
+                    style = MaterialTheme.typography.labelSmall,
                     color = ink.copy(alpha = 0.7f),
                 )
             }
@@ -324,11 +333,11 @@ private fun TaskBubble(
     onClick: () -> Unit,
 ) {
     val progress = if (totalSec > 0) remainSec.toFloat() / totalSec.toFloat() else 0f
-    // 【2026-10-07 宝定】小圆圈整体走淡紫：底再淡一层，环和里面的字用淡紫本体
+    // 【2026-10-07 宝定·方案②】圈是实心淡紫；里面的数字和进度环用主题第二色（深），看得清转了多少
     val lavender = MaterialTheme.colorScheme.surfaceContainerHigh
-    val bg = lavender.copy(alpha = 0.45f)
-    val trackColor = lavender.copy(alpha = 0.35f)
-    val progressColor = lavender
+    val bg = lavender
+    val trackColor = lavender.copy(alpha = 0.45f)
+    val progressColor = MaterialTheme.colorScheme.secondary
 
     Surface(
         modifier = Modifier
@@ -366,7 +375,8 @@ private fun TaskBubble(
                     totalSec < 60 -> "${remainSec}s"
                     else -> "${(remainSec + 59) / 60}"
                 },
-                color = lavender,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary,
             )
         }
     }
@@ -408,6 +418,7 @@ fun TaskReceiptLine(text: String) {
     ) {
         Text(
             text = text,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f),
         )
     }
