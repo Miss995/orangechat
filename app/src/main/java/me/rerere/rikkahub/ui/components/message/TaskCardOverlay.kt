@@ -246,7 +246,9 @@ private fun TaskCard(
 ) {
     // 宝定的配色：底纯白。
     // "读"的地方（标题/正文/图标）用深紫保证看得清；"看"的地方（竖线/倒计时/圆圈）留她喜欢的那个淡紫。
-    val ink = MaterialTheme.colorScheme.onSecondaryContainer
+    // 【2026-10-07 修】主题的 onSecondaryContainer 在宝这套配色里近乎纯黑。
+    // 换成写死的紫：不跟主题走，保证"是紫的、看得清"。
+    val ink = androidx.compose.ui.graphics.Color(0xFF6C5BA8)
     val accentSoft = MaterialTheme.colorScheme.surfaceContainerHigh
 
     Surface(
