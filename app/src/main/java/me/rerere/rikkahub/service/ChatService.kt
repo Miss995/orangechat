@@ -818,6 +818,14 @@ class ChatService(
                         java.util.Collections.synchronizedList(mutableListOf<UIMessage>())
                     }.addAll(leftover!!)
                     syncPendingInterjectionFlow()
+                    // 【刹车 · 2026-10-06 宝发现】这一轮原来不注册 job：
+                    //   上一轮完成时 invokeOnCompletion 把 _generationJob 清成 null，
+                    //   于是界面 loading=false → 按键变发送键（✕ 消失）→ 按下去变成"发消息"，
+                    //   还给新消息另注册一个 job，而这一轮没人 cancel → 两轮并排跑。
+                    // 此刻在 previousJob.join() 之后，_generationJob 已是 null，
+                    // 用 tryClaimGeneration（低优先级、不抢占）把这轮自己登记进去，✕ 就回来了。
+                    kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]
+                        ?.let { session.tryClaimGeneration(it) }
                     runCatching { handleMessageComplete(conversationId) }
                 } else {
                     AppLogBuffer.log(TAG, "interject: rode the turn, no relay needed conv=$conversationId")
