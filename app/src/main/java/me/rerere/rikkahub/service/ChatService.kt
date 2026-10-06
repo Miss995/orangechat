@@ -2422,7 +2422,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             AppLogBuffer.log(
                 TAG,
                 "[Interject] merge-check: ni=$ni alreadyMerged=$alreadyMerged " +
-                    "marksInMsg=${msg.parts.count { isInterjectMarked(it) }} partsInMsg=${msg.parts.size}"
+                    "marksInMsg=${msg.parts.count { isInterjectMarked(it) }} partsInMsg=${msg.parts.size} " +
+                    "markIdx=" + msg.parts.withIndex().filter { isInterjectMarked(it.value) }
+                        .joinToString(",") { "${it.index}:" + (it.value as? UIMessagePart.Text)?.text?.take(8).orEmpty() } +
+                    " shape=" + msg.parts.mapIndexed { i, pt -> "$i" + (pt::class.simpleName?.take(4) ?: "?") }.joinToString("|")
             )
             val out = if (alreadyMerged) {
                 cleaned
