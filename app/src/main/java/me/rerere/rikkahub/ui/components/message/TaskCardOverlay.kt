@@ -248,7 +248,8 @@ private fun TaskCard(
     // "读"的地方（标题/正文/图标）用深紫保证看得清；"看"的地方（竖线/倒计时/圆圈）留她喜欢的那个淡紫。
     // 【2026-10-07 修】主题的 onSecondaryContainer 在宝这套配色里近乎纯黑。
     // 换成写死的紫：不跟主题走，保证"是紫的、看得清"。
-    val ink = androidx.compose.ui.graphics.Color(0xFF6C5BA8)
+    // 【2026-10-07 宝定】文字/图标一律走主题第二色（跟正文里那条任务条同源）
+    val ink = MaterialTheme.colorScheme.secondary
     val accentSoft = MaterialTheme.colorScheme.surfaceContainerHigh
 
     Surface(
@@ -291,14 +292,12 @@ private fun TaskCard(
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = "橘仔给的小任务 · ${task.name}",
-                        style = MaterialTheme.typography.labelMedium,
                         color = ink,
                         modifier = Modifier.weight(1f),
                     )
                     if (task.seconds != null) {
                         Text(
                             text = formatRemain(remainSec),
-                            style = MaterialTheme.typography.labelMedium,
                             color = accentSoft,
                         )
                     }
@@ -306,13 +305,11 @@ private fun TaskCard(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = task.content,
-                    style = MaterialTheme.typography.bodyMedium,
                     color = ink,
                 )
                 Spacer(Modifier.height(9.dp))
                 Text(
                     text = "左滑完成 · 右滑收掉",
-                    style = MaterialTheme.typography.labelSmall,
                     color = ink.copy(alpha = 0.7f),
                 )
             }
@@ -327,9 +324,11 @@ private fun TaskBubble(
     onClick: () -> Unit,
 ) {
     val progress = if (totalSec > 0) remainSec.toFloat() / totalSec.toFloat() else 0f
-    val bg = MaterialTheme.colorScheme.surfaceContainerHigh
-    val trackColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.25f)
-    val progressColor = MaterialTheme.colorScheme.onSecondaryContainer
+    // 【2026-10-07 宝定】小圆圈整体走淡紫：底再淡一层，环和里面的字用淡紫本体
+    val lavender = MaterialTheme.colorScheme.surfaceContainerHigh
+    val bg = lavender.copy(alpha = 0.45f)
+    val trackColor = lavender.copy(alpha = 0.35f)
+    val progressColor = lavender
 
     Surface(
         modifier = Modifier
@@ -367,8 +366,7 @@ private fun TaskBubble(
                     totalSec < 60 -> "${remainSec}s"
                     else -> "${(remainSec + 59) / 60}"
                 },
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                color = lavender,
             )
         }
     }
@@ -410,8 +408,7 @@ fun TaskReceiptLine(text: String) {
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f),
         )
     }
 }

@@ -415,7 +415,7 @@ private fun TaskStrip(name: String) {
         )
         Text(
             text = if (name.isBlank()) "橘仔给的小任务" else "橘仔给的小任务 · $name",
-            style = LocalTextStyle.current.copy(color = accent, fontSize = 12.sp),
+            style = LocalTextStyle.current.copy(color = accent),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
