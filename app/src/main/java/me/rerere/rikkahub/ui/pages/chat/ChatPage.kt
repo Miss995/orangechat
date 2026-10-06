@@ -588,6 +588,7 @@ private fun ChatPageContent(
                 TaskCardOverlay(
                     conversation = conversation,
                     loading = loadingJob != null,
+                    onTaskDone = { name, byTimeout -> vm.appendTaskReceipt(name, byTimeout) },
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = innerPadding.calculateTopPadding() + 8.dp),

@@ -186,6 +186,17 @@ class ChatVM(
         chatService.sendMessage(_conversationId, content, answer, quotedMessageId)
     }
 
+
+    /** 【任务回执 · 2026-10-06】任务完成 / 倒计时到点 → 往会话里落一条"只存不回"的小字。
+     *  用 handleMessageSend(answer = false)：只追加、不触发生成。 */
+    fun appendTaskReceipt(name: String, byTimeout: Boolean) {
+        val prefix = if (byTimeout) "〔任务到点〕" else "〔任务完成〕"
+        handleMessageSend(
+            content = listOf(UIMessagePart.Text(prefix + name)),
+            answer = false,
+        )
+    }
+
     fun handleMessageEdit(parts: List<UIMessagePart>, messageId: Uuid) {
         if (parts.isEmptyInputMessage()) return
 

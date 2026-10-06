@@ -46,13 +46,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Clipboard
@@ -63,10 +65,11 @@ import kotlin.math.roundToInt
  * 【小任务卡 · 2026-10-06 宝定的】
  * 第一刀：正文里写 [指令 名称]内容[/指令] → 原地变成一条"任务条"（ChatMessage.kt）。
  * 这一刀：写完之后从右边滑进来一张卡片，挂聊天顶部。
- *   · 底色浅（跟聊天框一致），左边一条主题色竖线
- *   · 手势：左滑 = 完成（这条收尾了）；右滑 = 收掉；长按 = 收掉
+ *   · 卡片底 = 纯白；字/竖线/图标/倒计时 = 主题里那个"卡片色"（淡紫）
+ *   · 手势：左滑 = 完成；右滑 = 收掉；长按 = 收掉
  *   · 收掉不是消失 → 缩成右边一个小圆圈，倒计时住在圆圈上；点圆圈再展开
  *   · 倒计时写在任务名里：[指令 背课文 · 15分] → 15 分钟；不写就不显示
+ *   · 完成 / 倒计时到点 → 回调 onTaskDone（ChatPage 那边落一条回执小字）
  * ------------------------------------------------------------------------- */
 
 private val OVERLAY_TASK_REGEX =
@@ -106,6 +109,7 @@ internal fun findLatestTask(conversation: Conversation): OverlayTask? {
 fun TaskCardOverlay(
     conversation: Conversation,
     loading: Boolean,
+    onTaskDone: (name: String, byTimeout: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // 只在写完（不在生成中）时才认任务 —— 流式写一半正则匹配不上，正好。
@@ -117,6 +121,7 @@ fun TaskCardOverlay(
 
     var doneKey by remember(conversation.id) { mutableStateOf<String?>(null) }
     var collapsedKey by remember(conversation.id) { mutableStateOf<String?>(null) }
+    var timeoutReportedKey by remember(conversation.id) { mutableStateOf<String?>(null) }
     var dragX by remember { mutableFloatStateOf(0f) }
     var remain by remember(key) { mutableIntStateOf(totalSec) }
 
@@ -126,6 +131,17 @@ fun TaskCardOverlay(
         while (remain > 0) {
             delay(1000L)
             remain -= 1
+        }
+    }
+
+    // 倒计时到点、而且她没点完成 → 也回执一次（只报一次）
+    LaunchedEffect(key, remain) {
+        val current = task
+        if (current != null && key != null && totalSec > 0 &&
+            remain == 0 && timeoutReportedKey != key && doneKey != key
+        ) {
+            timeoutReportedKey = key
+            onTaskDone(current.name, true)
         }
     }
 
@@ -147,7 +163,10 @@ fun TaskCardOverlay(
                     onDrag = { delta -> dragX += delta },
                     onDragEnd = {
                         when {
-                            dragX < -140f -> doneKey = key
+                            dragX < -140f -> {
+                                doneKey = key
+                                onTaskDone(task.name, false)
+                            }
                             dragX > 140f -> collapsedKey = key
                         }
                         dragX = 0f
@@ -186,6 +205,9 @@ private fun TaskCard(
     onDragEnd: () -> Unit,
     onLongPress: () -> Unit,
 ) {
+    // 宝定的配色：底纯白，字/线/图标走主题那个"卡片色"（淡紫）
+    val ink = MaterialTheme.colorScheme.surfaceContainerHigh
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -203,38 +225,38 @@ private fun TaskCard(
                 onLongClick = { onLongPress() },
             ),
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = Color.White,
         tonalElevation = 0.dp,
         shadowElevation = 6.dp,
     ) {
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-            // 左边一条主题色竖线（宝说的「」那种边缘色）
+            // 左边一条竖线（跟字同色）
             Box(
                 modifier = Modifier
                     .width(4.dp)
                     .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.secondary),
+                    .background(ink),
             )
             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = HugeIcons.Clipboard,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary,
+                        tint = ink,
                         modifier = Modifier.size(14.dp),
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = "橘仔给的小任务 · ${task.name}",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = ink,
                         modifier = Modifier.weight(1f),
                     )
                     if (task.minutes != null) {
                         Text(
                             text = formatRemain(remainSec),
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.secondary,
+                            color = ink,
                         )
                     }
                 }
@@ -242,13 +264,13 @@ private fun TaskCard(
                 Text(
                     text = task.content,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = ink,
                 )
                 Spacer(Modifier.height(9.dp))
                 Text(
                     text = "左滑完成 · 右滑收掉",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                    color = ink.copy(alpha = 0.7f),
                 )
             }
         }
@@ -262,8 +284,9 @@ private fun TaskBubble(
     onClick: () -> Unit,
 ) {
     val progress = if (totalSec > 0) remainSec.toFloat() / totalSec.toFloat() else 0f
-    val trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
-    val progressColor = MaterialTheme.colorScheme.onPrimary
+    val bg = MaterialTheme.colorScheme.secondary
+    val trackColor = MaterialTheme.colorScheme.onSecondary.copy(alpha = 0.25f)
+    val progressColor = MaterialTheme.colorScheme.onSecondary
 
     Surface(
         modifier = Modifier
@@ -272,7 +295,7 @@ private fun TaskBubble(
             .clip(CircleShape)
             .clickable(onClick = onClick),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.secondary,
+        color = bg,
         shadowElevation = 6.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -298,7 +321,7 @@ private fun TaskBubble(
             Text(
                 text = if (totalSec > 0) "${(remainSec + 59) / 60}" else "任",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimary,
+                color = MaterialTheme.colorScheme.onSecondary,
             )
         }
     }
@@ -310,5 +333,38 @@ private fun formatRemain(sec: Int): String {
         "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
     } else {
         "%02d:%02d".format(s / 60, s % 60)
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * 【任务回执小字 · 2026-10-06 宝定的】
+ * 完成 / 倒计时到点 → 往会话里落一条"〔任务完成〕名称"的小字。
+ * 它不画成气泡，就一行居中的灰字，卡在她和猫两条消息中间。
+ * ------------------------------------------------------------------------- */
+
+private val RECEIPT_PREFIXES = listOf("〔任务完成〕", "〔任务到点〕")
+
+internal fun taskReceiptText(message: UIMessage): String? {
+    if (message.role != MessageRole.USER) return null
+    val text = message.parts
+        .filterIsInstance<UIMessagePart.Text>()
+        .joinToString("") { it.text }
+        .trim()
+    return if (RECEIPT_PREFIXES.any { text.startsWith(it) }) text else null
+}
+
+@Composable
+fun TaskReceiptLine(text: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+        )
     }
 }

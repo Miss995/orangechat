@@ -104,6 +104,8 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.ui.components.message.TaskReceiptLine
+import me.rerere.rikkahub.ui.components.message.taskReceiptText
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.service.ChatError
@@ -449,6 +451,12 @@ private fun ChatListNormal(
                 // 【插话定位 · 2026-09-30】插话不再自己画一条：它的内容由前一条猫消息
                 // 按锚点渲染（见 ChatMessage 的 interjections 参数）。这里留一个空 item。
                 if (isInterjection) return@itemsIndexed
+                // 【任务回执 · 2026-10-06】〔任务完成〕/〔任务到点〕→ 一行居中灰字，不画气泡
+                val receiptText = taskReceiptText(node.currentMessage)
+                if (receiptText != null) {
+                    TaskReceiptLine(receiptText)
+                    return@itemsIndexed
+                }
                 Column {
                     ListSelectableItem(
                         key = node.id,
