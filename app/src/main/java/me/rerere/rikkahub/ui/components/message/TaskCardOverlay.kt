@@ -205,8 +205,10 @@ private fun TaskCard(
     onDragEnd: () -> Unit,
     onLongPress: () -> Unit,
 ) {
-    // 宝定的配色：底纯白，字/线/图标走主题那个"卡片色"（淡紫）
+    // 宝定的配色：底纯白。
+    // "读"的地方（标题/正文/图标）用深紫保证看得清；"看"的地方（竖线/倒计时/圆圈）留她喜欢的那个淡紫。
     val ink = MaterialTheme.colorScheme.onSecondaryContainer
+    val accentSoft = MaterialTheme.colorScheme.surfaceContainerHigh
 
     Surface(
         modifier = Modifier
@@ -235,7 +237,7 @@ private fun TaskCard(
                 modifier = Modifier
                     .width(4.dp)
                     .fillMaxHeight()
-                    .background(ink),
+                    .background(accentSoft),
             )
             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -256,7 +258,7 @@ private fun TaskCard(
                         Text(
                             text = formatRemain(remainSec),
                             style = MaterialTheme.typography.labelMedium,
-                            color = ink,
+                            color = accentSoft,
                         )
                     }
                 }
@@ -284,9 +286,9 @@ private fun TaskBubble(
     onClick: () -> Unit,
 ) {
     val progress = if (totalSec > 0) remainSec.toFloat() / totalSec.toFloat() else 0f
-    val bg = MaterialTheme.colorScheme.secondary
-    val trackColor = MaterialTheme.colorScheme.onSecondary.copy(alpha = 0.25f)
-    val progressColor = MaterialTheme.colorScheme.onSecondary
+    val bg = MaterialTheme.colorScheme.surfaceContainerHigh
+    val trackColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.25f)
+    val progressColor = MaterialTheme.colorScheme.onSecondaryContainer
 
     Surface(
         modifier = Modifier
@@ -321,7 +323,7 @@ private fun TaskBubble(
             Text(
                 text = if (totalSec > 0) "${(remainSec + 59) / 60}" else "任",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSecondary,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
         }
     }
