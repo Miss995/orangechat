@@ -277,6 +277,9 @@ class ChatService(
     // 每 5 秒就满足条件打一次、把时间戳一直刷新，于是 DUP merge 这条"合到已有标上"的
     // 关键证据永远轮不到 —— 埋了却没插电。单开一路。
     private var lastInterjectMergeDupLogAt = 0L
+    // 【形状快照节流 · 2026-10-06】宝要"找源头、别去重"。这一行照出每帧 messages 的形状：
+    // 几条带标猫消息、几条带标的话、各自 id。3 秒最多一行。
+    private var lastInterjectShapeLogAt = 0L
     /** 【条数对账降频 · 2026-10-05】流式每秒约 10 个 chunk，5 秒最多报一行条数不符。 */
     private var lastCountMismatchLogAt = 0L
 
@@ -2601,6 +2604,23 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             if (nowDup - lastInterjectDupLogAt > 5_000) {
                 lastInterjectDupLogAt = nowDup
                 AppLogBuffer.log(TAG, "[Interject] DUP markedUsers=$markedUsers in=${messages.size}")
+            }
+        }
+        // 【形状快照 · 2026-10-06 宝要"找源头"】这一帧进来时到底长什么样：
+        // 几条带标 assistant、几条带标 user、各自 id 和标数。
+        // "带标 assistant 和带标 user 同时存在"就是两份的来源（合并态和展开态并存）。
+        run {
+            val nowShape = System.currentTimeMillis()
+            if (nowShape - lastInterjectShapeLogAt > 3_000) {
+                lastInterjectShapeLogAt = nowShape
+                val mA = messages.filter { m -> m.role == MessageRole.ASSISTANT && m.parts.any { isInterjectMarked(it) } }
+                val mU = messages.filter { m -> m.role == MessageRole.USER && m.parts.any { isInterjectMarked(it) } }
+                AppLogBuffer.log(
+                    TAG,
+                    "[Interject] SHAPE a=" + mA.size + " u=" + mU.size + " total=" + messages.size +
+                        " aIds=" + mA.joinToString(",") { m -> m.id.toString().take(6) + "x" + m.parts.count { isInterjectMarked(it) } } +
+                        " uIds=" + mU.joinToString(",") { m -> m.id.toString().take(6) }
+                )
             }
         }
         val out = mutableListOf<UIMessage>()
