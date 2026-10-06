@@ -427,7 +427,7 @@ private fun TaskAwareBody(
     text: String,
     assistant: Assistant?,
     scope: AssistantAffectScope,
-    onClickCitation: ((String) -> Unit)?,
+    onClickCitation: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val segments = remember(text) { text.splitTaskSegments() }
