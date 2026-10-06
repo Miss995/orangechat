@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.provider.AlarmClock
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -37,6 +38,13 @@ fun createAlarmTool(context: Context): Tool = Tool(
                     put("type", "string")
                     put("description", "A label/name for the alarm (optional)")
                 }
+                putJsonObject("days") {
+                    put("type", "array")
+                    put("description", "Repeat days, using Calendar numbering: 1=Sunday, 2=Monday, 3=Tuesday, 4=Wednesday, 5=Thursday, 6=Friday, 7=Saturday. Omit for a one-time alarm. Use [1,2,3,4,5,6,7] for every day, [2,3,4,5,6] for weekdays.")
+                    putJsonObject("items") {
+                        put("type", "integer")
+                    }
+                }
             },
             required = listOf("hour", "minute")
         )
@@ -46,6 +54,9 @@ fun createAlarmTool(context: Context): Tool = Tool(
         val hour = params["hour"]?.jsonPrimitive?.content?.toIntOrNull()
         val minute = params["minute"]?.jsonPrimitive?.content?.toIntOrNull()
         val label = params["label"]?.jsonPrimitive?.content ?: ""
+        val days = params["days"]?.jsonArray
+            ?.mapNotNull { it.jsonPrimitive.content.toIntOrNull() }
+            ?.filter { it in 1..7 }
 
         if (hour == null || minute == null) {
             return@Tool listOf(UIMessagePart.Text(
@@ -72,6 +83,9 @@ fun createAlarmTool(context: Context): Tool = Tool(
                 if (label.isNotBlank()) {
                     putExtra(AlarmClock.EXTRA_MESSAGE, label)
                 }
+                if (!days.isNullOrEmpty()) {
+                    putExtra(AlarmClock.EXTRA_DAYS, ArrayList(days))
+                }
                 putExtra(AlarmClock.EXTRA_SKIP_UI, true)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -96,6 +110,7 @@ fun createAlarmTool(context: Context): Tool = Tool(
                     put("success", true)
                     put("alarm_time", "$displayHour:$displayMinute")
                     put("label", label)
+                    put("repeat", if (days.isNullOrEmpty()) "once" else days.joinToString(","))
                     put("message", "Alarm set for $displayHour:$displayMinute${if (label.isNotBlank()) " ($label)" else ""}")
                 }.toString()
             ))
