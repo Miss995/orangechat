@@ -173,6 +173,12 @@ class GenerationHandler(
         // 约定：取的动作同时清空队列（由提供方 remove 实现），所以同一句不会被并进第二步。
         // 取不到 = 没有插话，行为与以前完全一致。
         pendingInterjections: (() -> List<UIMessage>)? = null,
+        // 【插话补步 · 2026-10-06 宝定的】宝的话插进来时，这一轮可能正处在"没有工具调用、马上要退出"
+        // 的那一步——按老路，队里的话没人接，只能落到 ChatService 的兜底（另起一轮）。
+        // 可兜底那轮会被当成"新回合"，而它本该是"当前这轮的第二次请求"：像有工具那样多走一步，
+        // 把猫刚写的正文/思考/工具结果连同她的话一起带进下一次请求。
+        // 这里只看不取 —— 真取的动作在每步开头那处（continue 回去自然被取走；取走即清空，不会空转）。
+        hasPendingInterjections: (() -> Boolean)? = null,
         // 【2026-09-24 召回留痕】把本次门控 / 拆词 / 命中数回传给上层（ChatService 补写到用户消息）
         onRecallDebug: ((String) -> Unit)? = null,
     ): Flow<GenerationChunk> = flow {
@@ -480,6 +486,17 @@ class GenerationHandler(
                         AppLogBuffer.log("GEN_RESULT", "text=0 自动重试一次（去掉空回复重新生成）")
                         messages = messages.slice(0 until messages.lastIndex)
                         emit(GenerationChunk.Messages(messages))
+                        continue
+                    }
+                    // 【插话补步 · 2026-10-06 宝定的】没有工具调用、本该退出了，但队里还有她的话 →
+                    // 别走兜底那条"另起一轮"（那会被当成新回合），就在这一轮里再发一次请求：
+                    // 像有工具多走一步那样，把这次的内容（正文/思考/工具结果）连她的话一起带过去。
+                    // 只看不取（真取在每步开头那处）；取走即清空，所以不会空转。
+                    if (hasPendingInterjections?.invoke() == true) {
+                        AppLogBuffer.log(
+                            "Interject",
+                            "no tool calls but pending interjection -> extra request (step #$stepIndex)"
+                        )
                         continue
                     }
                     // no tool calls, break

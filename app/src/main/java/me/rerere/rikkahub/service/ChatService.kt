@@ -1376,6 +1376,12 @@ class ChatService(
                     syncPendingInterjectionFlow()
                     taken
                 },
+                // 【插话补步 · 2026-10-06 宝定的】只看不取：GenerationHandler 在"没有工具调用、
+                // 即将退出"那一步问一句队里还有没有她的话。有就再发一次请求——让插话这轮像有工具
+                // 那样多走一步，而不是被推到"另起一轮"（那样会被当成新回合，收尾还会多挂一份）。
+                hasPendingInterjections = {
+                    pendingInterjections[conversationId]?.isNotEmpty() == true
+                },
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {
