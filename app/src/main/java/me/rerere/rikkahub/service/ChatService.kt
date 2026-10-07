@@ -270,6 +270,13 @@ class ChatService(
     private val interjectedMessages =
         java.util.concurrent.ConcurrentHashMap<Uuid, MutableList<UIMessage>>()
 
+    // 【本轮有插话 · 2026-10-08 宝定的方案①】搭车那一刻置位，收尾清掉。
+    // collapse 读它：本轮真取过她的话 → 兜底无条件合（同回合，该黏的黏上）；
+    // 没取过 → 不允许合（不同回合，比如主动消息那种，别被吸进去）。
+    // 判据选它而不是"看消息 id"：一个回合在代码里 = 同一次 generateText 循环；
+    // 而"本轮取过她的话"正好等价于"这一轮是被插话打断后接上的"。
+    private val interjectRounds = java.util.concurrent.ConcurrentHashMap.newKeySet<Uuid>()
+
     // 【数标诊断节流 · 2026-10-05】排"一次插话显示两个折叠条"用，5 秒最多一行，免得把日志环刷爆。
     @Volatile
     private var lastInterjectDupLogAt = 0L
@@ -1368,6 +1375,8 @@ class ChatService(
                     // 【搭车记账 · 2026-10-01】取走的同时记一笔：这些 id 真的被并进去了。
                     // 收尾合并时不靠 metadata 猜，直接读这本账。
                     if (taken.isNotEmpty()) {
+                        // 【本轮有插话 · 2026-10-08】这一轮真取过她的话 → 记下来给 collapse 看
+                        interjectRounds.add(conversationId)
                         rodeInterjectIds.computeIfAbsent(conversationId) {
                             java.util.Collections.synchronizedList(mutableListOf<String>())
                         }.addAll(taken.map { it.id.toString() })
@@ -1639,7 +1648,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                         // 【插话合回 · 2026-10-01】回来的这份是"发出去那一版"，宝插的话被拆成了
                         // 独立 user 消息（三截），而会话里那条早就合并过（一截）。先合回去再塞，
                         // 否则按位置更新会多出一条、还会把前半顶掉（宝实测：一句显示两次 + 跳过）。
-                        val incoming = collapseInterjections(chunk.messages)
+                        val incoming = collapseInterjections(
+                            chunk.messages,
+                            roundHasInterject = interjectRounds.contains(conversationId),
+                        )
                         val __tB = System.currentTimeMillis()
                         // 【2026-09-24 召回留痕】传进来的 chunk.messages 取自"开始生成那一刻"的快照，
                         // 那时门控/召回还没跑完，上面没有 recallDebug；而 updateCurrentMessages 是按 id
@@ -1722,6 +1734,8 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 // 【插话不落库 · 2026-10-02】合并改成读"入队那刻记的账"——不再靠锚点从会话里找人。
                 // 插话压根没进会话，所以这里只要拿到那几条消息本体，直接挂到猫那条上。
                 val pendingToMerge = interjectedMessages.remove(conversationId).orEmpty()
+                // 【本轮有插话 · 2026-10-08】收尾了，本轮标记擦掉（下一轮重新判）
+                interjectRounds.remove(conversationId)
                 latest = mergeInterjectionsIntoAssistant(latest, pendingToMerge)
                 // 【回写内存 · 2026-10-01 宝实测第二轮】只合并落库不够：界面读的是内存态
                 // （session.state.value），收尾不写回它，下一条回复一来列表重建，宝那句
@@ -2612,7 +2626,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
      * 所以先合回原样：带 interject 记号的 user 消息挂回前一条 assistant，容器沿用前一条的 id。
      * 一条记号都没有时原样返回（绝大多数请求走这条，零开销）。
      */
-    private fun collapseInterjections(messages: List<UIMessage>): List<UIMessage> {
+    private fun collapseInterjections(
+        messages: List<UIMessage>,
+        roundHasInterject: Boolean = false,
+    ): List<UIMessage> {
         if (messages.none { msg -> msg.role == MessageRole.USER && msg.parts.any { isInterjectMarked(it) } }) {
             return messages
         }
@@ -2685,18 +2702,19 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 //（宝看到的"猫的上半句和下半句分开、两个号"）。
                 out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
                 justMerged = true
-            } else if (justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT && last.id == msg.id) {
-                // 紧跟在插话后面的那半截正文：并回同一条，别让它独立成条
-                // 【限同 id · 2026-10-07 · 日志定案】23:28:33 的 MERGE-TAIL-PASS 实录：
-                //   last=8f3fb943 msg=8f3fb943（**id 完全相同**）lastTail=Text,Text msgHead=Reas,Text
-                //   → 该合的这对是"同一条猫消息被切开的两截"（前半结尾正文 / 后半开头"思考+正文"）。
-                // 所以判据就用 id：同 id = 同一条切出来的（该合）；另一回合的新消息 id 必不同（不会被吸走）。
+            } else if (roundHasInterject && justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT) {
+                // 【兜底 · 2026-10-08 宝的方案①】紧跟在插话后面的那截正文：并回同一条。
+                // 判据不是消息 id，是"**这一轮真的取过她的话**"（roundHasInterject）：
+                //   · 本轮取过 → 这一轮是被插话打断后接上的 = 同回合 → 无条件并（该黏的黏上）
+                //   · 本轮没取过 → 不同回合（比如主动消息）→ 落到下面那支，不许并
+                // （上一版用"id 相同"是错的：它把"兜底那轮新生成的正文"也当外人挡在外面，
+                //   宝实测就是"该黏的不黏、分成两条"。详见 memory 275。）
                 out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
                 justMerged = false
             } else if (justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT) {
-                // 【漏网留痕 · 2026-10-07】id 不同、但同样"紧跟在上一条 assistant 之后"。
-                // 这是"另一回合的新消息"该走的正常路（原版就是在这里把它误吸走的）。
-                // 不放行、不合并，只留一行：万一还有"该合但 id 不同"的情况被漏掉，能看见。
+                // 【拦下不同回合 · 2026-10-08 宝的方案①】刚才合过、但也紧跟在一条 assistant 之后，
+                // 而**这一轮没取过她的话** → 属于不同回合（典型：主动消息接在上一轮屁股后面），
+                // 不许并，原样放行。留一行日志：万一有该合的被误拦，能看见。
                 run {
                     val nowT = System.currentTimeMillis()
                     if (nowT - lastMergeTailLogAt > 3_000) {
