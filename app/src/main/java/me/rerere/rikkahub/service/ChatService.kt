@@ -2684,13 +2684,8 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 //（宝看到的"猫的上半句和下半句分开、两个号"）。
                 out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
                 justMerged = true
-            } else if (justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT && last.id == msg.id) {
+            } else if (justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT) {
                 // 紧跟在插话后面的那半截正文：并回同一条，别让它独立成条
-                // 【限同 id · 2026-10-07】原来只认"刚才合过"这个状态、不认是谁——历史里那条插话的
-                // 尾截一合，旗子就立着，紧跟着的**本回合新消息**也会被吸进来（宝实测：上一轮插过话
-                // 之后，新回复黏在上一条上、看着像"上下并一起"）。切出来的前半/后半本来就同 id
-                //（见 expandInterjections：两截都走 msg.copy），所以按 id 认人正好——
-                // 同 id=同一回合的后半截（该并），id 不同=另一回合的新消息（别碰）。
                 out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
                 justMerged = false
             } else {
