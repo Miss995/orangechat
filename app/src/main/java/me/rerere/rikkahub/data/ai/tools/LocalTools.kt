@@ -721,6 +721,7 @@ class LocalTools(
             tools.add(me.rerere.rikkahub.data.ai.tools.local.scrollTool(invocationContext))
             tools.add(me.rerere.rikkahub.data.ai.tools.local.globalActionTool(invocationContext))
             tools.add(me.rerere.rikkahub.data.ai.tools.local.takeScreenshotTool(context))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.virtualDisplayTool(context))
         }
         if (options.contains(LocalToolOption.Ssh)) {
             tools.add(me.rerere.rikkahub.data.ai.tools.local.sshExecTool(context))
