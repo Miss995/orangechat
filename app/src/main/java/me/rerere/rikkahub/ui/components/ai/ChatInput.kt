@@ -557,64 +557,8 @@ fun ChatInput(
                                 .fillMaxWidth()
                                 .padding(horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                // Model Picker
-                                ModelSelector(
-                                    modelId = assistant.chatModelId ?: settings.chatModelId,
-                                    providers = settings.providers,
-                                    onSelect = {
-                                        onUpdateChatModel(it)
-                                        dismissExpand()
-                                    },
-                                    type = ModelType.CHAT,
-                                    onlyIcon = true,
-                                    modifier = Modifier,
-                                )
-
-                                // Search
-                                val enableSearchMsg = stringResource(R.string.web_search_enabled)
-                                val disableSearchMsg = stringResource(R.string.web_search_disabled)
-                                val chatModel = settings.getCurrentChatModel()
-                                SearchPickerButton(
-                                    enableSearch = enableSearch,
-                                    settings = settings,
-                                    onToggleSearch = { enabled ->
-                                        onToggleSearch(enabled)
-                                        toaster.show(
-                                            message = if (enabled) enableSearchMsg else disableSearchMsg,
-                                            duration = 1.seconds,
-                                            type = if (enabled) {
-                                                ToastType.Success
-                                            } else {
-                                                ToastType.Normal
-                                            }
-                                        )
-                                    },
-                                    onUpdateSearchService = onUpdateSearchService,
-                                    model = chatModel,
-                                )
-
-                                // Reasoning
-                                val model = settings.getCurrentChatModel()
-                                if (model?.abilities?.contains(ModelAbility.REASONING) == true) {
-                                    ReasoningButton(
-                                        reasoningLevel = assistant.reasoningLevel,
-                                        onUpdateReasoningLevel = {
-                                            onUpdateAssistant(assistant.copy(reasoningLevel = it))
-                                        },
-                                        onlyIcon = true,
-                                    )
-                                }
-
-                            }
-
                             // 定时发送：点一下选时间，到点自动把这条消息发出去（2026-09-17 宝提的新玩法）
                             ActionIconButton(
                                 onClick = onScheduleClick

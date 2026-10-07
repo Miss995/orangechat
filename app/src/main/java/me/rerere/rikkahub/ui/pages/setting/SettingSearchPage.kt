@@ -35,6 +35,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -174,6 +175,9 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                         vm.updateSettings(
                             settings.copy(searchCommonOptions = options)
                         )
+                    },
+                    onToggleWebSearch = { enabled ->
+                        vm.updateSettings(settings.copy(enableWebSearch = enabled))
                     }
                 )
             }
@@ -376,7 +380,8 @@ fun SearchAbilityTagLine(
 @Composable
 private fun CommonOptions(
     settings: me.rerere.rikkahub.data.datastore.Settings,
-    onUpdate: (SearchCommonOptions) -> Unit
+    onUpdate: (SearchCommonOptions) -> Unit,
+    onToggleWebSearch: (Boolean) -> Unit
 ) {
     var commonOptions by remember(settings.searchCommonOptions) {
         mutableStateOf(settings.searchCommonOptions)
@@ -409,6 +414,17 @@ private fun CommonOptions(
                         onUpdate(commonOptions)
                     },
                     modifier = Modifier.fillMaxWidth()
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(stringResource(R.string.use_web_search))
+                Switch(
+                    checked = settings.enableWebSearch,
+                    onCheckedChange = onToggleWebSearch
                 )
             }
         }
