@@ -118,14 +118,26 @@ private fun listDisplays(): String {
 }
 
 private fun launchOnDisplay(displayId: String, pkg: String): String {
-    val out = ShizukuShell.exec(
-        "monkey -p $pkg --display $displayId -c android.intent.category.LAUNCHER 1"
-    )
-    val ok = !out.contains("No activities found") && !out.contains("aborted")
+    // 部分 ROM 把 monkey 的 --display 阉了，改用 am start：
+    // 先解析入口 Activity，再强停旧实例，最后指定 display 启动。
+    val resolve = ShizukuShell.exec(
+        "cmd package resolve-activity --brief -c android.intent.category.LAUNCHER $pkg"
+    ).trim().lines().lastOrNull()?.trim().orEmpty()
+    ShizukuShell.exec("am force-stop $pkg")
+    Thread.sleep(600)
+    val out = if (resolve.isNotEmpty() && resolve.contains("/")) {
+        ShizukuShell.exec("am start --display $displayId -n $resolve")
+    } else {
+        ShizukuShell.exec(
+            "am start --display $displayId -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p $pkg"
+        )
+    }
+    val ok = !out.contains("Error:") && !out.contains("Exception") && !out.contains("does not exist")
     return buildJsonObject {
         put("ok", ok)
         put("package", pkg)
         put("display", displayId)
+        put("resolved", resolve)
         put("raw", out.trim().take(600))
     }.toString()
 }
