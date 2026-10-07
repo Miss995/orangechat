@@ -277,6 +277,7 @@ class ChatService(
     // 每 5 秒就满足条件打一次、把时间戳一直刷新，于是 DUP merge 这条"合到已有标上"的
     // 关键证据永远轮不到 —— 埋了却没插电。单开一路。
     private var lastInterjectMergeDupLogAt = 0L
+    private var lastMergeTailLogAt = 0L
     // 【形状快照节流 · 2026-10-06】宝要"找源头、别去重"。这一行照出每帧 messages 的形状：
     // 几条带标猫消息、几条带标的话、各自 id。3 秒最多一行。
     private var lastInterjectShapeLogAt = 0L
@@ -2686,6 +2687,23 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 justMerged = true
             } else if (justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT) {
                 // 紧跟在插话后面的那半截正文：并回同一条，别让它独立成条
+                // 【定案日志 · 2026-10-07】宝报：原版会把"另一回合的新消息"也吸进来（主动消息黏在上一轮）；
+                // 猫加"id 必须相同"后，连该合的"同回合后半截"也挡住了。说明这两对的 id 长什么样还没看清。
+                // 这里把每次走这个分支的两条 id / 是否相同 / 各自的 part 数打出来，定案用（限频 3 秒一条）。
+                run {
+                    val nowT = System.currentTimeMillis()
+                    if (nowT - lastMergeTailLogAt > 3_000) {
+                        lastMergeTailLogAt = nowT
+                        AppLogBuffer.log(
+                            TAG,
+                            "[Interject] MERGE-TAIL last=${last.id.toString().take(8)} " +
+                                "msg=${msg.id.toString().take(8)} same=${last.id == msg.id} " +
+                                "lastParts=${last.parts.size} msgParts=${msg.parts.size} " +
+                                "lastTail=" + last.parts.takeLast(2).joinToString(",") { it::class.simpleName?.take(4) ?: "?" } +
+                                " msgHead=" + msg.parts.take(2).joinToString(",") { it::class.simpleName?.take(4) ?: "?" }
+                        )
+                    }
+                }
                 out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
                 justMerged = false
             } else {
