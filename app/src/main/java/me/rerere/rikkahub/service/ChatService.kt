@@ -2685,20 +2685,25 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 //（宝看到的"猫的上半句和下半句分开、两个号"）。
                 out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
                 justMerged = true
+            } else if (justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT && last.id == msg.id) {
+                // 紧跟在插话后面的那半截正文：并回同一条，别让它独立成条
+                // 【限同 id · 2026-10-07 · 日志定案】23:28:33 的 MERGE-TAIL-PASS 实录：
+                //   last=8f3fb943 msg=8f3fb943（**id 完全相同**）lastTail=Text,Text msgHead=Reas,Text
+                //   → 该合的这对是"同一条猫消息被切开的两截"（前半结尾正文 / 后半开头"思考+正文"）。
+                // 所以判据就用 id：同 id = 同一条切出来的（该合）；另一回合的新消息 id 必不同（不会被吸走）。
+                out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
+                justMerged = false
             } else if (justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT) {
-                // 【拆兜底 · 2026-10-07 宝拍板"先试试"】这一支原来无条件把"紧跟的 assistant"并进上一条，
-                // 本意是接"从同一条猫消息切出来的后半截"。但它不看记号、只看"刚才合过"这个状态，
-                // 于是历史里那条插话的尾截一合，紧跟着的**另一回合新消息**（主动消息等）也被吸进来
-                //（宝实测：主动消息黏在上一轮上）。
-                // 而真正该合的后半截，切开时已经盖了 interjectTail（上一支认它）—— 所以这一支先松开：
-                // 不再并，原样放行。留一行日志：真有"没尾标的后半截"被放过时能看见，试错也有方向。
+                // 【漏网留痕 · 2026-10-07】id 不同、但同样"紧跟在上一条 assistant 之后"。
+                // 这是"另一回合的新消息"该走的正常路（原版就是在这里把它误吸走的）。
+                // 不放行、不合并，只留一行：万一还有"该合但 id 不同"的情况被漏掉，能看见。
                 run {
                     val nowT = System.currentTimeMillis()
                     if (nowT - lastMergeTailLogAt > 3_000) {
                         lastMergeTailLogAt = nowT
                         AppLogBuffer.log(
                             TAG,
-                            "[Interject] MERGE-TAIL-PASS left last=${last.id.toString().take(8)} " +
+                            "[Interject] MERGE-TAIL-SKIP last=${last.id.toString().take(8)} " +
                                 "msg=${msg.id.toString().take(8)} " +
                                 "lastTail=" + last.parts.takeLast(2).joinToString(",") { it::class.simpleName?.take(4) ?: "?" } +
                                 " msgHead=" + msg.parts.take(2).joinToString(",") { it::class.simpleName?.take(4) ?: "?" } +
