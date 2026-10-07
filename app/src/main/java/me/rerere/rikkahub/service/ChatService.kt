@@ -2686,25 +2686,27 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
                 justMerged = true
             } else if (justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT) {
-                // 紧跟在插话后面的那半截正文：并回同一条，别让它独立成条
-                // 【定案日志 · 2026-10-07】宝报：原版会把"另一回合的新消息"也吸进来（主动消息黏在上一轮）；
-                // 猫加"id 必须相同"后，连该合的"同回合后半截"也挡住了。说明这两对的 id 长什么样还没看清。
-                // 这里把每次走这个分支的两条 id / 是否相同 / 各自的 part 数打出来，定案用（限频 3 秒一条）。
+                // 【拆兜底 · 2026-10-07 宝拍板"先试试"】这一支原来无条件把"紧跟的 assistant"并进上一条，
+                // 本意是接"从同一条猫消息切出来的后半截"。但它不看记号、只看"刚才合过"这个状态，
+                // 于是历史里那条插话的尾截一合，紧跟着的**另一回合新消息**（主动消息等）也被吸进来
+                //（宝实测：主动消息黏在上一轮上）。
+                // 而真正该合的后半截，切开时已经盖了 interjectTail（上一支认它）—— 所以这一支先松开：
+                // 不再并，原样放行。留一行日志：真有"没尾标的后半截"被放过时能看见，试错也有方向。
                 run {
                     val nowT = System.currentTimeMillis()
                     if (nowT - lastMergeTailLogAt > 3_000) {
                         lastMergeTailLogAt = nowT
                         AppLogBuffer.log(
                             TAG,
-                            "[Interject] MERGE-TAIL last=${last.id.toString().take(8)} " +
-                                "msg=${msg.id.toString().take(8)} same=${last.id == msg.id} " +
-                                "lastParts=${last.parts.size} msgParts=${msg.parts.size} " +
+                            "[Interject] MERGE-TAIL-PASS left last=${last.id.toString().take(8)} " +
+                                "msg=${msg.id.toString().take(8)} " +
                                 "lastTail=" + last.parts.takeLast(2).joinToString(",") { it::class.simpleName?.take(4) ?: "?" } +
-                                " msgHead=" + msg.parts.take(2).joinToString(",") { it::class.simpleName?.take(4) ?: "?" }
+                                " msgHead=" + msg.parts.take(2).joinToString(",") { it::class.simpleName?.take(4) ?: "?" } +
+                                " msgMarked=" + msg.parts.any { isInterjectMarked(it) }
                         )
                     }
                 }
-                out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
+                out.add(msg)
                 justMerged = false
             } else {
                 // 【漏网兜底 · 2026-10-05 宝实测】她的话没跟紧在猫消息后面（连着两条她的、或列表开头就是它）
