@@ -12,6 +12,7 @@ import me.rerere.hugeicons.stroke.PencilEdit01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.MoreVertical
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -132,13 +134,17 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
             state = lazyListState
         ) {
-            items(settings.searchServices, key = { it.id }) { service ->
+            itemsIndexed(settings.searchServices, key = { _, it -> it.id }) { index, service ->
                 ReorderableItem(
                     state = reorderableState,
                     key = service.id
                 ) { isDragging ->
                     SearchProviderCard(
                         service = service,
+                        isSelected = index == settings.searchServiceSelected,
+                        onSelect = {
+                            vm.updateSettings(settings.copy(searchServiceSelected = index))
+                        },
                         onEdit = {
                             nav.navigate(Screen.SettingSearchDetail(service.id.toString()))
                         },
@@ -282,14 +288,19 @@ private fun SearchProviderCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     canDelete: Boolean,
+    isSelected: Boolean = false,
+    onSelect: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
     Card(
-        modifier = modifier,
+        // 【用这家 · 2026-10-07】点卡片=把联网搜索切到这家。聊天页那个按钮撤掉后，
+        // "用哪家"就没了入口，这里补上；选中的那张换个底色，一眼看出现在用的是谁。
+        modifier = modifier.clickable { onSelect() },
         colors = CardDefaults.cardColors(
-            containerColor = CustomColors.listItemColors.containerColor
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+            else CustomColors.listItemColors.containerColor
         )
     ) {
         Row(
