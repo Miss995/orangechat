@@ -545,7 +545,7 @@ fun ChatInput(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 PanelCell(
@@ -1202,7 +1202,7 @@ private fun PanelCell(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = if (compact) 8.dp else 12.dp),
+                .padding(vertical = if (compact) 4.dp else 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(

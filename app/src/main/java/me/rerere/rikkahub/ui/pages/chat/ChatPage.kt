@@ -698,35 +698,7 @@ private fun TopBar(
             }
         },
         actions = {
-            TextButton(
-                onClick = onToggleRequestEdit,
-            ) {
-                Text(
-                    text = if (requestEditMode) "请求编辑·开" else "请求编辑",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (requestEditMode) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        LocalContentColor.current.copy(alpha = 0.7f)
-                    },
-                )
-            }
-            IconButton(
-                onClick = {
-                    onVoiceCall()
-                }
-            ) {
-                Icon(HugeIcons.Voice, "Voice Call")
-            }
-
-            IconButton(
-                onClick = {
-                    onClickMenu()
-                }
-            ) {
-                Icon(if (previewMode) HugeIcons.Cancel01 else HugeIcons.LeftToRightListBullet, "Chat Options")
-            }
-
+            // 【重排·第八刀 2026-10-08】请求编辑 / 语音通话 / 预览模式 三个撤出顶栏（进了 ＋ 面板）
             IconButton(
                 onClick = {
                     onNewChat()
