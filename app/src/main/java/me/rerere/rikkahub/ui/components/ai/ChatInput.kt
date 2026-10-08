@@ -177,6 +177,8 @@ fun ChatInput(
     onVoiceCall: () -> Unit = {},
     previewMode: Boolean = false,
     onTogglePreview: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onOpenAssistant: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
     val assistant = settings.getCurrentAssistant()
@@ -234,8 +236,8 @@ fun ChatInput(
     // 【重排·第五刀 2026-10-08】输入模式：false=文字（输入框） true=语音（录音条）
     // 粘性的：手动切过去就一直保持，不会自己弹回来（宝定的）
     var voiceInputMode by remember { mutableStateOf(false) }
-    // 【重排·第六刀 2026-10-08】面板分两页：main=主面板 / session=当前会话（子面板）
-    var panelPage by remember { mutableStateOf("main") }
+    // 【重排·第七刀 2026-10-08】「当前会话」子面板：升起在主面板上方（不是替换，两层并存）
+    var showSessionPanel by remember { mutableStateOf(false) }
 
     // Auto-start voice recording when entering from voice call notification
     LaunchedEffect(autoStartVoice) {
@@ -529,42 +531,80 @@ fun ChatInput(
                 enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
                 exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
             ) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(20.dp)),
-                    shape = RoundedCornerShape(20.dp),
-                    tonalElevation = 0.dp,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ) {
-                    // 【重排·第六刀 2026-10-08】面板分两页：主面板 / 当前会话
-                    Row(
+                // 【重排·第七刀 2026-10-08】面板套娃：点「当前会话」在它上面升起一层
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (showSessionPanel) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(20.dp)),
+                            shape = RoundedCornerShape(20.dp),
+                            tonalElevation = 0.dp,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                PanelCell(
+                                    label = if (requestEditMode) "编辑·开" else "编辑",
+                                    modifier = Modifier.weight(1f),
+                                    compact = true,
+                                ) { onToggleRequestEdit() }
+                                PanelCell(
+                                    label = "通话",
+                                    modifier = Modifier.weight(1f),
+                                    compact = true,
+                                ) { onVoiceCall() }
+                                PanelCell(
+                                    label = if (previewMode) "预览·开" else "预览",
+                                    modifier = Modifier.weight(1f),
+                                    compact = true,
+                                ) { onTogglePreview() }
+                                PanelCell(
+                                    label = "定时",
+                                    modifier = Modifier.weight(1f),
+                                    compact = true,
+                                ) {
+                                    onScheduleClick()
+                                    expand = ExpandState.Collapsed
+                                }
+                            }
+                        }
+                    }
+
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            .clip(RoundedCornerShape(20.dp)),
+                        shape = RoundedCornerShape(20.dp),
+                        tonalElevation = 0.dp,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ) {
-                        if (panelPage == "session") {
-                            PanelCell(label = "←", modifier = Modifier.weight(1f)) { panelPage = "main" }
-                            PanelCell(
-                                label = if (requestEditMode) "编辑·开" else "编辑",
-                                modifier = Modifier.weight(1f)
-                            ) { onToggleRequestEdit() }
-                            PanelCell(label = "通话", modifier = Modifier.weight(1f)) { onVoiceCall() }
-                            PanelCell(
-                                label = if (previewMode) "预览·开" else "预览",
-                                modifier = Modifier.weight(1f)
-                            ) { onTogglePreview() }
-                        } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                             PanelCell(label = "语音", modifier = Modifier.weight(1f)) {
                                 voiceInputMode = true
                                 expand = ExpandState.Collapsed
                             }
-                            PanelCell(label = "设置", modifier = Modifier.weight(1f)) {}
-                            PanelCell(label = "助手", modifier = Modifier.weight(1f)) {}
-                            PanelCell(label = "当前会话", modifier = Modifier.weight(1f)) {
-                                panelPage = "session"
+                            PanelCell(label = "设置", modifier = Modifier.weight(1f)) {
+                                onOpenSettings()
+                                expand = ExpandState.Collapsed
                             }
+                            PanelCell(label = "助手", modifier = Modifier.weight(1f)) {
+                                onOpenAssistant()
+                                expand = ExpandState.Collapsed
+                            }
+                            PanelCell(
+                                label = if (showSessionPanel) "当前会话·开" else "当前会话",
+                                modifier = Modifier.weight(1f),
+                            ) { showSessionPanel = !showSessionPanel }
                         }
                     }
                 }
@@ -783,25 +823,6 @@ fun ChatInput(
                             }
                         }
 
-                        // 【重排·第四刀 2026-10-08】剩下定时（语音在第五刀挪进了面板）
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
-                        ) {
-                            ActionIconButton(
-                                onClick = onScheduleClick
-                            ) {
-                                Icon(
-                                    imageVector = HugeIcons.Clock02,
-                                    contentDescription = "定时发送",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -1169,6 +1190,7 @@ private fun FullScreenEditor(
 private fun PanelCell(
     label: String,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -1180,7 +1202,7 @@ private fun PanelCell(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 12.dp),
+                .padding(vertical = if (compact) 8.dp else 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(

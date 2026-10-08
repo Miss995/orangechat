@@ -403,6 +403,12 @@ private fun ChatPageContent(
                     onTogglePreview = {
                         previewMode = !previewMode
                     },
+                    onOpenSettings = {
+                        navController.navigate(Screen.Setting)
+                    },
+                    onOpenAssistant = {
+                        navController.navigate(Screen.Assistant)
+                    },
                     onCancelClick = {
                         vm.stopGeneration()
                     },
