@@ -256,6 +256,15 @@ private fun MainPage(vm: DebugVM) {
             Text("清理消息多版本（插话欠账）")
         }
 
+        Button(
+            onClick = {
+                vm.diagnoseMessageNodes()
+                toaster.show("体检中（只读，一条都不改），完事看日志筛 Dx...")
+            }
+        ) {
+            Text("体检：多版本格明细（只读）")
+        }
+
         HorizontalDivider()
 
         Text("Launch Stats", style = MaterialTheme.typography.labelMedium)

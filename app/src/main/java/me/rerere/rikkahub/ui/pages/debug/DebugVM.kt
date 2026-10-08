@@ -124,6 +124,19 @@ class DebugVM(
      * 【一键修复 nodeIndex · 2026-08-27】按消息真实时间重排所有对话的 nodeIndex。
      * 用于修复窗口版保存重写索引导致的顺序错位（窗口回溯）。
      */
+    /**
+     * 【体检 · 2026-10-08】只读诊断：把"多版本格"的真面目打进日志。不改任何数据。
+     */
+    fun diagnoseMessageNodes() {
+        viewModelScope.launch {
+            runCatching {
+                conversationRepository.diagnoseMessageNodes()
+            }.onFailure {
+                it.printStackTrace()
+            }
+        }
+    }
+
     fun repairAllNodeIndexes() {
         viewModelScope.launch {
             runCatching {

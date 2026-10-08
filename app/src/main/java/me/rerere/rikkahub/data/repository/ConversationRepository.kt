@@ -540,6 +540,84 @@ class ConversationRepository(
         }
     }
 
+    /**
+     * 【体检 · 2026-10-08】只读诊断：把"多版本格"的真面目打进日志。一条都不改。
+     *
+     * 背景：插话错位会把"两条不同的消息"（一条 user、一条 assistant）塞进同一个格子，
+     * 界面上表现为"同一句出现两三次 + 时间顺序乱"。清理按钮只治"同 id 的复制品"，
+     * 对"两个不同 id 挤在一格"无能为力 —— 先把它们长什么样看清，再决定怎么修。
+     *
+     * 读法：日志筛 "Dx"。1/4 全库统计 → 2/4 目标会话 → 3/4 重复 id 名单 → 4/4 逐格明细。
+     */
+    suspend fun diagnoseMessageNodes() {
+        try {
+            val allIds = conversationDAO.getAllIds()
+            var badConvs = 0
+            var worstId: String? = null
+            var worstMulti = 0
+            val brief = StringBuilder()
+            allIds.forEach { id ->
+                val multiIds = messageNodeDAO.getMultiVersionNodeIds(id)
+                if (multiIds.isEmpty()) return@forEach
+                val dupIds = messageNodeDAO.getDuplicatedMessageIds(id)
+                val nodeCount = messageNodeDAO.getNodeCountOfConversation(id)
+                badConvs++
+                brief.append("${id.take(8)}(n=$nodeCount,m=${multiIds.size},d=${dupIds.size}) ")
+                if (multiIds.size > worstMulti) {
+                    worstMulti = multiIds.size
+                    worstId = id
+                }
+            }
+            AppLogBuffer.log("Dx", "1/4 全库：会话=${allIds.size} 有问题=$badConvs → $brief")
+
+            val target = worstId
+            if (target == null) {
+                AppLogBuffer.log("Dx", "1/4 没有多版本格，结束")
+                return
+            }
+            AppLogBuffer.log("Dx", "2/4 目标=${target.take(8)} 多版本格=$worstMulti")
+
+            val multiIds = messageNodeDAO.getMultiVersionNodeIds(target)
+            val dupIds = messageNodeDAO.getDuplicatedMessageIds(target).toHashSet()
+            AppLogBuffer.log(
+                "Dx",
+                "3/4 重复 id（一个 id 住在多格）共 ${dupIds.size} 个：" +
+                    dupIds.take(24).joinToString(",") { it.take(6) }
+            )
+
+            var printed = 0
+            multiIds.chunked(60).forEach { chunk ->
+                val entities = messageNodeDAO.getNodesByIds(chunk)
+                entities.sortedBy { it.nodeIndex }.forEach { e ->
+                    val msgs = try {
+                        JsonInstant.decodeFromString<List<UIMessage>>(e.messages)
+                    } catch (ex: Exception) {
+                        null
+                    }
+                    if (msgs == null) {
+                        AppLogBuffer.log("Dx", "#${e.nodeIndex} 解码失败（可能超大行）")
+                    } else {
+                        val t0 = msgs.minOfOrNull { it.createdAt }?.toString()?.take(16) ?: "-"
+                        val body = msgs.mapIndexed { i, m ->
+                            val texts = m.parts.filterIsInstance<UIMessagePart.Text>()
+                            val txtLen = texts.sumOf { it.text.length }
+                            val head = texts.joinToString(" ") { it.text }
+                                .replace('\n', ' ').take(12)
+                            "[$i:${m.role.toString().take(1)}:${m.id.toString().take(4)}" +
+                                ":${m.parts.size}p:${txtLen}t:$head]"
+                        }.joinToString(" | ")
+                        AppLogBuffer.log("Dx", "#${e.nodeIndex} t=$t0 sel=${e.selectIndex} $body")
+                        printed++
+                    }
+                }
+            }
+            AppLogBuffer.log("Dx", "4/4 明细格数=$printed")
+        } catch (e: Exception) {
+            Log.e(TAG, "diagnoseMessageNodes failed", e)
+            AppLogBuffer.log("Dx", "体检失败：${e.message}")
+        }
+    }
+
     /** 【2026-10-04】重建索引时每页读多少格。分页读是为了绕开 12M 字符的预算闸。 */
     private val REBUILD_INDEX_PAGE_SIZE = 40
 
