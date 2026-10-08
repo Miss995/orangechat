@@ -618,6 +618,92 @@ class ConversationRepository(
         }
     }
 
+    /**
+     * 【存量去重 · 2026-10-08】同一条消息被复制进多个格子时，只留最早那格，其余格里的副本删掉。
+     *
+     * 为什么这样够：串位是"把 A 格的消息复制进 B 格"，**A 格自己那条还在** ——
+     * 所以每份乱掉的内容都有个"正主"。清掉副本，顺序自己就回来了，
+     * 不用大动两万多格，一条原文也不会丢。
+     *
+     * dryRun=true 时只算不写（打样例 + 数量），确认无误再 dryRun=false。
+     */
+    suspend fun dedupeMessageNodes(dryRun: Boolean = true) {
+        try {
+            val allIds = conversationDAO.getAllIds()
+            var worstId: String? = null
+            var worstMulti = 0
+            allIds.forEach { id ->
+                val m = messageNodeDAO.getMultiVersionNodeIds(id).size
+                if (m > worstMulti) {
+                    worstMulti = m
+                    worstId = id
+                }
+            }
+            val target = worstId
+            if (target == null) {
+                AppLogBuffer.log("Dedupe", "没有多版本格，结束")
+                return
+            }
+
+            val pairs = messageNodeDAO.getMessageIdNodeIndex(target)
+            val byMid = HashMap<String, MutableList<Int>>()
+            pairs.forEach { p -> byMid.getOrPut(p.mid) { mutableListOf() }.add(p.ni) }
+
+            // 格号 → 这格里要删掉的 id 集合
+            val dropInNode = HashMap<Int, MutableSet<String>>()
+            byMid.forEach { (mid, list) ->
+                val keep = list.minOrNull()!!
+                list.filter { it != keep }.forEach { ni ->
+                    dropInNode.getOrPut(ni) { mutableSetOf() }.add(mid)
+                }
+            }
+
+            val dupMidCount = byMid.count { it.value.size > 1 }
+            AppLogBuffer.log(
+                "Dedupe",
+                "会话=${target.take(8)} 格=${messageNodeDAO.getNodeCountOfConversation(target)} " +
+                    "消息=${pairs.size} 重复id=$dupMidCount 待清格=${dropInNode.size} dryRun=$dryRun"
+            )
+
+            if (dryRun) {
+                AppLogBuffer.log(
+                    "Dedupe",
+                    "① 样例：" + dropInNode.entries.sortedBy { it.key }.take(12)
+                        .joinToString(" ") { e ->
+                            "#${e.key}←" + e.value.take(2).joinToString(",") { it.take(6) }
+                        }
+                )
+                AppLogBuffer.log("Dedupe", "② 预演结束（没动库）")
+                return
+            }
+
+            var fixed = 0
+            dropInNode.keys.sorted().chunked(200).forEach { chunk ->
+                val entities = messageNodeDAO.getNodesByIndexes(target, chunk)
+                val updated = entities.mapNotNull { e ->
+                    val drop = dropInNode[e.nodeIndex] ?: return@mapNotNull null
+                    val msgs = try {
+                        JsonInstant.decodeFromString<List<UIMessage>>(e.messages)
+                    } catch (ex: Exception) {
+                        return@mapNotNull null
+                    }
+                    val kept = msgs.filter { it.id.toString() !in drop }
+                    if (kept.isEmpty() || kept.size == msgs.size) return@mapNotNull null
+                    fixed++
+                    e.copy(
+                        messages = JsonInstant.encodeToString(kept),
+                        selectIndex = e.selectIndex.coerceIn(0, kept.lastIndex)
+                    )
+                }
+                if (updated.isNotEmpty()) messageNodeDAO.insertAll(updated)
+            }
+            AppLogBuffer.log("Dedupe", "③ 完成：清理格数=$fixed（待清=${dropInNode.size}）")
+        } catch (e: Exception) {
+            Log.e(TAG, "dedupeMessageNodes failed", e)
+            AppLogBuffer.log("Dedupe", "失败：${e.message}")
+        }
+    }
+
     /** 【2026-10-04】重建索引时每页读多少格。分页读是为了绕开 12M 字符的预算闸。 */
     private val REBUILD_INDEX_PAGE_SIZE = 40
 

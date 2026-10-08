@@ -125,6 +125,19 @@ class DebugVM(
      * 用于修复窗口版保存重写索引导致的顺序错位（窗口回溯）。
      */
     /**
+     * 【存量去重 · 2026-10-08】dryRun=true 只算不写；false 才真删副本。
+     */
+    fun dedupeMessageNodes(dryRun: Boolean) {
+        viewModelScope.launch {
+            runCatching {
+                conversationRepository.dedupeMessageNodes(dryRun)
+            }.onFailure {
+                it.printStackTrace()
+            }
+        }
+    }
+
+    /**
      * 【体检 · 2026-10-08】只读诊断：把"多版本格"的真面目打进日志。不改任何数据。
      */
     fun diagnoseMessageNodes() {

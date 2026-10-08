@@ -265,6 +265,24 @@ private fun MainPage(vm: DebugVM) {
             Text("体检：多版本格明细（只读）")
         }
 
+        Button(
+            onClick = {
+                vm.dedupeMessageNodes(true)
+                toaster.show("去重预演中（只读，没动库），完事看日志筛 Dedupe...")
+            }
+        ) {
+            Text("存量去重 · 预演（只读）")
+        }
+
+        Button(
+            onClick = {
+                vm.dedupeMessageNodes(false)
+                toaster.show("正在清理重复副本...")
+            }
+        ) {
+            Text("存量去重 · 执行（会改库）")
+        }
+
         HorizontalDivider()
 
         Text("Launch Stats", style = MaterialTheme.typography.labelMedium)

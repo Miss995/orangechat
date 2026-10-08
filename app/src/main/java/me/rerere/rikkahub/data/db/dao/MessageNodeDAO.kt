@@ -62,6 +62,17 @@ interface MessageNodeDAO {
     suspend fun getDuplicatedMessageIdsRaw(query: SupportSQLiteQuery): List<DuplicatedMessageId>
 
     /**
+     * 【存量去重 · 2026-10-08】把每格里的每个 message id 连同它所在的 node_index 一起拉出来。
+     * 只吐 id 和序号、不带内容 —— 两万多格也能一次问明白。
+     */
+    @RawQuery
+    suspend fun getMessageIdNodeIndexRaw(query: SupportSQLiteQuery): List<MessageIdAndNodeIndex>
+
+    /** 【存量去重】按 node_index 批量取格（不按 id 列表取，免得 node_index 跳号时错位）。 */
+    @Query("SELECT * FROM message_node WHERE conversation_id = :ci AND node_index IN (:idx)")
+    suspend fun getNodesByIndexes(ci: String, idx: List<Int>): List<MessageNodeEntity>
+
+    /**
      * 查某个对话下 node 的总行数。loadMessageNodes 用它提前知道总行数，
      * 这样在逐行重试跳过超大blob行时，能精确控制循环范围，
      * 不会因为"空结果"（可能是被跳过的超大行，也可能是真的到末尾）而误判提前退出。
@@ -141,6 +152,25 @@ suspend fun MessageNodeDAO.getDuplicatedMessageIds(conversationId: String): List
             arrayOf(conversationId)
         )
     ).map { it.mid }
+
+data class MessageIdAndNodeIndex(val mid: String, val ni: Int)
+
+/**
+ * 【存量去重 · 2026-10-08】每条消息 id 都出现在哪个 node_index 上。
+ *
+ * 用途：串位是"把 A 格的消息复制进 B 格"，所以同一个 id 会横跨多个格 ——
+ * 把 (id, 格号) 全列出来，就能算出"每个 id 该留在哪格（最早那格）、其余格里的副本要删"。
+ * 全程只吐 id 和序号，不带内容，不进 Kotlin 内存。
+ */
+suspend fun MessageNodeDAO.getMessageIdNodeIndex(conversationId: String): List<MessageIdAndNodeIndex> =
+    getMessageIdNodeIndexRaw(
+        SimpleSQLiteQuery(
+            "SELECT json_extract(j.value, '$.id') AS mid, mn.node_index AS ni " +
+                "FROM message_node mn, json_each(mn.messages) j " +
+                "WHERE mn.conversation_id = ?",
+            arrayOf(conversationId)
+        )
+    )
 
 // SQLite json_each() 展开 messages JSON 数组，json_extract() 提取 Token 字段并聚合
 private val TOKEN_STATS_SQL = SimpleSQLiteQuery(
