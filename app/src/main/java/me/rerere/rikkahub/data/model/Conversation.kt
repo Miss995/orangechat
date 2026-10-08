@@ -62,57 +62,56 @@ data class Conversation(
     }
 
     fun updateCurrentMessages(messages: List<UIMessage>): Conversation {
-        val newNodes = this.messageNodes.toMutableList()
+        // 【按 id 对齐 · 2026-10-08】原版按"位置"对齐（messages[index] ↔ newNodes[index]），
+        // 前提是"列表和节点树条数完全一致"。而插话那套（请求时拆开 / 流式时合回）会改条数，
+        // 只改列表、不动节点树 → 一旦差上几条，从差的位置起每条都被串到后一格，
+        // 表现就是"同一句出现两三次 + 时间顺序乱"（宝 2026-10-08 实测，796 格中招）。
+        //
+        // 改成按 id 找家：命中的回它自己那格（两边条数不等也不会互相带歪）；
+        // 找不到的（真·新消息）紧跟在上一条之后插一格。
+        val idToNode = HashMap<String, Int>()
+        messageNodes.forEachIndexed { i, node ->
+            node.messages.forEach { m -> idToNode[m.id.toString()] = i }
+        }
 
-        // 【诊断 · 2026-10-02】正常情况下面这个循环永远不该走到 add 分支：
-        //   新消息 → index 位置是刚新建的节点、里面就是它自己 → 命中 if；
-        //   流式更新 → id 命中 if。
-        // 一旦走了 add，就说明"列表第 index 条"在"节点树第 index 格"里找不到家 = 两边错位。
-        // 错一格就会往后每格都塞一份副本 → 界面长出 <2/2> 分支。这里把现场记下来。
+        val newNodes = messageNodes.toMutableList()
         val strayAppends = StringBuilder()
+        var lastIndex = -1
 
-        messages.forEachIndexed { index, message ->
-            val node = newNodes
-                .getOrElse(index) { message.toMessageNode() }
-
-            val newMessages = node.messages.toMutableList()
-            var newMessageIndex = node.selectIndex
-            if (newMessages.any { it.id == message.id }) {
-                newMessages[newMessages.indexOfFirst { it.id == message.id }] = message
+        messages.forEach { message ->
+            val known = idToNode[message.id.toString()]
+            if (known != null && known <= newNodes.lastIndex) {
+                val node = newNodes[known]
+                val nm = node.messages.toMutableList()
+                val j = nm.indexOfFirst { it.id == message.id }
+                if (j >= 0) {
+                    nm[j] = message
+                    newNodes[known] = node.copy(messages = nm)
+                }
+                lastIndex = known
             } else {
+                // 新消息：插在"上一条"之后（按位置对齐最容易在这里串位）
+                val insertAt = (if (lastIndex < 0) 0 else lastIndex + 1)
+                    .coerceIn(0, newNodes.size)
+                newNodes.add(insertAt, message.toMessageNode())
+                // 插入点之后的旧下标全部 +1
+                for (k in insertAt until newNodes.size) {
+                    newNodes[k].messages.forEach { m -> idToNode[m.id.toString()] = k }
+                }
+                lastIndex = insertAt
                 if (strayAppends.isNotEmpty()) strayAppends.append(' ')
-                // 【细查 · 2026-10-02】把两边的身份都记下来：列表这条要进的是谁、
-                // 该格原来住的是谁。光看格号看不出差在哪，看 id 头一眼就明白。
                 strayAppends.append(
-                    "#$index(had${node.messages.size}:${node.messages.firstOrNull()?.id.toString().take(8)})" +
-                        "<-${message.id.toString().take(8)}(${message.role}:" +
-                        // 【带 part 类型 · 2026-10-05】插话错位调查：跑错格的那条带了哪些 part？
-                        // 宝报"带工具的大块已经弹出来过、插话一进去就没了"。如果错位那条的 part 里
-                        // 有 Tool，就说明工具块没被删、只是被塞进了别的格（跟正文消失同一个机制）。
+                    "+${message.id.toString().take(8)}@$insertAt(${message.role}:" +
                         message.parts.joinToString("") { it::class.simpleName?.take(4) ?: "?" } +
                         ")"
                 )
-                newMessages.add(message)
-                newMessageIndex = newMessages.lastIndex
-            }
-
-            val newNode = node.copy(
-                messages = newMessages,
-                selectIndex = newMessageIndex
-            )
-
-            // 更新newNodes
-            if (index > newNodes.lastIndex) {
-                newNodes.add(newNode)
-            } else {
-                newNodes[index] = newNode
             }
         }
 
         if (strayAppends.isNotEmpty()) {
             AppLogBuffer.log(
                 "ConvUpd",
-                "STRAY list=${messages.size} nodes=${this.messageNodes.size} at=$strayAppends"
+                "NEWBYID list=${messages.size} nodes=${messageNodes.size} at=$strayAppends"
             )
         }
 
