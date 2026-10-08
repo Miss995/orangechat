@@ -728,7 +728,7 @@ fun ChatInput(
                                     }
                                 ) {
                                     Icon(
-                                        imageVector = HugeIcons.Text,
+                                        imageVector = HugeIcons.Cancel01,
                                         contentDescription = "切回文字输入",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(18.dp)
