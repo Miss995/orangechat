@@ -324,6 +324,21 @@ private fun ChatPageContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     var previewMode by rememberSaveable { mutableStateOf(false) }
+    // 【重排·第六刀 2026-10-08】语音通话入口：顶栏和输入区面板共用一份
+    val onVoiceCallAction: () -> Unit = {
+        val activeId = VoiceCallService.activeConversationId.value
+        when {
+            activeId == null -> navController.navigate(
+                Screen.VoiceCall(conversation.id.toString())
+            )
+            activeId == conversation.id.toString() -> navController.navigate(
+                Screen.VoiceCall(conversation.id.toString())
+            )
+            else -> {
+                toaster.show("当前有通话进行中，请先挂断", type = ToastType.Warning)
+            }
+        }
+    }
     // 定时发送对话框（2026-09-17 宝提的小玩法）
     var showScheduleDialog by remember { mutableStateOf(false) }
     val hazeState = rememberHazeState()
@@ -366,20 +381,7 @@ private fun ChatPageContent(
                     onUpdateTitle = {
                         vm.updateTitle(it)
                     },
-                    onVoiceCall = {
-                        val activeId = VoiceCallService.activeConversationId.value
-                        when {
-                            activeId == null -> navController.navigate(
-                                Screen.VoiceCall(conversation.id.toString())
-                            )
-                            activeId == conversation.id.toString() -> navController.navigate(
-                                Screen.VoiceCall(conversation.id.toString())
-                            )
-                            else -> {
-                                toaster.show("当前有通话进行中，请先挂断", type = ToastType.Warning)
-                            }
-                        }
-                    },
+                    onVoiceCall = onVoiceCallAction,
                 )
             },
             bottomBar = {
@@ -391,6 +393,16 @@ private fun ChatPageContent(
                     mcpManager = vm.mcpManager,
                     hazeState = hazeState,
                     autoStartVoice = autoStartVoice,
+                    // 【重排·第六刀 2026-10-08】顶栏那三个的入口，面板里也要用
+                    requestEditMode = setting.requestEditMode,
+                    onToggleRequestEdit = {
+                        vm.updateSettings(setting.copy(requestEditMode = !setting.requestEditMode))
+                    },
+                    onVoiceCall = onVoiceCallAction,
+                    previewMode = previewMode,
+                    onTogglePreview = {
+                        previewMode = !previewMode
+                    },
                     onCancelClick = {
                         vm.stopGeneration()
                     },

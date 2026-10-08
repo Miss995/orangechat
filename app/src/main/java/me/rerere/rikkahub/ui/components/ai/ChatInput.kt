@@ -171,6 +171,12 @@ fun ChatInput(
     onScheduleClick: () -> Unit = {},
     onVoiceMessage: ((url: String, duration: Long, transcript: String) -> Unit)? = null,
     autoStartVoice: Boolean = false,
+    // 【重排·第六刀 2026-10-08】顶栏那三个挪进面板，需要从 ChatPage 拿到入口
+    requestEditMode: Boolean = false,
+    onToggleRequestEdit: () -> Unit = {},
+    onVoiceCall: () -> Unit = {},
+    previewMode: Boolean = false,
+    onTogglePreview: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
     val assistant = settings.getCurrentAssistant()
@@ -228,6 +234,8 @@ fun ChatInput(
     // 【重排·第五刀 2026-10-08】输入模式：false=文字（输入框） true=语音（录音条）
     // 粘性的：手动切过去就一直保持，不会自己弹回来（宝定的）
     var voiceInputMode by remember { mutableStateOf(false) }
+    // 【重排·第六刀 2026-10-08】面板分两页：main=主面板 / session=当前会话（子面板）
+    var panelPage by remember { mutableStateOf("main") }
 
     // Auto-start voice recording when entering from voice call notification
     LaunchedEffect(autoStartVoice) {
@@ -529,53 +537,33 @@ fun ChatInput(
                     tonalElevation = 0.dp,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
+                    // 【重排·第六刀 2026-10-08】面板分两页：主面板 / 当前会话
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 10.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        // 【重排·第五刀 2026-10-08】第一格：切到语音输入模式
-                        Surface(
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            onClick = {
+                        if (panelPage == "session") {
+                            PanelCell(label = "←", modifier = Modifier.weight(1f)) { panelPage = "main" }
+                            PanelCell(
+                                label = if (requestEditMode) "编辑·开" else "编辑",
+                                modifier = Modifier.weight(1f)
+                            ) { onToggleRequestEdit() }
+                            PanelCell(label = "通话", modifier = Modifier.weight(1f)) { onVoiceCall() }
+                            PanelCell(
+                                label = if (previewMode) "预览·开" else "预览",
+                                modifier = Modifier.weight(1f)
+                            ) { onTogglePreview() }
+                        } else {
+                            PanelCell(label = "语音", modifier = Modifier.weight(1f)) {
                                 voiceInputMode = true
                                 expand = ExpandState.Collapsed
-                            },
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                Text(
-                                    text = "语音",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
                             }
-                        }
-                        listOf("设置", "助手", "待定").forEach { label ->
-                            Surface(
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 12.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                ) {
-                                    Text(
-                                        text = label,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+                            PanelCell(label = "设置", modifier = Modifier.weight(1f)) {}
+                            PanelCell(label = "助手", modifier = Modifier.weight(1f)) {}
+                            PanelCell(label = "当前会话", modifier = Modifier.weight(1f)) {
+                                panelPage = "session"
                             }
                         }
                     }
@@ -1172,6 +1160,34 @@ private fun FullScreenEditor(
                     )
                 }
             }
+        }
+    }
+}
+
+// 【重排·第六刀 2026-10-08】面板里的一格（抽出来，免得 8 格写 8 遍）
+@Composable
+private fun PanelCell(
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        onClick = onClick,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
