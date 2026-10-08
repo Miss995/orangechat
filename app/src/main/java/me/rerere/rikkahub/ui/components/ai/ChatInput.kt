@@ -140,6 +140,7 @@ import me.rerere.rikkahub.ui.context.LocalQuickMessages
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
+import me.rerere.rikkahub.ui.hooks.rememberAssistantState
 import me.rerere.rikkahub.utils.SoundEffectPlayer
 import org.koin.compose.koinInject
 import java.io.File
@@ -179,6 +180,8 @@ fun ChatInput(
     onTogglePreview: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenAssistant: () -> Unit = {},
+    // 【重排·第九刀 2026-10-08】「切换聊天」要弹助手选择面板，需要它
+    onUpdateSettings: (Settings) -> Unit = {},
 ) {
     val toaster = LocalToaster.current
     val assistant = settings.getCurrentAssistant()
@@ -238,6 +241,8 @@ fun ChatInput(
     var voiceInputMode by remember { mutableStateOf(false) }
     // 【重排·第七刀 2026-10-08】「当前会话」子面板：升起在主面板上方（不是替换，两层并存）
     var showSessionPanel by remember { mutableStateOf(false) }
+    // 【重排·第九刀 2026-10-08】「切换聊天」弹的助手选择面板
+    var showAssistantPicker by remember { mutableStateOf(false) }
 
     // Auto-start voice recording when entering from voice call notification
     LaunchedEffect(autoStartVoice) {
@@ -597,8 +602,8 @@ fun ChatInput(
                                 onOpenSettings()
                                 expand = ExpandState.Collapsed
                             }
-                            PanelCell(label = "助手", modifier = Modifier.weight(1f)) {
-                                onOpenAssistant()
+                            PanelCell(label = "切换聊天", modifier = Modifier.weight(1f)) {
+                                showAssistantPicker = true
                                 expand = ExpandState.Collapsed
                             }
                             PanelCell(
@@ -823,6 +828,22 @@ fun ChatInput(
                             }
                         }
 
+                    }
+
+                    // 【重排·第九刀 2026-10-08】助手选择面板（复用现成的 AssistantPickerSheet）
+                    if (showAssistantPicker) {
+                        val assistantState = rememberAssistantState(settings, onUpdateSettings)
+                        AssistantPickerSheet(
+                            settings = settings,
+                            currentAssistant = assistant,
+                            onAssistantSelected = { picked ->
+                                showAssistantPicker = false
+                                assistantState.setSelectAssistant(picked)
+                            },
+                            onDismiss = {
+                                showAssistantPicker = false
+                            }
+                        )
                     }
                 }
             }

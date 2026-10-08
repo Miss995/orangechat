@@ -409,6 +409,9 @@ private fun ChatPageContent(
                     onOpenAssistant = {
                         navController.navigate(Screen.Assistant)
                     },
+                    onUpdateSettings = {
+                        vm.updateSettings(it)
+                    },
                     onCancelClick = {
                         vm.stopGeneration()
                     },
