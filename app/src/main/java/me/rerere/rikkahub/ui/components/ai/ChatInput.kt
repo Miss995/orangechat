@@ -630,30 +630,12 @@ fun ChatInput(
                             MediaFileInputRow(state = state)
                         }
 
-                        TextInputRow(
-                            state = state,
-                            onSendMessage = { sendMessage() }
-                        )
-
+                        // 【重排·第四刀 2026-10-08】+ 和发送键挪到输入框左右两侧
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            // 定时发送：点一下选时间，到点自动把这条消息发出去（2026-09-17 宝提的新玩法）
-                            ActionIconButton(
-                                onClick = onScheduleClick
-                            ) {
-                                Icon(
-                                    imageVector = HugeIcons.Clock02,
-                                    contentDescription = "定时发送",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-
                             ActionIconButton(
                                 onClick = {
                                     expandToggle(ExpandState.Panel)
@@ -664,44 +646,11 @@ fun ChatInput(
                                 )
                             }
 
-                            // Voice button: click to record, click again to stop and send
-                            // 通话进行中禁用, 避免两路麦克风冲突
-                            if ((asrState.isAvailable || asrState.isRecording) && !isVoiceCallActive) {
-                                ActionIconButton(
-                                    onClick = {
-                                        when (asrState.status) {
-                                            ASRStatus.Listening -> {
-                                                asr.stop()
-                                            }
-                                            ASRStatus.Idle, ASRStatus.Error -> {
-                                                if (!asrPermission.allRequiredPermissionsGranted) {
-                                                    asrPermission.requestPermissions()
-                                                } else {
-                                                    voiceMessageMode = true
-                                                    asr.start { transcript ->
-                                                        // Ignore transcript in voice message mode
-                                                    }
-                                                }
-                                            }
-                                            ASRStatus.Connecting, ASRStatus.Stopping -> {}
-                                        }
-                                    }
-                                ) {
-                                    if (asrState.isRecording) {
-                                        androidx.compose.material3.CircularProgressIndicator(
-                                            modifier = Modifier.size(18.dp),
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.error,
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = HugeIcons.Voice,
-                                            contentDescription = "Voice",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
+                            Box(modifier = Modifier.weight(1f)) {
+                                TextInputRow(
+                                    state = state,
+                                    onSendMessage = { sendMessage() }
+                                )
                             }
 
                             AnimatedVisibility(
@@ -756,6 +705,63 @@ fun ChatInput(
                                             imageVector = HugeIcons.ArrowUp02,
                                             contentDescription = stringResource(R.string.send),
                                             tint = contentColor,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 【重排·第四刀 2026-10-08】剩下这两个仍靠右：定时 / 语音
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                        ) {
+                            ActionIconButton(
+                                onClick = onScheduleClick
+                            ) {
+                                Icon(
+                                    imageVector = HugeIcons.Clock02,
+                                    contentDescription = "定时发送",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            if ((asrState.isAvailable || asrState.isRecording) && !isVoiceCallActive) {
+                                ActionIconButton(
+                                    onClick = {
+                                        when (asrState.status) {
+                                            ASRStatus.Listening -> {
+                                                asr.stop()
+                                            }
+                                            ASRStatus.Idle, ASRStatus.Error -> {
+                                                if (!asrPermission.allRequiredPermissionsGranted) {
+                                                    asrPermission.requestPermissions()
+                                                } else {
+                                                    voiceMessageMode = true
+                                                    asr.start { transcript ->
+                                                        // Ignore transcript in voice message mode
+                                                    }
+                                                }
+                                            }
+                                            ASRStatus.Connecting, ASRStatus.Stopping -> {}
+                                        }
+                                    }
+                                ) {
+                                    if (asrState.isRecording) {
+                                        androidx.compose.material3.CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = HugeIcons.Voice,
+                                            contentDescription = "Voice",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
