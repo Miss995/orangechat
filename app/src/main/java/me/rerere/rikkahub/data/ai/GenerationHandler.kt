@@ -483,8 +483,16 @@ class GenerationHandler(
                     // 【2026-09-27 补】再加一道：本回合调过工具就不重发（见 anyToolCallThisTurn）。
                     if (fallbackUsed && !emptyTextRetried && !anyToolCallThisTurn) {
                         emptyTextRetried = true
-                        AppLogBuffer.log("GEN_RESULT", "text=0 自动重试一次（去掉空回复重新生成）")
-                        messages = messages.slice(0 until messages.lastIndex)
+                        AppLogBuffer.log("GEN_RESULT", "text=0 自动重试一次（原地清空重写，保留同一条消息）")
+                        // 【正文空重试 · 2026-10-08 修】原来这里把最后一条整个切掉（slice 掉），
+                        // 重发时 handleMessageChunk 看到最后一条是 user → 判定 role 不同 →
+                        // 另开一条 assistant（新 id）→ 会话里就多出一条。
+                        //（旧行为：按位置对齐把它叠进空那格、显示成 <2/2>；
+                        //  改成按 id 对齐后：找不到家 → 显示成两条独立消息。）
+                        // 现在改成"原地清空、保留同一条"：最后一条仍是 ASSISTANT，
+                        // 重发时 handleMessageChunk 会接着写它 → 同一个 id，库里不会多消息。
+                        messages = messages.slice(0 until messages.lastIndex) +
+                            messages.last().copy(parts = emptyList())
                         emit(GenerationChunk.Messages(messages))
                         continue
                     }
