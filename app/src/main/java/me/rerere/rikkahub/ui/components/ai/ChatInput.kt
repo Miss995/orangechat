@@ -13,10 +13,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import coil3.compose.AsyncImage
 import androidx.compose.foundation.clickable
@@ -145,7 +147,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 
 enum class ExpandState {
-    Collapsed, Files,
+    Collapsed, Files, Panel,
 }
 
 @Composable
@@ -509,6 +511,51 @@ fun ChatInput(
                 .padding(horizontal = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // 【重排·第三刀 2026-10-08】新面板：点 + 从输入框「上方」弹出的小面板
+            // 内容先占位（宝：先看形态，之后再定哪几个常用的挪进来）
+            AnimatedVisibility(
+                visible = expand == ExpandState.Panel,
+                enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+                exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp)),
+                    shape = RoundedCornerShape(20.dp),
+                    tonalElevation = 0.dp,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf("设置", "助手", "待定", "待定").forEach { label ->
+                            Surface(
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Input area with optional background image
             Surface(
                 modifier = Modifier
@@ -609,10 +656,10 @@ fun ChatInput(
 
                             ActionIconButton(
                                 onClick = {
-                                    expandToggle(ExpandState.Files)
+                                    expandToggle(ExpandState.Panel)
                                 }) {
                                 Icon(
-                                    imageVector = if (expand == ExpandState.Files) HugeIcons.Cancel01 else HugeIcons.Add01,
+                                    imageVector = if (expand == ExpandState.Panel) HugeIcons.Cancel01 else HugeIcons.Add01,
                                     contentDescription = stringResource(R.string.more_options)
                                 )
                             }
