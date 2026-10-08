@@ -535,6 +535,12 @@ fun ChatInput(
                                         if (expand != ExpandState.Files) {
                                             expand = ExpandState.Files
                                         }
+                                    } else if (!fired && (ch.position.y - startY) > 48f) {
+                                        // 下滑 -> 收回（宝 2026-10-08 提的：只出得去、回不来）
+                                        fired = true
+                                        if (expand != ExpandState.Collapsed) {
+                                            expand = ExpandState.Collapsed
+                                        }
                                     }
                                 }
                             }
