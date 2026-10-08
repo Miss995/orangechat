@@ -225,6 +225,9 @@ fun ChatInput(
     PermissionManager(permissionState = asrPermission)
     var asrBaseText by remember { mutableStateOf("") }
     var voiceMessageMode by remember { mutableStateOf(false) }
+    // 【重排·第五刀 2026-10-08】输入模式：false=文字（输入框） true=语音（录音条）
+    // 粘性的：手动切过去就一直保持，不会自己弹回来（宝定的）
+    var voiceInputMode by remember { mutableStateOf(false) }
 
     // Auto-start voice recording when entering from voice call notification
     LaunchedEffect(autoStartVoice) {
@@ -532,7 +535,30 @@ fun ChatInput(
                             .padding(horizontal = 10.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        listOf("设置", "助手", "待定", "待定").forEach { label ->
+                        // 【重排·第五刀 2026-10-08】第一格：切到语音输入模式
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            onClick = {
+                                voiceInputMode = true
+                                expand = ExpandState.Collapsed
+                            },
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(
+                                    text = "语音",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        listOf("设置", "助手", "待定").forEach { label ->
                             Surface(
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(12.dp),
@@ -647,12 +673,68 @@ fun ChatInput(
                             }
 
                             Box(modifier = Modifier.weight(1f)) {
-                                TextInputRow(
-                                    state = state,
-                                    onSendMessage = { sendMessage() }
-                                )
+                                if (voiceInputMode) {
+                                    // 【重排·第五刀 2026-10-08】语音模式：这根条子占输入框的位子
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(24.dp))
+                                            .clickable {
+                                                when (asrState.status) {
+                                                    ASRStatus.Listening -> asr.stop()
+                                                    ASRStatus.Idle, ASRStatus.Error -> {
+                                                        if (!asrPermission.allRequiredPermissionsGranted) {
+                                                            asrPermission.requestPermissions()
+                                                        } else {
+                                                            voiceMessageMode = true
+                                                            asr.start { }
+                                                        }
+                                                    }
+                                                    ASRStatus.Connecting, ASRStatus.Stopping -> {}
+                                                }
+                                            },
+                                        shape = RoundedCornerShape(24.dp),
+                                        color = if (asrState.isRecording) MaterialTheme.colorScheme.errorContainer
+                                        else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    ) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 10.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                        ) {
+                                            Text(
+                                                text = if (asrState.isRecording) "点击结束并发送" else "点击开始说话",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = if (asrState.isRecording) MaterialTheme.colorScheme.onErrorContainer
+                                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    TextInputRow(
+                                        state = state,
+                                        onSendMessage = { sendMessage() }
+                                    )
+                                }
                             }
 
+                            // 【重排·第五刀 2026-10-08】语音模式下，这个位子换成「切回文字」
+                            if (voiceInputMode) {
+                                ActionIconButton(
+                                    onClick = {
+                                        if (asrState.isRecording) asr.stop()
+                                        voiceInputMode = false
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = HugeIcons.Text,
+                                        contentDescription = "切回文字输入",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            } else {
                             AnimatedVisibility(
                                 visible = !asrState.isRecording,
                                 enter = fadeIn() + scaleIn(),
@@ -710,9 +792,10 @@ fun ChatInput(
                                     }
                                 }
                             }
+                            }
                         }
 
-                        // 【重排·第四刀 2026-10-08】剩下这两个仍靠右：定时 / 语音
+                        // 【重排·第四刀 2026-10-08】剩下定时（语音在第五刀挪进了面板）
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -729,43 +812,6 @@ fun ChatInput(
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(18.dp)
                                 )
-                            }
-                            if ((asrState.isAvailable || asrState.isRecording) && !isVoiceCallActive) {
-                                ActionIconButton(
-                                    onClick = {
-                                        when (asrState.status) {
-                                            ASRStatus.Listening -> {
-                                                asr.stop()
-                                            }
-                                            ASRStatus.Idle, ASRStatus.Error -> {
-                                                if (!asrPermission.allRequiredPermissionsGranted) {
-                                                    asrPermission.requestPermissions()
-                                                } else {
-                                                    voiceMessageMode = true
-                                                    asr.start { transcript ->
-                                                        // Ignore transcript in voice message mode
-                                                    }
-                                                }
-                                            }
-                                            ASRStatus.Connecting, ASRStatus.Stopping -> {}
-                                        }
-                                    }
-                                ) {
-                                    if (asrState.isRecording) {
-                                        androidx.compose.material3.CircularProgressIndicator(
-                                            modifier = Modifier.size(18.dp),
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.error,
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = HugeIcons.Voice,
-                                            contentDescription = "Voice",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
                             }
                         }
                     }
