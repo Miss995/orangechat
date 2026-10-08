@@ -73,6 +73,9 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.awaitFirstDown
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -510,6 +513,33 @@ fun ChatInput(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // 【第二刀 2026-10-08】在输入框整块上滑 -> 拉起附件区（跟点 + 同一个动作）
+                    // 用 Initial pass 只观察、不消费，免得抢掉输入框自己的手势
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val down = awaitFirstDown(
+                                    requireUnconsumed = false,
+                                    pass = PointerEventPass.Initial
+                                )
+                                val startY = down.position.y
+                                var fired = false
+                                var alive = true
+                                while (alive) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val ch = event.changes.firstOrNull { it.id == down.id }
+                                    if (ch == null || !ch.pressed) {
+                                        alive = false
+                                    } else if (!fired && (startY - ch.position.y) > 48f) {
+                                        fired = true
+                                        if (expand != ExpandState.Files) {
+                                            expand = ExpandState.Files
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     .clip(MaterialTheme.shapes.largeIncreased)
                     .then(
                         if (settings.displaySetting.enableBlurEffect) Modifier.hazeEffect(
