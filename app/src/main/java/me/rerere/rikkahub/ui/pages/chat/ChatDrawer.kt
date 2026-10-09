@@ -829,7 +829,7 @@ private fun DrawerAction(
 }
 
 @Composable
-private fun FolderBar(
+internal fun FolderBar(
     folders: List<Folder>,
     selectedFolderId: Uuid?,
     onSelect: (Uuid?) -> Unit,
