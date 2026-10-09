@@ -409,6 +409,16 @@ private fun ChatPageContent(
                     onOpenAssistant = {
                         navController.navigate(Screen.Assistant)
                     },
+                    // 【重排·第十刀 2026-10-09】遗拾旧事：三个入口都跳现成页面
+                    onOpenSearch = {
+                        navController.navigate(Screen.MessageSearch)
+                    },
+                    onOpenFavorites = {
+                        navController.navigate(Screen.Favorite)
+                    },
+                    onOpenChatHistory = {
+                        navController.navigate(Screen.History)
+                    },
                     onUpdateSettings = {
                         vm.updateSettings(it)
                     },

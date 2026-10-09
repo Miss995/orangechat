@@ -182,6 +182,10 @@ fun ChatInput(
     onOpenAssistant: () -> Unit = {},
     // 【重排·第九刀 2026-10-08】「切换聊天」要弹助手选择面板，需要它
     onUpdateSettings: (Settings) -> Unit = {},
+    // 【重排·第十刀 2026-10-09】「遗拾旧事」三个入口（都跳现成页面）
+    onOpenSearch: () -> Unit = {},
+    onOpenFavorites: () -> Unit = {},
+    onOpenChatHistory: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
     val assistant = settings.getCurrentAssistant()
@@ -243,6 +247,8 @@ fun ChatInput(
     var showSessionPanel by remember { mutableStateOf(false) }
     // 【重排·第九刀 2026-10-08】「切换聊天」弹的助手选择面板
     var showAssistantPicker by remember { mutableStateOf(false) }
+    // 【重排·第十刀 2026-10-09】「遗拾旧事」子面板：搜索聊天 / 收藏夹 / 聊天历史
+    var showLegacyPanel by remember { mutableStateOf(false) }
 
     // Auto-start voice recording when entering from voice call notification
     LaunchedEffect(autoStartVoice) {
@@ -580,6 +586,50 @@ fun ChatInput(
                         }
                     }
 
+                    // 【重排·第十刀 2026-10-09】「遗拾旧事」子面板：三个入口都跳现成页面
+                    if (showLegacyPanel) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(20.dp)),
+                            shape = RoundedCornerShape(20.dp),
+                            tonalElevation = 0.dp,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                PanelCell(
+                                    label = "搜索聊天",
+                                    modifier = Modifier.weight(1f),
+                                    compact = true,
+                                ) {
+                                    onOpenSearch()
+                                    expand = ExpandState.Collapsed
+                                }
+                                PanelCell(
+                                    label = "收藏夹",
+                                    modifier = Modifier.weight(1f),
+                                    compact = true,
+                                ) {
+                                    onOpenFavorites()
+                                    expand = ExpandState.Collapsed
+                                }
+                                PanelCell(
+                                    label = "聊天历史",
+                                    modifier = Modifier.weight(1f),
+                                    compact = true,
+                                ) {
+                                    onOpenChatHistory()
+                                    expand = ExpandState.Collapsed
+                                }
+                            }
+                        }
+                    }
+
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -591,25 +641,31 @@ fun ChatInput(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 10.dp, vertical = 10.dp),
+                                .padding(horizontal = 10.dp, vertical = 10.dp)
+                                // 【重排·第十刀 2026-10-09】格子能横着滑（宝选的 b：以后再加格不用重排）
+                                .horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            PanelCell(label = "语音", modifier = Modifier.weight(1f)) {
+                            PanelCell(label = "语音", modifier = Modifier.width(72.dp)) {
                                 voiceInputMode = true
                                 expand = ExpandState.Collapsed
                             }
-                            PanelCell(label = "设置", modifier = Modifier.weight(1f)) {
+                            PanelCell(label = "设置", modifier = Modifier.width(72.dp)) {
                                 onOpenSettings()
                                 expand = ExpandState.Collapsed
                             }
-                            PanelCell(label = "切换聊天", modifier = Modifier.weight(1f)) {
+                            PanelCell(label = "切换聊天", modifier = Modifier.width(72.dp)) {
                                 showAssistantPicker = true
                                 expand = ExpandState.Collapsed
                             }
                             PanelCell(
                                 label = if (showSessionPanel) "当前会话·开" else "当前会话",
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.width(72.dp),
                             ) { showSessionPanel = !showSessionPanel }
+                            PanelCell(
+                                label = if (showLegacyPanel) "遗拾旧事·开" else "遗拾旧事",
+                                modifier = Modifier.width(72.dp),
+                            ) { showLegacyPanel = !showLegacyPanel }
                         }
                     }
                 }
