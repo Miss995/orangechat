@@ -1327,10 +1327,12 @@ private fun PanelCell(
     onClick: () -> Unit,
 ) {
     Surface(
-        modifier = modifier,
+        // 【重排·第十八刀 2026-10-09】不用 Surface(onClick=...)：它自带 48dp 最小触摸区，
+        // 格子明明只有一行字，却被撑出大片空白（宝："能开一家蜜雪冰城"）。
+        // 改用 modifier.clickable，高度就由内容自己说了算（compact 才真的生效）。
+        modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        onClick = onClick,
     ) {
         Column(
             modifier = Modifier
