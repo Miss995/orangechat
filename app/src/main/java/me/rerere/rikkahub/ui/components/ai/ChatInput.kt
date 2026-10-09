@@ -553,11 +553,12 @@ fun ChatInput(
                 // 【重排·第七刀 2026-10-08】面板套娃：点「当前会话」在它上面升起一层
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (showSessionPanel) {
+                        // 【重排·第十八刀补2 2026-10-09】外壳圆角跟着高度走（20dp 配三四十 dp 的壳=胶囊）
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(20.dp)),
-                            shape = RoundedCornerShape(20.dp),
+                                .clip(RoundedCornerShape(12.dp)),
+                            shape = RoundedCornerShape(12.dp),
                             tonalElevation = 0.dp,
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ) {
@@ -596,11 +597,12 @@ fun ChatInput(
 
                     // 【重排·第十刀 2026-10-09】「遗拾旧事」子面板：三个入口都跳现成页面
                     if (showLegacyPanel) {
+                        // 【重排·第十八刀补2 2026-10-09】外壳圆角跟着高度走（20dp 配三四十 dp 的壳=胶囊）
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(20.dp)),
-                            shape = RoundedCornerShape(20.dp),
+                                .clip(RoundedCornerShape(12.dp)),
+                            shape = RoundedCornerShape(12.dp),
                             tonalElevation = 0.dp,
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ) {
@@ -640,11 +642,12 @@ fun ChatInput(
 
                     // 【重排·第十二刀 2026-10-09】「小工具」子面板：翻译 / 图像生成 / 小应用
                     if (showToolPanel) {
+                        // 【重排·第十八刀补2 2026-10-09】外壳圆角跟着高度走（20dp 配三四十 dp 的壳=胶囊）
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(20.dp)),
-                            shape = RoundedCornerShape(20.dp),
+                                .clip(RoundedCornerShape(12.dp)),
+                            shape = RoundedCornerShape(12.dp),
                             tonalElevation = 0.dp,
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ) {
