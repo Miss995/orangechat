@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -826,12 +827,34 @@ private fun MessagePartsBlock(
                                     .shimmer(isLoading = true)
                             )
                         } else {
+                            // 【图片展示 · 2026-10-10 宝："直接像屏幕截下来一块，丑丑的"】
+                            // 原先高度死定 72dp（那是缩略图尺寸）：竖着的小红书截图按 72dp 高缩下去，
+                            // 宽度只剩三四十 dp —— 一条细缝。
+                            // 现在按原图比例分两条路：
+                            //   普通图 → 按比例完整显示（最大 240x320dp，小图不拉伸）
+                            //   竖长图 → 卡片：宽度撑满 240dp、只露上半截，点开看全
+                            val imgRatioState = remember(part.url) { mutableStateOf(0f) }
+                            val imgRatio = imgRatioState.value
+                            val isTallImage = imgRatio > 0f && imgRatio < 240f / 320f
                             ZoomableAsyncImage(
                                 model = part.url,
                                 contentDescription = null,
-                                modifier = Modifier
-                                    .clip(MaterialTheme.shapes.medium)
-                                    .height(72.dp)
+                                modifier = if (isTallImage) {
+                                    Modifier
+                                        .clip(MaterialTheme.shapes.medium)
+                                        .width(240.dp)
+                                        .height(320.dp)
+                                } else {
+                                    Modifier
+                                        .clip(MaterialTheme.shapes.medium)
+                                        .widthIn(max = 240.dp)
+                                        .heightIn(max = 320.dp)
+                                },
+                                contentScale = if (isTallImage) ContentScale.FillWidth else ContentScale.Fit,
+                                alignment = if (isTallImage) Alignment.TopCenter else Alignment.Center,
+                                onImageSize = { w, h ->
+                                    if (h > 0) imgRatioState.value = w.toFloat() / h.toFloat()
+                                },
                             )
                         }
                     }

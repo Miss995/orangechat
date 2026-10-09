@@ -36,6 +36,8 @@ fun ZoomableAsyncImage(
     alignment: Alignment = Alignment.Center,
     contentScale: ContentScale = ContentScale.Fit,
     alpha: Float = DefaultAlpha,
+    /** 【图片展示 · 2026-10-10】把原图尺寸回传出去，调用方才能判断"这是不是长截图"。默认 null，老调用方不受影响。 */
+    onImageSize: ((Int, Int) -> Unit)? = null,
 ) {
     var showImageViewer by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -63,6 +65,7 @@ fun ZoomableAsyncImage(
             loading = true
         },
         onSuccess = {
+            onImageSize?.invoke(it.result.image.width, it.result.image.height)
             loading = false
         },
         onError = {
