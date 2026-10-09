@@ -186,6 +186,10 @@ fun ChatInput(
     onOpenSearch: () -> Unit = {},
     onOpenFavorites: () -> Unit = {},
     onOpenChatHistory: () -> Unit = {},
+    // 【重排·第十二刀 2026-10-09】「小工具」三个入口（翻译 / 图像生成 / 小应用）
+    onOpenTranslator: () -> Unit = {},
+    onOpenImageGen: () -> Unit = {},
+    onOpenMiniApps: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
     val assistant = settings.getCurrentAssistant()
@@ -249,6 +253,8 @@ fun ChatInput(
     var showAssistantPicker by remember { mutableStateOf(false) }
     // 【重排·第十刀 2026-10-09】「遗拾旧事」子面板：搜索聊天 / 收藏夹 / 聊天历史
     var showLegacyPanel by remember { mutableStateOf(false) }
+    // 【重排·第十二刀 2026-10-09】「小工具」子面板：翻译 / 图像生成 / 小应用
+    var showToolPanel by remember { mutableStateOf(false) }
 
     // Auto-start voice recording when entering from voice call notification
     LaunchedEffect(autoStartVoice) {
@@ -630,6 +636,50 @@ fun ChatInput(
                         }
                     }
 
+                    // 【重排·第十二刀 2026-10-09】「小工具」子面板：翻译 / 图像生成 / 小应用
+                    if (showToolPanel) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(20.dp)),
+                            shape = RoundedCornerShape(20.dp),
+                            tonalElevation = 0.dp,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                PanelCell(
+                                    label = "翻译",
+                                    modifier = Modifier.weight(1f),
+                                    compact = true,
+                                ) {
+                                    onOpenTranslator()
+                                    expand = ExpandState.Collapsed
+                                }
+                                PanelCell(
+                                    label = "图像生成",
+                                    modifier = Modifier.weight(1f),
+                                    compact = true,
+                                ) {
+                                    onOpenImageGen()
+                                    expand = ExpandState.Collapsed
+                                }
+                                PanelCell(
+                                    label = "小应用",
+                                    modifier = Modifier.weight(1f),
+                                    compact = true,
+                                ) {
+                                    onOpenMiniApps()
+                                    expand = ExpandState.Collapsed
+                                }
+                            }
+                        }
+                    }
+
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -666,6 +716,10 @@ fun ChatInput(
                                 label = if (showLegacyPanel) "遗拾旧事·开" else "遗拾旧事",
                                 modifier = Modifier.width(72.dp),
                             ) { showLegacyPanel = !showLegacyPanel }
+                            PanelCell(
+                                label = if (showToolPanel) "小工具·开" else "小工具",
+                                modifier = Modifier.width(72.dp),
+                            ) { showToolPanel = !showToolPanel }
                         }
                     }
                 }

@@ -419,6 +419,16 @@ private fun ChatPageContent(
                     onOpenChatHistory = {
                         navController.navigate(Screen.History)
                     },
+                    // 【重排·第十二刀 2026-10-09】小工具：翻译 / 图像生成 / 小应用
+                    onOpenTranslator = {
+                        navController.navigate(Screen.Translator)
+                    },
+                    onOpenImageGen = {
+                        navController.navigate(Screen.ImageGen)
+                    },
+                    onOpenMiniApps = {
+                        navController.navigate(Screen.MiniAppManager)
+                    },
                     onUpdateSettings = {
                         vm.updateSettings(it)
                     },
