@@ -22,9 +22,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -88,6 +91,9 @@ import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.service.FloatingPetService
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
+import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.hooks.EditStateContent
+import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.icons.DiscordIcon
 import me.rerere.rikkahub.ui.components.ui.icons.TencentQQIcon
@@ -108,6 +114,44 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
+
+    // 【重排·第十一刀 2026-10-09】用户头像 + 昵称（从侧边栏搬过来）
+    val nicknameEditState = useEditState<String> { newNickname ->
+        vm.updateSettings(
+            settings.copy(
+                displaySetting = settings.displaySetting.copy(
+                    userNickname = newNickname
+                )
+            )
+        )
+    }
+
+    // 【重排·第十一刀】昵称编辑对话框（照搬侧边栏那份）
+    nicknameEditState.EditStateContent { nickname, onUpdate ->
+        AlertDialog(
+            onDismissRequest = { nicknameEditState.dismiss() },
+            title = { Text(stringResource(R.string.chat_page_edit_nickname)) },
+            text = {
+                OutlinedTextField(
+                    value = nickname,
+                    onValueChange = onUpdate,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text(stringResource(R.string.chat_page_nickname_placeholder)) }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { nicknameEditState.confirm() }) {
+                    Text(stringResource(R.string.chat_page_save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { nicknameEditState.dismiss() }) {
+                    Text(stringResource(R.string.chat_page_cancel))
+                }
+            }
+        )
+    }
 
     if (settings.launchCount > 100 && (settings.launchCount - settings.sponsorAlertDismissedAt) >= 50) {
         AlertDialog(
@@ -175,6 +219,38 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     modifier = Modifier.padding(horizontal = 8.dp),
                     title = { Text(stringResource(R.string.setting_page_general_settings)) },
                 ) {
+                    // 【重排·第十一刀 2026-10-09】用户资料：头像（点它换图）+ 昵称（点它改名）
+                    item(
+                        leadingContent = {
+                            UIAvatar(
+                                name = settings.displaySetting.userNickname.ifBlank {
+                                    stringResource(R.string.user_default_name)
+                                },
+                                value = settings.displaySetting.userAvatar,
+                                onUpdate = { newAvatar ->
+                                    vm.updateSettings(
+                                        settings.copy(
+                                            displaySetting = settings.displaySetting.copy(
+                                                userAvatar = newAvatar
+                                            )
+                                        )
+                                    )
+                                },
+                                modifier = Modifier.size(40.dp),
+                            )
+                        },
+                        headlineContent = {
+                            Text(
+                                text = settings.displaySetting.userNickname.ifBlank {
+                                    stringResource(R.string.user_default_name)
+                                },
+                                modifier = Modifier.clickable {
+                                    nicknameEditState.open(settings.displaySetting.userNickname)
+                                },
+                            )
+                        },
+                        supportingContent = { Text("点头像换图，点名字改昵称") },
+                    )
                     item(
                         leadingContent = { Icon(HugeIcons.Sun01, null) },
                         trailingContent = {
