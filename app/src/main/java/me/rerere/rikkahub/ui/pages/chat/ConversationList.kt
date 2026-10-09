@@ -91,7 +91,9 @@ fun ColumnScope.ConversationList(
     onRegenerateTitle: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},
     onMoveToAssistant: (Conversation) -> Unit = {},
-    onMoveToFolder: (Conversation) -> Unit = {}
+    onMoveToFolder: (Conversation) -> Unit = {},
+    // 【重排·第十三刀 2026-10-09】平铺模式：会话面板里用（标题不铺底，去掉"斑马线"）
+    flatStyle: Boolean = false,
 ) {
     var hasScrolledToCurrent by remember(current.id) { mutableStateOf(false) }
 
@@ -148,6 +150,7 @@ fun ColumnScope.ConversationList(
                     DateHeaderItem(
                         label = item.label,
                         drawerItemAlpha = drawerItemAlpha,
+                        flatStyle = flatStyle,
                         modifier = Modifier.animateItem()
                     )
                 }
@@ -155,6 +158,7 @@ fun ColumnScope.ConversationList(
                 is ConversationListItem.PinnedHeader -> {
                     PinnedHeader(
                         drawerItemAlpha = drawerItemAlpha,
+                        flatStyle = flatStyle,
                         modifier = Modifier.animateItem()
                     )
                 }
@@ -171,6 +175,7 @@ fun ColumnScope.ConversationList(
                         onMoveToAssistant = onMoveToAssistant,
                         onMoveToFolder = onMoveToFolder,
                         drawerItemAlpha = drawerItemAlpha,
+                        flatStyle = flatStyle,
                         modifier = Modifier.animateItem()
                     )
                 }
@@ -187,12 +192,16 @@ fun ColumnScope.ConversationList(
 private fun DateHeaderItem(
     label: String,
     drawerItemAlpha: Float = 1f,
+    flatStyle: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = drawerItemAlpha))
+            .background(
+                if (flatStyle) Color.Transparent
+                else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = drawerItemAlpha)
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -208,12 +217,16 @@ private fun DateHeaderItem(
 @Composable
 private fun PinnedHeader(
     drawerItemAlpha: Float = 1f,
+    flatStyle: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = drawerItemAlpha))
+            .background(
+                if (flatStyle) Color.Transparent
+                else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = drawerItemAlpha)
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -240,6 +253,7 @@ private fun ConversationItem(
     loading: Boolean,
     modifier: Modifier = Modifier,
     drawerItemAlpha: Float = 1f,
+    flatStyle: Boolean = false,
     onDelete: (Conversation) -> Unit = {},
     onRegenerateTitle: (Conversation) -> Unit = {},
     onPin: (Conversation) -> Unit = {},

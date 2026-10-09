@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -73,8 +74,13 @@ fun ChatSessionPanel(
     ) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .heightIn(max = 620.dp),
+                .fillMaxWidth(0.86f)
+                .heightIn(max = 560.dp)
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    shape = RoundedCornerShape(24.dp),
+                ),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
@@ -128,6 +134,8 @@ fun ChatSessionPanel(
                     onPin = { vm.updatePinnedStatus(it) },
                     onMoveToAssistant = { },
                     onMoveToFolder = { },
+                    // 【重排·第十三刀 2026-10-09】面板里平铺：去掉日期标题那条底色（斑马线）
+                    flatStyle = true,
                 )
             }
         }
