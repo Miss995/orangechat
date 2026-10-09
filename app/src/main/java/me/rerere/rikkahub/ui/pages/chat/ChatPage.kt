@@ -324,6 +324,8 @@ private fun ChatPageContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     var previewMode by rememberSaveable { mutableStateOf(false) }
+    // 【重排·第十三刀 2026-10-09】会话面板（从侧边栏搬出来的那块）
+    var showSessionPanel by remember { mutableStateOf(false) }
     // 【重排·第六刀 2026-10-08】语音通话入口：顶栏和输入区面板共用一份
     val onVoiceCallAction: () -> Unit = {
         val activeId = VoiceCallService.activeConversationId.value
@@ -431,6 +433,10 @@ private fun ChatPageContent(
                     },
                     onUpdateSettings = {
                         vm.updateSettings(it)
+                    },
+                    // 【重排·第十三刀 2026-10-09】「切换聊天」改成开会话面板
+                    onOpenSessionPanel = {
+                        showSessionPanel = true
                     },
                     onCancelClick = {
                         vm.stopGeneration()
@@ -647,6 +653,17 @@ private fun ChatPageContent(
                 .joinToString("") { it.text },
             onDismiss = { showScheduleDialog = false },
             onScheduled = { inputState.clearInput() },
+        )
+    }
+
+    // 【重排·第十三刀 2026-10-09】会话面板：最上面选助手，下面是当前助手的会话列表
+    if (showSessionPanel) {
+        ChatSessionPanel(
+            onDismiss = { showSessionPanel = false },
+            navController = navController,
+            vm = vm,
+            settings = setting,
+            current = conversation,
         )
     }
 }

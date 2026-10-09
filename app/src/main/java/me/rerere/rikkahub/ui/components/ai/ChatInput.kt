@@ -182,6 +182,8 @@ fun ChatInput(
     onOpenAssistant: () -> Unit = {},
     // 【重排·第九刀 2026-10-08】「切换聊天」要弹助手选择面板，需要它
     onUpdateSettings: (Settings) -> Unit = {},
+    // 【重排·第十三刀 2026-10-09】「切换聊天」改成开「会话面板」
+    onOpenSessionPanel: () -> Unit = {},
     // 【重排·第十刀 2026-10-09】「遗拾旧事」三个入口（都跳现成页面）
     onOpenSearch: () -> Unit = {},
     onOpenFavorites: () -> Unit = {},
@@ -705,7 +707,7 @@ fun ChatInput(
                                 expand = ExpandState.Collapsed
                             }
                             PanelCell(label = "切换聊天", modifier = Modifier.width(72.dp)) {
-                                showAssistantPicker = true
+                                onOpenSessionPanel()
                                 expand = ExpandState.Collapsed
                             }
                             PanelCell(
