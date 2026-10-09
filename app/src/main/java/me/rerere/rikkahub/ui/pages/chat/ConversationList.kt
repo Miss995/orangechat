@@ -13,6 +13,7 @@ import me.rerere.hugeicons.stroke.Pin
 import me.rerere.hugeicons.stroke.PinOff
 import me.rerere.hugeicons.stroke.Refresh01
 import me.rerere.hugeicons.stroke.Delete01
+import me.rerere.hugeicons.stroke.PencilEdit01
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -92,6 +93,8 @@ fun ColumnScope.ConversationList(
     onPin: (Conversation) -> Unit = {},
     onMoveToAssistant: (Conversation) -> Unit = {},
     onMoveToFolder: (Conversation) -> Unit = {},
+    // 【重排·第十七刀 2026-10-09】重命名：顶栏撤了，改名搬进长按菜单
+    onRename: (Conversation) -> Unit = {},
     // 【重排·第十三刀 2026-10-09】平铺模式：会话面板里用（标题不铺底，去掉"斑马线"）
     flatStyle: Boolean = false,
 ) {
@@ -174,6 +177,7 @@ fun ColumnScope.ConversationList(
                         onPin = onPin,
                         onMoveToAssistant = onMoveToAssistant,
                         onMoveToFolder = onMoveToFolder,
+                        onRename = onRename,
                         drawerItemAlpha = drawerItemAlpha,
                         flatStyle = flatStyle,
                         modifier = Modifier.animateItem()
@@ -259,6 +263,7 @@ private fun ConversationItem(
     onPin: (Conversation) -> Unit = {},
     onMoveToAssistant: (Conversation) -> Unit = {},
     onMoveToFolder: (Conversation) -> Unit = {},
+    onRename: (Conversation) -> Unit = {},
     onClick: (Conversation) -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -348,6 +353,19 @@ private fun ConversationItem(
                     },
                     leadingIcon = {
                         Icon(HugeIcons.Refresh01, null)
+                    }
+                )
+
+                DropdownMenuItem(
+                    text = {
+                        Text(stringResource(R.string.chat_page_rename))
+                    },
+                    onClick = {
+                        onRename(conversation)
+                        showDropdownMenu = false
+                    },
+                    leadingIcon = {
+                        Icon(HugeIcons.PencilEdit01, null)
                     }
                 )
 

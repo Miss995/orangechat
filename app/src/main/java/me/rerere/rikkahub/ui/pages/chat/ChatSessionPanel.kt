@@ -93,6 +93,9 @@ fun ChatSessionPanel(
         initialValue = emptyMap(),
     )
 
+    // 会话改名（顶栏撤了，改名搬进长按菜单）
+    var conversationToRename by remember { mutableStateOf<Conversation?>(null) }
+
     // 文件夹三个对话框的状态
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var folderToRename by remember { mutableStateOf<Folder?>(null) }
@@ -207,11 +210,43 @@ fun ChatSessionPanel(
                     onPin = { vm.updatePinnedStatus(it) },
                     onMoveToAssistant = { },
                     onMoveToFolder = { },
+                    // 【重排·第十七刀 2026-10-09】长按会话 -> 重命名（顶栏撤了，改名的新家）
+                    onRename = { conversationToRename = it },
                     // 【重排·第十三刀 2026-10-09】面板里平铺：去掉日期标题那条底色（斑马线）
                     flatStyle = true,
                 )
             }
         }
+    }
+
+    // ── 会话改名（从顶栏搬来） ──
+    conversationToRename?.let { conv ->
+        var name by remember(conv.id) { mutableStateOf(conv.title) }
+        AlertDialog(
+            onDismissRequest = { conversationToRename = null },
+            title = { Text(stringResource(R.string.chat_page_edit_title)) },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        vm.updateTitle(name)
+                        conversationToRename = null
+                    }
+                ) { Text(stringResource(R.string.chat_page_save)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { conversationToRename = null }) {
+                    Text(stringResource(R.string.chat_page_cancel))
+                }
+            }
+        )
     }
 
     // ── 文件夹：新建 / 重命名 / 删除（与侧边栏同一套） ──

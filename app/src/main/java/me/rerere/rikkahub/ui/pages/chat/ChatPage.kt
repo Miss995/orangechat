@@ -285,27 +285,6 @@ private fun ChatPageContent(
     ) {
         AssistantBackground(setting = setting)
         Scaffold(
-            topBar = {
-                TopBar(
-                    settings = setting,
-                    conversation = conversation,
-                    previewMode = previewMode,
-                    requestEditMode = setting.requestEditMode,
-                    onToggleRequestEdit = {
-                        vm.updateSettings(setting.copy(requestEditMode = !setting.requestEditMode))
-                    },
-                    onNewChat = {
-                        navigateToChatPage(navController)
-                    },
-                    onClickMenu = {
-                        previewMode = !previewMode
-                    },
-                    onUpdateTitle = {
-                        vm.updateTitle(it)
-                    },
-                    onVoiceCall = onVoiceCallAction,
-                )
-            },
             bottomBar = {
                 ChatInput(
                     state = inputState,
