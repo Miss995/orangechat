@@ -743,19 +743,29 @@ fun ChatInput(
                                     requireUnconsumed = false,
                                     pass = PointerEventPass.Initial
                                 )
+                                // 【按需让位 · 2026-10-10 宝的方案】输入框内容超过它自己的可视高度
+                                //（5 行 —— 见下面 TextFieldLineLimits.MultiLine(maxHeightInLines = 5)）
+                                // → 它自己有得滚，这一轮让给它，等抬手再重来；否则外层照常接（拉附件）。
+                                // 上一版无条件让（Final pass）错在哪：TextField 只要碰到指针就标 consumed
+                                //（它得先防着"这可能是拖选 / 放光标"），外层永远在第一步就退出 →
+                                // 不管有没有字，怎么滑都拉不出附件。
+                                val __inputText = state.textContent.text.toString()
+                                val __inputCanScroll =
+                                    __inputText.length > 90 || __inputText.count { ch -> ch == '\n' } >= 4
+                                if (__inputCanScroll) {
+                                    waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                                    continue
+                                }
                                 val startY = down.position.y
                                 var fired = false
                                 var alive = true
                                 while (alive) {
-                                    // 【手势让位 · 2026-10-10 宝：写长文上滑看前面，附件区却升起来了】
-                                    // 原来用 Initial（父级先看），所以输入框里怎么滑都算数。
-                                    // 改成 Final：等里面的输入框先处理 —— 它把事件吃掉（长文在滚动）就让位；
-                                    // 没被吃掉（点在空白处 / 内容还不用滚）才轮到拉附件。
-                                    val event = awaitPointerEvent(PointerEventPass.Final)
+                                    // 【观察位 · 2026-10-10 最终版】回到 Initial：外层只"看"不消费。
+                                    // 走到这里说明输入框没得滚（上面那道 __inputCanScroll 闸已经放行），
+                                    // 所以放心观察 —— 滑够 48f 就拉 / 收附件。
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
                                     val ch = event.changes.firstOrNull { it.id == down.id }
                                     if (ch == null || !ch.pressed) {
-                                        alive = false
-                                    } else if (ch.isConsumed) {
                                         alive = false
                                     } else if (!fired && (startY - ch.position.y) > 48f) {
                                         fired = true
