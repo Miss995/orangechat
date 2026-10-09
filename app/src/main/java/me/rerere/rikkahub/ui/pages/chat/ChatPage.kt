@@ -116,23 +116,6 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
     val enableWebSearch by vm.enableWebSearch.collectAsStateWithLifecycle()
     val errors by vm.errors.collectAsStateWithLifecycle()
 
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val softwareKeyboardController = LocalSoftwareKeyboardController.current
-
-    // Handle back press when drawer is open
-    BackHandler(enabled = drawerState.isOpen) {
-        scope.launch {
-            drawerState.close()
-        }
-    }
-
-    // Hide keyboard when drawer is open
-    LaunchedEffect(drawerState.isOpen) {
-        if (drawerState.isOpen) {
-            softwareKeyboardController?.hide()
-        }
-    }
-
     val windowAdaptiveInfo = currentWindowDpSize()
     val isBigScreen =
         windowAdaptiveInfo.width > windowAdaptiveInfo.height && windowAdaptiveInfo.width >= 1100.dp
@@ -214,87 +197,28 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
         }
     }
 
-    when {
-        isBigScreen -> {
-            PermanentNavigationDrawer(
-                drawerContent = {
-                    ChatDrawerContent(
-                        navController = navController,
-                        current = conversation,
-                        vm = vm,
-                        settings = setting
-                    )
-                }
-            ) {
-                ChatPageContent(
-                    inputState = inputState,
-                    loadingJob = loadingJob,
-                    processingStatus = processingStatus,
-                    setting = setting,
-                    conversation = conversation,
-                    drawerState = drawerState,
-                    navController = navController,
-                    vm = vm,
-                    chatListState = chatListState,
-                    enableWebSearch = enableWebSearch,
-                    currentChatModel = currentChatModel,
-                    bigScreen = true,
-                    autoStartVoice = autoStartVoice,
-                    errors = errors,
-                    onDismissError = { vm.dismissError(it) },
-                    onClearAllErrors = { vm.clearAllErrors() },
-                    jumpNodes = jumpNodes,
-                    jumpTargetIndex = jumpTargetIndex,
-                    onExitJump = {
-                        jumpNodes = null
-                        jumpTargetIndex = null
-                    },
-                )
-            }
-        }
-
-        else -> {
-            ModalNavigationDrawer(
-                drawerState = drawerState,
-                drawerContent = {
-                    ChatDrawerContent(
-                        navController = navController,
-                        current = conversation,
-                        vm = vm,
-                        settings = setting
-                    )
-                }
-            ) {
-                ChatPageContent(
-                    inputState = inputState,
-                    loadingJob = loadingJob,
-                    processingStatus = processingStatus,
-                    setting = setting,
-                    conversation = conversation,
-                    drawerState = drawerState,
-                    navController = navController,
-                    vm = vm,
-                    chatListState = chatListState,
-                    enableWebSearch = enableWebSearch,
-                    currentChatModel = currentChatModel,
-                    bigScreen = false,
-                    autoStartVoice = autoStartVoice,
-                    errors = errors,
-                    onDismissError = { vm.dismissError(it) },
-                    onClearAllErrors = { vm.clearAllErrors() },
-                    jumpNodes = jumpNodes,
-                    jumpTargetIndex = jumpTargetIndex,
-                    onExitJump = {
-                        jumpNodes = null
-                        jumpTargetIndex = null
-                    },
-                )
-            }
-            BackHandler(drawerState.isOpen) {
-                scope.launch { drawerState.close() }
-            }
-        }
-    }
+    ChatPageContent(
+        inputState = inputState,
+        loadingJob = loadingJob,
+        processingStatus = processingStatus,
+        setting = setting,
+        conversation = conversation,
+        navController = navController,
+        vm = vm,
+        chatListState = chatListState,
+        enableWebSearch = enableWebSearch,
+        currentChatModel = currentChatModel,
+        autoStartVoice = autoStartVoice,
+        errors = errors,
+        onDismissError = { vm.dismissError(it) },
+        onClearAllErrors = { vm.clearAllErrors() },
+        jumpNodes = jumpNodes,
+        jumpTargetIndex = jumpTargetIndex,
+        onExitJump = {
+            jumpNodes = null
+            jumpTargetIndex = null
+        },
+    )
 }
 
 @Composable
@@ -303,9 +227,7 @@ private fun ChatPageContent(
     loadingJob: Job?,
     processingStatus: String? = null,
     setting: Settings,
-    bigScreen: Boolean,
     conversation: Conversation,
-    drawerState: DrawerState,
     navController: Navigator,
     vm: ChatVM,
     chatListState: LazyListState,
@@ -367,8 +289,6 @@ private fun ChatPageContent(
                 TopBar(
                     settings = setting,
                     conversation = conversation,
-                    bigScreen = bigScreen,
-                    drawerState = drawerState,
                     previewMode = previewMode,
                     requestEditMode = setting.requestEditMode,
                     onToggleRequestEdit = {
@@ -672,8 +592,6 @@ private fun ChatPageContent(
 private fun TopBar(
     settings: Settings,
     conversation: Conversation,
-    drawerState: DrawerState,
-    bigScreen: Boolean,
     previewMode: Boolean,
     requestEditMode: Boolean,
     onToggleRequestEdit: () -> Unit,
@@ -690,17 +608,6 @@ private fun TopBar(
 
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-        navigationIcon = {
-            if (!bigScreen) {
-                IconButton(
-                    onClick = {
-                        scope.launch { drawerState.open() }
-                    }
-                ) {
-                    Icon(HugeIcons.Menu03, "Messages")
-                }
-            }
-        },
         title = {
             val editTitleWarning = stringResource(R.string.chat_page_edit_title_warning)
             Surface(
