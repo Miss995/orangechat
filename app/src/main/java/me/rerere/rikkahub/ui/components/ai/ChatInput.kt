@@ -747,9 +747,15 @@ fun ChatInput(
                                 var fired = false
                                 var alive = true
                                 while (alive) {
-                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    // 【手势让位 · 2026-10-10 宝：写长文上滑看前面，附件区却升起来了】
+                                    // 原来用 Initial（父级先看），所以输入框里怎么滑都算数。
+                                    // 改成 Final：等里面的输入框先处理 —— 它把事件吃掉（长文在滚动）就让位；
+                                    // 没被吃掉（点在空白处 / 内容还不用滚）才轮到拉附件。
+                                    val event = awaitPointerEvent(PointerEventPass.Final)
                                     val ch = event.changes.firstOrNull { it.id == down.id }
                                     if (ch == null || !ch.pressed) {
+                                        alive = false
+                                    } else if (ch.isConsumed) {
                                         alive = false
                                     } else if (!fired && (startY - ch.position.y) > 48f) {
                                         fired = true
