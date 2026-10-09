@@ -2586,16 +2586,29 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                             "markTexts=" + msg.parts.filter { isInterjectMarked(it) }
                             .joinToString("|") { (it as? UIMessagePart.Text)?.text?.take(8).orEmpty() }
                     )
-                    if (text.isNotBlank()) {
+                    if (part is UIMessagePart.Text) {
+                        if (text.isNotBlank()) {
+                            out.add(
+                                UIMessage(
+                                    role = MessageRole.USER,
+                                    parts = listOf(
+                                        UIMessagePart.Text(
+                                            text = text,
+                                            metadata = JsonObject(mapOf("interject" to JsonPrimitive(true)))
+                                        )
+                                    )
+                                )
+                            )
+                        }
+                    } else {
+                        // 【插话带图 · 2026-10-09】以前只搬文字：图片这类非文字 part 走到这儿
+                        // 既不进 buffer、也吐不出去 = 直接丢（宝问"插话能发截图吗"）。
+                        // 现在原样搬出去，metadata 里的插话记号跟着走，回程 collapse 按 part 认得到。
+                        AppLogBuffer.log(TAG, "[Interject] EXPAND nontext part=" + part::class.simpleName)
                         out.add(
                             UIMessage(
                                 role = MessageRole.USER,
-                                parts = listOf(
-                                    UIMessagePart.Text(
-                                        text = text,
-                                        metadata = JsonObject(mapOf("interject" to JsonPrimitive(true)))
-                                    )
-                                )
+                                parts = listOf(part)
                             )
                         )
                     }
