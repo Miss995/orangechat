@@ -1674,7 +1674,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                         // 这里只报"合回后的条数 vs 会话格数"，差多少一眼看出错位的起点。
                         if (patchedMessages.size != currentConversationForChunk.messageNodes.size) {
                             val nowCnt = System.currentTimeMillis()
-                            if (nowCnt - lastCountMismatchLogAt > 5_000) {
+                            if (nowCnt - lastCountMismatchLogAt > 60_000) {   // 【降频 2026-10-10】5s→60s
                                 lastCountMismatchLogAt = nowCnt
                                 AppLogBuffer.log(
                                     TAG,
@@ -2651,7 +2651,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         val markedUsers = messages.count { it.role == MessageRole.USER && it.parts.any { isInterjectMarked(it) } }
         if (markedUsers > 1) {
             val nowDup = System.currentTimeMillis()
-            if (nowDup - lastInterjectDupLogAt > 5_000) {
+            if (nowDup - lastInterjectDupLogAt > 60_000) {   // 【降频 2026-10-10】5s→60s：插话排查用，留着但别刷
                 lastInterjectDupLogAt = nowDup
                 AppLogBuffer.log(TAG, "[Interject] DUP markedUsers=$markedUsers in=${messages.size}")
             }
@@ -2661,7 +2661,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         // "带标 assistant 和带标 user 同时存在"就是两份的来源（合并态和展开态并存）。
         run {
             val nowShape = System.currentTimeMillis()
-            if (nowShape - lastInterjectShapeLogAt > 3_000) {
+            if (nowShape - lastInterjectShapeLogAt > 60_000) {   // 【降频 2026-10-10】3s→60s（这段要 filter 两遍全列表，一次几十 ms）
                 lastInterjectShapeLogAt = nowShape
                 val mA = messages.filter { m -> m.role == MessageRole.ASSISTANT && m.parts.any { isInterjectMarked(it) } }
                 val mU = messages.filter { m -> m.role == MessageRole.USER && m.parts.any { isInterjectMarked(it) } }
@@ -2690,7 +2690,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 val hadMarks = last.parts.count { isInterjectMarked(it) }
                 if (hadMarks > 0) {
                     val nowDup2 = System.currentTimeMillis()
-                    if (nowDup2 - lastInterjectMergeDupLogAt > 3_000) {
+                    if (nowDup2 - lastInterjectMergeDupLogAt > 60_000) {   // 【降频 2026-10-10】3s→60s
                         lastInterjectMergeDupLogAt = nowDup2
                         // 【看内容 · 2026-10-05 宝要】光知道"有几个标"不够，得看那几个标里装的是什么：
                         // 是同一份被算了两遍，还是两份不同的东西叠着。
@@ -2730,7 +2730,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 // 不许并，原样放行。留一行日志：万一有该合的被误拦，能看见。
                 run {
                     val nowT = System.currentTimeMillis()
-                    if (nowT - lastMergeTailLogAt > 3_000) {
+                    if (nowT - lastMergeTailLogAt > 60_000) {   // 【降频 2026-10-10】3s→60s
                         lastMergeTailLogAt = nowT
                         AppLogBuffer.log(
                             TAG,

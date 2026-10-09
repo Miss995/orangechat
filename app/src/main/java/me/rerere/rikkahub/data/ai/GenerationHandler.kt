@@ -1174,6 +1174,11 @@ class GenerationHandler(
             // contentTotal=0 = 服务端没发正文（流在 reasoning 后断了/没发）；>0 = 发了但 append 丢了
             var streamContentTotal = 0
             var streamFinishReason = "unknown"
+            // 【日志降频 · 2026-10-10 宝：流式一开始整个应用就卡】原来每个字打一条
+            // StreamChunk（每 11ms 一条，500 条的日志环约 5.5 秒就被它冲光）。
+            // 改成每 40 块报一条 + 带 finish 的收尾块必报 —— 排查"正文被吃"时照样够看
+            //（那类排查看的本来就是收尾那条）。
+            var streamChunkLogTick = 0
             try {
                 providerImpl.streamText(
                     providerSetting = provider,
@@ -1195,7 +1200,10 @@ class GenerationHandler(
                         // 只打有内容/有结束标记的 chunk——空 delta（content=0 reasoning=0 finish=unknown）不打，
                         // 否则每次生成几百条把 MessagePartsRender（渲染诊断）刷出 500 条日志环
                         if (contentLen > 0 || reasoningLen > 0 || (finish.isNotBlank() && finish != "unknown")) {
-                            AppLogBuffer.log("StreamChunk", "content=$contentLen reasoning=$reasoningLen raw=$rawContentLen finish=$finish")
+                            streamChunkLogTick++
+                            if (streamChunkLogTick % 40 == 0 || (finish.isNotBlank() && finish != "unknown")) {
+                                AppLogBuffer.log("StreamChunk", "#$streamChunkLogTick content=$contentLen reasoning=$reasoningLen raw=$rawContentLen finish=$finish")
+                            }
                         }
                     }
                     messages = messages.handleMessageChunk(chunk = it, model = model)
