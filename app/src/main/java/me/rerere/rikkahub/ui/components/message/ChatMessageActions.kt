@@ -76,6 +76,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.vector.ImageVector
 
 @Composable
 fun ChatMessageActionMenu(
@@ -100,7 +101,9 @@ fun ChatMessageActionMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         offset = offset,
-        modifier = Modifier.widthIn(min = 150.dp),
+        // 【点按菜单 · 2026-10-10 宝要求缩一半】下限收到 110dp（只防过窄，实际宽度由内容决定）。
+        // 系统 DropdownMenuItem 的硬性 minWidth 已随它一起换掉了。
+        modifier = Modifier.widthIn(min = 110.dp),
         // 【点按菜单 · 2026-10-10 宝嫌丑】圆角 + 半透明 + 细描边，整体收一圈
         shape = RoundedCornerShape(20.dp),
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
@@ -109,9 +112,9 @@ fun ChatMessageActionMenu(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
     ) {
         // 复制
-        DropdownMenuItem(
-            text = { Text(stringResource(R.string.copy), style = MaterialTheme.typography.bodyMedium) },
-            leadingIcon = { Icon(HugeIcons.Copy01, contentDescription = null) },
+        CompactMenuItem(
+            icon = HugeIcons.Copy01,
+            label = stringResource(R.string.copy),
             onClick = {
                 onDismissRequest()
                 context.copyMessageToClipboard(message)
@@ -119,9 +122,9 @@ fun ChatMessageActionMenu(
         )
 
         // 重新生成（用户消息先弹确认框：免得误点把自己的话重发一遍）
-        DropdownMenuItem(
-            text = { Text(stringResource(R.string.regenerate), style = MaterialTheme.typography.bodyMedium) },
-            leadingIcon = { Icon(HugeIcons.Refresh03, contentDescription = null) },
+        CompactMenuItem(
+            icon = HugeIcons.Refresh03,
+            label = stringResource(R.string.regenerate),
             onClick = {
                 onDismissRequest()
                 if (message.role == MessageRole.USER) {
@@ -139,14 +142,9 @@ fun ChatMessageActionMenu(
             val isAvailable by tts.isAvailable.collectAsState()
 
             // 朗读 / 停止朗读
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.tts), style = MaterialTheme.typography.bodyMedium) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = if (isSpeaking) HugeIcons.StopCircle else HugeIcons.VolumeHigh,
-                        contentDescription = null,
-                    )
-                },
+            CompactMenuItem(
+                icon = if (isSpeaking) HugeIcons.StopCircle else HugeIcons.VolumeHigh,
+                label = stringResource(R.string.tts),
                 enabled = isAvailable,
                 onClick = {
                     onDismissRequest()
@@ -166,9 +164,9 @@ fun ChatMessageActionMenu(
 
             // 翻译
             if (onTranslate != null) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.translate), style = MaterialTheme.typography.bodyMedium) },
-                    leadingIcon = { Icon(HugeIcons.Translate, contentDescription = null) },
+                CompactMenuItem(
+                    icon = HugeIcons.Translate,
+                    label = stringResource(R.string.translate),
                     onClick = {
                         onDismissRequest()
                         showTranslateDialog = true
@@ -179,9 +177,9 @@ fun ChatMessageActionMenu(
 
         // 编辑（只给用户消息）
         if (message.role == MessageRole.USER && onEdit != null) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.edit), style = MaterialTheme.typography.bodyMedium) },
-                leadingIcon = { Icon(HugeIcons.Edit01, contentDescription = null) },
+            CompactMenuItem(
+                icon = HugeIcons.Edit01,
+                label = stringResource(R.string.edit),
                 onClick = {
                     onDismissRequest()
                     onEdit()
@@ -190,9 +188,9 @@ fun ChatMessageActionMenu(
         }
 
         // 更多 → 原来的底部操作面板（那个不动）
-        DropdownMenuItem(
-            text = { Text(stringResource(R.string.more_options), style = MaterialTheme.typography.bodyMedium) },
-            leadingIcon = { Icon(HugeIcons.MoreVertical, contentDescription = null) },
+        CompactMenuItem(
+            icon = HugeIcons.MoreVertical,
+            label = stringResource(R.string.more_options),
             onClick = {
                 onDismissRequest()
                 onOpenActionSheet()
@@ -231,6 +229,43 @@ fun ChatMessageActionMenu(
         text = { Text(stringResource(R.string.regenerate_confirm_message)) }
     )
 }
+/**
+ * 【点按菜单 · 2026-10-10 宝要求再缩一半】自己拼的一行。
+ *
+ * 为什么不用系统的 DropdownMenuItem：它内部有硬性的 minWidth(约 280dp) / minHeight(约 48dp)，
+ * 字号和 contentPadding 都改了也压不下去 —— 想真正缩一半只能自己画。
+ * 这里每行高约 26dp（12dp 图标 + 5dp 上下内边距）。
+ */
+@Composable
+private fun CompactMenuItem(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val contentColor = LocalContentColor.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(13.dp),
+            tint = if (enabled) contentColor else contentColor.copy(alpha = 0.38f),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (enabled) contentColor else contentColor.copy(alpha = 0.38f),
+        )
+    }
+}
+
 @Composable
 fun ChatMessageActionsSheet(
     message: UIMessage,
