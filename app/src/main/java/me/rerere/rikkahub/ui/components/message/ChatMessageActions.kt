@@ -74,6 +74,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 @Composable
 fun ChatMessageActionMenu(
@@ -98,11 +100,17 @@ fun ChatMessageActionMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         offset = offset,
-        modifier = Modifier.widthIn(min = 180.dp),
+        modifier = Modifier.widthIn(min = 150.dp),
+        // 【点按菜单 · 2026-10-10 宝嫌丑】圆角 + 半透明 + 细描边，整体收一圈
+        shape = RoundedCornerShape(20.dp),
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        tonalElevation = 0.dp,
+        shadowElevation = 6.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
     ) {
         // 复制
         DropdownMenuItem(
-            text = { Text(stringResource(R.string.copy)) },
+            text = { Text(stringResource(R.string.copy), style = MaterialTheme.typography.bodyMedium) },
             leadingIcon = { Icon(HugeIcons.Copy01, contentDescription = null) },
             onClick = {
                 onDismissRequest()
@@ -112,7 +120,7 @@ fun ChatMessageActionMenu(
 
         // 重新生成（用户消息先弹确认框：免得误点把自己的话重发一遍）
         DropdownMenuItem(
-            text = { Text(stringResource(R.string.regenerate)) },
+            text = { Text(stringResource(R.string.regenerate), style = MaterialTheme.typography.bodyMedium) },
             leadingIcon = { Icon(HugeIcons.Refresh03, contentDescription = null) },
             onClick = {
                 onDismissRequest()
@@ -132,7 +140,7 @@ fun ChatMessageActionMenu(
 
             // 朗读 / 停止朗读
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.tts)) },
+                text = { Text(stringResource(R.string.tts), style = MaterialTheme.typography.bodyMedium) },
                 leadingIcon = {
                     Icon(
                         imageVector = if (isSpeaking) HugeIcons.StopCircle else HugeIcons.VolumeHigh,
@@ -159,7 +167,7 @@ fun ChatMessageActionMenu(
             // 翻译
             if (onTranslate != null) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.translate)) },
+                    text = { Text(stringResource(R.string.translate), style = MaterialTheme.typography.bodyMedium) },
                     leadingIcon = { Icon(HugeIcons.Translate, contentDescription = null) },
                     onClick = {
                         onDismissRequest()
@@ -172,7 +180,7 @@ fun ChatMessageActionMenu(
         // 编辑（只给用户消息）
         if (message.role == MessageRole.USER && onEdit != null) {
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.edit)) },
+                text = { Text(stringResource(R.string.edit), style = MaterialTheme.typography.bodyMedium) },
                 leadingIcon = { Icon(HugeIcons.Edit01, contentDescription = null) },
                 onClick = {
                     onDismissRequest()
@@ -183,7 +191,7 @@ fun ChatMessageActionMenu(
 
         // 更多 → 原来的底部操作面板（那个不动）
         DropdownMenuItem(
-            text = { Text(stringResource(R.string.more_options)) },
+            text = { Text(stringResource(R.string.more_options), style = MaterialTheme.typography.bodyMedium) },
             leadingIcon = { Icon(HugeIcons.MoreVertical, contentDescription = null) },
             onClick = {
                 onDismissRequest()

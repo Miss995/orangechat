@@ -205,8 +205,11 @@ fun ChatMessage(
     )
     var showActionsSheet by remember { mutableStateOf(false) }
     var showSelectCopySheet by remember { mutableStateOf(false) }
-    // 【点按菜单 · 2026-10-10】手指落在消息里的位置（px，相对整条消息）。null = 菜单关着。
-    var tapOffset by remember { mutableStateOf<Offset?>(null) }
+    // 【点按菜单 · 2026-10-10】"开合"和"位置"分成两个状态：
+    // 位置只在点按那一刻更新，关菜单时**不动** ——
+    // 否则 offset 归零，退场那一瞬菜单会跳回父元素底部（宝看到的"左上角闪一下"）。
+    var menuVisible by remember { mutableStateOf(false) }
+    var menuOffset by remember { mutableStateOf(DpOffset.Zero) }
     val navController = LocalNavController.current
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -230,7 +233,10 @@ fun ChatMessage(
                                 )
                                 val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
                                 if (up != null) {
-                                    tapOffset = down.position
+                                    menuOffset = with(density) {
+                                        DpOffset(down.position.x.toDp(), down.position.y.toDp())
+                                    }
+                                    menuVisible = true
                                 }
                             }
                         }
@@ -244,11 +250,9 @@ fun ChatMessage(
         // 放在 Column 第一个子项，Popup 的锚点就是这条消息的顶部，offset = 手指落点。
         ChatMessageActionMenu(
             message = message,
-            expanded = tapOffset != null,
-            offset = tapOffset?.let {
-                DpOffset(with(density) { it.x.toDp() }, with(density) { it.y.toDp() })
-            } ?: DpOffset.Zero,
-            onDismissRequest = { tapOffset = null },
+            expanded = menuVisible,
+            offset = menuOffset,
+            onDismissRequest = { menuVisible = false },
             onRegenerate = onRegenerate,
             onEdit = onEdit,
             onOpenActionSheet = { showActionsSheet = true },
