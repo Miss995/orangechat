@@ -24,6 +24,9 @@ class ChatInputState {
     var quotedMessageId by mutableStateOf<Uuid?>(null)
     // 【消息引用 2026-09-22】被引消息的摘要文本，只给输入框上方那条条显示用，不参与发送。
     var quotedPreview by mutableStateOf("")
+    // 【引用一句 2026-10-10】宝长按选中一段文字后引用的那句原文（原样存下来，那条消息后来被编辑也不怕）。
+    // null = 引用整条（走老路，靠 quotedMessageId 反查）；非 null = 只引用这一句。
+    var quotedText by mutableStateOf<String?>(null)
     private var editingParts: List<UIMessagePart>? = null
     private var editingAttachmentUrls: Set<String> = emptySet()
 
@@ -35,6 +38,7 @@ class ChatInputState {
         editingAttachmentUrls = emptySet()
         quotedMessageId = null
         quotedPreview = ""
+        quotedText = null
     }
 
     fun isEditing() = editingMessage != null

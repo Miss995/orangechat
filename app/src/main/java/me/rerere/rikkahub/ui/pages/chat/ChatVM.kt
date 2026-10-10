@@ -180,10 +180,16 @@ class ChatVM(
      * @param content 消息内容
      * @param answer 是否触发消息生成，如果为false，则仅添加消息到消息列表中
      */
-    fun handleMessageSend(content: List<UIMessagePart>, answer: Boolean = true, quotedMessageId: Uuid? = null) {
+    fun handleMessageSend(
+        content: List<UIMessagePart>,
+        answer: Boolean = true,
+        quotedMessageId: Uuid? = null,
+        // 【引用一句 2026-10-10】只引用了某一句时，那段原文（null = 引用整条）
+        quotedText: String? = null,
+    ) {
         if (content.isEmptyInputMessage()) return
 
-        chatService.sendMessage(_conversationId, content, answer, quotedMessageId)
+        chatService.sendMessage(_conversationId, content, answer, quotedMessageId, quotedText)
     }
 
 

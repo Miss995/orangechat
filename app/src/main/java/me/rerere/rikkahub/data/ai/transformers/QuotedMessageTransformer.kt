@@ -67,13 +67,18 @@ object QuotedMessageTransformer : InputMessageTransformer {
             val quoted = ctx.quotedLookup?.invoke(quotedId.toString())
                 ?: messages.firstOrNull { it.id == quotedId }
 
-            val quotedText = quoted?.parts
-                ?.filterIsInstance<UIMessagePart.Text>()
-                ?.joinToString("\n") { it.text }
-                ?.trim()
-                .orEmpty()
+            // 【引用一句 2026-10-10】宝只引用了某一句 → 直接用那句原文（不怕那条消息后来被编辑/删掉）
+            val picked = target.quotedText?.trim().orEmpty()
 
-            if (quoted == null || quotedText.isBlank()) {
+            val quotedText = picked.ifBlank {
+                quoted?.parts
+                    ?.filterIsInstance<UIMessagePart.Text>()
+                    ?.joinToString("\n") { it.text }
+                    ?.trim()
+                    .orEmpty()
+            }
+
+            if (quotedText.isBlank()) {
                 // 原文真找不到了：只有「最新那条」留一句话（让模型知道上下文缺了一块），
                 // 历史里的安静跳过 —— 否则每轮都在请求里插一串「原文已不在」的噪音。
                 if (i == indices.last()) {

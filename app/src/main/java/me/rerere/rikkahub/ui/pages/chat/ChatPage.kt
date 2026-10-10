@@ -359,6 +359,8 @@ private fun ChatPageContent(
                                 content = inputState.getContents(),
                                 // 【消息引用 2026-09-22】带上正在引用的那条（没引用就是 null）
                                 quotedMessageId = inputState.quotedMessageId,
+                                // 【引用一句 2026-10-10】只引用了其中一句时，那句原文
+                                quotedText = inputState.quotedText,
                             )
                             scope.launch {
                                 chatListState.requestScrollToItem(conversation.messageNodes.size.coerceAtMost(WINDOW_DISPLAY_SIZE) + 5)
@@ -398,6 +400,7 @@ private fun ChatPageContent(
                                 content = inputState.getContents(),
                                 answer = false,
                                 quotedMessageId = inputState.quotedMessageId,
+                                quotedText = inputState.quotedText,
                             )
                             scope.launch {
                                 chatListState.requestScrollToItem(conversation.messageNodes.size.coerceAtMost(WINDOW_DISPLAY_SIZE) + 5)
@@ -462,11 +465,19 @@ private fun ChatPageContent(
                 // 【消息引用 2026-09-22】长按选了"引用"→ 挂到输入框上方那条引用条
                 onQuote = {
                     inputState.quotedMessageId = it.id
+                    // 【引用一句 2026-10-10】这次引的是整条，把上一次可能留下的"那一句"清掉
+                    inputState.quotedText = null
                     inputState.quotedPreview = it.parts
                         .filterIsInstance<UIMessagePart.Text>()
                         .joinToString(" ") { p -> p.text }
                         .trim()
                         .take(120)
+                },
+                // 【引用一句 2026-10-10】长按选中一段文字 → 只引用这一句
+                onQuoteText = { msg, text ->
+                    inputState.quotedMessageId = msg.id
+                    inputState.quotedText = text
+                    inputState.quotedPreview = text.replace("\n", " ").trim().take(120)
                 },
                 onForkMessage = {
                     scope.launch {

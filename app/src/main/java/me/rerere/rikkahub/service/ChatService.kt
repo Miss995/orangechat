@@ -513,7 +513,15 @@ class ChatService(
 
     // ---- 发送消息 ----
 
-    fun sendMessage(conversationId: Uuid, content: List<UIMessagePart>, answer: Boolean = true, quotedMessageId: Uuid? = null) {
+    fun sendMessage(
+        conversationId: Uuid,
+        content: List<UIMessagePart>,
+        answer: Boolean = true,
+        quotedMessageId: Uuid? = null,
+        // 【引用一句 2026-10-10】宝只引用了那条消息里的某一句时，那段原文。
+        // null = 引用整条（照旧靠 quotedMessageId 反查全文）。
+        quotedText: String? = null,
+    ) {
         if (content.isEmptyInputMessage()) return
         val tSend = System.currentTimeMillis()
 
@@ -565,6 +573,8 @@ class ChatService(
                             parts = processedContent,
                             // 【消息引用 2026-09-22】这条在回复哪一条（宝长按消息选的"引用"）
                             quotedMessageId = quotedMessageId,
+                            // 【引用一句 2026-10-10】只引用了其中一句时，那句原文
+                            quotedText = quotedText,
                         )
                         // 【抓鬼 · 2026-10-06】一次点击被处理了几次，看这里。
                         // 两行同样的文本 = 客户端/入口把同一条送了两遍。

@@ -1118,6 +1118,7 @@ private fun TextInputRow(
                         modifier = Modifier.clickable {
                             state.quotedMessageId = null
                             state.quotedPreview = ""
+                            state.quotedText = null
                         }
                     )
                 }

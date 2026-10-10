@@ -155,6 +155,8 @@ fun ChatList(
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
     // 【消息引用 2026-09-22】长按消息 → 引用
     onQuote: (UIMessage) -> Unit = {},
+    // 【引用一句 2026-10-10】长按选中一段文字 → 只引用这一句（第二参 = 选中那段原文）
+    onQuoteText: ((UIMessage, String) -> Unit)? = null,
     // 【插话不落库 · 2026-10-02】排队中的插话（还没并进猫那条的，界面画"排队中"用）
     pendingInterjections: List<UIMessage> = emptyList(),
 ) {
@@ -200,6 +202,7 @@ fun ChatList(
                 onToggleFavorite = onToggleFavorite,
                 onConversationSystemPromptChange = onConversationSystemPromptChange,
                 onQuote = onQuote,
+                onQuoteText = onQuoteText,
                 jumpNodes = jumpNodes,
                 jumpTargetIndex = jumpTargetIndex,
                 onExitJump = onExitJump,
@@ -236,6 +239,8 @@ private fun ChatListNormal(
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
     // 【消息引用 2026-09-22】长按消息 → 引用
     onQuote: (UIMessage) -> Unit = {},
+    // 【引用一句 2026-10-10】长按选中一段文字 → 只引用这一句
+    onQuoteText: ((UIMessage, String) -> Unit)? = null,
     jumpNodes: List<MessageNode>? = null,
     jumpTargetIndex: Int? = null,
     onExitJump: () -> Unit = {},
@@ -512,6 +517,12 @@ private fun ChatListNormal(
                             onQuote = {
                                 onQuote(node.currentMessage)
                             },
+                            // 【引用一句 2026-10-10】选中一段文字后点"引用这句"
+                            onQuoteText = { text ->
+                                onQuoteText?.invoke(node.currentMessage, text)
+                            },
+                            // 【引用一句 2026-10-10】只引用了某一句时，那句原文（画小条用）
+                            quotedText = node.currentMessage.quotedText,
                             // 【消息引用 2026-09-22】反查被引的那条（id 打不到就为 null，不显示小条）
                             quotedMessage = node.currentMessage.quotedMessageId?.let { qid ->
                                 conversation.messageNodes
