@@ -881,7 +881,8 @@ fun ChatInput(
                                 } else {
                                     TextInputRow(
                                         state = state,
-                                        onSendMessage = { sendMessage() }
+                                        onSendMessage = { sendMessage() },
+                                        onUsePickedQuote = onUsePickedQuote
                                     )
                                 }
                             }
@@ -1058,6 +1059,8 @@ private fun ActionIconButton(
 private fun TextInputRow(
     state: ChatInputState,
     onSendMessage: () -> Unit,
+    // 【引用一句 2026-10-10】选中提示条上点「引用这句」（要传下来：这个函数有自己的参数列表）
+    onUsePickedQuote: (() -> Unit)? = null,
 ) {
     val displaySettings = LocalDisplaySettings.current
     val filesManager: FilesManager = koinInject()
