@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -26,10 +26,10 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberSliderState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -99,10 +99,17 @@ fun ReasoningPicker(
     onUpdateReasoningLevel: (ReasoningLevel) -> Unit,
 ) {
     val currentIndex = levels.indexOf(reasoningLevel).coerceAtLeast(0)
-    var sliderValue by remember { mutableFloatStateOf(currentIndex.toFloat()) }
+    // material3 1.5 起 Slider 的自定义 thumb/track 必须走 SliderState
+    val sliderState = rememberSliderState(
+        value = currentIndex.toFloat(),
+        steps = levelCount - 2,
+        trackRange = 0f..(levelCount - 1).toFloat(),
+    )
 
     LaunchedEffect(currentIndex) {
-        sliderValue = currentIndex.toFloat()
+        if (sliderState.value != currentIndex.toFloat()) {
+            sliderState.value = currentIndex.toFloat()
+        }
     }
 
     ModalBottomSheet(
@@ -167,15 +174,13 @@ fun ReasoningPicker(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Slider(
-                    value = sliderValue,
-                    onValueChange = { sliderValue = it },
+                    state = sliderState,
+                    onValueChange = { sliderState.value = it },
                     onValueChangeFinished = {
-                        val snappedIndex = sliderValue.roundToInt().coerceIn(0, levelCount - 1)
-                        sliderValue = snappedIndex.toFloat()
+                        val snappedIndex = sliderState.value.roundToInt().coerceIn(0, levelCount - 1)
+                        sliderState.value = snappedIndex.toFloat()
                         onUpdateReasoningLevel(levels[snappedIndex])
                     },
-                    valueRange = 0f..(levelCount - 1).toFloat(),
-                    steps = levelCount - 2,
                     modifier = Modifier.fillMaxWidth(),
                     thumb = {
                         Box(
@@ -193,9 +198,9 @@ fun ReasoningPicker(
                             )
                         }
                     },
-                    track = { sliderState ->
+                    track = { state ->
                         SliderDefaults.Track(
-                            sliderState = sliderState,
+                            sliderState = state,
                             drawStopIndicator = null,
                             thumbTrackGapSize = 0.dp,
                         )
@@ -205,7 +210,7 @@ fun ReasoningPicker(
                 ReasoningScale(
                     selectedLevel = reasoningLevel,
                     onSelect = { level ->
-                        sliderValue = levels.indexOf(level).toFloat()
+                        sliderState.value = levels.indexOf(level).toFloat()
                         onUpdateReasoningLevel(level)
                     }
                 )
