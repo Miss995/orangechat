@@ -134,6 +134,13 @@ import kotlin.time.Duration.Companion.milliseconds
 import androidx.compose.foundation.text.selection.rememberSelectionState
 import androidx.compose.ui.geometry.Rect
 import kotlin.uuid.Uuid
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.platform.LocalDensity
  
 @Composable
 fun ChatMessage(
@@ -198,17 +205,57 @@ fun ChatMessage(
     )
     var showActionsSheet by remember { mutableStateOf(false) }
     var showSelectCopySheet by remember { mutableStateOf(false) }
+    // 【点按菜单 · 2026-10-10】手指落在消息里的位置（px，相对整条消息）。null = 菜单关着。
+    var tapOffset by remember { mutableStateOf<Offset?>(null) }
     val navController = LocalNavController.current
     val context = LocalContext.current
+    val density = LocalDensity.current
     val colorScheme = MaterialTheme.colorScheme
     Column(
         modifier = modifier
             .fillMaxWidth()
             // 【插话贴猫 · 2026-09-30】插话往里缩一点，视觉上贴着上面那条猫消息
-            .then(if (isInterjection) Modifier.padding(start = 40.dp) else Modifier),
+            .then(if (isInterjection) Modifier.padding(start = 40.dp) else Modifier)
+            // 【点按菜单 · 2026-10-10】点一下消息 → 记下手指落点，弹出操作菜单。
+            // 用 Initial pass 只观察不消费，"长按选文字"照常好使。
+            // 生成中 / 插话不挂（跟原来那排按钮的显示条件一致）。
+            .then(
+                if (!loading && !isInterjection) {
+                    Modifier.pointerInput(message.id) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val down = awaitFirstDown(
+                                    requireUnconsumed = false,
+                                    pass = PointerEventPass.Initial
+                                )
+                                val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                                if (up != null) {
+                                    tapOffset = down.position
+                                }
+                            }
+                        }
+                    }
+                } else Modifier
+            ),
         horizontalAlignment = if (!isInterjection && message.role == MessageRole.USER) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
+        // 【点按菜单 · 2026-10-10】操作菜单（原来是消息下面那排小图标）。
+        // 放在 Column 第一个子项，Popup 的锚点就是这条消息的顶部，offset = 手指落点。
+        ChatMessageActionMenu(
+            message = message,
+            expanded = tapOffset != null,
+            offset = tapOffset?.let {
+                DpOffset(with(density) { it.x.toDp() }, with(density) { it.y.toDp() })
+            } ?: DpOffset.Zero,
+            onDismissRequest = { tapOffset = null },
+            onRegenerate = onRegenerate,
+            onEdit = onEdit,
+            onOpenActionSheet = { showActionsSheet = true },
+            onTranslate = onTranslate,
+            onClearTranslation = onClearTranslation,
+        )
+
         // 插话不画头像行（头像跟方向一样会"跳"，跟工具结果看齐）
         if (!isInterjection && !message.parts.isEmptyUIMessage()) {
             Row(
@@ -242,7 +289,9 @@ fun ChatMessage(
                 model = model,
                 onToolApproval = onToolApproval,
                 onToolAnswer = onToolAnswer,
-                onUserMessageClick = if (message.role == MessageRole.USER) onEdit else null,
+                // 【点按菜单 · 2026-10-10】原来点用户消息 = 编辑，现在点按统一是"弹操作菜单"，
+                // 编辑挪进菜单里（只给用户消息）。
+                onUserMessageClick = null,
                 onQuoteText = onQuoteText,
                 interjections = interjections,
             )
@@ -278,33 +327,8 @@ fun ChatMessage(
             )
         }
  
-        val showActions = if (lastMessage) {
-            !loading
-        } else {
-            message.parts.isEmptyUIMessage().not()
-        }
- 
-        AnimatedVisibility(
-            visible = showActions,
-            enter = slideInVertically { it / 2 } + fadeIn(),
-            exit = slideOutVertically { it / 2 } + fadeOut()
-        ) {
-            Column(
-                modifier = Modifier.animateContentSize()
-            ) {
-                ChatMessageActionButtons(
-                    message = message,
-                    onRegenerate = onRegenerate,
-                    node = node,
-                    onUpdate = onUpdate,
-                    onOpenActionSheet = {
-                        showActionsSheet = true
-                    },
-                    onTranslate = onTranslate,
-                    onClearTranslation = onClearTranslation
-                )
-            }
-        }
+        // 【点按菜单 · 2026-10-10】原来这里有一排小图标（复制/重新生成/朗读/翻译/更多/版本选择器），
+        // 已整体撤掉，功能搬进上面的 ChatMessageActionMenu。
  
         ProvideTextStyle(textStyle) {
             ChatMessageNerdLine(message = message)

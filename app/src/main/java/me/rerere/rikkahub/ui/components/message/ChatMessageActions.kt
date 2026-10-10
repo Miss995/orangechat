@@ -70,57 +70,58 @@ import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.utils.extractQuotedContentAsText
 import me.rerere.rikkahub.utils.toLocalString
 import java.util.Locale
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.unit.DpOffset
 
 @Composable
-fun ColumnScope.ChatMessageActionButtons(
+fun ChatMessageActionMenu(
     message: UIMessage,
-    node: MessageNode,
-    onUpdate: (MessageNode) -> Unit,
+    expanded: Boolean,
+    offset: DpOffset,
+    onDismissRequest: () -> Unit,
     onRegenerate: () -> Unit,
     onOpenActionSheet: () -> Unit,
+    // 【点按菜单 · 2026-10-10】编辑只给用户消息（宝说她从没用过 AI 那条的编辑）
+    onEdit: (() -> Unit)? = null,
     onTranslate: ((UIMessage, Locale) -> Unit)? = null,
     onClearTranslation: (UIMessage) -> Unit = {},
 ) {
     val context = LocalContext.current
-    var isPendingDelete by remember { mutableStateOf(false) }
     var showTranslateDialog by remember { mutableStateOf(false) }
     var showRegenerateConfirm by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isPendingDelete) {
-        if (isPendingDelete) {
-            delay(3000) // 3秒后自动取消
-            isPendingDelete = false
-        }
-    }
-
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        itemVerticalAlignment = Alignment.CenterVertically,
+    // 【点按菜单 · 2026-10-10】原来是消息下面那排小图标，改成浮在手指旁边的菜单。
+    // offset = 手指落点（相对整条消息），由 ChatMessage 那边的 pointerInput 量出来。
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        offset = offset,
+        modifier = Modifier.widthIn(min = 180.dp),
     ) {
-        Icon(
-            imageVector = HugeIcons.Copy01,
-            contentDescription = stringResource(R.string.copy),
-            modifier = Modifier
-                .clip(CircleShape)
-                .clickable { context.copyMessageToClipboard(message) }
-                .padding(8.dp)
-                .size(16.dp)
+        // 复制
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.copy)) },
+            leadingIcon = { Icon(HugeIcons.Copy01, contentDescription = null) },
+            onClick = {
+                onDismissRequest()
+                context.copyMessageToClipboard(message)
+            }
         )
 
-        Icon(
-            imageVector = HugeIcons.Refresh03,
-            contentDescription = stringResource(R.string.regenerate),
-            modifier = Modifier
-                .clip(CircleShape)
-                .clickable {
-                    if (message.role == MessageRole.USER) {
-                        showRegenerateConfirm = true
-                    } else {
-                        onRegenerate()
-                    }
+        // 重新生成（用户消息先弹确认框：免得误点把自己的话重发一遍）
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.regenerate)) },
+            leadingIcon = { Icon(HugeIcons.Refresh03, contentDescription = null) },
+            onClick = {
+                onDismissRequest()
+                if (message.role == MessageRole.USER) {
+                    showRegenerateConfirm = true
+                } else {
+                    onRegenerate()
                 }
-                .padding(8.dp)
-                .size(16.dp)
+            }
         )
 
         if (message.role == MessageRole.ASSISTANT) {
@@ -128,73 +129,66 @@ fun ColumnScope.ChatMessageActionButtons(
             val displaySettings = LocalDisplaySettings.current
             val isSpeaking by tts.isSpeaking.collectAsState()
             val isAvailable by tts.isAvailable.collectAsState()
-            Icon(
-                imageVector = if (isSpeaking) HugeIcons.StopCircle else HugeIcons.VolumeHigh,
-                contentDescription = stringResource(R.string.tts),
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(
-                        enabled = isAvailable,
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = LocalIndication.current,
-                        onClick = {
-                            if (!isSpeaking) {
-                                val text = message.toText()
-                                val textToSpeak = if (displaySettings.ttsOnlyReadQuoted) {
-                                    text.extractQuotedContentAsText() ?: text
-                                } else {
-                                    text
-                                }
-                                tts.speak(textToSpeak)
-                            } else {
-                                tts.stop()
-                            }
-                        }
+
+            // 朗读 / 停止朗读
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.tts)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (isSpeaking) HugeIcons.StopCircle else HugeIcons.VolumeHigh,
+                        contentDescription = null,
                     )
-                    .padding(8.dp)
-                    .size(16.dp),
-                tint = if (isAvailable) LocalContentColor.current else LocalContentColor.current.copy(alpha = 0.38f)
+                },
+                enabled = isAvailable,
+                onClick = {
+                    onDismissRequest()
+                    if (!isSpeaking) {
+                        val text = message.toText()
+                        val textToSpeak = if (displaySettings.ttsOnlyReadQuoted) {
+                            text.extractQuotedContentAsText() ?: text
+                        } else {
+                            text
+                        }
+                        tts.speak(textToSpeak)
+                    } else {
+                        tts.stop()
+                    }
+                }
             )
 
-            // Translation button
+            // 翻译
             if (onTranslate != null) {
-                Icon(
-                    imageVector = HugeIcons.Translate,
-                    contentDescription = stringResource(R.string.translate),
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = LocalIndication.current,
-                            onClick = {
-                                showTranslateDialog = true
-                            }
-                        )
-                        .padding(8.dp)
-                        .size(16.dp)
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.translate)) },
+                    leadingIcon = { Icon(HugeIcons.Translate, contentDescription = null) },
+                    onClick = {
+                        onDismissRequest()
+                        showTranslateDialog = true
+                    }
                 )
             }
         }
 
-        Icon(
-            imageVector = HugeIcons.MoreVertical,
-            contentDescription = stringResource(R.string.more_options),
-            modifier = Modifier
-                .clip(CircleShape)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = LocalIndication.current,
-                    onClick = {
-                        onOpenActionSheet()
-                    }
-                )
-                .padding(8.dp)
-                .size(16.dp)
-        )
+        // 编辑（只给用户消息）
+        if (message.role == MessageRole.USER && onEdit != null) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.edit)) },
+                leadingIcon = { Icon(HugeIcons.Edit01, contentDescription = null) },
+                onClick = {
+                    onDismissRequest()
+                    onEdit()
+                }
+            )
+        }
 
-        ChatMessageBranchSelector(
-            node = node,
-            onUpdate = onUpdate,
+        // 更多 → 原来的底部操作面板（那个不动）
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.more_options)) },
+            leadingIcon = { Icon(HugeIcons.MoreVertical, contentDescription = null) },
+            onClick = {
+                onDismissRequest()
+                onOpenActionSheet()
+            }
         )
     }
 
@@ -229,7 +223,6 @@ fun ColumnScope.ChatMessageActionButtons(
         text = { Text(stringResource(R.string.regenerate_confirm_message)) }
     )
 }
-
 @Composable
 fun ChatMessageActionsSheet(
     message: UIMessage,
