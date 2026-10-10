@@ -1392,6 +1392,16 @@ class ChatService(
                 hasPendingInterjections = {
                     pendingInterjections[conversationId]?.isNotEmpty() == true
                 },
+                // 【消息引用修复 · 2026-10-10 宝发现】被引原文从「整个会话」里找，不只在本次请求的那几十条里找。
+                // 病根：QuotedMessageTransformer 原来只在 messages 里找，而会话有几百条、请求只有最近 30 条
+                // → 被引那条一旦滚出请求范围，引用就哑了。（09-22 从 ChatService 挪进 transformer 时缩的范围）
+                // 只用当前版本（currentMessage），跟界面上画引用小条用的是同一条。
+                quotedLookup = { id ->
+                    conversation.messageNodes
+                        .asSequence()
+                        .map { it.currentMessage }
+                        .firstOrNull { it.id.toString() == id }
+                },
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {
