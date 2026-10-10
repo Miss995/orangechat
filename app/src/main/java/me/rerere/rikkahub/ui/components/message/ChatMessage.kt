@@ -682,10 +682,18 @@ private fun MessagePartsBlock(
                                                         requireUnconsumed = false,
                                                         pass = PointerEventPass.Initial
                                                     )
+                                                    // 【长按不弹菜单 · 2026-10-11 宝报：长按选字抬手时跟"引用"打架】
+                                                    // 长按选文字抬手那一下也走"按下→抬起"，不掐时长就会误弹菜单。
+                                                    // 卡 500ms：单击在 200ms 内、长按选择在 500ms 以上，分得干净。
+                                                    val downAt = System.currentTimeMillis()
                                                     val up = waitForUpOrCancellation(
                                                         pass = PointerEventPass.Initial
                                                     )
-                                                    if (up != null) onBodyTap(down.position)
+                                                    if (up != null &&
+                                                        System.currentTimeMillis() - downAt < 500L
+                                                    ) {
+                                                        onBodyTap(down.position)
+                                                    }
                                                 }
                                             }
                                         }
