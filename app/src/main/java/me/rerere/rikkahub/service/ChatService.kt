@@ -257,14 +257,6 @@ class ChatService(
     private val pendingInterjections =
         java.util.concurrent.ConcurrentHashMap<Uuid, MutableList<UIMessage>>()
 
-    // 【插话搭车记账 · 2026-10-01】这一回合里真的被搭上车的插话消息 id。
-    // 提供方取队列时顺手写进来；收尾合并时读它。
-    // 为什么要这本账：搭车那一刻打的 metadata 记号只存在于"请求副本"里，
-    // 落库的会话上没有，合并按 metadata 去找永远找不到人（宝实测：折叠条一刷新就散、
-    // 日志里从来没有 merged）。账在本侧记，落库会话也认。
-    private val rodeInterjectIds =
-        java.util.concurrent.ConcurrentHashMap<Uuid, MutableList<String>>()
-
     // 【插话不落库 · 2026-10-02 宝定的根治】收尾时要挂进猫那条的插话（入队即记，挂完清）。
     // 跟 pendingInterjections 的区别：那本是"搭车队列"（被取走就清，用来判断要不要接力），
     // 这本是"收尾要挂的东西"——不管搭没搭上车都要挂，接力那条也记在这里。
@@ -835,11 +827,10 @@ class ChatService(
                     // 队列还在 = 这一轮没有第二次请求，宝那句没人接 → 兜底起一轮
                     AppLogBuffer.log(TAG, "interject: no ride happened, relay generation conv=$conversationId")
                     // 【接力修 · 2026-10-04 宝实测】把拿出来的插话放回队列，再起接力那一轮。
-                    // 原来只用不还，带出两个毛病：
-                    //   ① 接力那轮的请求里没有宝的话（模型压根看不到她说了什么）
-                    //   ② 取走时才记的"搭车账"（rodeInterjectIds）是空的 → 收尾找不到锚点，
-                    //      插话被兜底规则扔到最后一条末尾
-                    // 放回去之后，接力这轮会像平常一样把它取走并进请求、顺手记账——一次修好两个。
+                    // 原来只用不还，带出的毛病：接力那轮的请求里没有宝的话（模型压根看不到她说了什么）。
+                    // 放回去之后，接力这轮会像平常一样把它取走并进请求——修好。
+                    //（旧注释还记过一条"收尾找不到锚点"，那条后来由 interjectedMessages
+                    //  入队即记根治了，跟这本被删掉的搭车账无关。）
                     pendingInterjections.computeIfAbsent(conversationId) {
                         java.util.Collections.synchronizedList(mutableListOf<UIMessage>())
                     }.addAll(leftover!!)
@@ -1383,14 +1374,9 @@ class ChatService(
                 // 有就并进去（宝的话跟着猫的下一口气走），取完队列空 = 兜底接力不会再补一轮。
                 pendingInterjections = {
                     val taken = pendingInterjections.remove(conversationId) ?: emptyList()
-                    // 【搭车记账 · 2026-10-01】取走的同时记一笔：这些 id 真的被并进去了。
-                    // 收尾合并时不靠 metadata 猜，直接读这本账。
                     if (taken.isNotEmpty()) {
                         // 【本轮有插话 · 2026-10-08】这一轮真取过她的话 → 记下来给 collapse 看
                         interjectRounds.add(conversationId)
-                        rodeInterjectIds.computeIfAbsent(conversationId) {
-                            java.util.Collections.synchronizedList(mutableListOf<String>())
-                        }.addAll(taken.map { it.id.toString() })
                     }
                     // 【插话不落库 · 2026-10-02】队列被取走＝这些已搭上车，界面上的"排队中"该撤了
                     //（接下来由猫那条消息里的折叠条接管）
