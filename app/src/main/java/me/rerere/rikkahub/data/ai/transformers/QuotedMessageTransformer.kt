@@ -91,7 +91,8 @@ object QuotedMessageTransformer : InputMessageTransformer {
                 continue
             }
 
-            val who = if (quoted.role == MessageRole.USER) "宝" else "橘仔"
+            // 【引用一句 2026-10-10】引用"某一句"时可能查不到来源消息（quoted 为 null），走安全调用
+            val who = if (quoted?.role == MessageRole.USER) "宝" else "橘仔"
             result[i] = target.copy(
                 parts = listOf(
                     UIMessagePart.Text(

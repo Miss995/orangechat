@@ -253,6 +253,7 @@ fun ChatMessage(
                 onToolApproval = onToolApproval,
                 onToolAnswer = onToolAnswer,
                 onUserMessageClick = if (message.role == MessageRole.USER) onEdit else null,
+                onQuoteText = onQuoteText,
                 interjections = interjections,
             )
  
@@ -484,6 +485,8 @@ private fun MessagePartsBlock(
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onUserMessageClick: (() -> Unit)? = null,
+    // 【引用一句 2026-10-10】长按选中一段文字 → 引用选中那句（上层负责挂进输入框）
+    onQuoteText: ((String) -> Unit)? = null,
     // 【插话定位 · 2026-09-30】插话锚点表（id → 那条消息）。渲染到带锚点的 part 之后
     // 就把宝的话画在正文中间，由上层 ChatList 收集好传进来。
     interjections: Map<String, UIMessage> = emptyMap(),
