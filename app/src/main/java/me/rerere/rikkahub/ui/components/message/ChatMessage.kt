@@ -232,15 +232,6 @@ fun ChatMessage(
                 )
             }
         }
-        // 【消息引用 2026-09-22】被引的那一条，画成小条挂在正文上方（点在它上面能跳回去）
-        // 【引用一句 2026-10-10】只引用了某一句时，小条上显示那句
-        if (quotedMessage != null) {
-            QuotedMessageChip(
-                quoted = quotedMessage,
-                pickedText = quotedText,
-                onClick = onQuotedClick,
-            )
-        }
         ProvideTextStyle(textStyle) {
             MessagePartsBlock(
                 assistant = assistant,
@@ -262,6 +253,17 @@ fun ChatMessage(
                     onClickCitation = {}
                 )
             }
+        }
+
+        // 【引用挪位 · 2026-10-10 宝要求】小条从"正文上方"挪到"正文下方"：
+        // 橘仔引用宝是生成中途才决定的（先调 quote_message、接着写正文），
+        // 画在最上面看着像"这条一开头就在引用"，不对。挪到正文结束之后。
+        if (quotedMessage != null) {
+            QuotedMessageChip(
+                quoted = quotedMessage,
+                pickedText = quotedText,
+                onClick = onQuotedClick,
+            )
         }
  
         // 【2026-09-24 召回留痕】用户消息下面一行小字：本次门控 / 拆词 / 命中数。
