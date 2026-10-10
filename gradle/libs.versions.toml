@@ -14,7 +14,14 @@ commons-text = "1.15.0"
 lifecycleRuntimeKtx = "2.10.0"
 activityCompose = "1.13.0"
 composeBom = "2026.09.00"
-material3 = "1.5.0-alpha19"
+# ⚠️ material3 必须跟 composeBom 同批次升，否则运行时闪退。
+# 2026-10-10 事故复盘：BOM 升到 2026.09.00 时 material3 还锁在 1.5.0-alpha19，
+# 而 alpha19 的 AAR 是对着 foundation 1.12.0-alpha02 编译的；BOM 把 foundation
+# 拉到 1.12.1 后口径不一致 → CustomStyle.applyStyle → AbstractMethodError
+# （ResolvedStyle.build，界面首次构建即崩）。
+# 上游 RikkaHub 同款组合：composeBom 2026.09.00 + material3 1.5.0-alpha29
+# （alpha29 配套 foundation 1.13.0-alpha01，Gradle 会自动一起拉齐）。
+material3 = "1.5.0-alpha29"
 media3 = "1.10.1"
 metadataExtractor = "2.20.0"
 nav2 = "2.9.8"
