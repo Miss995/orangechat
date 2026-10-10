@@ -141,6 +141,8 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
  
 @Composable
 fun ChatMessage(
@@ -210,6 +212,10 @@ fun ChatMessage(
     // 否则 offset 归零，退场那一瞬菜单会跳回父元素底部（宝看到的"左上角闪一下"）。
     var menuVisible by remember { mutableStateOf(false) }
     var menuOffset by remember { mutableStateOf(DpOffset.Zero) }
+    // 【点按菜单 · 只有正文响应】手势挂在正文块上，拿到的是"相对正文"的局部坐标；
+    // 而菜单锚点在这条 Column 上 —— 用两边的窗口坐标相减换算。
+    var colTopLeft by remember { mutableStateOf(Offset.Zero) }
+    var bodyTopLeft by remember { mutableStateOf(Offset.Zero) }
     val navController = LocalNavController.current
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -219,30 +225,12 @@ fun ChatMessage(
             .fillMaxWidth()
             // 【插话贴猫 · 2026-09-30】插话往里缩一点，视觉上贴着上面那条猫消息
             .then(if (isInterjection) Modifier.padding(start = 40.dp) else Modifier)
-            // 【点按菜单 · 2026-10-10】点一下消息 → 记下手指落点，弹出操作菜单。
-            // 用 Initial pass 只观察不消费，"长按选文字"照常好使。
-            // 生成中 / 插话不挂（跟原来那排按钮的显示条件一致）。
-            .then(
-                if (!loading && !isInterjection) {
-                    Modifier.pointerInput(message.id) {
-                        awaitPointerEventScope {
-                            while (true) {
-                                val down = awaitFirstDown(
-                                    requireUnconsumed = false,
-                                    pass = PointerEventPass.Initial
-                                )
-                                val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
-                                if (up != null) {
-                                    menuOffset = with(density) {
-                                        DpOffset(down.position.x.toDp(), down.position.y.toDp())
-                                    }
-                                    menuVisible = true
-                                }
-                            }
-                        }
-                    }
-                } else Modifier
-            ),
+            // 【点按菜单 · 2026-10-10】只量自己的窗口位置，给"正文局部坐标"做换算基准。
+            // 手势本身挪到正文块上了（见 MessagePartsBlock 的 onBodyTap）——
+            // 点思考链/工具块不再弹菜单。
+            .onGloballyPositioned { coords ->
+                colTopLeft = coords.positionInWindow()
+            },
         horizontalAlignment = if (!isInterjection && message.role == MessageRole.USER) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -296,6 +284,16 @@ fun ChatMessage(
                 // 【点按菜单 · 2026-10-10】原来点用户消息 = 编辑，现在点按统一是"弹操作菜单"，
                 // 编辑挪进菜单里（只给用户消息）。
                 onUserMessageClick = null,
+                // 【点按菜单 · 2026-10-10】只有正文响应点击：局部坐标 + Column 的窗口坐标换算
+                onBodyTap = if (!loading && !isInterjection) {
+                    { localOffset ->
+                        val abs = localOffset + bodyTopLeft
+                        val rel = abs - colTopLeft
+                        menuOffset = with(density) { DpOffset(rel.x.toDp(), rel.y.toDp()) }
+                        menuVisible = true
+                    }
+                } else null,
+                onBodyPlaced = { bodyTopLeft = it },
                 onQuoteText = onQuoteText,
                 interjections = interjections,
             )
@@ -514,6 +512,9 @@ private fun MessagePartsBlock(
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onUserMessageClick: (() -> Unit)? = null,
+    // 【点按菜单 · 2026-10-10】只有正文响应点击：局部坐标回调 + 正文块窗口位置上报
+    onBodyTap: ((Offset) -> Unit)? = null,
+    onBodyPlaced: ((Offset) -> Unit)? = null,
     // 【引用一句 2026-10-10】长按选中一段文字 → 引用选中那句（上层负责挂进输入框）
     onQuoteText: ((String) -> Unit)? = null,
     // 【插话定位 · 2026-09-30】插话锚点表（id → 那条消息）。渲染到带锚点的 part 之后
@@ -664,7 +665,33 @@ private fun MessagePartsBlock(
                         // 确保最后一批 parts（含正文）一定会被渲染——不依赖流式增量触发的最后一次重组
                         // （思考链渲染间隙里完成的正文不再静默消失，memory 91 的渲染竞态修复）。
                         key(loading) {
-                        SelectableWithQuote(onTextPicked = onQuoteText) {
+                        // 【点按菜单 · 2026-10-10】手势只挂在正文这一块上 —— 点思考链、点工具块都不再弹菜单。
+                        // Initial pass 只观察不消费，"长按选文字"照常。
+                        SelectableWithQuote(
+                            onTextPicked = onQuoteText,
+                            modifier = Modifier
+                                .onGloballyPositioned { coords ->
+                                    onBodyPlaced?.invoke(coords.positionInWindow())
+                                }
+                                .then(
+                                    if (onBodyTap != null) {
+                                        Modifier.pointerInput("bodyTap") {
+                                            awaitPointerEventScope {
+                                                while (true) {
+                                                    val down = awaitFirstDown(
+                                                        requireUnconsumed = false,
+                                                        pass = PointerEventPass.Initial
+                                                    )
+                                                    val up = waitForUpOrCancellation(
+                                                        pass = PointerEventPass.Initial
+                                                    )
+                                                    if (up != null) onBodyTap(down.position)
+                                                }
+                                            }
+                                        }
+                                    } else Modifier
+                                )
+                        ) {
                             Column {
                                 // 生成中（loading=true 且是 AI 消息）：用纯文本渲染，跳过 Markdown 解析/代码高亮/正则替换，
                                 // 避免流式更新时（100ms 一次）对超长消息全量重解析导致主线程卡顿（整页滑动掉帧）。
@@ -1382,13 +1409,14 @@ internal fun VoiceMessageBubble(
 @Composable
 private fun SelectableWithQuote(
     onTextPicked: ((String) -> Unit)?,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     if (onTextPicked == null) {
-        SelectionContainer { content() }
+        SelectionContainer(modifier = modifier) { content() }
     } else {
         val selectionState = rememberSelectionState()
-        SelectionContainer(state = selectionState) { content() }
+        SelectionContainer(state = selectionState, modifier = modifier) { content() }
 
         // rememberUpdatedState 兜一下：LaunchedEffect 只在 picked 变化时重启，
         // 若直接捕获 onTextPicked，重组后换了新 lambda 它也还拿着旧那个。
