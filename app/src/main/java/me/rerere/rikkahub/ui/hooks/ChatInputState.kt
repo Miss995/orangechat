@@ -27,6 +27,11 @@ class ChatInputState {
     // 【引用一句 2026-10-10】宝长按选中一段文字后引用的那句原文（原样存下来，那条消息后来被编辑也不怕）。
     // null = 引用整条（走老路，靠 quotedMessageId 反查）；非 null = 只引用这一句。
     var quotedText by mutableStateOf<String?>(null)
+    // 【引用一句 2026-10-10】刚选中、还没点"引用这句"的一段文字（输入框上方那条提示用）。
+    // 有它 = 提示条出现；点确认才搬进 quotedText/quotedMessageId，取消就清掉。
+    var pickedText by mutableStateOf<String?>(null)
+    // 上面那段文字属于哪条消息（点了才真引用）
+    var pickedMessageId by mutableStateOf<Uuid?>(null)
     private var editingParts: List<UIMessagePart>? = null
     private var editingAttachmentUrls: Set<String> = emptySet()
 
@@ -39,6 +44,8 @@ class ChatInputState {
         quotedMessageId = null
         quotedPreview = ""
         quotedText = null
+        pickedText = null
+        pickedMessageId = null
     }
 
     fun isEditing() = editingMessage != null

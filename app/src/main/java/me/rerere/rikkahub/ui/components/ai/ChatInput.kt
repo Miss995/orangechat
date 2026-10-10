@@ -193,6 +193,8 @@ fun ChatInput(
     onOpenTranslator: () -> Unit = {},
     onOpenImageGen: () -> Unit = {},
     onOpenMiniApps: () -> Unit = {},
+    // 【引用一句 2026-10-10】选中提示条上点「引用这句」
+    onUsePickedQuote: (() -> Unit)? = null,
 ) {
     val toaster = LocalToaster.current
     val assistant = settings.getCurrentAssistant()
@@ -1119,6 +1121,47 @@ private fun TextInputRow(
                             state.quotedMessageId = null
                             state.quotedPreview = ""
                             state.quotedText = null
+                        }
+                    )
+                }
+            }
+        }
+
+        // 【引用一句 2026-10-10】选中一段文字 → 冒一条提示，点了才真引用。
+        // 为什么不直接在系统工具条上加一项：Compose 1.12 上 LocalTextToolbar 的覆盖不生效
+        //（Google issue 447192728 / 184950231），详见 ChatMessage.kt 里 SelectableWithQuote 的注释。
+        // 所以系统工具条原样不动，猫在旁边自己冒一条。
+        state.pickedText?.let { picked ->
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "选中了 " + picked.length + " 个字：" + picked.replace("\n", " "),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    if (onUsePickedQuote != null) {
+                        TextButton(onClick = onUsePickedQuote) {
+                            Text("引用这句", style = MaterialTheme.typography.labelMedium)
+                        }
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Icon(
+                        imageVector = HugeIcons.Cancel01,
+                        contentDescription = "取消",
+                        modifier = Modifier.clickable {
+                            state.pickedText = null
+                            state.pickedMessageId = null
                         }
                     )
                 }

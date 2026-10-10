@@ -330,6 +330,18 @@ private fun ChatPageContent(
                     onOpenMiniApps = {
                         navController.navigate(Screen.MiniAppManager)
                     },
+                    // 【引用一句 2026-10-10】选中提示条上点「引用这句」→ 这时候才真的挂进引用条
+                    onUsePickedQuote = {
+                        val text = inputState.pickedText
+                        val mid = inputState.pickedMessageId
+                        if (text != null && mid != null) {
+                            inputState.quotedMessageId = mid
+                            inputState.quotedText = text
+                            inputState.quotedPreview = text.replace("\n", " ").trim().take(120)
+                        }
+                        inputState.pickedText = null
+                        inputState.pickedMessageId = null
+                    },
                     onUpdateSettings = {
                         vm.updateSettings(it)
                     },
@@ -473,11 +485,16 @@ private fun ChatPageContent(
                         .trim()
                         .take(120)
                 },
-                // 【引用一句 2026-10-10】长按选中一段文字 → 只引用这一句
+                // 【引用一句 2026-10-10】选中一段文字 → 先存进 inputState，输入框上方冒一条提示；
+                // 点了那条上的「引用这句」才真引用（见下面 ChatInput 的 onUsePickedQuote）。
                 onQuoteText = { msg, text ->
-                    inputState.quotedMessageId = msg.id
-                    inputState.quotedText = text
-                    inputState.quotedPreview = text.replace("\n", " ").trim().take(120)
+                    if (text.isBlank()) {
+                        inputState.pickedText = null
+                        inputState.pickedMessageId = null
+                    } else {
+                        inputState.pickedMessageId = msg.id
+                        inputState.pickedText = text
+                    }
                 },
                 onForkMessage = {
                     scope.launch {

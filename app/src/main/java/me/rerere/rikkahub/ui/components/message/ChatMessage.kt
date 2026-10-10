@@ -131,16 +131,8 @@ import me.rerere.rikkahub.utils.splitIntoBubbleSegments
 import me.rerere.rikkahub.utils.urlDecode
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
-import androidx.compose.foundation.text.selection.SelectionState
 import androidx.compose.foundation.text.selection.rememberSelectionState
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.platform.LocalTextToolbar
-import androidx.compose.ui.platform.TextToolbar
-import androidx.compose.ui.platform.TextToolbarStatus
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
  
 @Composable
 fun ChatMessage(
@@ -635,7 +627,7 @@ private fun MessagePartsBlock(
                         // 确保最后一批 parts（含正文）一定会被渲染——不依赖流式增量触发的最后一次重组
                         // （思考链渲染间隙里完成的正文不再静默消失，memory 91 的渲染竞态修复）。
                         key(loading) {
-                        SelectableWithQuote(onQuoteText = onQuoteText) {
+                        SelectableWithQuote(onTextPicked = onQuoteText) {
                             Column {
                                 // 生成中（loading=true 且是 AI 消息）：用纯文本渲染，跳过 Markdown 解析/代码高亮/正则替换，
                                 // 避免流式更新时（100ms 一次）对超长消息全量重解析导致主线程卡顿（整页滑动掉帧）。
@@ -1339,96 +1331,34 @@ internal fun VoiceMessageBubble(
     }
 }
  
-// ─────────────────────────────────────────────────────────────
-// 【引用一句 · 2026-10-10】
-// 把系统的选中工具条（复制/全选）换成一个多一项「引用这句」的版本。
-// TextToolbar 是接口、不是 Composable，画不了界面，所以这里用"状态泵"：
-// showMenu 只记下锚点和两个回调，菜单本身由 SelectableWithQuote 用 Popup 画。
-// ─────────────────────────────────────────────────────────────
-private class QuoteTextToolbar(private val default: TextToolbar) : TextToolbar {
-    private var copyCb: (() -> Unit)? = null
-    private var selectAllCb: (() -> Unit)? = null
-
-    /** 菜单锚点（全局坐标）；null = 不显示。用 state 存，外层才感知得到。 */
-    var anchor by mutableStateOf<Rect?>(null)
-        private set
-
-    override val status: TextToolbarStatus get() = default.status
-
-    override fun hide() {
-        anchor = null
-        default.hide()
-    }
-
-    // 只实现 5 参数这个抽象版；带 onAutofillRequested 的那个是 open、有默认实现
-    override fun showMenu(
-        rect: Rect,
-        onCopyRequested: (() -> Unit)?,
-        onPasteRequested: (() -> Unit)?,
-        onCutRequested: (() -> Unit)?,
-        onSelectAllRequested: (() -> Unit)?,
-    ) {
-        copyCb = onCopyRequested
-        selectAllCb = onSelectAllRequested
-        anchor = rect
-    }
-
-    fun copy() { copyCb?.invoke() }
-    fun selectAll() { selectAllCb?.invoke() }
-}
-
 /**
  * 带「引用这句」的选中容器。
- * [onQuoteText] 为 null 时完全退回系统默认（和以前一模一样）。
+ *
+ * 【2026-10-10 改路】原本想换掉系统工具条（加一项"引用这句"），但 Compose 1.12 上
+ * LocalTextToolbar 的覆盖不生效（Google issue 447192728 / 合并进 184950231），
+ * 所以改成：系统工具条原封不动，这里只负责"盯住选中了什么"、回报给上层，
+ * 由输入框上方那条自己冒的提示条来承接点击。
+ *
+ * [onTextPicked] 传 null 时完全退回系统默认（和以前一模一样）；
+ * 没选中时回调空串 —— 上层据此把提示条收掉。
  */
 @Composable
 private fun SelectableWithQuote(
-    onQuoteText: ((String) -> Unit)?,
+    onTextPicked: ((String) -> Unit)?,
     content: @Composable () -> Unit,
 ) {
-    if (onQuoteText == null) {
+    if (onTextPicked == null) {
         SelectionContainer { content() }
     } else {
-        val defaultToolbar = LocalTextToolbar.current
         val selectionState = rememberSelectionState()
-        val toolbar = remember(defaultToolbar) { QuoteTextToolbar(defaultToolbar) }
+        SelectionContainer(state = selectionState) { content() }
 
-        CompositionLocalProvider(LocalTextToolbar provides toolbar) {
-            SelectionContainer(state = selectionState) { content() }
-        }
-
-        val anchor = toolbar.anchor
-        if (anchor != null) {
-            Popup(
-                offset = IntOffset(anchor.left.toInt(), anchor.top.toInt()),
-                onDismissRequest = { toolbar.hide() },
-                properties = PopupProperties(focusable = true),
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    tonalElevation = 3.dp,
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TextButton(onClick = { toolbar.copy(); toolbar.hide() }) {
-                            Text("复制", style = MaterialTheme.typography.labelMedium)
-                        }
-                        TextButton(onClick = { toolbar.selectAll(); toolbar.hide() }) {
-                            Text("全选", style = MaterialTheme.typography.labelMedium)
-                        }
-                        TextButton(onClick = {
-                            val picked = selectionState.selectedTexts.joinToString("") { it.text }.trim()
-                            toolbar.hide()
-                            if (picked.isNotBlank()) onQuoteText(picked)
-                        }) {
-                            Text("引用这句", style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
-                }
-            }
+        // rememberUpdatedState 兜一下：LaunchedEffect 只在 picked 变化时重启，
+        // 若直接捕获 onTextPicked，重组后换了新 lambda 它也还拿着旧那个。
+        val latestPick by rememberUpdatedState(onTextPicked)
+        val picked = selectionState.selectedTexts.joinToString("") { it.text }.trim()
+        LaunchedEffect(picked) {
+            latestPick(picked)
         }
     }
 }
