@@ -133,6 +133,7 @@ import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
 import androidx.compose.foundation.text.selection.rememberSelectionState
 import androidx.compose.ui.geometry.Rect
+import kotlin.uuid.Uuid
  
 @Composable
 fun ChatMessage(
@@ -163,6 +164,8 @@ fun ChatMessage(
     onQuoteText: ((String) -> Unit)? = null,
     // 【引用一句 2026-10-10】这条消息只引用了某一句时，那句原文（画小条用；null = 引用整条）
     quotedText: String? = null,
+    // 【引用跳回 2026-10-10】点被引的小条 → 跳回那条消息（参数 = 那条消息所在节点的 id）
+    onQuotedClick: ((Uuid) -> Unit)? = null,
     // 【插话贴猫 · 2026-09-30】宝在猫生成过程中插的那句：不占自己的气泡，
     // 跟猫同侧、缩进、不带头像，像工具结果那样贴在前一条猫消息底下。
     // 判据（上层算好传进来）：她这条的 createdAt 早于前一条猫消息的 finishedAt。
@@ -232,7 +235,11 @@ fun ChatMessage(
         // 【消息引用 2026-09-22】被引的那一条，画成小条挂在正文上方（点在它上面能跳回去）
         // 【引用一句 2026-10-10】只引用了某一句时，小条上显示那句
         if (quotedMessage != null) {
-            QuotedMessageChip(quoted = quotedMessage, pickedText = quotedText)
+            QuotedMessageChip(
+                quoted = quotedMessage,
+                pickedText = quotedText,
+                onClick = onQuotedClick,
+            )
         }
         ProvideTextStyle(textStyle) {
             MessagePartsBlock(
@@ -1369,7 +1376,12 @@ private fun SelectableWithQuote(
  * 宝引猫的、猫引宝的都走这一个。
  */
 @Composable
-private fun QuotedMessageChip(quoted: UIMessage, pickedText: String? = null) {
+private fun QuotedMessageChip(
+    quoted: UIMessage,
+    pickedText: String? = null,
+    // 【引用跳回 2026-10-10】点它 → 跳回被引的那条（null = 不给点）
+    onClick: ((Uuid) -> Unit)? = null,
+) {
     val isUser = quoted.role == MessageRole.USER
     // 【引用一句 2026-10-10】只有某一句时优先显示那句；没有就照旧显示整条摘要
     val summary = pickedText?.replace("\n", " ")?.trim()
@@ -1382,7 +1394,14 @@ private fun QuotedMessageChip(quoted: UIMessage, pickedText: String? = null) {
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.widthIn(max = 280.dp),
+        modifier = Modifier
+            .widthIn(max = 280.dp)
+            // 【引用跳回 2026-10-10】点一下跳回被引的那条（没给回调就不给点）
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable { onClick(quoted.id) }
+                } else Modifier
+            ),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),

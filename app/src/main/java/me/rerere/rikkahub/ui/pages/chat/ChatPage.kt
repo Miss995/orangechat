@@ -110,6 +110,8 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
     // 【老消息跳转 2026-08-31】目标在懒加载窗口外时，临时加载目标段显示（配合 ChatList 跳转模式）
     var jumpNodes by remember { mutableStateOf<List<MessageNode>?>(null) }
     var jumpTargetIndex by remember { mutableStateOf<Int?>(null) }
+    // 【引用跳回 2026-10-10】会话内点被引的小条发起的跳转 —— 跟路由参数 nodeId 走同一段逻辑
+    var localJumpNodeId by remember { mutableStateOf<Uuid?>(null) }
     val loadingJob by vm.conversationJob.collectAsStateWithLifecycle()
     val processingStatus by vm.processingStatus.collectAsStateWithLifecycle()
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
@@ -154,15 +156,17 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
     // 【2026-09-27 修】同一条跳转只处理一次：否则列表条数一变（发新消息）effect 会重跑，
     // 又把视图拽回那条老消息。
     val lastJumpNodeId = remember { mutableStateOf<Uuid?>(null) }
-    LaunchedEffect(nodeId, conversation.messageNodes.size) {
+    // 【引用跳回 2026-10-10】两个来源合流：从别的页面跳进来的 nodeId、会话内点小条发的 localJumpNodeId
+    val jumpTargetNodeId: Uuid? = nodeId ?: localJumpNodeId
+    LaunchedEffect(nodeId, localJumpNodeId, conversation.messageNodes.size) {
         // 【2026-09-27 修·老消息跳转失效】原条件是 `!vm.chatListInitialized`，而 chatListInitialized
         // 挂在 ChatVM 上、VM 按会话 ID 复用 —— 进过一次会话后该标记永久为 true，
         // 于是「从搜索/收藏夹点某条消息跳回同一个会话」永远不执行（日志里连 jumpToNode 三条都不出现）。
         // 改为：带 nodeId（跳转请求）时无条件执行；只有"无 nodeId 的首次滚到底"仍受该标记限制。
-        if (conversation.messageNodes.isNotEmpty() && (!vm.chatListInitialized || (nodeId != null && lastJumpNodeId.value != nodeId))) {
-            if (nodeId != null) {
-                lastJumpNodeId.value = nodeId
-                val index = conversation.messageNodes.indexOfFirst { it.id == nodeId }
+        if (conversation.messageNodes.isNotEmpty() && (!vm.chatListInitialized || (jumpTargetNodeId != null && lastJumpNodeId.value != jumpTargetNodeId))) {
+            if (jumpTargetNodeId != null) {
+                lastJumpNodeId.value = jumpTargetNodeId
+                val index = conversation.messageNodes.indexOfFirst { it.id == jumpTargetNodeId }
                 if (index >= 0) {
                     // 窗口剪切后，历史消息 index 需映射到窗口内；超出窗口则停在窗口开头
                     val start = (conversation.messageNodes.size - WINDOW_DISPLAY_SIZE).coerceAtLeast(0)
@@ -170,7 +174,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
                 } else {
                     // 【老消息跳转 2026-08-31】目标在懒加载窗口外：从数据库定位并加载目标段临时显示
                     runCatching {
-                        val dbIndex = conversationRepo.getMessageNodeIndex(conversation.id.toString(), nodeId)
+                        val dbIndex = conversationRepo.getMessageNodeIndex(conversation.id.toString(), jumpTargetNodeId)
                         if (dbIndex != null) {
                             val count = conversationRepo.getMessageNodeCount(conversation.id.toString())
                             val segStart = (dbIndex - 30).coerceAtLeast(0)
@@ -184,7 +188,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
                                 AppLogBuffer.log("ChatPage", "jumpToNode: 目标段为空 dbIndex=$dbIndex count=$count")
                             }
                         } else {
-                            AppLogBuffer.log("ChatPage", "jumpToNode: 数据库找不到 nodeId=$nodeId")
+                            AppLogBuffer.log("ChatPage", "jumpToNode: 数据库找不到 nodeId=$jumpTargetNodeId")
                         }
                     }.onFailure {
                         AppLogBuffer.log("ChatPage", "jumpToNode: 老消息跳转失败 ${it.message}")
@@ -218,6 +222,8 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, au
             jumpNodes = null
             jumpTargetIndex = null
         },
+        // 【引用跳回 2026-10-10】点被引的小条 → 设这一路跳转请求
+        onQuotedClick = { localJumpNodeId = it },
     )
 }
 
@@ -240,6 +246,8 @@ private fun ChatPageContent(
     jumpNodes: List<MessageNode>? = null,
     jumpTargetIndex: Int? = null,
     onExitJump: () -> Unit = {},
+    // 【引用跳回 2026-10-10】点被引的小条 → 跳回那条消息（参数 = 目标节点 id）
+    onQuotedClick: (Uuid) -> Unit = {},
 ) {
     // 【插话不落库 · 2026-10-02】排队中的插话（插话没进会话，列表靠它画"排队中"折叠条）
     val pendingInterjections by vm.pendingInterjections.collectAsStateWithLifecycle()
@@ -544,6 +552,7 @@ private fun ChatPageContent(
                 jumpNodes = jumpNodes,
                 jumpTargetIndex = jumpTargetIndex,
                 onExitJump = onExitJump,
+                onQuotedClick = onQuotedClick,
                 onToolApproval = { toolCallId, approved, reason ->
                     vm.handleToolApproval(toolCallId, approved, reason)
                 },
