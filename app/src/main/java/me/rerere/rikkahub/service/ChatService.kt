@@ -281,7 +281,7 @@ class ChatService(
     // 【形状快照节流 · 2026-10-06】宝要"找源头、别去重"。这一行照出每帧 messages 的形状：
     // 几条带标猫消息、几条带标的话、各自 id。3 秒最多一行。
     private var lastInterjectShapeLogAt = 0L
-    /** 【条数对账降频 · 2026-10-05】流式每秒约 10 个 chunk，5 秒最多报一行条数不符。 */
+    /** 【条数对账降频 · 2026-10-05】流式每秒约 10 个 chunk，60 秒最多报一行条数不符（降频 2026-10-10）。 */
     private var lastCountMismatchLogAt = 0L
 
     // 【collapse 日志节流 · 2026-10-05】collapse 每秒被调十次、每次都吐一行，500 条的环五十秒就被冲干净，
@@ -2731,14 +2731,14 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                         )
                     }
                 }
-                out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
+                out[out.lastIndex] = last.copy(parts = concatParts(last.parts, msg.parts))
                 mergedCount++
                 justMerged = true
             } else if (isInterjectTail && last != null && last.role == MessageRole.ASSISTANT) {
                 // 【认尾标 · 2026-10-02】切出来的后半截自带记号：只要它跟在一条 assistant 后面就并回去。
                 // 不依赖"返回值里有没有她那条 USER"——实测那个条件常不成立，于是后半独立成条
                 //（宝看到的"猫的上半句和下半句分开、两个号"）。
-                out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
+                out[out.lastIndex] = last.copy(parts = concatParts(last.parts, msg.parts))
                 justMerged = true
             } else if (roundHasInterject && justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT) {
                 // 【兜底 · 2026-10-08 宝的方案①】紧跟在插话后面的那截正文：并回同一条。
@@ -2747,7 +2747,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 //   · 本轮没取过 → 不同回合（比如主动消息）→ 落到下面那支，不许并
                 // （上一版用"id 相同"是错的：它把"兜底那轮新生成的正文"也当外人挡在外面，
                 //   宝实测就是"该黏的不黏、分成两条"。详见 memory 275。）
-                out[out.lastIndex] = last.copy(parts = concatPartsReplacingInterject(last.parts, msg.parts))
+                out[out.lastIndex] = last.copy(parts = concatParts(last.parts, msg.parts))
                 justMerged = false
             } else if (justMerged && msg.role == MessageRole.ASSISTANT && last != null && last.role == MessageRole.ASSISTANT) {
                 // 【拦下不同回合 · 2026-10-08 宝的方案①】刚才合过、但也紧跟在一条 assistant 之后，
@@ -2777,7 +2777,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 if (isInterjectUser) {
                     val backIdx = out.indexOfLast { it.role == MessageRole.ASSISTANT }
                     if (backIdx >= 0) {
-                        out[backIdx] = out[backIdx].copy(parts = concatPartsReplacingInterject(out[backIdx].parts, msg.parts))
+                        out[backIdx] = out[backIdx].copy(parts = concatParts(out[backIdx].parts, msg.parts))
                         AppLogBuffer.log(TAG, "[Interject] collapse: stray user merged back to #$backIdx")
                     } else {
                         out.add(msg)
@@ -2830,7 +2830,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
      * 所以先把"摘旧的"这一步拿掉，让它只相加 —— 让两条都露出来，
      * 用日志查清来源之后再决定怎么合。
      */
-    private fun concatPartsReplacingInterject(
+    private fun concatParts(
         oldParts: List<UIMessagePart>,
         newParts: List<UIMessagePart>
     ): List<UIMessagePart> {
