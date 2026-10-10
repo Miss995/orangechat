@@ -53,6 +53,8 @@ suspend fun buildAssistantTools(
         // 心动收藏夹（2026-09-06：五感记忆库 V1——橘仔收藏宝的话，理由+五感）
         add(buildHeartSaveTool(favoriteRepo, conversationRepo, conversationId))
         add(buildHeartQueryTool(favoriteRepo, conversationRepo, conversationId))
+        // 【猫引用宝 · 2026-10-10】橘仔引用宝的话（这一轮回复带一条引用小条，点它能跳回原话）
+        add(buildQuoteMessageTool(conversationRepo, conversationId))
         // 记忆工具（助手开启记忆时）
         if (assistant.enableMemory) {
             val memoryAssistantId = if (assistant.useGlobalMemory) {

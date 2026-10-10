@@ -61,6 +61,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpTool
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.rikkahub.data.service.MemoryBankService
+import me.rerere.rikkahub.data.service.PendingQuoteStore
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.ToolApprovalState
@@ -1757,6 +1758,24 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 // 【本轮有插话 · 2026-10-08】收尾了，本轮标记擦掉（下一轮重新判）
                 interjectRounds.remove(conversationId)
                 latest = mergeInterjectionsIntoAssistant(latest, pendingToMerge)
+                // 【猫引用宝 · 2026-10-10 · 宝选 A】橘仔这一轮调了 quote_message 的话，
+                // 把引用挂到这条回复上（跟插话挂载同一个时机，界面就画成跟宝引猫一样的小条）。
+                PendingQuoteStore.take(conversationId.toString())?.let { quotedMsgId ->
+                    val nodes = latest.messageNodes
+                    val lastIdx = nodes.indexOfLast { it.currentMessage.role == MessageRole.ASSISTANT }
+                    if (lastIdx >= 0) {
+                        latest = latest.copy(
+                            messageNodes = nodes.mapIndexed { idx, n ->
+                                if (idx == lastIdx) {
+                                    n.copy(messages = n.messages.map { m -> m.copy(quotedMessageId = quotedMsgId) })
+                                } else n
+                            }
+                        )
+                        AppLogBuffer.log(TAG, "[Quote] mounted: msgId=${quotedMsgId.toString().take(8)} at node#$lastIdx")
+                    } else {
+                        AppLogBuffer.log(TAG, "[Quote] mount-skip: 这条回复还没落进会话")
+                    }
+                }
                 // 【回写内存 · 2026-10-01 宝实测第二轮】只合并落库不够：界面读的是内存态
                 // （session.state.value），收尾不写回它，下一条回复一来列表重建，宝那句
                 // 又会从折叠条变回独立消息（宝原话："只有在你那条消息发出来之后才会跳回去"）。
