@@ -9,6 +9,8 @@ package me.rerere.rikkahub.data.ai.transformers
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * 消息引用转换器（2026-09-22 建 / 2026-10-10 修复）
@@ -42,6 +44,13 @@ import me.rerere.ai.ui.UIMessagePart
  */
 object QuotedMessageTransformer : InputMessageTransformer {
     private const val QUOTE_HEADER_PREFIX = "【引用·"
+
+    /** 这条消息里所有图片身上存的转述（metadata["imageNote"]），用来判断引用的文字是不是图上的。 */
+    private fun imageNoteTexts(message: UIMessage?): List<String> =
+        message?.parts
+            ?.filterIsInstance<UIMessagePart.Image>()
+            ?.mapNotNull { it.metadata?.get("imageNote")?.jsonPrimitive?.contentOrNull?.trim() }
+            .orEmpty()
 
     override suspend fun transform(
         ctx: TransformerContext,
@@ -93,11 +102,23 @@ object QuotedMessageTransformer : InputMessageTransformer {
 
             // 【引用一句 2026-10-10】引用"某一句"时可能查不到来源消息（quoted 为 null），走安全调用
             val who = if (quoted?.role == MessageRole.USER) "宝" else "橘仔"
+
+            // 【图片转述引用 · 2026-10-12】如果宝引的这句本来就出自图上的转述
+            // （不是她打的字），文案要写明 —— 不然猫会当成"宝说的一句话"。
+            val fromImageNote = imageNoteTexts(quoted).any { it.contains(picked) }
+
+            val header = if (fromImageNote)
+                "【引用·宝发来的一张图（下面这段是图片转述，不是宝说的话）】"
+            else
+                "【引用·$who 的一条消息】"
+            val tail = if (fromImageNote)
+                "——以上是图片转述，下面是宝这次说的话。"
+            else
+                "——以上是被引用的原文，下面是宝这次说的话。"
+
             result[i] = target.copy(
                 parts = listOf(
-                    UIMessagePart.Text(
-                        "【引用·$who 的一条消息】\n$quotedText\n——以上是被引用的原文，下面是宝这次说的话。\n\n"
-                    )
+                    UIMessagePart.Text("$header\n$quotedText\n$tail\n\n")
                 ) + target.parts
             )
         }
