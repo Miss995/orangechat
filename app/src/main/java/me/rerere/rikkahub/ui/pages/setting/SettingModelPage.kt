@@ -118,6 +118,9 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
 
             item {
                 DefaultOcrModelSetting(settings = settings, vm = vm)
+            }
+
+            item {
                 DefaultVideoModelSetting(settings = settings, vm = vm)
             }
 
