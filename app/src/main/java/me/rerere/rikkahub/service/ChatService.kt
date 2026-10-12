@@ -803,8 +803,10 @@ class ChatService(
                                         val descriptions = mutableListOf<String>()
                                         // 【优先读抽屉 · 2026-10-12】转述已在上面跑过一次并写进消息的 metadata，
                                         // 这里同源取用；只有确实没写成功时才现跑一次兜底。
+                                        // 【读会话当前态 · 2026-10-12】不能用 newConversation（那是插消息时的旧快照，
+                                        // 上面那次转述写的 metadata 不在里面）；改读 session 当前状态。
                                         val lived = if (isInterjection) null
-                                            else newConversation.messageNodes.lastOrNull()?.messages?.firstOrNull()
+                                            else session.state.value.messageNodes.lastOrNull()?.messages?.firstOrNull()
                                         val cachedNotes = lived?.parts?.filterIsInstance<UIMessagePart.Image>()
                                             ?.associate { it.url to it.metadata?.get("imageNote")?.jsonPrimitive?.contentOrNull }
                                             .orEmpty()
