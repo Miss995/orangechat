@@ -626,6 +626,56 @@ class ChatService(
                 val newConversation = insert.conversation
                 AppLogBuffer.log(TAG, "sendMessage: lock released at ${System.currentTimeMillis() - tSend}ms")
 
+                // 【图片转述回填 · 2026-10-12】图片上屏后后台跑一次视觉转述，把结果写回该图片 part 的
+                // metadata["imageNote"]：①转述跟着消息走（存图/查图有抓手、图片瘦身时的占位符能带内容）
+                // ②OcrTransformer 下次直接从 metadata 读，不用重跑（省一份钱）。
+                // 与下面语音那条同构：fire-and-forget、加锁写回、不阻塞发送/生成主流程。
+                runCatching {
+                    val addedImageMessage = if (isInterjection) null else newConversation.messageNodes.lastOrNull()?.messages?.firstOrNull()
+                    val imageParts2 = addedImageMessage?.parts?.filterIsInstance<UIMessagePart.Image>()
+                        ?.filter { it.url.startsWith("file:") }
+                        .orEmpty()
+                    if (addedImageMessage != null && imageParts2.isNotEmpty()) {
+                        val targetId2 = addedImageMessage.id
+                        appScope.launch {
+                            runCatching {
+                                val notes = imageParts2.associate { it.url to ImageDescriber.describe(it.url) }
+                                session.saveMutex.withLock {
+                                    val cur = session.state.value
+                                    val updated = cur.copy(
+                                        messageNodes = cur.messageNodes.map { node ->
+                                            if (node.messages.any { it.id == targetId2 }) {
+                                                node.copy(messages = node.messages.map { msg ->
+                                                    if (msg.id == targetId2) {
+                                                        msg.copy(parts = msg.parts.map { p ->
+                                                            if (p is UIMessagePart.Image) {
+                                                                val note = notes[p.url]
+                                                                if (!note.isNullOrBlank()) {
+                                                                    p.copy(
+                                                                        metadata = JsonObject(
+                                                                            (p.metadata ?: JsonObject(emptyMap())).toMutableMap().apply {
+                                                                                put("imageNote", JsonPrimitive(note))
+                                                                            }
+                                                                        )
+                                                                    )
+                                                                } else p
+                                                            } else p
+                                                        })
+                                                    } else msg
+                                                })
+                                            } else node
+                                        }
+                                    )
+                                    updateConversation(conversationId, updated)
+                                    AppLogBuffer.log(TAG, "imageNote: saved ${notes.size} image(s) msg=$targetId2")
+                                }
+                            }.onFailure {
+                                Log.w(TAG, "imageNote: describe failed", it)
+                            }
+                        }
+                    }
+                }.onFailure { e -> Log.w(TAG, "imageNote: dispatch failed", e) }
+
                 // 【语音情绪分析 V1 2026-09-04·宝的"情绪耳朵"】语音条上屏后后台调 Qwen3-Omni 听音频，
                 // 出语气/语速 → 写回该消息 VoiceMessage 的 metadata → VoiceMessageTransformer 拼
                 // 「（语气：X，语速：Y）」尾巴喂 DeepSeek。fire-and-forget：不阻塞发送/生成主流程；
