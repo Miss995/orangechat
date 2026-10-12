@@ -6,13 +6,13 @@
 
 package me.rerere.rikkahub.ui.components.message
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.rememberSelectionState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -45,7 +45,7 @@ internal fun ImageTextMenuDialog(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = "识别文字（挑一句引用）",
+                    text = "识别文字（划选要引用的部分）",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
                 )
@@ -57,7 +57,12 @@ internal fun ImageTextMenuDialog(
 /**
  * 【图片文字引用 · 2026-10-12】
  *
- * 识别结果：一行一条，点哪条就把哪条送去引用。
+ * 识别结果。宝定的形态（19:26）：
+ * **不切句、不列表 —— 直接摊成一坨，像正文那样自己划选**，划中哪段引哪段。
+ *
+ * 行与行的拼接：上一行要是没以标点收尾（说明它在图里被视觉换行切断了），
+ * 就直接跟下一行接上，不硬换行 —— 这样"半句半句"的情况会少很多，
+ * 但**不做句子重排**（宝明确说不要"重新切"）。
  */
 @Composable
 internal fun ImageTextPickDialog(
@@ -65,32 +70,50 @@ internal fun ImageTextPickDialog(
     onPick: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val selectionState = rememberSelectionState()
+    val picked = selectionState.selectedTexts.joinToString("") { it.text }.trim()
+    val body = joinOcrLines(lines)
+
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
+            TextButton(
+                onClick = { onPick(picked) },
+                enabled = picked.isNotBlank(),
+            ) { Text("引用选中的") }
+        },
+        dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消") }
         },
-        title = { Text("认出这些字，点一句引用") },
+        title = { Text("划选要引用的部分") },
         text = {
-            LazyColumn(
-                modifier = Modifier.heightIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+            SelectionContainer(
+                state = selectionState,
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
             ) {
-                items(lines) { line ->
-                    Surface(
-                        onClick = { onPick(line) },
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            text = line,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                        )
-                    }
-                }
+                Text(
+                    text = body,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         },
     )
+}
+
+/** 上一行没以标点收尾就跟下一行接上（图里被视觉换行切开的句子，拼回来）。 */
+private fun joinOcrLines(lines: List<String>): String {
+    val enders = "。！？；：!?;:”』】）)"
+    val sb = StringBuilder()
+    lines.forEachIndexed { index, rawLine ->
+        val line = rawLine.trim()
+        if (line.isEmpty()) return@forEachIndexed
+        if (sb.isNotEmpty()) {
+            val last = sb.last()
+            if (last in enders) sb.append('\n')
+        }
+        sb.append(line)
+    }
+    return sb.toString().ifBlank { "（没认出文字）" }
 }
