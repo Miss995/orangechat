@@ -85,6 +85,7 @@ import androidx.core.net.toFile
 import androidx.core.net.toUri
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -957,9 +958,20 @@ private fun MessagePartsBlock(
                                         if (!imgTextBusy) {
                                             imgTextBusy = true
                                             imgTextScope.launch {
-                                                val lines = runCatching {
-                                                    ImageTextRecognizer.recognize(context, part.url)
-                                                }.getOrDefault(emptyList())
+                                                // 【优先用格子 · 2026-10-12】转述已经跟着消息存下来了，直接用它
+                                                // （口径和分析时那份一致）；没有才退回本地认字（截图那类还得靠它）。
+                                                val cachedNote = part.metadata
+                                                    ?.get("imageNote")
+                                                    ?.jsonPrimitive
+                                                    ?.contentOrNull
+                                                    ?.trim()
+                                                val lines = if (!cachedNote.isNullOrBlank()) {
+                                                    listOf(cachedNote)
+                                                } else {
+                                                    runCatching {
+                                                        ImageTextRecognizer.recognize(context, part.url)
+                                                    }.getOrDefault(emptyList())
+                                                }
                                                 imgTextBusy = false
                                                 if (lines.isEmpty()) {
                                                     Toast.makeText(

@@ -25,7 +25,9 @@ import androidx.compose.ui.unit.dp
 /**
  * 【图片文字引用 · 2026-10-12】
  *
- * 长按图片之后弹的小菜单。目前只有一项「识别文字」。
+ * 长按图片之后弹的小菜单。目前只有一项：引用图里的内容。
+ * 【2026-10-12 改】它取的内容优先用消息里存好的转述（metadata["imageNote"]），
+ * 读不到才退回本地认字 —— 所以文案写中性的"图里的内容"，不写"描述"。
  * 以后要加「保存图片」「分享」之类，往这里加就行，入口不用再动。
  */
 @Composable
@@ -45,7 +47,7 @@ internal fun ImageTextMenuDialog(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = "识别文字（划选要引用的部分）",
+                    text = "引用图里的内容（划选要引用的部分）",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
                 )
