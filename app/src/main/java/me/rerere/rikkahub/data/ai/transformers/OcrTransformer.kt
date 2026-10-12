@@ -54,9 +54,9 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        if (ctx.model.inputModalities.contains(Modality.IMAGE)) {
-            return messages
-        }
+        // 【图与转述并行 · 2026-10-12】模型自己看得见图时，不再走"图换文字"，
+        // 而是保留原图、另外附一段转述（两个视角互相补）；看不见图的模型仍走替换。
+        val modelCanSeeImages = ctx.model.inputModalities.contains(Modality.IMAGE)
 
         // 检测消息中是否包含图片: 既检查最外层 parts, 也检查 Tool.output 里的图片
         // (camera_capture 等工具返回的图片存放在 Tool.output 中, 不在最外层 parts)
@@ -76,28 +76,29 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
                 ctx.processingStatus.value = "正在识别图片..."
                 messages.map { message ->
                     message.copy(
-                        parts = message.parts.map { part ->
+                        parts = message.parts.flatMap { part ->
                             when {
-                                // 最外层图片: OCR 转文字
+                                // 最外层图片：看得见图就「原图 + 转述」，看不见就只能换成文字
                                 part is UIMessagePart.Image && part.url.startsWith("file:") -> {
-                                    UIMessagePart.Text(performOcr(part))
+                                    val note = UIMessagePart.Text(performOcr(part))
+                                    if (modelCanSeeImages) listOf(part, note) else listOf(note)
                                 }
 
-                                // Tool.output 里的图片: 递归扫描, 把图片替换成 OCR 文字
+                                // Tool.output 里的图片：递归扫描，同一套规则
                                 part is UIMessagePart.Tool -> {
-                                    part.copy(
-                                        output = part.output.map { outputPart ->
-                                            when {
-                                                outputPart is UIMessagePart.Image && outputPart.url.startsWith("file:") -> {
-                                                    UIMessagePart.Text(performOcr(outputPart))
-                                                }
-                                                else -> outputPart
+                                    listOf(
+                                        part.copy(
+                                            output = part.output.flatMap { outputPart ->
+                                                if (outputPart is UIMessagePart.Image && outputPart.url.startsWith("file:")) {
+                                                    val note = UIMessagePart.Text(performOcr(outputPart))
+                                                    if (modelCanSeeImages) listOf(outputPart, note) else listOf(note)
+                                                } else listOf(outputPart)
                                             }
-                                        }
+                                        )
                                     )
                                 }
 
-                                else -> part
+                                else -> listOf(part)
                             }
                         }
                     )
@@ -143,10 +144,10 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
         val content = result.choices[0].message?.toText() ?: "[ERROR, OCR failed]"
         Log.i(TAG, "performOcr: $content")
         val ocrResult = """
-            <image_file_ocr>
+            <image_note>
                $content
-            </image_file_ocr>
-            * The image_file_ocr tag contains a description of an image that the user uploaded to you, not the user's prompt.
+            </image_note>
+            * The image_note tag contains a description of an image that the user uploaded to you, not the user's prompt. When the original image is present, treat the image itself as authoritative and this note as a second opinion.
         """.trimIndent()
 
         // Cache the result
