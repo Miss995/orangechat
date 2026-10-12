@@ -206,8 +206,9 @@ fun ChatInput(
     fun sendMessage() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
-        // 【插话 2026-09-25 宝的需求】输入框里有字时，即使猫在忙也按「发送」走：
+        // 【插话 2026-09-25 宝的需求】输入框里有内容时，即使猫在忙也按「发送」走：
         // 宝能在猫干活的时候把话塞进来。空着才是「停止」。
+        // （2026-10-13：这里的「有内容」含附件 —— 一张图没配字也算。）
         if (loading && state.isEmpty()) onCancelClick() else onSendClick()
     }
 
@@ -924,8 +925,9 @@ fun ChatInput(
                                             }
                                         )
                                 ) {
-                                    // 【插话 2026-09-25 宝的需求】输入框里有字时，按钮保持「发送」的样子，
+                                    // 【插话 2026-09-25 宝的需求】输入框里有内容时，按钮保持「发送」的样子，
                                     // 哪怕猫正在忙。这样一眼就能看出「现在按下去是插话，不是打断」。
+                                    // （2026-10-13：含附件 —— 一张图没配字也算。）
                                     val showStop = loading && state.isEmpty()
                                     val containerColor = when {
                                         showStop -> MaterialTheme.colorScheme.errorContainer

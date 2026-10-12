@@ -107,8 +107,13 @@ class ChatInputState {
         return listOf(UIMessagePart.Text(text)) + messageContent
     }
 
+    /**
+     * 输入框里有没有「可以发出去的东西」。
+     * 【图片单独发 2026-10-13 宝的需求】以前只看文字，所以「一张图没配字」会被当成空的 ——
+     * 发送键点不动、回车也不发。现在把附件也算进来：有图（或视频/语音/文件）就算有内容。
+     */
     fun isEmpty(): Boolean {
-        return textContent.text.isEmpty()
+        return textContent.text.isEmpty() && messageContent.isEmpty()
     }
 
     fun addImages(uris: List<Uri>) {
