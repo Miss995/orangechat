@@ -628,11 +628,11 @@ class ChatService(
                 val newConversation = insert.conversation
                 AppLogBuffer.log(TAG, "sendMessage: lock released at ${System.currentTimeMillis() - tSend}ms")
 
-                // 【图片转述回填 · 2026-10-12】图片上屏后后台跑一次视觉转述，把结果写回该图片 part 的
+                // 【图片转述回填 · 2026-10-12】图片上屏后跑一次视觉转述，把结果写回该图片 part 的
                 // metadata["imageNote"]：①转述跟着消息走（存图/查图有抓手、图片瘦身时的占位符能带内容）
-                // ②OcrTransformer 下次直接从 metadata 读，不用重跑（省一份钱）。
-                // 与下面语音那条同构：fire-and-forget、加锁写回、不阻塞发送/生成主流程。
-                var imageNoteJob: kotlinx.coroutines.Job? = null
+                // ②OcrTransformer 直接从这里读，不用重跑（省一份钱、口径统一）。
+                // ⚠️ 这里是【同步】跑的（不再 fire-and-forget）：必须在这条消息变成请求之前写完，
+                // 否则发出去那一步读到的还是没有格子的快照，会白跑第二遍。代价是发送后停几秒。
                 runCatching {
                     val addedImageMessage = if (isInterjection) null else newConversation.messageNodes.lastOrNull()?.messages?.firstOrNull()
                     val imageParts2 = addedImageMessage?.parts?.filterIsInstance<UIMessagePart.Image>()
@@ -640,8 +640,9 @@ class ChatService(
                         .orEmpty()
                     if (addedImageMessage != null && imageParts2.isNotEmpty()) {
                         val targetId2 = addedImageMessage.id
-                        imageNoteJob = appScope.launch {
-                            runCatching {
+                        // 【同步等它写完 · 2026-10-12】不用 appScope.launch：转述必须在这条消息
+                        // 变成请求之前写进会话，否则发出去那一步（OcrTransformer）读到的还是没有格子的快照。
+                        runCatching {
                                 val notes = imageParts2.associate { it.url to ImageDescriber.describe(it.url) }
                                 session.saveMutex.withLock {
                                     val cur = session.state.value
@@ -778,9 +779,8 @@ class ChatService(
                     val externalMemoryConfigs = settingsRaw.externalMemories.filter {
                         it.enabled && it.id in assistant.externalMemoryIds && it.autoSaveMessages
                     }
-                    // 【等转述落地 · 2026-10-12】上面那次转述若在跑，先让它写完 metadata，
-                    // 下面直接用那份（不再自己跑第二遍）。
-                    imageNoteJob?.join()
+                    // 【转述已落地 · 2026-10-12】上面那次转述是同步跑完才往下走的，
+                    // 这里直接读 metadata 那份（不再自己跑第二遍）。
                     if (externalMemoryConfigs.isNotEmpty()) {
                         val textParts = processedContent.mapNotNull { part ->
                             when (part) {
