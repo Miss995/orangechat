@@ -683,7 +683,6 @@ class ChatService(
                             }.onFailure {
                                 Log.w(TAG, "imageNote: describe failed", it)
                             }
-                        }
                     }
                 }.onFailure { e -> Log.w(TAG, "imageNote: dispatch failed", e) }
 
