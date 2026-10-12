@@ -50,6 +50,8 @@ import kotlinx.serialization.json.JsonObject
 import me.rerere.rikkahub.data.ai.AppLogBuffer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
@@ -630,6 +632,7 @@ class ChatService(
                 // metadata["imageNote"]：①转述跟着消息走（存图/查图有抓手、图片瘦身时的占位符能带内容）
                 // ②OcrTransformer 下次直接从 metadata 读，不用重跑（省一份钱）。
                 // 与下面语音那条同构：fire-and-forget、加锁写回、不阻塞发送/生成主流程。
+                var imageNoteJob: kotlinx.coroutines.Job? = null
                 runCatching {
                     val addedImageMessage = if (isInterjection) null else newConversation.messageNodes.lastOrNull()?.messages?.firstOrNull()
                     val imageParts2 = addedImageMessage?.parts?.filterIsInstance<UIMessagePart.Image>()
@@ -637,7 +640,7 @@ class ChatService(
                         .orEmpty()
                     if (addedImageMessage != null && imageParts2.isNotEmpty()) {
                         val targetId2 = addedImageMessage.id
-                        appScope.launch {
+                        imageNoteJob = appScope.launch {
                             runCatching {
                                 val notes = imageParts2.associate { it.url to ImageDescriber.describe(it.url) }
                                 session.saveMutex.withLock {
@@ -669,6 +672,13 @@ class ChatService(
                                     updateConversation(conversationId, updated)
                                     AppLogBuffer.log(TAG, "imageNote: saved ${notes.size} image(s) msg=$targetId2")
                                 }
+                                // 【回声自检 · 2026-10-12】写完立刻回读，确认它真的留在会话里（还是被裁剪/落库洗掉了）
+                                val back = session.state.value.messageNodes
+                                    .flatMap { it.messages }
+                                    .firstOrNull { it.id == targetId2 }
+                                    ?.parts?.filterIsInstance<UIMessagePart.Image>()
+                                    ?.mapNotNull { it.metadata?.get("imageNote")?.jsonPrimitive?.contentOrNull?.length }
+                                AppLogBuffer.log(TAG, "imageNote: readback msg=$targetId2 imgs=${back?.size ?: -1} lens=$back")
                             }.onFailure {
                                 Log.w(TAG, "imageNote: describe failed", it)
                             }
@@ -768,6 +778,9 @@ class ChatService(
                     val externalMemoryConfigs = settingsRaw.externalMemories.filter {
                         it.enabled && it.id in assistant.externalMemoryIds && it.autoSaveMessages
                     }
+                    // 【等转述落地 · 2026-10-12】上面那次转述若在跑，先让它写完 metadata，
+                    // 下面直接用那份（不再自己跑第二遍）。
+                    imageNoteJob?.join()
                     if (externalMemoryConfigs.isNotEmpty()) {
                         val textParts = processedContent.mapNotNull { part ->
                             when (part) {
@@ -788,8 +801,16 @@ class ChatService(
                                     var messageText = textParts
                                     if (imageParts.isNotEmpty()) {
                                         val descriptions = mutableListOf<String>()
+                                        // 【优先读抽屉 · 2026-10-12】转述已在上面跑过一次并写进消息的 metadata，
+                                        // 这里同源取用；只有确实没写成功时才现跑一次兜底。
+                                        val lived = if (isInterjection) null
+                                            else newConversation.messageNodes.lastOrNull()?.messages?.firstOrNull()
+                                        val cachedNotes = lived?.parts?.filterIsInstance<UIMessagePart.Image>()
+                                            ?.associate { it.url to it.metadata?.get("imageNote")?.jsonPrimitive?.contentOrNull }
+                                            .orEmpty()
                                         for (img in imageParts) {
-                                            val desc = ImageDescriber.describe(img.url)
+                                            val desc = cachedNotes[img.url]?.takeIf { it.isNotBlank() }
+                                                ?: ImageDescriber.describe(img.url)
                                             descriptions.add(if (desc.isNullOrBlank()) "[图片]" else "[图片] $desc")
                                         }
                                         if (messageText.isNotBlank()) messageText += "\n"
