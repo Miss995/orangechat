@@ -54,9 +54,7 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        // 【图与转述并行 · 2026-10-12】模型自己看得见图时，不再走"图换文字"，
-        // 而是保留原图、另外附一段转述（两个视角互相补）；看不见图的模型仍走替换。
-        val modelCanSeeImages = ctx.model.inputModalities.contains(Modality.IMAGE)
+        // 【图与转述并行 · 2026-10-12】原图一律保留，转述只作为补充附在后面。
 
         // 检测消息中是否包含图片: 既检查最外层 parts, 也检查 Tool.output 里的图片
         // (camera_capture 等工具返回的图片存放在 Tool.output 中, 不在最外层 parts)
@@ -78,10 +76,12 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
                     message.copy(
                         parts = message.parts.flatMap { part ->
                             when {
-                                // 最外层图片：看得见图就「原图 + 转述」，看不见就只能换成文字
+                                // 最外层图片：原图 + 转述（转述只作补充）
                                 part is UIMessagePart.Image && part.url.startsWith("file:") -> {
-                                    val note = UIMessagePart.Text(performOcr(part))
-                                    if (modelCanSeeImages) listOf(part, note) else listOf(note)
+                                    // 【一律保留原图 · 2026-10-12 晚修正】之前按"模型自己看不看得见图"分岔，
+                                    // 结果本仓库模型标记跟预期不一致，图片被换成纯文字=宝那边"图片隐形了"。
+                                    // 现在不再分岔：图一定留着，转述只作为补充附在后面。
+                                    listOf(part, UIMessagePart.Text(performOcr(part)))
                                 }
 
                                 // Tool.output 里的图片：递归扫描，同一套规则
@@ -90,8 +90,7 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
                                         part.copy(
                                             output = part.output.flatMap { outputPart ->
                                                 if (outputPart is UIMessagePart.Image && outputPart.url.startsWith("file:")) {
-                                                    val note = UIMessagePart.Text(performOcr(outputPart))
-                                                    if (modelCanSeeImages) listOf(outputPart, note) else listOf(note)
+                                                    listOf(outputPart, UIMessagePart.Text(performOcr(outputPart)))
                                                 } else listOf(outputPart)
                                             }
                                         )
