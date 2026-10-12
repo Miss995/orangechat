@@ -12,6 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
@@ -78,10 +80,11 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
                             when {
                                 // 最外层图片：原图 + 转述（转述只作补充）
                                 part is UIMessagePart.Image && part.url.startsWith("file:") -> {
-                                    // 【一律保留原图 · 2026-10-12 晚修正】之前按"模型自己看不看得见图"分岔，
-                                    // 结果本仓库模型标记跟预期不一致，图片被换成纯文字=宝那边"图片隐形了"。
-                                    // 现在不再分岔：图一定留着，转述只作为补充附在后面。
-                                    listOf(part, UIMessagePart.Text(performOcr(part)))
+                                    // 【一律保留原图 · 2026-10-12 晚修正】不按"模型看不看得见图"分岔，
+                                    // 图一定留着，转述作为补充附在后面。
+                                    // 【优先读抽屉 · 2026-10-12】落库时已把转述写进 metadata["imageNote"]，
+                                    // 有就直接用（省一次识别），没有才现跑。
+                                    listOf(part, UIMessagePart.Text(noteFor(part)))
                                 }
 
                                 // Tool.output 里的图片：递归扫描，同一套规则
@@ -90,7 +93,7 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
                                         part.copy(
                                             output = part.output.flatMap { outputPart ->
                                                 if (outputPart is UIMessagePart.Image && outputPart.url.startsWith("file:")) {
-                                                    listOf(outputPart, UIMessagePart.Text(performOcr(outputPart)))
+                                                    listOf(outputPart, UIMessagePart.Text(noteFor(outputPart)))
                                                 } else listOf(outputPart)
                                             }
                                         )
@@ -107,6 +110,23 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
             }
         }
     }
+
+    /**
+     * 【2026-10-12】取这张图的说明文字：抽屉(metadata["imageNote"])里有就直接用，
+     * 没有才现跑一次识别。落库那侧只存裸文字，这里统一套上标记。
+     */
+    private suspend fun noteFor(part: UIMessagePart.Image): String {
+        val cached = part.metadata?.get("imageNote")?.jsonPrimitive?.contentOrNull
+        return if (!cached.isNullOrBlank()) wrapImageNote(cached) else performOcr(part)
+    }
+
+    /** 【2026-10-12】图片说明的统一包装 —— 认字现跑和读抽屉两条路都走它，格式保持一致。 */
+    private fun wrapImageNote(content: String): String = """
+            <image_note>
+               $content
+            </image_note>
+            * The image_note tag contains a description of an image that the user uploaded to you, not the user's prompt. When the original image is present, treat the image itself as authoritative and this note as a second opinion.
+        """.trimIndent()
 
     suspend fun performOcr(part: UIMessagePart.Image): String = runCatching {
         // Check cache first
@@ -142,12 +162,7 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
         )
         val content = result.choices[0].message?.toText() ?: "[ERROR, OCR failed]"
         Log.i(TAG, "performOcr: $content")
-        val ocrResult = """
-            <image_note>
-               $content
-            </image_note>
-            * The image_note tag contains a description of an image that the user uploaded to you, not the user's prompt. When the original image is present, treat the image itself as authoritative and this note as a second opinion.
-        """.trimIndent()
+        val ocrResult = wrapImageNote(content)
 
         // Cache the result
         cache.put(part.url, ocrResult)
