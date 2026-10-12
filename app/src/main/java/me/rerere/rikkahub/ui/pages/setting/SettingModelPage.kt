@@ -16,6 +16,7 @@ import me.rerere.hugeicons.stroke.Message01
 import me.rerere.hugeicons.stroke.MessageMultiple01
 import me.rerere.hugeicons.stroke.Notebook01
 import me.rerere.hugeicons.stroke.Tools
+import me.rerere.hugeicons.stroke.Video01
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -117,6 +118,7 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
 
             item {
                 DefaultOcrModelSetting(settings = settings, vm = vm)
+                DefaultVideoModelSetting(settings = settings, vm = vm)
             }
 
             item {
@@ -555,6 +557,44 @@ private fun DefaultOcrModelSetting(
             }
         }
     }
+}
+
+@Composable
+private fun DefaultVideoModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        title = {
+            Text(
+                stringResource(R.string.setting_model_page_video_model),
+                maxLines = 1
+            )
+        },
+        description = {
+            Text(stringResource(R.string.setting_model_page_video_model_desc))
+        },
+        icon = {
+            Icon(HugeIcons.Video01, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.videoModelId,
+                    type = ModelType.CHAT,
+                    onSelect = {
+                        vm.updateSettings(
+                            settings.copy(
+                                videoModelId = it.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
 }
 
 @Composable

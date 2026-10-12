@@ -139,7 +139,10 @@ object VideoNarrationTransformer : InputMessageTransformer, KoinComponent {
         }
 
         val settings = get<SettingsStore>().settingsFlow.value
-        val model = settings.findModelById(settings.ocrModelId) ?: return "[Video]"
+        // 【视频模型独立 · 2026-10-12】优先用「视频模型」；没配过就退回 OCR 那个（跟升级前的行为一致）。
+        val model = settings.findModelById(settings.videoModelId)
+            ?: settings.findModelById(settings.ocrModelId)
+            ?: return "[Video]"
         val providerSetting = model.findProvider(settings.providers) ?: return "[Video]"
         val provider = get<ProviderManager>().getProviderByType(providerSetting)
         val result = provider.generateText(
