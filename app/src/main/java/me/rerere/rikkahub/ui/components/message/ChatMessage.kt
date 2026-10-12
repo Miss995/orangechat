@@ -9,6 +9,10 @@ package me.rerere.rikkahub.ui.components.message
 import android.content.Intent
 import android.media.MediaPlayer
 import android.util.Log
+import android.widget.Toast
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.ocr.ImageTextRecognizer
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
@@ -919,6 +923,11 @@ private fun MessagePartsBlock(
                             val imgRatioState = remember(part.url) { mutableStateOf(0f) }
                             val imgRatio = imgRatioState.value
                             val isTallImage = imgRatio > 0f && imgRatio < 240f / 320f
+                            // 【图片文字引用 · 2026-10-12】长按图片 → 认字 → 挑一句引用
+                            val imgTextScope = rememberCoroutineScope()
+                            var imgTextMenuOpen by remember(part.url) { mutableStateOf(false) }
+                            var imgTextBusy by remember(part.url) { mutableStateOf(false) }
+                            var imgTextLines by remember(part.url) { mutableStateOf<List<String>?>(null) }
                             ZoomableAsyncImage(
                                 model = part.url,
                                 contentDescription = null,
@@ -938,7 +947,44 @@ private fun MessagePartsBlock(
                                 onImageSize = { w, h ->
                                     if (h > 0) imgRatioState.value = w.toFloat() / h.toFloat()
                                 },
+                                onLongClick = { imgTextMenuOpen = true },
                             )
+                            if (imgTextMenuOpen) {
+                                ImageTextMenuDialog(
+                                    onDismiss = { imgTextMenuOpen = false },
+                                    onRecognize = {
+                                        imgTextMenuOpen = false
+                                        if (!imgTextBusy) {
+                                            imgTextBusy = true
+                                            imgTextScope.launch {
+                                                val lines = runCatching {
+                                                    ImageTextRecognizer.recognize(context, part.url)
+                                                }.getOrDefault(emptyList())
+                                                imgTextBusy = false
+                                                if (lines.isEmpty()) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "这张图里没认出文字",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                } else {
+                                                    imgTextLines = lines
+                                                }
+                                            }
+                                        }
+                                    },
+                                )
+                            }
+                            imgTextLines?.let { lines ->
+                                ImageTextPickDialog(
+                                    lines = lines,
+                                    onPick = { picked ->
+                                        imgTextLines = null
+                                        onQuoteText?.invoke(picked)
+                                    },
+                                    onDismiss = { imgTextLines = null },
+                                )
+                            }
                         }
                     }
  

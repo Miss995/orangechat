@@ -6,7 +6,7 @@
 
 package me.rerere.rikkahub.ui.components.richtext
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +38,11 @@ fun ZoomableAsyncImage(
     alpha: Float = DefaultAlpha,
     /** 【图片展示 · 2026-10-10】把原图尺寸回传出去，调用方才能判断"这是不是长截图"。默认 null，老调用方不受影响。 */
     onImageSize: ((Int, Int) -> Unit)? = null,
+    /**
+     * 【图片文字引用 · 2026-10-12】长按回调。
+     * null = 保持老行为（长按什么都不做）；点按照旧 = 打开大图。
+     */
+    onLongClick: (() -> Unit)? = null,
 ) {
     var showImageViewer by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -55,9 +60,10 @@ fun ZoomableAsyncImage(
         contentDescription = contentDescription,
         modifier = modifier
             .shimmer(isLoading = loading)
-            .clickable {
-                showImageViewer = true
-            },
+            .combinedClickable(
+                onClick = { showImageViewer = true },
+                onLongClick = onLongClick,
+            ),
         contentScale = contentScale,
         alpha = alpha,
         alignment = alignment,
