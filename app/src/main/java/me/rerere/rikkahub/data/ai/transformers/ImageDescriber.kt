@@ -44,9 +44,11 @@ object ImageDescriber : KoinComponent {
     private const val MAX_IMAGE_BYTES = 7L * 1024 * 1024
 
     private const val DESCRIBE_PROMPT =
-        "你是图片理解助手。请仔细看这张图片，用中文详细描述图片内容" +
-            "（画面主体、场景、人物动作、文字内容、氛围等，一两句话讲清楚这张图是什么）。" +
-            "如果图片没有明显内容，请如实说明。"
+        "你是图片理解助手。请仔细看这张图片，严格按下面三段格式输出，每段以方括号标题开头，" +
+            "不要添加任何其它说明文字：\n" +
+            "【原文照抄】把图里出现的文字一字不差地抄下来；图里确实没有文字就写\"无\"。\n" +
+            "【画面简述】一两句话讲清画面：主体、场景、人物动作、氛围。\n" +
+            "【图片理解】你对这张图的解读（它在讲什么、想表达什么）。"
 
     /**
      * 转述一张真图（file://）成文字描述。
@@ -92,5 +94,21 @@ object ImageDescriber : KoinComponent {
             Log.w(TAG, "describe failed: $imageUrl", e)
             AppLogBuffer.log(TAG, "ImageDescriber FAILED: ${e.javaClass.simpleName}: ${e.message}")
         }.getOrNull()
+    }
+
+    // 【图片转述三段 · 2026-10-13】转述一次出三段，写法见 DESCRIBE_PROMPT。
+    // 整份都存（宝要点「查看AI理解」看第三段），但发到模型眼前只发前两段：
+    // 前两段是客观素材（口径锚 —— 防止"你说你的我说我的"），
+    // 第三段是转述模型自己的解读，只给宝一个人看。
+    private const val NOTE_PART3 = "【图片理解】"
+
+    /**
+     * 把三段转述切成「前两段」和「第三段」。
+     * 旧格式（10-13 之前存的、没写标记）→ 第三段为 null，全文当前两段照发，不丢东西。
+     */
+    fun splitNote(text: String): Pair<String, String?> {
+        val idx = text.indexOf(NOTE_PART3)
+        if (idx < 0) return text.trim() to null
+        return text.substring(0, idx).trim() to text.substring(idx).trim()
     }
 }

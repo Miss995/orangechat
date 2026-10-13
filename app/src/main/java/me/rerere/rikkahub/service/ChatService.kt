@@ -810,8 +810,11 @@ class ChatService(
                                             ?.associate { it.url to it.metadata?.get("imageNote")?.jsonPrimitive?.contentOrNull }
                                             .orEmpty()
                                         for (img in imageParts) {
-                                            val desc = cachedNotes[img.url]?.takeIf { it.isNotBlank() }
+                                            val raw = cachedNotes[img.url]?.takeIf { it.isNotBlank() }
                                                 ?: ImageDescriber.describe(img.url)
+                                            // 【三段 · 2026-10-13】客观记忆库只收前两段（原文照抄 + 画面简述）；
+                                            // 第三段「图片理解」是转述模型自己的解读，掺进客观层会洗脏记录。
+                                            val desc = raw?.let { ImageDescriber.splitNote(it).first }
                                             descriptions.add(if (desc.isNullOrBlank()) "[图片]" else "[图片] $desc")
                                         }
                                         if (messageText.isNotBlank()) messageText += "\n"

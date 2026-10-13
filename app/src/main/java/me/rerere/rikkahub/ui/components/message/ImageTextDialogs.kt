@@ -6,7 +6,10 @@
 
 package me.rerere.rikkahub.ui.components.message
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -34,23 +37,44 @@ import androidx.compose.ui.unit.dp
 internal fun ImageTextMenuDialog(
     onDismiss: () -> Unit,
     onRecognize: () -> Unit,
+    onViewAiNote: (() -> Unit)? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {},
         title = { Text("这张图") },
         text = {
-            Surface(
-                onClick = onRecognize,
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = "引用图里的内容（划选要引用的部分）",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-                )
+            Column {
+                Surface(
+                    onClick = onRecognize,
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = "引用图里的内容（划选要引用的部分）",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                    )
+                }
+                // 【图片转述三段 · 2026-10-13】第三段「图片理解」不发到模型眼前
+                //（只发前两段当口径锚），所以只在这儿给宝一个人看。
+                // 老图（没写标记 / 本地认字来的）没有第三段 → 这一项直接不出现。
+                if (onViewAiNote != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        onClick = onViewAiNote,
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = "查看 AI 理解（它怎么读这张图的）",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                        )
+                    }
+                }
             }
         },
     )
@@ -97,6 +121,38 @@ internal fun ImageTextPickDialog(
             ) {
                 Text(
                     text = body,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+    )
+}
+
+/**
+ * 【图片转述三段 · 2026-10-13】
+ * 「查看 AI 理解」—— 转述的第三段：转述模型自己怎么读这张图。
+ * 这一段不发到模型眼前（发过去的只有前两段：原文照抄 + 画面简述），
+ * 所以它只在这里露一次面，给宝一个人看。
+ */
+@Composable
+internal fun ImageAiNoteDialog(
+    text: String,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("知道了") }
+        },
+        title = { Text("AI 怎么看这张图") },
+        text = {
+            SelectionContainer(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    text = text,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

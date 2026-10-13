@@ -117,7 +117,10 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
      */
     private suspend fun noteFor(part: UIMessagePart.Image): String {
         val cached = part.metadata?.get("imageNote")?.jsonPrimitive?.contentOrNull
-        return if (!cached.isNullOrBlank()) wrapImageNote(cached) else performOcr(part)
+        // 【三段 · 2026-10-13】抽屉里存的是整份（含第三段「图片理解」），
+        // 但发到模型眼前只发前两段（客观素材 / 口径锚）；第三段只给宝自己看。
+        return if (!cached.isNullOrBlank()) wrapImageNote(ImageDescriber.splitNote(cached).first)
+        else performOcr(part)
     }
 
     /** 【2026-10-12】图片说明的统一包装 —— 认字现跑和读抽屉两条路都走它，格式保持一致。 */
@@ -162,7 +165,8 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
         )
         val content = result.choices[0].message?.toText() ?: "[ERROR, OCR failed]"
         Log.i(TAG, "performOcr: $content")
-        val ocrResult = wrapImageNote(content)
+        // 【三段 · 2026-10-13】兜底现跑这条路，同样只把前两段发给模型。
+        val ocrResult = wrapImageNote(ImageDescriber.splitNote(content).first)
 
         // Cache the result
         cache.put(part.url, ocrResult)

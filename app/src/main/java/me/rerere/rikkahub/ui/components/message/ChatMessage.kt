@@ -12,6 +12,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.ai.transformers.ImageDescriber
 import me.rerere.rikkahub.data.ocr.ImageTextRecognizer
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -929,6 +930,10 @@ private fun MessagePartsBlock(
                             var imgTextMenuOpen by remember(part.url) { mutableStateOf(false) }
                             var imgTextBusy by remember(part.url) { mutableStateOf(false) }
                             var imgTextLines by remember(part.url) { mutableStateOf<List<String>?>(null) }
+                            // 【图片转述三段 · 2026-10-13】第三段「图片理解」：存着，但只给宝一个人看
+                            var imgAiNoteOpen by remember(part.url) { mutableStateOf(false) }
+                            val imgAiNote = part.metadata?.get("imageNote")?.jsonPrimitive?.contentOrNull
+                                ?.let { ImageDescriber.splitNote(it).second }
                             ZoomableAsyncImage(
                                 model = part.url,
                                 contentDescription = null,
@@ -953,6 +958,9 @@ private fun MessagePartsBlock(
                             if (imgTextMenuOpen) {
                                 ImageTextMenuDialog(
                                     onDismiss = { imgTextMenuOpen = false },
+                                    onViewAiNote = if (imgAiNote.isNullOrBlank()) null else {
+                                        { imgAiNoteOpen = true }
+                                    },
                                     onRecognize = {
                                         imgTextMenuOpen = false
                                         if (!imgTextBusy) {
@@ -965,8 +973,13 @@ private fun MessagePartsBlock(
                                                     ?.jsonPrimitive
                                                     ?.contentOrNull
                                                     ?.trim()
-                                                val lines = if (!cachedNote.isNullOrBlank()) {
-                                                    listOf(cachedNote)
+                                                // 【三段 · 2026-10-13】划选给的是前两段（原文照抄 + 画面简述）；
+                                                // 第三段「图片理解」走菜单里的「查看 AI 理解」，不跟素材混在一起。
+                                                val cachedBody = if (!cachedNote.isNullOrBlank()) {
+                                                    ImageDescriber.splitNote(cachedNote).first
+                                                } else null
+                                                val lines = if (!cachedBody.isNullOrBlank()) {
+                                                    listOf(cachedBody)
                                                 } else {
                                                     runCatching {
                                                         ImageTextRecognizer.recognize(context, part.url)
@@ -995,6 +1008,13 @@ private fun MessagePartsBlock(
                                         onQuoteText?.invoke(picked)
                                     },
                                     onDismiss = { imgTextLines = null },
+                                )
+                            }
+                            // 【图片转述三段 · 2026-10-13】「查看 AI 理解」—— 只给宝看的那一段
+                            if (imgAiNoteOpen && !imgAiNote.isNullOrBlank()) {
+                                ImageAiNoteDialog(
+                                    text = imgAiNote,
+                                    onDismiss = { imgAiNoteOpen = false },
                                 )
                             }
                         }
