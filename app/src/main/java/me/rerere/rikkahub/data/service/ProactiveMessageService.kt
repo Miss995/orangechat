@@ -257,8 +257,16 @@ class ProactiveMessageService : KoinComponent {
 
         // Current time
         val currentTime = java.lang.System.currentTimeMillis()
-        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
-        sb.appendLine("当前时间: ${sdf.format(java.util.Date(currentTime))}")
+        // 【周几 · 2026-10-13 宝定的】跟聊天侧同一个格式（日期 + 周几 + 时刻）
+        val nowLdtWd = java.time.Instant.ofEpochMilli(currentTime)
+            .atZone(java.time.ZoneId.systemDefault()).toLocalDateTime()
+        val wd = "周" + "一二三四五六日"[nowLdtWd.dayOfWeek.value - 1]
+        sb.appendLine(
+            "当前时间: " + "%04d-%02d-%02d %s %02d:%02d:%02d".format(
+                nowLdtWd.year, nowLdtWd.monthValue, nowLdtWd.dayOfMonth,
+                wd, nowLdtWd.hour, nowLdtWd.minute, nowLdtWd.second,
+            )
+        )
 
         // Location context
         try {

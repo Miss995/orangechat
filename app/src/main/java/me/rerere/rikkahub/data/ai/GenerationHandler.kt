@@ -1087,7 +1087,19 @@ class GenerationHandler(
                         // 而这条必须放最末尾才离生成最近）。加一行头部标记后一眼分得清来源。
                         append("以下是系统消息注入:")
                         append("\n【当前时间】")
-                        append(java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()))
+                        // 【周几 · 2026-10-13 宝定的】日期后面带上周几，跟日期一起给。
+                        // 起因：猫盯着"周六"两个字，把 10-17 说成"明天"，其实还有四天 ——
+                        // 光有星期或光有日期都会算错，所以两个一起出现。
+                        run {
+                            val nowLdtWd = java.time.LocalDateTime.now()
+                            val wd = "周" + "一二三四五六日"[nowLdtWd.dayOfWeek.value - 1]
+                            append(
+                                "%04d-%02d-%02d %s %02d:%02d:%02d".format(
+                                    nowLdtWd.year, nowLdtWd.monthValue, nowLdtWd.dayOfMonth,
+                                    wd, nowLdtWd.hour, nowLdtWd.minute, nowLdtWd.second,
+                                )
+                            )
+                        }
                         // 时刻感（宝 2026-09-07 拍板：时段词表 + 这场聊了多久；15 分钟断、按橘仔→宝消息间隔）
                         val nowLdt = java.time.LocalDateTime.now()
                         val tl = hourToPeriodLabel(nowLdt.hour)
