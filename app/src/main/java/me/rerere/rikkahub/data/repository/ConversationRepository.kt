@@ -337,15 +337,16 @@ class ConversationRepository(
                 val newById = newEntities.associateBy { it.id }
 
                 // 【保存提速 · 2026-10-14】审核分两道：
-                //   第一道比元信息（顺序号/选中号/内容长度）—— 全一样就认定它没动过，不读全文、不写库；
+                //   第一道比元信息（顺序号/选中号）—— 都一样就认定它没动过，不读全文、不写库；
                 //   有一样不同才进第二道（读全文逐条细比），由细比决定写不写。
                 // 这样"读全文"只在真可能变过的那几条上发生，平时整个会话一条都不碰。
-                // ⚠️ 别在这里加"消息条数"这类判断 —— 数条数要解析 JSON，比省下来的还贵（见 DAO 注释）。
+                // ⚠️ 别在这里加"长度/条数"这类判断 —— 那都要把内容从头过一遍，比省下来的还贵（见 DAO 注释）。
+                // ⚠️ 副作用：内容改了、顺序号和选中号却都没动的那种（编辑消息、工具结果回填），这道抓不到，
+                //    得靠真正动手的地方自己报账（待做）。
                 fun metaUnchanged(e: MessageNodeEntity): Boolean {
                     val meta = metaById[e.id] ?: return false // 不在库里 = 新节点，必须写
                     return meta.nodeIndex == e.nodeIndex &&
-                        meta.selectIndex == e.selectIndex &&
-                        meta.msgLen == e.messages.length
+                        meta.selectIndex == e.selectIndex
                 }
 
                 // 第一道放行的（没动过）直接排除，剩下的才可能写

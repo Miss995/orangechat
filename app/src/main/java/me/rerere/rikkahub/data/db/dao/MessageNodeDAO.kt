@@ -36,18 +36,18 @@ interface MessageNodeDAO {
     suspend fun getNodesByIds(ids: List<String>): List<MessageNodeEntity>
 
     /**
-     * 【保存提速 · 2026-10-14】只读"顺序号 + 选中号 + 内容长度"，不把 messages 搬进内存。
+     * 【保存提速 · 2026-10-14】只读"顺序号 + 选中号"，不碰 messages 列。
      *
-     * 用途 = 保存链路的第一道闸。老节点先拿这三样跟手里的比一遍：
-     * 全一样就认定没动过（不读全文、不写库）；有一样不同才把它挑出来做第二道细比。
+     * 用途 = 保存链路的第一道闸。老节点先拿这两样跟手里的比一遍：
+     * 都一样就认定没动过（不读全文、不写库）；有一样不同才挑出来做第二道细比。
      * 平时整个会话一条都不碰，读全文只在"真可能变过"的那几条上发生。
      *
-     * ⚠️ 千万不要在这里加 json_array_length(messages) —— 它为了数条数会把整个 JSON 解析一遍，
-     * 在长会话（两万多格）上实测把这一步从 92ms 顶到 884ms，比省下来的还贵。length() 只读长度，便宜。
+     * ⚠️ 千万不要在这里加 length(messages) 或 json_array_length(messages) —— 两个都要把值的内容
+     * 从头过一遍（文本长度要数变长编码、条数要解析 JSON）。长会话两万多格实测：
+     * 只读 id 是 92ms，加上 length 变 964ms，比省下来的读全文还贵。这里只能留 O(1) 的列。
      */
     @Query(
-        "SELECT id, node_index AS nodeIndex, select_index AS selectIndex, " +
-            "length(messages) AS msgLen " +
+        "SELECT id, node_index AS nodeIndex, select_index AS selectIndex " +
             "FROM message_node WHERE conversation_id = :conversationId ORDER BY node_index ASC"
     )
     suspend fun getNodeMetasOfConversation(conversationId: String): List<NodeMeta>
@@ -155,12 +155,11 @@ data class MessageDayCount(val day: String, val count: Int)
 
 data class DuplicatedMessageId(val mid: String)
 
-/** 【保存提速 · 2026-10-14】保存链路第一道闸用的轻量元信息（不含 messages 内容）。 */
+/** 【保存提速 · 2026-10-14】保存链路第一道闸用的轻量元信息（只留 O(1) 的列，不碰 messages）。 */
 data class NodeMeta(
     val id: String,
     val nodeIndex: Int,
     val selectIndex: Int,
-    val msgLen: Int,
 )
 
 /**
