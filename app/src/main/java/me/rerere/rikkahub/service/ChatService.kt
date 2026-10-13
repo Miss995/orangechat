@@ -876,6 +876,15 @@ class ChatService(
                     interjectedMessages.computeIfAbsent(conversationId) {
                         java.util.Collections.synchronizedList(mutableListOf<UIMessage>())
                     }.add(insertedMessage)
+                    // 【插话丢句排查 · 2026-10-13 宝实测】她 20:58 插的那句"虽然本来也没有多少"
+                    // 搭车送出去了，收尾却报 pending empty —— 要挂到猫回复上的账是空的。
+                    // 这两行把"写账"和"取账"两头都留痕，下次一条就能判：没写进去，还是被提前取走。
+                    AppLogBuffer.log(
+                        TAG,
+                        "[Interject] ledger: queued id=" + insertedMessage.id.toString().take(8) +
+                            " ride=" + (pendingInterjections[conversationId]?.size ?: 0) +
+                            " ledger=" + (interjectedMessages[conversationId]?.size ?: 0)
+                    )
                     syncPendingInterjectionFlow()
                     AppLogBuffer.log(
                         TAG,
@@ -1830,6 +1839,11 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 // 【插话不落库 · 2026-10-02】合并改成读"入队那刻记的账"——不再靠锚点从会话里找人。
                 // 插话压根没进会话，所以这里只要拿到那几条消息本体，直接挂到猫那条上。
                 val pendingToMerge = interjectedMessages.remove(conversationId).orEmpty()
+                AppLogBuffer.log(
+                    TAG,
+                    "[Interject] ledger: onSuccess took=" + pendingToMerge.size +
+                        " ids=" + pendingToMerge.joinToString(",") { it.id.toString().take(8) }
+                )
                 // 【本轮有插话 · 2026-10-08】收尾了，本轮标记擦掉（下一轮重新判）
                 interjectRounds.remove(conversationId)
                 latest = mergeInterjectionsIntoAssistant(latest, pendingToMerge)
