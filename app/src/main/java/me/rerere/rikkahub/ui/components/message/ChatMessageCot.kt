@@ -9,6 +9,7 @@ package me.rerere.rikkahub.ui.components.message
 import androidx.compose.ui.util.fastForEachIndexed
 import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 
 /** 【插话记号 · 2026-10-01】这个 part 是不是宝插进来的那句（收尾合并时打的 metadata{"interject": true}）。
  *  2026-10-04 从 ChatMessage.kt 挪出来共用（分组和渲染两边都要认它）。 */
@@ -104,5 +105,14 @@ fun List<UIMessagePart>.groupMessageParts(): List<MessagePartBlock> {
         }
     }
     flushThinkingSteps()
+    // 【插话行消失排查 · 2026-10-13】数据层有几个标、这里分出几步 —— 对不上就是分组吞的，
+    // 对得上就是画的时候漏的。这行是给下一次"插话行没画出来"留的尺子。
+    AppLogBuffer.log(
+        "ChatService",
+        "[Interject] group: marks=" + count { it is UIMessagePart.Text && it.isInterjectPart() } +
+            " steps=" + result.sumOf { blk ->
+                (blk as? MessagePartBlock.ThinkingBlock)?.steps?.count { it is ThinkingStep.InterjectStep } ?: 0
+            }
+    )
     return result
 }
