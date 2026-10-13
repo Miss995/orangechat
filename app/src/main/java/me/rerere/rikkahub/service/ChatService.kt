@@ -102,6 +102,7 @@ import me.rerere.rikkahub.data.ai.transformers.PromptInjectionTransformer
 import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
+import me.rerere.rikkahub.data.ai.transformers.InterjectSupplementTransformer
 import me.rerere.rikkahub.data.ai.transformers.QuotedMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.TimeReminderTransformer
 import me.rerere.rikkahub.data.ai.transformers.VoiceMessageTransformer
@@ -179,6 +180,9 @@ private val inputTransformers by lazy {
         OcrTransformer,
         VideoNarrationTransformer,
         VoiceMessageTransformer,
+        // 【插话补充 · 2026-10-13 宝定的】按了"这句是补充上文那条"的消息，
+        // 在它前面插一条短消息（不落库，只活在请求里）。
+        InterjectSupplementTransformer,
     )
 }
 
@@ -516,6 +520,9 @@ class ChatService(
         // 【引用一句 2026-10-10】宝只引用了那条消息里的某一句时，那段原文。
         // null = 引用整条（照旧靠 quotedMessageId 反查全文）。
         quotedText: String? = null,
+        // 【插话补充 · 2026-10-13 宝定的】"supplement" = 这句是补上文里她自己那条，不是新话题。
+        // 只落在消息字段上；发请求时由 transformer 在它前面插一条短消息，其它全不变。
+        interjectKind: String? = null,
     ) {
         if (content.isEmptyInputMessage()) return
         val tSend = System.currentTimeMillis()
@@ -570,6 +577,8 @@ class ChatService(
                             quotedMessageId = quotedMessageId,
                             // 【引用一句 2026-10-10】只引用了其中一句时，那句原文
                             quotedText = quotedText,
+                            // 【插话补充 · 2026-10-13】按了开关才带（"supplement"），平时 null
+                            interjectKind = interjectKind,
                         )
                         // 【抓鬼 · 2026-10-06】一次点击被处理了几次，看这里。
                         // 两行同样的文本 = 客户端/入口把同一条送了两遍。

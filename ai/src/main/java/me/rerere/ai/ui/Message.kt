@@ -43,7 +43,12 @@ data class UIMessage(
     // 【召回留痕 2026-09-24】这条用户消息触发召回时，门控与拆词的结果，供聊天界面在消息下面画一行小字。
     // 例："门控：强词命中「记得」 · 拆词(AI)：轮椅, 医院 · 命中 3 条"
     // 也用于排查"明明该想起来却没想起来"（memory 156）。
-    val recallDebug: String? = null
+    val recallDebug: String? = null,
+    // 【插话补充 2026-10-13 宝定的】这条插话是"补上文里她自己那条"，不是开新话题。
+    // 值："supplement"；普通消息（含没标的新话题插话）为 null。
+    // 发请求时由 transformer 在它前面插一条短消息，让模型知道这句接的是她自己上一条，
+    // 而不是接猫刚说的那句（猫回得快、她回得慢，插话物理上落在猫回复后面、逻辑上接她自己那句）。
+    val interjectKind: String? = null
 ) {
     private fun appendChunk(chunk: MessageChunk): UIMessage {
         val choice = chunk.choices.getOrNull(0)

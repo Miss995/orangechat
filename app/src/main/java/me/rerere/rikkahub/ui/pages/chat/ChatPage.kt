@@ -381,6 +381,8 @@ private fun ChatPageContent(
                                 quotedMessageId = inputState.quotedMessageId,
                                 // 【引用一句 2026-10-10】只引用了其中一句时，那句原文
                                 quotedText = inputState.quotedText,
+                                // 【插话补充 · 2026-10-13】按了那条开关 = 补上文；没按 = null（新话题）
+                                interjectKind = if (inputState.interjectSupplement) "supplement" else null,
                             )
                             scope.launch {
                                 chatListState.requestScrollToItem(conversation.messageNodes.size.coerceAtMost(WINDOW_DISPLAY_SIZE) + 5)

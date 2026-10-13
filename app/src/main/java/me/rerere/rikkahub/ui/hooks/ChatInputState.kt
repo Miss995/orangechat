@@ -32,6 +32,9 @@ class ChatInputState {
     var pickedText by mutableStateOf<String?>(null)
     // 上面那段文字属于哪条消息（点了才真引用）
     var pickedMessageId by mutableStateOf<Uuid?>(null)
+    // 【插话补充 · 2026-10-13 宝定的】这条要发的话，是不是"补上文里她自己那条"（不是新话题）。
+    // 默认 false（= 新话题）；宝按一下输入框上方那条开关才置 true。发送时写进消息的 interjectKind。
+    var interjectSupplement by mutableStateOf(false)
     private var editingParts: List<UIMessagePart>? = null
     private var editingAttachmentUrls: Set<String> = emptySet()
 
@@ -46,6 +49,7 @@ class ChatInputState {
         quotedText = null
         pickedText = null
         pickedMessageId = null
+        interjectSupplement = false
     }
 
     fun isEditing() = editingMessage != null

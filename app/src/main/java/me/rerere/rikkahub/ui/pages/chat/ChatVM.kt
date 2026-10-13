@@ -186,10 +186,12 @@ class ChatVM(
         quotedMessageId: Uuid? = null,
         // 【引用一句 2026-10-10】只引用了某一句时，那段原文（null = 引用整条）
         quotedText: String? = null,
+        // 【插话补充 · 2026-10-13】"supplement" = 这句是补上文里她自己那条，不是新话题
+        interjectKind: String? = null,
     ) {
         if (content.isEmptyInputMessage()) return
 
-        chatService.sendMessage(_conversationId, content, answer, quotedMessageId, quotedText)
+        chatService.sendMessage(_conversationId, content, answer, quotedMessageId, quotedText, interjectKind)
     }
 
 

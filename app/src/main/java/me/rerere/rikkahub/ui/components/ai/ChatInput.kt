@@ -882,6 +882,7 @@ fun ChatInput(
                                 } else {
                                     TextInputRow(
                                         state = state,
+                                        loading = loading,
                                         onSendMessage = { sendMessage() },
                                         onUsePickedQuote = onUsePickedQuote
                                     )
@@ -1060,6 +1061,8 @@ private fun ActionIconButton(
 @Composable
 private fun TextInputRow(
     state: ChatInputState,
+    // 【插话补充 · 2026-10-13】只有猫在干活（= 这条算插话）时才显示那条开关
+    loading: Boolean,
     onSendMessage: () -> Unit,
     // 【引用一句 2026-10-10】选中提示条上点「引用这句」（要传下来：这个函数有自己的参数列表）
     onUsePickedQuote: (() -> Unit)? = null,
@@ -1093,6 +1096,35 @@ private fun TextInputRow(
                         imageVector = HugeIcons.Cancel01,
                         contentDescription = stringResource(R.string.cancel_edit),
                         modifier = Modifier.clickable { state.clearInput() }
+                    )
+                }
+            }
+        }
+
+        // 【插话补充 · 2026-10-13 宝定的】猫在干活时，宝发的话常常是"补她自己上一条"，
+        // 可这个形状是"打断"，猫容易当成一句新话题去接（宝的观察：猫回得快、她回得慢，
+        // 那句补充物理上落在猫回复之后，逻辑上却接她自己上一句）。
+        // 按一下 = 标成"补充"，发送时写进消息；不按 = 新话题，跟以前一样。
+        if (loading) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = if (state.interjectSupplement) MaterialTheme.colorScheme.tertiaryContainer
+                else MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.clickable {
+                    state.interjectSupplement = !state.interjectSupplement
+                },
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (state.interjectSupplement) "这是补充上文那条 · 再按取消"
+                        else "这句是补充上文那条？（按一下）",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
