@@ -292,8 +292,10 @@ class ConversationRepository(
                 )
                 val __tA = System.currentTimeMillis()
 
-                // 只查 id，不碰 messages 列，避免因个别行 blob 过大导致这里直接抛异常
-                val existingIds = messageNodeDAO.getNodeIdsOfConversation(conversation.id.toString())
+                // 【保存提速 · 2026-10-14】第一道闸：只读元信息（顺序号/选中号/长度/条数），不碰 messages 列 ——
+                // 既避免个别行 blob 过大抛异常，也免掉每次保存都把整个会话的内容读一遍。
+                val existingMetas = messageNodeDAO.getNodeMetasOfConversation(conversation.id.toString())
+                val existingIds = existingMetas.map { it.id }
                 val __tB = System.currentTimeMillis()
                 // existingIds 按 node_index ASC 排序 → 前 windowFirstIndex 个是窗口外历史（受保护）
                 val protectedCount = windowFirstIndex?.coerceAtLeast(0) ?: 0
@@ -307,25 +309,9 @@ class ConversationRepository(
                 // firstIndex 与数据库实际对齐，一旦对不齐就整体错位 → 窗口越加载越旧（宝实测重启倒退）。
                 // 窗口版：已存在节点保持数据库原 nodeIndex；新节点（主动消息等追加）从 max+1 往后排。
                 // 全量版（windowFirstIndex==null）：保持原行为 0..N-1 重写（压缩/重建等整表覆盖场景）。
-                val idsNeedCompare = conversation.messageNodes.map { it.id.toString() }.filter { it in existingIds }
-                val existingById = if (idsNeedCompare.isEmpty()) {
-                    emptyMap()
-                } else {
-                    try {
-                        messageNodeDAO.getNodesByIds(idsNeedCompare).associateBy { it.id }
-                    } catch (e: SQLiteBlobTooBigException) {
-                        Log.w(
-                            TAG,
-                            "updateConversation: blob too big while comparing existing nodes, " +
-                                "conversationId=${conversation.id}, will treat all as changed and overwrite",
-                            e
-                        )
-                        // 读不出旧内容就没法比较，保守地当作全部有变化，直接覆盖写入（REPLACE，安全）
-                        emptyMap()
-                    }
-                }
                 val __tC = System.currentTimeMillis()
-                val existingNodeIndexById: Map<String, Int> = existingById.mapValues { it.value.nodeIndex }
+                val metaById = existingMetas.associateBy { it.id }
+                val existingNodeIndexById: Map<String, Int> = existingMetas.associate { it.id to it.nodeIndex }
                 val maxExistingNodeIndex = existingNodeIndexById.values.maxOrNull() ?: -1
                 val newEntities = conversation.messageNodes.mapIndexed { index, node ->
                     val nid = node.id.toString()
@@ -350,9 +336,43 @@ class ConversationRepository(
                 val __tD = System.currentTimeMillis()
                 val newById = newEntities.associateBy { it.id }
 
+                // 【保存提速 · 2026-10-14】审核分两道：
+                //   第一道比元信息（顺序号/选中号/长度/条数）—— 全一样就认定它没动过，不读全文、不写库；
+                //   有一样不同才进第二道（读全文逐条细比），由细比决定写不写。
+                // 这样"读全文"只在真可能变过的那几条上发生，平时整个会话一条都不碰。
+                val nodeMsgCountById = conversation.messageNodes.associate { it.id.toString() to it.messages.size }
+                fun metaUnchanged(e: MessageNodeEntity): Boolean {
+                    val meta = metaById[e.id] ?: return false // 不在库里 = 新节点，必须写
+                    return meta.nodeIndex == e.nodeIndex &&
+                        meta.selectIndex == e.selectIndex &&
+                        meta.msgLen == e.messages.length &&
+                        meta.msgCount == (nodeMsgCountById[e.id] ?: -1)
+                }
+
+                // 第一道放行的（没动过）直接排除，剩下的才可能写
+                val maybeChanged = newEntities.filterNot { metaUnchanged(it) }
+                // 第二道：只对"可能变过"的那几条读全文，逐条细比
+                val idsNeedCompare = maybeChanged.map { it.id }
+                val existingById = if (idsNeedCompare.isEmpty()) {
+                    emptyMap()
+                } else {
+                    try {
+                        messageNodeDAO.getNodesByIds(idsNeedCompare).associateBy { it.id }
+                    } catch (e: SQLiteBlobTooBigException) {
+                        Log.w(
+                            TAG,
+                            "updateConversation: blob too big while comparing existing nodes, " +
+                                "conversationId=${conversation.id}, will treat all as changed and overwrite",
+                            e
+                        )
+                        // 读不出旧内容就没法比较，保守地当作全部有变化，直接覆盖写入（REPLACE，安全）
+                        emptyMap()
+                    }
+                }
+
                 // 只处理真正发生变化的 node：内容/顺序(nodeIndex)/selectIndex 有任何不同才写库；
                 // 读不到旧内容的（existingById 里没有对应 id）也会被判定为"变化"，直接覆盖写入
-                val toUpsert = newEntities.filter { newEntity ->
+                val toUpsert = maybeChanged.filter { newEntity ->
                     existingById[newEntity.id] != newEntity
                 }
                 // 窗口版保存时，窗口外历史（protectedIds）即使不在传入列表中也不删除
