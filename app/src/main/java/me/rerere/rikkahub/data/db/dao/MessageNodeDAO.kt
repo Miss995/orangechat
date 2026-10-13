@@ -36,18 +36,18 @@ interface MessageNodeDAO {
     suspend fun getNodesByIds(ids: List<String>): List<MessageNodeEntity>
 
     /**
-     * 【保存提速 · 2026-10-14】只读"顺序号 + 选中号 + 长度 + 条数"，不把 messages 搬进内存。
+     * 【保存提速 · 2026-10-14】只读"顺序号 + 选中号 + 内容长度"，不把 messages 搬进内存。
      *
-     * 用途 = 保存链路的第一道闸。老节点先拿这四样跟手里的比一遍：
+     * 用途 = 保存链路的第一道闸。老节点先拿这三样跟手里的比一遍：
      * 全一样就认定没动过（不读全文、不写库）；有一样不同才把它挑出来做第二道细比。
      * 平时整个会话一条都不碰，读全文只在"真可能变过"的那几条上发生。
      *
-     * length() 和 json_array_length() 都在 SQLite C 层算，不把 blob 搬进 CursorWindow，
-     * 因此长会话里也不会触发 SQLiteBlobTooBigException。
+     * ⚠️ 千万不要在这里加 json_array_length(messages) —— 它为了数条数会把整个 JSON 解析一遍，
+     * 在长会话（两万多格）上实测把这一步从 92ms 顶到 884ms，比省下来的还贵。length() 只读长度，便宜。
      */
     @Query(
         "SELECT id, node_index AS nodeIndex, select_index AS selectIndex, " +
-            "length(messages) AS msgLen, json_array_length(messages) AS msgCount " +
+            "length(messages) AS msgLen " +
             "FROM message_node WHERE conversation_id = :conversationId ORDER BY node_index ASC"
     )
     suspend fun getNodeMetasOfConversation(conversationId: String): List<NodeMeta>
@@ -161,7 +161,6 @@ data class NodeMeta(
     val nodeIndex: Int,
     val selectIndex: Int,
     val msgLen: Int,
-    val msgCount: Int,
 )
 
 /**
