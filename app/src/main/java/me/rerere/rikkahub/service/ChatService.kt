@@ -899,17 +899,22 @@ class ChatService(
                 val leftover = pendingInterjections.remove(conversationId)
                 syncPendingInterjectionFlow()
                 if (!leftover.isNullOrEmpty()) {
-                    // 队列还在 = 这一轮没有第二次请求，宝那句没人接 → 兜底起一轮
-                    AppLogBuffer.log(TAG, "interject: no ride happened, relay generation conv=$conversationId")
-                    // 【接力修 · 2026-10-04 宝实测】把拿出来的插话放回队列，再起接力那一轮。
-                    // 原来只用不还，带出的毛病：接力那轮的请求里没有宝的话（模型压根看不到她说了什么）。
-                    // 放回去之后，接力这轮会像平常一样把它取走并进请求——修好。
-                    //（旧注释还记过一条"收尾找不到锚点"，那条后来由 interjectedMessages
-                    //  入队即记根治了，跟这本被删掉的搭车账无关。）
-                    pendingInterjections.computeIfAbsent(conversationId) {
-                        java.util.Collections.synchronizedList(mutableListOf<UIMessage>())
-                    }.addAll(leftover!!)
-                    syncPendingInterjectionFlow()
+                    // 【老路改造 · 2026-10-13 宝的方案】这一路上它不再当"插话"。
+                    // 旧写法是把它放回队列、再起"接力"那一轮 —— 于是它以一个"插话"的身份进了
+                    // 新回合，尾标认不出亲，反过来把上一条和它强制分手（宝凌晨实测到的那个）。
+                    // 现在改成：直接落成一条正式的用户消息，然后正儿八经接一回合。
+                    // 渲染的麻烦顺手解除 —— 它就是列表里一条普通消息，不带任何特殊标记。
+                    AppLogBuffer.log(TAG, "interject: no ride happened, land as normal message conv=$conversationId")
+                    // 先从"收尾要挂的账"里摘掉：它要当正式消息，不能再被合并进猫那条回复（会重复）。
+                    interjectedMessages[conversationId]?.removeAll { m -> leftover!!.any { it.id == m.id } }
+                    runCatching {
+                        session.saveMutex.withLock {
+                            val cur = session.state.value
+                            val nc = cur.copy(messageNodes = cur.messageNodes + leftover!!.map { it.toMessageNode() })
+                            updateConversation(conversationId, nc)
+                            saveConversation(conversationId, nc)
+                        }
+                    }.onFailure { Log.w(TAG, "interject: land-as-normal failed", it) }
                     // 【刹车 · 2026-10-06 宝发现】这一轮原来不注册 job：
                     //   上一轮完成时 invokeOnCompletion 把 _generationJob 清成 null，
                     //   于是界面 loading=false → 按键变发送键（✕ 消失）→ 按下去变成"发消息"，
