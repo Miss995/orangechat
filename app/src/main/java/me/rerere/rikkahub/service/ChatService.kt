@@ -2771,17 +2771,29 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         messages: List<UIMessage>,
         roundHasInterject: Boolean = false,
     ): List<UIMessage> {
+        // 【细计时 · 2026-10-14】45ms 花在哪儿，别猜，量出来：闸门 / 中段诊断 / 主循环三点。
+        val __cl0 = System.currentTimeMillis()
         if (messages.none { msg -> msg.role == MessageRole.USER && msg.parts.any { isInterjectMarked(it) } }) {
+            val __cl1 = System.currentTimeMillis()
+            if (__cl1 - __cl0 > 15) {
+                AppLogBuffer.log(TAG, "COLLAPSE gate=${__cl1 - __cl0} n=${messages.size} early=true")
+            }
             return messages
         }
+        val __cl1 = System.currentTimeMillis()
         // 【数标诊断 · 2026-10-05】宝实测"一次插话显示两个折叠条"。
         // 先看这一轮里带标 user 有几条——>1 就是重复的来源。5 秒最多报一次。
-        val markedUsers = messages.count { it.role == MessageRole.USER && it.parts.any { isInterjectMarked(it) } }
-        if (markedUsers > 1) {
+        // 【省一遍全量 · 2026-10-14】这个 count 原来每帧都跑（340 条 x 每个 part 查一遍），
+        // 可结果只喂给一行"降频到 60s"的诊断日志 —— 99% 的扫描是白扫的。
+        // 挪进降频判断里：60 秒才数一次，行为一字未改。
+        run {
             val nowDup = System.currentTimeMillis()
-            if (nowDup - lastInterjectDupLogAt > 60_000) {   // 【降频 2026-10-10】5s→60s：插话排查用，留着但别刷
-                lastInterjectDupLogAt = nowDup
-                AppLogBuffer.log(TAG, "[Interject] DUP markedUsers=$markedUsers in=${messages.size}")
+            if (nowDup - lastInterjectDupLogAt > 60_000) {
+                val markedUsers = messages.count { it.role == MessageRole.USER && it.parts.any { isInterjectMarked(it) } }
+                if (markedUsers > 1) {
+                    lastInterjectDupLogAt = nowDup
+                    AppLogBuffer.log(TAG, "[Interject] DUP markedUsers=$markedUsers in=${messages.size}")
+                }
             }
         }
         // 【形状快照 · 2026-10-06 宝要"找源头"】这一帧进来时到底长什么样：
@@ -2801,6 +2813,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 )
             }
         }
+        val __cl2 = System.currentTimeMillis()
         val out = mutableListOf<UIMessage>()
         // 【合回补全 · 2026-10-02】上一版只合了"宝那句"，把切出来的**后半截**漏在外面当独立一条。
         // 后果（STRAY 日志实录）：会话里那条是 1 条、回来却是 2 条 → 列表比节点树多 1 →
@@ -2909,6 +2922,14 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                         "tail=" + (mergedTail?.parts?.joinToString("") { it::class.simpleName?.take(4) ?: "?" } ?: "-")
                 )
             }
+        }
+        val __cl3 = System.currentTimeMillis()
+        if (__cl3 - __cl0 > 15) {
+            AppLogBuffer.log(
+                TAG,
+                "COLLAPSE gate=${__cl1 - __cl0} mid=${__cl2 - __cl1} loop=${__cl3 - __cl2} " +
+                    "n=${messages.size} out=${out.size} merged=$mergedCount"
+            )
         }
         return out
     }
