@@ -90,7 +90,6 @@ internal fun applyMiniAppWebViewSettings(wv: WebView) {
         // 小红书/抖音看到它就认定"这是内嵌浏览器"，会弹"请打开 App"的拦截层，帖子根本不给看。
         userAgentString = userAgentString?.replace("; wv", "") ?: userAgentString
     }
-    wv.webViewClient = miniAppWebViewClient
     wv.webChromeClient = WebChromeClient()
 }
 
@@ -382,6 +381,7 @@ fun MiniAppPage(
                         MiniAppWebViewHost.obtain(ctx) {
                             WebView(ctx).apply {
                                 applyMiniAppWebViewSettings(this)
+                                webViewClient = miniAppWebViewClient
                                 loadUrl(url)
                             }
                         }.also { wv ->
@@ -390,10 +390,10 @@ fun MiniAppPage(
                             webViewRef.value = wv
                             // 这个 WebView 的 window.innerHeight 量出来是 0，页面自己算不出视口高度，
                             // 所以由这边量好了喂给它（每次布局变化都喂一遍）。
-                            wv.addOnLayoutChangeListener { v, _, t, _, b, _, _, _, _ ->
+                            wv.addOnLayoutChangeListener { _, _, t, _, b, _, _, _, _ ->
                                 val h = b - t
                                 if (h > 0) {
-                                    v.evaluateJavascript(
+                                    wv.evaluateJavascript(
                                         "window.__vhFixSetHeight && window.__vhFixSetHeight($h);",
                                         null
                                     )

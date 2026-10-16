@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.miniapp
 
 import android.webkit.WebView
+import android.webkit.WebViewClient
 
 /**
  * 浏览器工具摸 WebView 的唯一入口。
@@ -10,6 +11,18 @@ import android.webkit.WebView
  * 页面在不在都不影响：只要 WebView 还活着，猫就够得着。
  */
 internal object MiniAppWebViewBridge {
+
+    /**
+     * 猫自己开的那只用的 client：只做一件事 —— 把补视口单位的脚本注进去。
+     * （页面里那只用的是 MiniAppWebViewClient，它的 onPageFinished 里也有同一句。）
+     */
+    private object ViewportFixClient : WebViewClient() {
+        override fun onPageFinished(view: WebView?, url: String?) {
+            super.onPageFinished(view, url)
+            view?.evaluateJavascript(viewportFixScript, null)
+        }
+    }
+
     /**
      * 猫要用的那只 WebView。
      *
@@ -21,6 +34,7 @@ internal object MiniAppWebViewBridge {
         MiniAppWebViewHost.webView?.let { return it }
         return MiniAppWebViewHost.obtainHeadless { wv ->
             applyMiniAppWebViewSettings(wv)
+            wv.webViewClient = ViewportFixClient
         }
     }
 
