@@ -23,8 +23,11 @@ internal object MiniAppWebViewBridge {
             view.evaluateJavascript(viewportFixScript, null)
             // 这只 WebView 待在小窝里（1×1），量不出自己多高 ——
             // 拿屏幕高度当近似喂给页面，页面里的 vh 才有值可用。
+            // 注意单位：displayMetrics 给的是物理像素（804dp 的屏这里是 2412），
+            // 而 CSS 的 px 是逻辑像素 —— 不除 density 会喂成三倍高。
             // 必须排在 viewportFixScript 后面：脚本要先装好 __vhFixSetHeight。
-            val h = view.context.resources.displayMetrics.heightPixels
+            val dm = view.context.resources.displayMetrics
+            val h = (dm.heightPixels / dm.density).toInt()
             if (h > 0) {
                 view.evaluateJavascript("window.__vhFixSetHeight && window.__vhFixSetHeight($h);", null)
             }

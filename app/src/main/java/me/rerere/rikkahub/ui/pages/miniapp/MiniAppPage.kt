@@ -394,8 +394,12 @@ fun MiniAppPage(
                                 // WebView 刚从 1×1 的小窝里摘出来时，Compose 还没量它，
                                 // 这一回调量到的会是 1px —— 别把那个 1 喂给页面（会把
                                 // ViewportFixClient 喂的屏幕高度盖掉，页面 vh 就塌成 0.01px）。
+                                // 这个 WebView 自己多高（View 的坐标是物理像素）
                                 val own = b - t
-                                val h = if (own >= 100) own else v.resources.displayMetrics.heightPixels
+                                val dm = v.resources.displayMetrics
+                                // 统一换算成 CSS 认的逻辑像素再喂 —— 不除 density 会喂成三倍高。
+                                val h = if (own >= 100) (own / dm.density).toInt()
+                                        else (dm.heightPixels / dm.density).toInt()
                                 if (h > 0) {
                                     wv.evaluateJavascript(
                                         "window.__vhFixSetHeight && window.__vhFixSetHeight($h);",
