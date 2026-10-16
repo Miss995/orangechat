@@ -198,6 +198,14 @@ fun MiniAppPage(
                                 allowContentAccess = true
                                 mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                                 cacheMode = WebSettings.LOAD_DEFAULT
+                                // 像个普通浏览器：认 viewport、按页面宽度适配、允许缩放
+                                useWideViewPort = true
+                                loadWithOverviewMode = true
+                                setSupportZoom(true)
+                                builtInZoomControls = true
+                                displayZoomControls = false
+                                // 音视频不强制"先点一下"才播
+                                mediaPlaybackRequiresUserGesture = false
                             }
                             webViewClient = miniAppWebViewClient
                             webChromeClient = WebChromeClient()
@@ -350,6 +358,19 @@ private class MiniAppWebViewClient(
         onLoadingChange(false)
         onPageTitle(view?.title)
         view?.evaluateJavascript(bridgeScript, null)
+    }
+
+    override fun onReceivedError(
+        view: WebView?,
+        request: WebResourceRequest?,
+        error: android.webkit.WebResourceError?,
+    ) {
+        super.onReceivedError(view, request, error)
+        // 只报主文档的失败；图片/JS 这些子资源挂掉不打扰
+        if (request?.isForMainFrame == true) {
+            onLoadingChange(false)
+            onAlert("页面加载失败：${error?.description ?: "未知错误"}")
+        }
     }
 
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
