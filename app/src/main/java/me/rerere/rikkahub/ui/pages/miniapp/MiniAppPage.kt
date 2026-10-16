@@ -226,7 +226,12 @@ fun MiniAppPage(
                             }
                         } else {
                             // 退无可退也不留空位：给一个关闭兜底
-                            IconButton(onClick = { navController.popBackStack() }) {
+                            IconButton(onClick = {
+                                // 明确的关闭：连 WebView 一起放掉，别让它在后台一直占着。
+                                // （只是切走的话走不到这儿 —— 那种情况留着它，宝回来猫还能读。）
+                                MiniAppWebViewHost.destroy()
+                                navController.popBackStack()
+                            }) {
                                 Icon(HugeIcons.Cancel01, contentDescription = "关闭")
                             }
                         }
@@ -301,16 +306,26 @@ fun MiniAppPage(
                                         },
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("后退") },
-                                        enabled = canBack,
+                                        text = { Text(if (canBack) "后退" else "关闭页面") },
                                         onClick = {
                                             showMoreMenu = false
-                                            webView?.goBack()
+                                            if (canBack) {
+                                                webView?.goBack()
+                                            } else {
+                                                // 退无可退：真把它关掉，别让它在后台一直占着
+                                                MiniAppWebViewHost.destroy()
+                                                navController.popBackStack()
+                                            }
                                         },
                                     )
                                 }
                             }
-                            IconButton(onClick = { navController.popBackStack() }) {
+                            IconButton(onClick = {
+                                // 明确的关闭：连 WebView 一起放掉，别让它在后台一直占着。
+                                // （只是切走的话走不到这儿 —— 那种情况留着它，宝回来猫还能读。）
+                                MiniAppWebViewHost.destroy()
+                                navController.popBackStack()
+                            }) {
                                 Icon(HugeIcons.Cancel01, contentDescription = "关闭")
                             }
                         }
