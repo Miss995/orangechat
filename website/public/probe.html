@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>probe</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font: 13px/1.75 ui-monospace, Menlo, Consolas, monospace; background: #0b0b0f; color: #7CFC9A; padding: 12px 14px 40px; white-space: pre-wrap; word-break: break-all; }
+  .k { color: #ffb36b; }
+  .box { position: fixed; top: 0; left: 0; right: 0; height: 100vh; border: 3px dashed #ff3b3b; pointer-events: none; z-index: 99; }
+  .box::after { content: '100vh 的底 ⇒'; position: absolute; left: 6px; bottom: 2px; font-size: 12px; color: #ff3b3b; background: rgba(0,0,0,.5); padding: 0 4px; }
+  .bar { position: fixed; top: 0; left: 0; right: 0; height: 6px; background: #2196f3; z-index: 100; }
+  #o { position: relative; z-index: 101; padding-top: 8px; }
+</style>
+</head>
+<body>
+<div class="bar"></div>
+<div class="box"></div>
+<div id="o">loading…</div>
+<script>
+function line(k, v) { return '<span class="k">' + k + '</span> ' + v + '\n'; }
+function measure(cssHeight) {
+  var t = document.createElement('div');
+  t.style.cssText = 'position:absolute;top:0;left:0;width:0;height:' + cssHeight + ';visibility:hidden';
+  document.body.appendChild(t);
+  var h = t.offsetHeight;
+  t.remove();
+  return h;
+}
+function probe() {
+  var d = document.documentElement;
+  var vv = window.visualViewport;
+  var s = '';
+  s += line('ua           ', navigator.userAgent);
+  s += line('innerW x H   ', window.innerWidth + ' x ' + window.innerHeight);
+  s += line('docClientW x H', d.clientWidth + ' x ' + d.clientHeight);
+  s += line('screen       ', screen.width + 'x' + screen.height + '  avail ' + screen.availWidth + 'x' + screen.availHeight);
+  s += line('dpr          ', window.devicePixelRatio);
+  s += line('100vh   =>   ', measure('100vh') + 'px');
+  s += line('100dvh  =>   ', measure('100dvh') + 'px');
+  s += line('100%    =>   ', measure('100%') + 'px');
+  s += line('window.outerH', window.outerHeight);
+  if (vv) {
+    s += line('vv.width x h ', Math.round(vv.width) + ' x ' + Math.round(vv.height));
+    s += line('vv.scale     ', vv.scale);
+    s += line('vv.pageTop   ', Math.round(vv.pageTop) + '  offsetTop ' + Math.round(vv.offsetTop));
+  }
+  s += line('body.scrollH ', document.body.scrollHeight);
+  s += line('scrollY      ', window.scrollY);
+  s += line('orientation  ', (screen.orientation && screen.orientation.type) || '-');
+  document.getElementById('o').innerHTML = s;
+}
+probe();
+window.addEventListener('resize', probe);
+window.addEventListener('orientationchange', function () { setTimeout(probe, 350); });
+</script>
+</body>
+</html>
