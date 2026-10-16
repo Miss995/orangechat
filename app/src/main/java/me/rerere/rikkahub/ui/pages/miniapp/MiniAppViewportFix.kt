@@ -61,11 +61,22 @@ internal val viewportFixScript: String = """
     }
 
     function setVh() {
-      var h = window.innerHeight;
+      // 优先用 App 喂进来的高度。这个 WebView 里 window.innerHeight 常年是 0
+      // （实测 innerWidth/innerHeight 都是 0、文档可视高 1px）——
+      // 问页面是问不出来的，只能让外面告诉它。
+      var h = window.__vhFixHostHeight || window.innerHeight || 0;
       if (h > 0) {
         document.documentElement.style.setProperty('--app-vh', (h / 100) + 'px');
       }
     }
+
+    // App 侧调用：把真实可视高度（px）告诉页面，随后立刻重算一遍。
+    window.__vhFixSetHeight = function (h) {
+      h = Number(h);
+      if (!isFinite(h) || h <= 0) return;
+      window.__vhFixHostHeight = h;
+      setVh();
+    };
 
     setVh();
     rewriteAll();

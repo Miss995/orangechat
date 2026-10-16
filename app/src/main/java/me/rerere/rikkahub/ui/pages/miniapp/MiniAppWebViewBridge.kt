@@ -10,6 +10,20 @@ import android.webkit.WebView
  * 页面在不在都不影响：只要 WebView 还活着，猫就够得着。
  */
 internal object MiniAppWebViewBridge {
+    /**
+     * 猫要用的那只 WebView。
+     *
+     * 有就直接给；宝没开着页面时，自己悄悄造一只放进小窝跑起来 ——
+     * 这样"必须宝先打开一个网页，猫才能用浏览器"这个限制就没了。
+     * (需要 App 至少进过一次小程序页，好知道把窝安在哪儿；没记过就返回 null。)
+     */
+    fun ensure(): WebView? {
+        MiniAppWebViewHost.webView?.let { return it }
+        return MiniAppWebViewHost.obtainHeadless { wv ->
+            applyMiniAppWebViewSettings(wv)
+        }
+    }
+
     val current: WebView?
-        get() = MiniAppWebViewHost.webView
+        get() = ensure()
 }

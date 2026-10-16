@@ -27,6 +27,31 @@ internal object MiniAppWebViewHost {
 
     private var park: FrameLayout? = null
 
+    /** 主 Activity 的根 View。页面第一次打开时记一下 —— 之后猫自己造 WebView 也有地方安放。 */
+    private var rootView: ViewGroup? = null
+
+    /** 应用上下文，用来在"宝没开着页面"时自己造一只。 */
+    private var appContext: Context? = null
+
+    fun rememberHost(context: Context) {
+        if (rootView == null) rootView = findActivity(context)?.window?.decorView as? ViewGroup
+        if (appContext == null) appContext = context.applicationContext
+    }
+
+    /**
+     * 猫要用页面、但宝没开着的时候调：自己造一只，直接放进小窝跑着。
+     * 配置由调用方给（跟页面里那只共用同一套）。没记过上下文时返回 null。
+     */
+    fun obtainHeadless(configure: (WebView) -> Unit): WebView? {
+        webView?.let { return it }
+        val ctx = appContext ?: return null
+        return WebView(ctx).also { created ->
+            configure(created)
+            webView = created
+            back(created)
+        }
+    }
+
     private fun findActivity(context: Context): Activity? {
         var c: Context? = context
         while (c is ContextWrapper) {
@@ -51,9 +76,9 @@ internal object MiniAppWebViewHost {
 
     /** 页面走了：放回小窝，不销毁。 */
     fun back(target: WebView) {
-        val activity = findActivity(target.context) ?: return
-        val root = activity.window?.decorView as? ViewGroup ?: return
-        val box = park ?: FrameLayout(activity).also { layout ->
+        val activity = findActivity(target.context)
+        val root = rootView ?: (activity?.window?.decorView as? ViewGroup) ?: return
+        val box = park ?: FrameLayout(activity ?: target.context).also { layout ->
             layout.layoutParams = ViewGroup.LayoutParams(1, 1)
             // INVISIBLE 而不是 GONE：占着位、不显示，但仍然走正常的绘制/回调流程
             layout.visibility = View.INVISIBLE

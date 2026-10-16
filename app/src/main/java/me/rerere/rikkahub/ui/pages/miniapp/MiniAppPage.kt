@@ -68,6 +68,32 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 private const val TAG = "MiniAppPage"
 
+/** 小程序 WebView 的统一配置 —— 页面里那只、和猫自己造的那只，共用这一套。 */
+@SuppressLint("SetJavaScriptEnabled")
+internal fun applyMiniAppWebViewSettings(wv: WebView) {
+    wv.settings.apply {
+        javaScriptEnabled = true
+        domStorageEnabled = true
+        databaseEnabled = true
+        allowContentAccess = true
+        mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        cacheMode = WebSettings.LOAD_DEFAULT
+        // 像个普通浏览器：认 viewport、按页面宽度适配、允许缩放
+        useWideViewPort = true
+        loadWithOverviewMode = true
+        setSupportZoom(true)
+        builtInZoomControls = true
+        displayZoomControls = false
+        // 音视频不强制"先点一下"才播
+        mediaPlaybackRequiresUserGesture = false
+        // 抹掉 WebView 的身份标记（UA 里的 "; wv"）。
+        // 小红书/抖音看到它就认定"这是内嵌浏览器"，会弹"请打开 App"的拦截层，帖子根本不给看。
+        userAgentString = userAgentString?.replace("; wv", "") ?: userAgentString
+    }
+    wv.webViewClient = miniAppWebViewClient
+    wv.webChromeClient = WebChromeClient()
+}
+
 /** 桌面版 UA：让网页以为自己在电脑上。 */
 private const val DESKTOP_UA =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
@@ -352,36 +378,27 @@ fun MiniAppPage(
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
+                        MiniAppWebViewHost.rememberHost(ctx)
                         MiniAppWebViewHost.obtain(ctx) {
                             WebView(ctx).apply {
-                                settings.apply {
-                                    @SuppressLint("SetJavaScriptEnabled")
-                                    javaScriptEnabled = true
-                                    domStorageEnabled = true
-                                    databaseEnabled = true
-                                    allowContentAccess = true
-                                    mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                                    cacheMode = WebSettings.LOAD_DEFAULT
-                                    // 像个普通浏览器：认 viewport、按页面宽度适配、允许缩放
-                                    useWideViewPort = true
-                                    loadWithOverviewMode = true
-                                    setSupportZoom(true)
-                                    builtInZoomControls = true
-                                    displayZoomControls = false
-                                    // 音视频不强制"先点一下"才播
-                                    mediaPlaybackRequiresUserGesture = false
-                                    // 抹掉 WebView 的身份标记（UA 里的 "; wv"）。
-                                    // 小红书/抖音看到它就认定"这是内嵌浏览器"，会弹"请打开 App"的拦截层，帖子根本不给看。
-                                    userAgentString = userAgentString?.replace("; wv", "") ?: userAgentString
-                                }
-                                webViewClient = miniAppWebViewClient
-                                webChromeClient = WebChromeClient()
+                                applyMiniAppWebViewSettings(this)
                                 loadUrl(url)
                             }
                         }.also { wv ->
                             // 从常驻小窝里摘出来交给 Compose；老实例带回来时不动它当前那一页
                             MiniAppWebViewHost.take(wv)
                             webViewRef.value = wv
+                            // 这个 WebView 的 window.innerHeight 量出来是 0，页面自己算不出视口高度，
+                            // 所以由这边量好了喂给它（每次布局变化都喂一遍）。
+                            wv.addOnLayoutChangeListener { v, _, t, _, b, _, _, _, _ ->
+                                val h = b - t
+                                if (h > 0) {
+                                    v.evaluateJavascript(
+                                        "window.__vhFixSetHeight && window.__vhFixSetHeight($h);",
+                                        null
+                                    )
+                                }
+                            }
                         }
                     },
                     update = {

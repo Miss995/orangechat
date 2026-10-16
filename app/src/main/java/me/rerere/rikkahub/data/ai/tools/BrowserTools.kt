@@ -24,7 +24,7 @@ import kotlin.coroutines.resume
  */
 
 private const val NO_PAGE =
-    "现在没有打开着的浏览器页面。让宝在小程序里打开一个网页，才有东西可看。"
+    "浏览器这会儿起不来 —— 猫还不知道把窝安在哪儿。宝随便进一次小程序页就好了（一次就够，之后猫就能自己开）。"
 
 private fun currentBrowser(): WebView? = MiniAppWebViewBridge.current
 
