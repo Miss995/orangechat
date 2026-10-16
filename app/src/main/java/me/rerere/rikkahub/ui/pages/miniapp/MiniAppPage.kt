@@ -358,6 +358,8 @@ private class MiniAppWebViewClient(
         onLoadingChange(false)
         onPageTitle(view?.title)
         view?.evaluateJavascript(bridgeScript, null)
+        // 补上某些系统 WebView 算不出来的视口单位（见 MiniAppViewportFix.kt）
+        view?.evaluateJavascript(viewportFixScript, null)
     }
 
     override fun onReceivedError(
