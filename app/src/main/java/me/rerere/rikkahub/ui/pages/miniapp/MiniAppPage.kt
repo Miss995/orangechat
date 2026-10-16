@@ -390,8 +390,12 @@ fun MiniAppPage(
                             webViewRef.value = wv
                             // 这个 WebView 的 window.innerHeight 量出来是 0，页面自己算不出视口高度，
                             // 所以由这边量好了喂给它（每次布局变化都喂一遍）。
-                            wv.addOnLayoutChangeListener { _, _, t, _, b, _, _, _, _ ->
-                                val h = b - t
+                            wv.addOnLayoutChangeListener { v, _, t, _, b, _, _, _, _ ->
+                                // WebView 刚从 1×1 的小窝里摘出来时，Compose 还没量它，
+                                // 这一回调量到的会是 1px —— 别把那个 1 喂给页面（会把
+                                // ViewportFixClient 喂的屏幕高度盖掉，页面 vh 就塌成 0.01px）。
+                                val own = b - t
+                                val h = if (own >= 100) own else v.resources.displayMetrics.heightPixels
                                 if (h > 0) {
                                     wv.evaluateJavascript(
                                         "window.__vhFixSetHeight && window.__vhFixSetHeight($h);",
