@@ -26,7 +26,9 @@ internal val viewportFixScript: String = """
     (document.body || document.documentElement).appendChild(probe);
     var probeH = probe.offsetHeight;
     if (probe.parentNode) probe.parentNode.removeChild(probe);
-    if (probeH > 0) return;   // vh 正常，不插手
+    // 判据注意：这个内核有时候给的是 1px（不是 0），一样是坏的 ——
+    // 别拿"非零"当正常，拿"够不够一个正常视口"当标准。
+    if (probeH >= 100) return;   // vh 正常，不插手
 
     function patchStyle(style) {
       if (!style) return;

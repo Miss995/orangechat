@@ -19,7 +19,15 @@ internal object MiniAppWebViewBridge {
     private object ViewportFixClient : WebViewClient() {
         override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
-            view?.evaluateJavascript(viewportFixScript, null)
+            view ?: return
+            view.evaluateJavascript(viewportFixScript, null)
+            // 这只 WebView 待在小窝里（1×1），量不出自己多高 ——
+            // 拿屏幕高度当近似喂给页面，页面里的 vh 才有值可用。
+            // 必须排在 viewportFixScript 后面：脚本要先装好 __vhFixSetHeight。
+            val h = view.context.resources.displayMetrics.heightPixels
+            if (h > 0) {
+                view.evaluateJavascript("window.__vhFixSetHeight && window.__vhFixSetHeight($h);", null)
+            }
         }
     }
 
