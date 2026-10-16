@@ -552,7 +552,20 @@ private class MiniAppWebViewClient(
             // 保持内部 WebView 加载
             return false
         }
-        return false
+        // 剩下的都是 WebView 加载不了的协议（alipays:// / xhsdiscover:// / weixin:// ...），
+        // 硬加载就是那句 net::ERR_UNKNOWN_URL_SCHEME。
+        // 能交给系统唤起对应 App 的就交出去；系统也接不住就当没点这一下。
+        val target = request?.url ?: return true
+        val scheme = target.scheme?.lowercase().orEmpty()
+        if (scheme == "javascript" || scheme == "data" || scheme == "about" || scheme == "file") {
+            return true
+        }
+        return try {
+            view?.context?.startActivity(Intent(Intent.ACTION_VIEW, target))
+            true
+        } catch (_: Exception) {
+            true
+        }
     }
 
     private fun handleBridgeCall(webView: WebView, url: String) {
