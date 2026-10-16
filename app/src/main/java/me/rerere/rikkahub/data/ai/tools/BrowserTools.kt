@@ -203,6 +203,32 @@ fun browserClickTool(): Tool = Tool(
     },
 )
 
+/** 在当前页面里跑一小段 JS，把结果拿回来（诊断怪毛病用）。 */
+fun browserEvalTool(): Tool = Tool(
+    name = "browser_eval",
+    description = "在宝打开着的小程序页面里执行一段 JavaScript，并把返回值拿回来。用来诊断页面排布为什么不对（量元素高度、看视口数字、读某个变量）。只读为主，别拿它改页面。",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                putJsonObject("js") {
+                    put("type", "string")
+                    put("description", "要执行的 JavaScript。写成最后返回一个字符串的表达式，比如 JSON.stringify({...})。")
+                }
+            },
+            required = listOf("js"),
+        )
+    },
+    execute = { args ->
+        val js = args.jsonObject["js"]?.jsonPrimitive?.content?.trim().orEmpty()
+        val wv = currentBrowser()
+        when {
+            wv == null -> listOf(UIMessagePart.Text(NO_PAGE))
+            js.isBlank() -> listOf(UIMessagePart.Text("得给一段 js。"))
+            else -> listOf(UIMessagePart.Text(evalJs(wv, js).ifBlank { "(没有返回值)" }))
+        }
+    },
+)
+
 /** 让当前页面后退 / 前进一页。卡在某个页面里出不来的时候用它。 */
 fun browserBackTool(): Tool = Tool(
     name = "browser_back",
