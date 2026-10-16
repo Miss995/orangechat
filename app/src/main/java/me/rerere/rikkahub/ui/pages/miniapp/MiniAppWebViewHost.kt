@@ -3,6 +3,8 @@ package me.rerere.rikkahub.ui.pages.miniapp
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
@@ -41,15 +43,30 @@ internal object MiniAppWebViewHost {
     /**
      * 猫要用页面、但宝没开着的时候调：自己造一只，直接放进小窝跑着。
      * 配置由调用方给（跟页面里那只共用同一套）。没记过上下文时返回 null。
+     *
+     * 注意：WebView 只能在有 Looper 的线程上 new 出来，而工具是在协程里跑的 ——
+     * 所以这里把"造"这件事投回主线程，等它造完再交回来。
      */
     fun obtainHeadless(configure: (WebView) -> Unit): WebView? {
         webView?.let { return it }
         val ctx = appContext ?: return null
-        return WebView(ctx).also { created ->
-            configure(created)
-            webView = created
-            back(created)
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var created: WebView? = null
+        Handler(Looper.getMainLooper()).post {
+            try {
+                created = WebView(ctx).also { wv ->
+                    configure(wv)
+                    webView = wv
+                    back(wv)
+                }
+            } catch (_: Throwable) {
+                // 造不出来就当没有，调用方会按 null 处理
+            } finally {
+                latch.countDown()
+            }
         }
+        latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        return created
     }
 
     private fun findActivity(context: Context): Activity? {
