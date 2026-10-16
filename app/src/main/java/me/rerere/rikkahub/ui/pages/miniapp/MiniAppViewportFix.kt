@@ -17,7 +17,12 @@ package me.rerere.rikkahub.ui.pages.miniapp
 internal val viewportFixScript: String = """
 (function () {
   try {
-    if (window.__vhFixInstalled) return;
+    // 这里原来有一句"装过就跳过"。删掉它 —— 它害过一次：
+    // 页面中途换过 document 时，标记（__vhFixInstalled）跟着 window 留下来了，
+    // 但同一次注入里后装的 __vhFixSetHeight 没留下 —— 于是后面每次注入都被那句
+    // 直接 return 掉，函数永远补不回来，视口就一直塌着。
+    // 现在改成每次都确保函数在位；重复改写有防重（patchStyle 里跳过含 --app-vh 的），
+    // 所以多跑几次是安全的。
     window.__vhFixInstalled = true;
 
     // 探针：这个 WebView 的 vh 好不好使
