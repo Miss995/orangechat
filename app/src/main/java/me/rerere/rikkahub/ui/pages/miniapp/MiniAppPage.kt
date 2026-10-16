@@ -68,6 +68,10 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 private const val TAG = "MiniAppPage"
 
+/** 桌面版 UA：让网页以为自己在电脑上。 */
+private const val DESKTOP_UA =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
+
 private val json = Json { ignoreUnknownKeys = true }
 
 /** 地址栏里输什么就按什么处理：像网址就往那儿走，不像就丢去搜索。 */
@@ -105,6 +109,7 @@ fun MiniAppPage(
     var canBack by remember { mutableStateOf(false) }
     var canForward by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
+    var desktopMode by remember { mutableStateOf(false) }
     var mainButtonVisible by remember { mutableStateOf(false) }
     var mainButtonText by remember { mutableStateOf("CONTINUE") }
     var mainButtonEnabled by remember { mutableStateOf(true) }
@@ -271,6 +276,21 @@ fun MiniAppPage(
                                             cm.setPrimaryClip(
                                                 android.content.ClipData.newPlainText("url", currentUrl)
                                             )
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(if (desktopMode) "桌面版 ✓" else "桌面版") },
+                                        onClick = {
+                                            showMoreMenu = false
+                                            val next = !desktopMode
+                                            desktopMode = next
+                                            webView?.let { wv ->
+                                                wv.settings.userAgentString =
+                                                    if (next) DESKTOP_UA else WebSettings.getDefaultUserAgent(context)
+                                                wv.settings.useWideViewPort = !next
+                                                wv.settings.loadWithOverviewMode = !next
+                                                wv.reload()
+                                            }
                                         },
                                     )
                                     DropdownMenuItem(
