@@ -120,6 +120,33 @@ data class Conversation(
         )
     }
 
+    /**
+     * 【流式只刷一条 · 2026-10-15】流式期间只更新"正在写的那一条"，
+     * 其余节点原样返回 —— 不遍历、不比较、不 copy。
+     *
+     * 起因：原来每帧都调 updateCurrentMessages(整份)，那个函数会把命中的每个节点
+     * 都 copy 一遍（内容没变也 copy），于是几百个节点对象全换新 → 界面那边整段
+     * 重组。而这条路径每帧都跑，代价就摊在每一次生成上。
+     *
+     * 之所以能直接按 id 找：流式期间只有一条 assistant 在长，它的 id 由
+     * handleMessageChunk 保证不变（"接着写同一条"）。找不到家时兜底追加 ——
+     * 宁可多一条，也不丢内容。
+     */
+    fun updateStreamingMessage(message: UIMessage): Conversation {
+        val idx = messageNodes.indexOfFirst { node -> node.messages.any { it.id == message.id } }
+        if (idx < 0) {
+            AppLogBuffer.log("ConvUpd", "STREAM-MISS id=${message.id.toString().take(8)} -> append")
+            return this.copy(messageNodes = messageNodes + message.toMessageNode())
+        }
+        val node = messageNodes[idx]
+        val nm = node.messages.toMutableList()
+        val j = nm.indexOfFirst { it.id == message.id }
+        nm[j] = message
+        val updated = messageNodes.toMutableList()
+        updated[idx] = node.copy(messages = nm)
+        return this.copy(messageNodes = updated)
+    }
+
     companion object {
         fun ofId(
             id: Uuid,

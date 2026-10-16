@@ -1794,8 +1794,18 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                                 )
                             }
                         }
-                        val updatedConversation = currentConversationForChunk
-                            .updateCurrentMessages(patchedMessages)
+                        // 【流式只刷一条 · 2026-10-15 宝拍板】原来这里把整份 patchedMessages
+                        // 交给 updateCurrentMessages —— 那个函数会把命中的每个节点都 copy 一遍
+                        // （内容没变也 copy），几百个节点对象全换新 → 界面那边每帧整段重组。
+                        // 改成只更新"正在写的那一条"（assistant）：其余节点原样返回，一个不碰。
+                        // collapseInterjections 照跑不动（插话那边行为一个字节不改），
+                        // 只是它的产出不再被拿去做整份覆盖。
+                        val streamingMessage = patchedMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                        val updatedConversation = if (streamingMessage != null) {
+                            currentConversationForChunk.updateStreamingMessage(streamingMessage)
+                        } else {
+                            currentConversationForChunk
+                        }
                         updateConversation(conversationId, updatedConversation)
                         val __tD = System.currentTimeMillis()
 
