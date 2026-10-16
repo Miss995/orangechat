@@ -12,7 +12,6 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import android.view.HapticFeedbackConstants
-import android.os.Message
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -359,26 +358,9 @@ fun MiniAppPage(
                                     // 抹掉 WebView 的身份标记（UA 里的 "; wv"）。
                                     // 小红书/抖音看到它就认定"这是内嵌浏览器"，会弹"请打开 App"的拦截层，帖子根本不给看。
                                     userAgentString = userAgentString?.replace("; wv", "") ?: userAgentString
-                                    // 点开帖子那类操作走的是 window.open（开新窗口），默认会被静默丢掉，
-                                    // 表现就是"点了没反应 / 卡住"。打开它，再由下面 onCreateWindow 兜住。
-                                    javaScriptCanOpenWindowsAutomatically = true
-                                    setSupportMultipleWindows(true)
                                 }
                                 webViewClient = miniAppWebViewClient
-                                webChromeClient = object : WebChromeClient() {
-                                    override fun onCreateWindow(
-                                        view: WebView?,
-                                        isDialog: Boolean,
-                                        isUserGesture: Boolean,
-                                        resultMsg: Message?,
-                                    ): Boolean {
-                                        // 不真开新窗口，让它在同一个 WebView 里走
-                                        val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
-                                        transport.webView = view
-                                        resultMsg.sendToTarget()
-                                        return true
-                                    }
-                                }
+                                webChromeClient = WebChromeClient()
                                 loadUrl(url)
                             }
                         }.also { wv ->
