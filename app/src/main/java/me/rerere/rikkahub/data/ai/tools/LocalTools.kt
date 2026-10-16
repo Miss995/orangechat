@@ -748,6 +748,7 @@ class LocalTools(
             tools.add(browserReadTool())
             tools.add(browserOpenTool())
             tools.add(browserClickTool())
+            tools.add(browserBackTool())
         }
         return tools
     }

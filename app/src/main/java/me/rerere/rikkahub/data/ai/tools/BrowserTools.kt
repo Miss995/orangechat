@@ -202,3 +202,48 @@ fun browserClickTool(): Tool = Tool(
         }
     },
 )
+
+/** 让当前页面后退 / 前进一页。卡在某个页面里出不来的时候用它。 */
+fun browserBackTool(): Tool = Tool(
+    name = "browser_back",
+    description = "让宝打开着的小程序页面退回上一页（或前进一页）。卡在某个页面里出不来的时候用它。",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                putJsonObject("step") {
+                    put("type", "integer")
+                    put("description", "退几页：-1 后退（默认），1 前进")
+                }
+            },
+        )
+    },
+    execute = { args ->
+        val step = args.jsonObject["step"]?.jsonPrimitive?.content?.toIntOrNull() ?: -1
+        val wv = currentBrowser()
+        if (wv == null) {
+            listOf(UIMessagePart.Text(NO_PAGE))
+        } else {
+            val can = try {
+                if (step > 0) wv.canGoForward() else wv.canGoBack()
+            } catch (_: Exception) {
+                false
+            }
+            if (!can) {
+                listOf(
+                    UIMessagePart.Text(
+                        if (step > 0) "已经是最前面那一页了，没得往前。" else "已经是最初那一页了，没得后退。"
+                    )
+                )
+            } else {
+                Handler(Looper.getMainLooper()).post {
+                    if (step > 0) wv.goForward() else wv.goBack()
+                }
+                listOf(
+                    UIMessagePart.Text(
+                        if (step > 0) "往前翻了一页，等一两秒再读。" else "退回上一页了，等一两秒再读。"
+                    )
+                )
+            }
+        }
+    },
+)

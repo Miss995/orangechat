@@ -210,6 +210,12 @@ fun MiniAppPage(
                             IconButton(onClick = { addressEditing = false }) {
                                 Icon(HugeIcons.Cancel01, contentDescription = "取消")
                             }
+                        } else if (canBack) {
+                            // 能退就一定要能退 —— 这个排在最前，
+                            // 免得页面（小红书这类）说自己接管了返回，结果又不管，宝就卡在里面出不来
+                            IconButton(onClick = { webView?.goBack() }) {
+                                Icon(HugeIcons.ArrowLeft01, contentDescription = "后退")
+                            }
                         } else if (backButtonVisible) {
                             IconButton(onClick = {
                                 webView?.evaluateJavascript(
@@ -219,9 +225,10 @@ fun MiniAppPage(
                             }) {
                                 Icon(HugeIcons.ArrowLeft01, contentDescription = "返回")
                             }
-                        } else if (canBack) {
-                            IconButton(onClick = { webView?.goBack() }) {
-                                Icon(HugeIcons.ArrowLeft01, contentDescription = "后退")
+                        } else {
+                            // 退无可退也不留空位：给一个关闭兜底
+                            IconButton(onClick = { navController.popBackStack() }) {
+                                Icon(HugeIcons.Cancel01, contentDescription = "关闭")
                             }
                         }
                     },
@@ -349,6 +356,9 @@ fun MiniAppPage(
                                     displayZoomControls = false
                                     // 音视频不强制"先点一下"才播
                                     mediaPlaybackRequiresUserGesture = false
+                                    // 抹掉 WebView 的身份标记（UA 里的 "; wv"）。
+                                    // 小红书/抖音看到它就认定"这是内嵌浏览器"，会弹"请打开 App"的拦截层，帖子根本不给看。
+                                    userAgentString = userAgentString?.replace("; wv", "") ?: userAgentString
                                     // 点开帖子那类操作走的是 window.open（开新窗口），默认会被静默丢掉，
                                     // 表现就是"点了没反应 / 卡住"。打开它，再由下面 onCreateWindow 兜住。
                                     javaScriptCanOpenWindowsAutomatically = true
