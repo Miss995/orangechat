@@ -12,6 +12,7 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import android.view.HapticFeedbackConstants
+import android.os.Message
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -41,7 +42,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -331,28 +331,50 @@ fun MiniAppPage(
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
-                        WebView(ctx).apply {
-                            settings.apply {
-                                @SuppressLint("SetJavaScriptEnabled")
-                                javaScriptEnabled = true
-                                domStorageEnabled = true
-                                databaseEnabled = true
-                                allowContentAccess = true
-                                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                                cacheMode = WebSettings.LOAD_DEFAULT
-                                // 像个普通浏览器：认 viewport、按页面宽度适配、允许缩放
-                                useWideViewPort = true
-                                loadWithOverviewMode = true
-                                setSupportZoom(true)
-                                builtInZoomControls = true
-                                displayZoomControls = false
-                                // 音视频不强制"先点一下"才播
-                                mediaPlaybackRequiresUserGesture = false
+                        MiniAppWebViewHost.obtain(ctx) {
+                            WebView(ctx).apply {
+                                settings.apply {
+                                    @SuppressLint("SetJavaScriptEnabled")
+                                    javaScriptEnabled = true
+                                    domStorageEnabled = true
+                                    databaseEnabled = true
+                                    allowContentAccess = true
+                                    mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                                    cacheMode = WebSettings.LOAD_DEFAULT
+                                    // 像个普通浏览器：认 viewport、按页面宽度适配、允许缩放
+                                    useWideViewPort = true
+                                    loadWithOverviewMode = true
+                                    setSupportZoom(true)
+                                    builtInZoomControls = true
+                                    displayZoomControls = false
+                                    // 音视频不强制"先点一下"才播
+                                    mediaPlaybackRequiresUserGesture = false
+                                    // 点开帖子那类操作走的是 window.open（开新窗口），默认会被静默丢掉，
+                                    // 表现就是"点了没反应 / 卡住"。打开它，再由下面 onCreateWindow 兜住。
+                                    javaScriptCanOpenWindowsAutomatically = true
+                                    setSupportMultipleWindows(true)
+                                }
+                                webViewClient = miniAppWebViewClient
+                                webChromeClient = object : WebChromeClient() {
+                                    override fun onCreateWindow(
+                                        view: WebView?,
+                                        isDialog: Boolean,
+                                        isUserGesture: Boolean,
+                                        resultMsg: Message?,
+                                    ): Boolean {
+                                        // 不真开新窗口，让它在同一个 WebView 里走
+                                        val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
+                                        transport.webView = view
+                                        resultMsg.sendToTarget()
+                                        return true
+                                    }
+                                }
+                                loadUrl(url)
                             }
-                            webViewClient = miniAppWebViewClient
-                            webChromeClient = WebChromeClient()
-                            loadUrl(url)
-                            webViewRef.value = this
+                        }.also { wv ->
+                            // 从常驻小窝里摘出来交给 Compose；老实例带回来时不动它当前那一页
+                            MiniAppWebViewHost.take(wv)
+                            webViewRef.value = wv
                         }
                     },
                     update = {
@@ -469,14 +491,9 @@ fun MiniAppPage(
 
     DisposableEffect(Unit) {
         onDispose {
-            webView?.let { MiniAppWebViewBridge.detach(it) }
-            webView?.destroy()
+            // 不销毁 —— 放回常驻小窝。这样宝切去聊天，浏览器工具照样摸得到它
+            webView?.let { MiniAppWebViewHost.back(it) }
         }
-    }
-
-    // 页面活着的时候把 WebView 挂到全局，browser_* 系列工具靠这个摸到它
-    LaunchedEffect(webView) {
-        webView?.let { MiniAppWebViewBridge.attach(it) }
     }
 }
 

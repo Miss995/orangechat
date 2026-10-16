@@ -3,24 +3,13 @@ package me.rerere.rikkahub.ui.pages.miniapp
 import android.webkit.WebView
 
 /**
- * 小程序 WebView 的"挂钩"。
+ * 浏览器工具摸 WebView 的唯一入口。
  *
- * 页面上打开着的小程序只可能有一个。工具侧的 browser_* 系列要摸到它，
- * 就得有个地方能拿到"当前那个 WebView"。页面进出时挂上 / 摘掉。
- *
- * 只在主线程读写。
+ * v1 的时候这里还兼着"页面进出时挂上 / 摘掉"，因为 WebView 跟着页面生灭。
+ * 现在 WebView 常驻在 [MiniAppWebViewHost] 的小窝里，这里就退成一句转发 ——
+ * 页面在不在都不影响：只要 WebView 还活着，猫就够得着。
  */
 internal object MiniAppWebViewBridge {
-    @Volatile
-    var current: WebView? = null
-        private set
-
-    fun attach(webView: WebView) {
-        current = webView
-    }
-
-    /** 只有还是同一个才算摘掉，避免后开的页面被先走的页面清空。 */
-    fun detach(webView: WebView) {
-        if (current === webView) current = null
-    }
+    val current: WebView?
+        get() = MiniAppWebViewHost.webView
 }
