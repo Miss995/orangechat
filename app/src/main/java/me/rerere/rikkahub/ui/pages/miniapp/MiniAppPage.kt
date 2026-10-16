@@ -254,9 +254,8 @@ fun MiniAppPage(
                                             val target = currentUrl
                                             if (target.isNotBlank()) {
                                                 try {
-                                                    startActivity(
-                                                        context,
-                                                        Intent(Intent.ACTION_VIEW, Uri.parse(target)),
+                                                    context.startActivity(
+                                                        Intent(Intent.ACTION_VIEW, Uri.parse(target))
                                                     )
                                                 } catch (_: ActivityNotFoundException) {
                                                 }
