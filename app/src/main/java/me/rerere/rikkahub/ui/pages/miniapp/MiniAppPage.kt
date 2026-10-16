@@ -18,6 +18,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,10 +27,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,7 +56,11 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowLeft01
+import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.Cancel01
+import me.rerere.hugeicons.stroke.Earth
+import me.rerere.hugeicons.stroke.MoreVertical
+import me.rerere.hugeicons.stroke.Refresh01
 import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.CustomColors
@@ -60,6 +69,19 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 private const val TAG = "MiniAppPage"
 
 private val json = Json { ignoreUnknownKeys = true }
+
+/** 地址栏里输什么就按什么处理：像网址就往那儿走，不像就丢去搜索。 */
+private fun normalizeAddress(input: String): String {
+    val t = input.trim()
+    if (t.isEmpty()) return t
+    val looksLikeUrl = t.startsWith("http://") || t.startsWith("https://") ||
+        t.startsWith("file://") || t.startsWith("about:") || t.startsWith("data:")
+    if (looksLikeUrl) return t
+    if (t.contains(" ") || !t.contains(".") || t.startsWith("localhost")) {
+        return "https://www.bing.com/search?q=" + java.net.URLEncoder.encode(t, "UTF-8")
+    }
+    return "https://$t"
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,6 +99,12 @@ fun MiniAppPage(
     val toolScope = rememberCoroutineScope()
     var pageTitle by remember { mutableStateOf(title ?: "") }
     var isLoading by remember { mutableStateOf(true) }
+    var currentUrl by remember { mutableStateOf(url) }
+    var addressEditing by remember { mutableStateOf(false) }
+    var addressText by remember { mutableStateOf(url) }
+    var canBack by remember { mutableStateOf(false) }
+    var canForward by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
     var mainButtonVisible by remember { mutableStateOf(false) }
     var mainButtonText by remember { mutableStateOf("CONTINUE") }
     var mainButtonEnabled by remember { mutableStateOf(true) }
@@ -95,6 +123,8 @@ fun MiniAppPage(
             bridgeScript = bridgeScript,
             onPageTitle = { pageTitle = it ?: title ?: "" },
             onLoadingChange = { isLoading = it },
+            onUrlChange = { newUrl -> currentUrl = newUrl; if (!addressEditing) addressText = newUrl },
+            onNavChange = { back, forward -> canBack = back; canForward = forward },
             onMainButton = { visible, text, enabled, progress ->
                 mainButtonVisible = visible
                 text?.let { mainButtonText = it }
@@ -146,33 +176,125 @@ fun MiniAppPage(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = pageTitle,
-                        maxLines = 1,
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                },
-                navigationIcon = {
-                    if (backButtonVisible) {
-                        IconButton(onClick = {
-                            webView?.evaluateJavascript(
-                                "window.__bridgeFireEvent('backButtonClicked');",
-                                null
+            Column {
+                TopAppBar(
+                    title = {
+                        if (addressEditing) {
+                            OutlinedTextField(
+                                value = addressText,
+                                onValueChange = { addressText = it },
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.fillMaxWidth(),
                             )
-                        }) {
-                            Icon(HugeIcons.ArrowLeft01, contentDescription = "返回")
+                        } else {
+                            Text(
+                                text = currentUrl.ifBlank { pageTitle },
+                                maxLines = 1,
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.clickable {
+                                    addressText = currentUrl
+                                    addressEditing = true
+                                },
+                            )
                         }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(HugeIcons.Cancel01, contentDescription = "关闭")
-                    }
-                },
-                colors = CustomColors.topBarColors,
-            )
+                    },
+                    navigationIcon = {
+                        if (addressEditing) {
+                            IconButton(onClick = { addressEditing = false }) {
+                                Icon(HugeIcons.Cancel01, contentDescription = "取消")
+                            }
+                        } else if (backButtonVisible) {
+                            IconButton(onClick = {
+                                webView?.evaluateJavascript(
+                                    "window.__bridgeFireEvent('backButtonClicked');",
+                                    null
+                                )
+                            }) {
+                                Icon(HugeIcons.ArrowLeft01, contentDescription = "返回")
+                            }
+                        } else if (canBack) {
+                            IconButton(onClick = { webView?.goBack() }) {
+                                Icon(HugeIcons.ArrowLeft01, contentDescription = "后退")
+                            }
+                        }
+                    },
+                    actions = {
+                        if (addressEditing) {
+                            IconButton(onClick = {
+                                val target = addressText.trim()
+                                addressEditing = false
+                                if (target.isNotEmpty()) {
+                                    webView?.loadUrl(normalizeAddress(target))
+                                }
+                            }) {
+                                Icon(HugeIcons.ArrowRight01, contentDescription = "前往")
+                            }
+                        } else {
+                            IconButton(onClick = { webView?.reload() }) {
+                                Icon(HugeIcons.Refresh01, contentDescription = "刷新")
+                            }
+                            IconButton(
+                                onClick = { webView?.goForward() },
+                                enabled = canForward,
+                            ) {
+                                Icon(HugeIcons.ArrowRight01, contentDescription = "前进")
+                            }
+                            IconButton(onClick = { showMoreMenu = true }) {
+                                Icon(HugeIcons.MoreVertical, contentDescription = "更多")
+                                DropdownMenu(
+                                    expanded = showMoreMenu,
+                                    onDismissRequest = { showMoreMenu = false },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("在系统浏览器打开") },
+                                        leadingIcon = { Icon(HugeIcons.Earth, contentDescription = null) },
+                                        onClick = {
+                                            showMoreMenu = false
+                                            val target = currentUrl
+                                            if (target.isNotBlank()) {
+                                                try {
+                                                    startActivity(
+                                                        context,
+                                                        Intent(Intent.ACTION_VIEW, Uri.parse(target)),
+                                                    )
+                                                } catch (_: ActivityNotFoundException) {
+                                                }
+                                            }
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("复制链接") },
+                                        onClick = {
+                                            showMoreMenu = false
+                                            val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                                as android.content.ClipboardManager
+                                            cm.setPrimaryClip(
+                                                android.content.ClipData.newPlainText("url", currentUrl)
+                                            )
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("后退") },
+                                        enabled = canBack,
+                                        onClick = {
+                                            showMoreMenu = false
+                                            webView?.goBack()
+                                        },
+                                    )
+                                }
+                            }
+                            IconButton(onClick = { navController.popBackStack() }) {
+                                Icon(HugeIcons.Cancel01, contentDescription = "关闭")
+                            }
+                        }
+                    },
+                    colors = CustomColors.topBarColors,
+                )
+                if (isLoading) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+            }
         },
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
@@ -336,6 +458,8 @@ private class MiniAppWebViewClient(
     private val bridgeScript: String,
     private val onPageTitle: (String?) -> Unit,
     private val onLoadingChange: (Boolean) -> Unit,
+    private val onUrlChange: (String) -> Unit,
+    private val onNavChange: (Boolean, Boolean) -> Unit,
     private val onMainButton: (visible: Boolean, text: String?, enabled: Boolean, progress: Boolean) -> Unit,
     private val onBackButton: (visible: Boolean) -> Unit,
     private val onPopup: (PopupData) -> Unit,
@@ -351,15 +475,32 @@ private class MiniAppWebViewClient(
     override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
         super.onPageStarted(view, url, favicon)
         onLoadingChange(true)
+        url?.let(onUrlChange)
     }
 
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
         onLoadingChange(false)
         onPageTitle(view?.title)
+        url?.let(onUrlChange)
+        reportNav(view)
         view?.evaluateJavascript(bridgeScript, null)
         // 补上某些系统 WebView 算不出来的视口单位（见 MiniAppViewportFix.kt）
         view?.evaluateJavascript(viewportFixScript, null)
+    }
+
+    override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+        super.doUpdateVisitedHistory(view, url, isReload)
+        url?.let(onUrlChange)
+        reportNav(view)
+    }
+
+    private fun reportNav(view: WebView?) {
+        if (view == null) return
+        try {
+            onNavChange(view.canGoBack(), view.canGoForward())
+        } catch (_: Exception) {
+        }
     }
 
     override fun onReceivedError(
