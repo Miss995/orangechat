@@ -270,6 +270,23 @@ private fun AssistantLocalToolContent(
                     )
                 }
             )
+            item(
+                headlineContent = { Text("猫的浏览器") },
+                supportingContent = { Text("让橘仔读你开着的那个小程序页面：看得见字、能跳网址、能点东西。要先把页面打开。") },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.Browser),
+                        onCheckedChange = {
+                            val newLocalTools = if (it) {
+                                assistant.localTools + LocalToolOption.Browser
+                            } else {
+                                assistant.localTools - LocalToolOption.Browser
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
         }
     }
 }

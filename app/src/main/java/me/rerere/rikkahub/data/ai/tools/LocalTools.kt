@@ -133,6 +133,15 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("music")
     data object Music : LocalToolOption()
+
+    /**
+     * 猫的浏览器。开启后注册 browser_read / browser_open / browser_click，
+     * 让橘仔能摸到宝此刻打开着的小程序页面（读文字、跳网址、点东西）。
+     * 页面没开着时工具会直接说明，不会乱来。2026-10-16 宝拍板做。
+     */
+    @Serializable
+    @SerialName("browser")
+    data object Browser : LocalToolOption()
 }
  
 class LocalTools(
@@ -721,7 +730,6 @@ class LocalTools(
             tools.add(me.rerere.rikkahub.data.ai.tools.local.scrollTool(invocationContext))
             tools.add(me.rerere.rikkahub.data.ai.tools.local.globalActionTool(invocationContext))
             tools.add(me.rerere.rikkahub.data.ai.tools.local.takeScreenshotTool(context))
-            tools.add(me.rerere.rikkahub.data.ai.tools.local.virtualDisplayTool(context))
         }
         if (options.contains(LocalToolOption.Ssh)) {
             tools.add(me.rerere.rikkahub.data.ai.tools.local.sshExecTool(context))
@@ -735,6 +743,11 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.Music)) {
             tools.add(eryuMusicTool)
+        }
+        if (options.contains(LocalToolOption.Browser)) {
+            tools.add(browserReadTool())
+            tools.add(browserOpenTool())
+            tools.add(browserClickTool())
         }
         return tools
     }

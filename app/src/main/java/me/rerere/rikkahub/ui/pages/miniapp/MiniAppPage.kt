@@ -41,6 +41,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -468,8 +469,14 @@ fun MiniAppPage(
 
     DisposableEffect(Unit) {
         onDispose {
+            webView?.let { MiniAppWebViewBridge.detach(it) }
             webView?.destroy()
         }
+    }
+
+    // 页面活着的时候把 WebView 挂到全局，browser_* 系列工具靠这个摸到它
+    LaunchedEffect(webView) {
+        webView?.let { MiniAppWebViewBridge.attach(it) }
     }
 }
 
