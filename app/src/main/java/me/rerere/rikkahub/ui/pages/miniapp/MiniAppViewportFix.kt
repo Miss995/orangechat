@@ -73,18 +73,32 @@ internal val viewportFixScript: String = """
     // 而抖音这类页面的布局全靠它算 —— 光把 CSS 的 vh 换掉，页面照样是 0 高。
     // 所以用 getter 把这两个数接管过来（实测：接管之后 html/body/滚动高度才从 0 起来）。
     function installViewportGetters() {
-      if (window.__vhFixGetters) return;
+      // 不设早退：defineProperty 重复设没有副作用，而"留了标记却没设成"
+      // 已经害过一次（见上面那段注释），这里每次进来都重设一遍。
+      var getH = function () { return window.__vhFixHostHeight || 0; };
+      var getW = function () { return window.screen.width || 360; };
       try {
-        Object.defineProperty(window, 'innerHeight', {
-          configurable: true,
-          get: function () { return window.__vhFixHostHeight || 0; }
-        });
-        Object.defineProperty(window, 'innerWidth', {
-          configurable: true,
-          get: function () { return window.screen.width || 360; }
-        });
-        window.__vhFixGetters = true;
-      } catch (e) { /* 有的内核不让改，改不了就只靠 CSS 那半边 */ }
+        Object.defineProperty(window, 'innerHeight', { configurable: true, get: getH });
+        Object.defineProperty(window, 'innerWidth', { configurable: true, get: getW });
+      } catch (e) { /* 有的内核不让改，改不了就算了 */ }
+      // ★ 实测这两个也坏：documentElement.clientHeight 给 1、visualViewport.height 给 1。
+      // 而现代框架（抖音这类 SPA 的瀑布流就是）算"还能不能再渲染一屏"时读的正是它们 ——
+      // 只接管 innerHeight 不够，页面排出来了却只铺半屏，下面空着。
+      try {
+        Object.defineProperty(document.documentElement, 'clientHeight', { configurable: true, get: getH });
+        Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, get: getW });
+      } catch (e) {}
+      try {
+        if (document.body) {
+          Object.defineProperty(document.body, 'clientHeight', { configurable: true, get: getH });
+        }
+      } catch (e) {}
+      try {
+        if (window.visualViewport) {
+          Object.defineProperty(window.visualViewport, 'height', { configurable: true, get: getH });
+          Object.defineProperty(window.visualViewport, 'width', { configurable: true, get: getW });
+        }
+      } catch (e) {}
     }
 
     function ensureRootHeight(h) {
@@ -99,11 +113,17 @@ internal val viewportFixScript: String = """
 
     // notify=true 时才广播 resize；监听里再传 false，避免自己叫自己转圈。
     function setVh(notify) {
-      // 优先用 App 喂进来的高度。这个 WebView 里 window.innerHeight 常年是 0
-      // （实测 innerWidth/innerHeight 都是 0、文档可视高 1px）——
-      // 问页面是问不出来的，只能让外面告诉它。
-      var h = window.__vhFixHostHeight || 0;
+      // ★ 以"页面自己量到的视口"为准（2026-10-17）。
+      // 小窝改成整屏之后，documentElement.clientHeight / visualViewport 终于是对的了，
+      // 页面自己就能问出真值 —— 不用再完全依赖外面喂。
+      // （实测踩过：外面的布局回调量到的是"WebView 半高"那一下，喂了个 350 进来，
+      //   把真值 700 盖掉了，页面就按 350 排，下面空一半。）
+      // App 喂的值只在视口还量不出来（<=100）时当兜底。
+      var h = 0;
+      try { h = document.documentElement.clientHeight || 0; } catch (e) {}
+      if (!(h > 100)) h = window.__vhFixHostHeight || 0;
       if (h > 0) {
+        window.__vhFixHostHeight = h;
         document.documentElement.style.setProperty('--app-vh', (h / 100) + 'px');
         installViewportGetters();
         ensureRootHeight(h);
