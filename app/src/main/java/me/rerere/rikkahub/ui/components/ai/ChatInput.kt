@@ -78,12 +78,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -224,6 +228,11 @@ fun ChatInput(
     // 于是外层接走手势，滑输入框内部就把附件区拉了出来。
     // 现在直接问它「还能不能滚」—— 不分字号、不分中英文、不分框宽，文字真排不下才为真。
     val inputScrollState = rememberScrollState()
+    // 【分区 · 2026-10-17 宝的方案】输入框在屏幕上的矩形 + 整块面板的屏幕原点。
+    // 手势落下来先算落在哪边：框里 = 全归输入框（滚不动也不拉面板）；框外空白 = 才拉/收附件。
+    // 空间判断比"滚到边界再传"稳 —— 落点一开始就知道，不用等手指动到哪儿才发现到边界。
+    var fieldRectInWindow by remember { mutableStateOf(Rect.Zero) }
+    var surfaceOriginInWindow by remember { mutableStateOf(Offset.Zero) }
     var showInjectionSheet by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
     fun dismissExpand() {
@@ -743,6 +752,7 @@ fun ChatInput(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .onGloballyPositioned { surfaceOriginInWindow = it.localToWindow(Offset.Zero) }
                     // 【第二刀 2026-10-08】在输入框整块上滑 -> 拉起附件区（跟点 + 同一个动作）
                     // 用 Initial pass 只观察、不消费，免得抢掉输入框自己的手势
                     .pointerInput(Unit) {
@@ -752,6 +762,16 @@ fun ChatInput(
                                     requireUnconsumed = false,
                                     pass = PointerEventPass.Initial
                                 )
+                                // 【分区判断 · 2026-10-17 宝的方案】手指落在输入框里 -> 这一下全归输入框，
+                                // 哪怕没内容可滚也不拉面板；落在框外的空白（边距、按钮那片）-> 才归外层。
+                                if (fieldRectInWindow.contains(surfaceOriginInWindow + down.position)) {
+                                    while (true) {
+                                        val e = awaitPointerEvent(PointerEventPass.Initial)
+                                        val c = e.changes.firstOrNull { it.id == down.id }
+                                        if (c == null || !c.pressed) break
+                                    }
+                                    continue
+                                }
                                 var startY = down.position.y
                                 var fired = false
                                 var alive = true
@@ -1271,6 +1291,7 @@ private fun TextInputRow(
             ),
             modifier = Modifier
                 .fillMaxWidth()
+                .onGloballyPositioned { fieldRectInWindow = it.boundsInWindow() }
                 .contentReceiver(receiveContentListener)
                 .onFocusChanged {
                     isFocused = it.isFocused
