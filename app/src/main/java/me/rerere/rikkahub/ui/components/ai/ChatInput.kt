@@ -78,7 +78,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
@@ -753,38 +752,40 @@ fun ChatInput(
                                     requireUnconsumed = false,
                                     pass = PointerEventPass.Initial
                                 )
-                                // 【按需让位 · 2026-10-10 宝的方案】输入框内容超过它自己的可视高度
-                                //（5 行 —— 见下面 TextFieldLineLimits.MultiLine(maxHeightInLines = 5)）
-                                // → 它自己有得滚，这一轮让给它，等抬手再重来；否则外层照常接（拉附件）。
-                                // 上一版无条件让（Final pass）错在哪：TextField 只要碰到指针就标 consumed
-                                //（它得先防着"这可能是拖选 / 放光标"），外层永远在第一步就退出 →
-                                // 不管有没有字，怎么滑都拉不出附件。
-                                // 【改用真实滚动状态 · 2026-10-17】不再按字数猜，直接问输入框「你还能不能滚」。
-                                if (inputScrollState.canScrollBackward || inputScrollState.canScrollForward) {
-                                    waitForUpOrCancellation(pass = PointerEventPass.Initial)
-                                    continue
-                                }
-                                val startY = down.position.y
+                                var startY = down.position.y
                                 var fired = false
                                 var alive = true
                                 while (alive) {
-                                    // 【观察位 · 2026-10-10 最终版】回到 Initial：外层只"看"不消费。
-                                    // 走到这里说明输入框没得滚（上面那道 __inputCanScroll 闸已经放行），
-                                    // 所以放心观察 —— 滑够 48f 就拉 / 收附件。
+                                    // 【边界才让位 · 2026-10-17 宝提的】外层始终只"看"不消费（Initial pass），
+                                    // 每一帧按方向问输入框一句：你这个方向还能不能滚？
+                                    //   还能滚 → 这一轮让给它，并把起算点挪到当前位置
+                                    //            （不挪的话，滚到底那一下会被前面攒的距离一次性算成"滑够了"，面板立刻弹出来）
+                                    //   滚到头（或压根没内容可滚）→ 才把这一下交给外层：上滑拉附件、下滑收附件。
+                                    // 老版本是进门先查一次"能不能滚"，能滚就整段让位 ——
+                                    // 结果文字一多，附件面板就彻底打不开了（除非清空或点 +），这才换成分帧判方向。
                                     val event = awaitPointerEvent(PointerEventPass.Initial)
                                     val ch = event.changes.firstOrNull { it.id == down.id }
                                     if (ch == null || !ch.pressed) {
                                         alive = false
-                                    } else if (!fired && (startY - ch.position.y) > 48f) {
-                                        fired = true
-                                        if (expand != ExpandState.Files) {
-                                            expand = ExpandState.Files
-                                        }
-                                    } else if (!fired && (ch.position.y - startY) > 48f) {
-                                        // 下滑 -> 收回（宝 2026-10-08 提的：只出得去、回不来）
-                                        fired = true
-                                        if (expand != ExpandState.Collapsed) {
-                                            expand = ExpandState.Collapsed
+                                    } else {
+                                        val dy = startY - ch.position.y   // 正 = 手指往上滑
+                                        val scrollableThisWay =
+                                            if (dy > 0) inputScrollState.canScrollForward
+                                            else inputScrollState.canScrollBackward
+                                        if (scrollableThisWay) {
+                                            startY = ch.position.y
+                                        } else if (!fired && (dy > 48f || dy < -48f)) {
+                                            fired = true
+                                            if (dy > 0) {
+                                                if (expand != ExpandState.Files) {
+                                                    expand = ExpandState.Files
+                                                }
+                                            } else {
+                                                // 下滑 -> 收回（宝 2026-10-08 提的：只出得去、回不来）
+                                                if (expand != ExpandState.Collapsed) {
+                                                    expand = ExpandState.Collapsed
+                                                }
+                                            }
                                         }
                                     }
                                 }
