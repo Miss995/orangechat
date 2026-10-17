@@ -680,7 +680,11 @@ class ChatService(
                                         }
                                     )
                                     updateConversation(conversationId, updated)
-                                    AppLogBuffer.log(TAG, "imageNote: saved ${notes.size} image(s) msg=$targetId2")
+                                    // 【真正落库 · 2026-10-17】上面那个 updateConversation 只更新内存态（见 2408 注释），
+                                    // 不落库 → 重开 App 转述就没了。这里补一次真正的保存；
+                                    // 并用 forceCompareIds 让保存层别因为"顺序号/选中号没变"就把这条当没动过。
+                                    saveConversation(conversationId, updated, forceCompareIds = setOf(targetId2))
+                                    AppLogBuffer.log(TAG, "imageNote: saved${notes.size} image(s) msg=$targetId2 persisted=force")
                                 }
                                 // 【回声自检 · 2026-10-12】写完立刻回读，确认它真的留在会话里（还是被裁剪/落库洗掉了）
                                 val back = session.state.value.messageNodes
@@ -2985,7 +2989,11 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
     private fun hasTextMark(msg: UIMessage, key: String): Boolean =
         msg.parts.any { it is UIMessagePart.Text && it.metadata?.get(key) != null }
 
-    suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
+    suspend fun saveConversation(
+        conversationId: Uuid,
+        conversation: Conversation,
+        forceCompareIds: Set<String> = emptySet()
+    ) {
         val exists = conversationRepo.existsConversationById(conversation.id)
         if (!exists && conversation.title.isBlank() && conversation.messageNodes.isEmpty()) {
             return // 新会话且为空时不保存
@@ -3069,7 +3077,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         if (!exists) {
             conversationRepo.insertConversation(updatedConversation)
         } else {
-            conversationRepo.updateConversation(updatedConversation, effectiveFirstIndex)
+            conversationRepo.updateConversation(updatedConversation, effectiveFirstIndex, forceCompareIds)
         }
 
         // 更新懒加载窗口边界

@@ -279,7 +279,11 @@ class ConversationRepository(
      *                         且 nodeIndex < windowFirstIndex 的数据库记录（窗口外历史）受保护不被删除。
      *                         为 null 时保持原行为（全量 diff，消失即删除）。
      */
-    suspend fun updateConversation(conversation: Conversation, windowFirstIndex: Int? = null) {
+    suspend fun updateConversation(
+        conversation: Conversation,
+        windowFirstIndex: Int? = null,
+        forceCompareIds: Set<String> = emptySet()
+    ) {
         // 【2026-09-29 排查 · 窗口版保存为什么半秒】在保存链路各段插计时点，跑一轮看日志
         // （筛 ConvRepo）就知道那几百毫秒归谁。
         // 重点看 upsert=N/M：N 接近 M 就说明"内容比较"每轮把窗口内几乎全部判成变过，
@@ -344,6 +348,9 @@ class ConversationRepository(
                 // ⚠️ 副作用：内容改了、顺序号和选中号却都没动的那种（编辑消息、工具结果回填），这道抓不到，
                 //    得靠真正动手的地方自己报账（待做）。
                 fun metaUnchanged(e: MessageNodeEntity): Boolean {
+                    // 【报账口子 · 2026-10-17】调用方明确说过"这条我改过内容"→ 直接进第二道读全文细比。
+                    // 治的是"内容变了、顺序号和选中号却没动"的漏落库（图片转述写 metadata 就是这样）。
+                    if (e.id in forceCompareIds) return false
                     val meta = metaById[e.id] ?: return false // 不在库里 = 新节点，必须写
                     return meta.nodeIndex == e.nodeIndex &&
                         meta.selectIndex == e.selectIndex
