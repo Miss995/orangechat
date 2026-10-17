@@ -96,12 +96,23 @@ internal object MiniAppWebViewHost {
         val activity = findActivity(target.context)
         val root = rootView ?: (activity?.window?.decorView as? ViewGroup) ?: return
         val box = park ?: FrameLayout(activity ?: target.context).also { layout ->
-            layout.layoutParams = ViewGroup.LayoutParams(1, 1)
-            // INVISIBLE 而不是 GONE：占着位、不显示，但仍然走正常的绘制/回调流程
+            // ★ 别用 1×1（2026-10-17 修）。
+            // WebView 的视口尺寸是在它第一次挂到窗口上时初始化的，挂在 1×1 的窝里
+            // 就定成 1×1，之后挪到多大都不重算。症状是"所有视口量全坏"：
+            //   window.innerWidth / innerHeight = 0
+            //   document.documentElement.clientHeight = 1
+            //   window.visualViewport.height = 1
+            //   CSS 的 100vh = 0
+            // 同一个页面在系统浏览器里完全正常，就是因为那边从一开始就是全屏。
+            // 改成整屏大小 + INVISIBLE：INVISIBLE 不绘制、也不接收触摸，所以照样"没人看得见"，
+            // 但 WebView 从第一次挂上去开始，视口尺寸就是对的。
+            val dm = (activity ?: target.context).resources.displayMetrics
+            layout.layoutParams = ViewGroup.LayoutParams(dm.widthPixels, dm.heightPixels)
             layout.visibility = View.INVISIBLE
             layout.isClickable = false
             layout.isFocusable = false
-            root.addView(layout)
+            // 加在最底层（INVISIBLE 本来就不吃触摸，这只是再多一层保险）
+            root.addView(layout, 0)
             park = layout
         }
         (target.parent as? ViewGroup)?.removeView(target)
