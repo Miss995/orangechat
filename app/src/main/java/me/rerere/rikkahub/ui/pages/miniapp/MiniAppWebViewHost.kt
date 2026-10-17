@@ -27,6 +27,23 @@ internal object MiniAppWebViewHost {
     var webView: WebView? = null
         private set
 
+    /**
+     * 最后停在的那个网址 —— 「只存路径，不存页面」（2026-10-17 宝定的方案）。
+     *
+     * 离开页面时把网址记下来、然后让 WebView 跳去 about:blank：
+     * 它待在窝里就是一片空白，不留旧页面（下次进来不会「旧内容 + 转圈」），
+     * 也不占着旧页面的内存。再进来时从这个网址重新加载。
+     */
+    @Volatile
+    var savedUrl: String? = null
+        private set
+
+    /** 记一个要下次打开的网址（入口处用）。 */
+    fun remember(url: String?) {
+        val u = url?.trim().orEmpty()
+        if (u.isNotEmpty()) savedUrl = u
+    }
+
     private var park: FrameLayout? = null
 
     /** 主 Activity 的根 View。页面第一次打开时记一下 —— 之后猫自己造 WebView 也有地方安放。 */
@@ -114,6 +131,17 @@ internal object MiniAppWebViewHost {
             // 加在最底层（INVISIBLE 本来就不吃触摸，这只是再多一层保险）
             root.addView(layout, 0)
             park = layout
+        }
+        // ★ 只存路径，不存页面（2026-10-17）。
+        // 走之前把当前网址记下来，再把页面清成空白 ——
+        // 窝里那只是一片 about:blank，下次进来就不会撞见「旧内容 + 转圈」。
+        try {
+            val current = target.url
+            if (!current.isNullOrBlank() && !current.startsWith("about:")) {
+                savedUrl = current
+            }
+            target.loadUrl("about:blank")
+        } catch (_: Throwable) {
         }
         (target.parent as? ViewGroup)?.removeView(target)
         box.addView(target)

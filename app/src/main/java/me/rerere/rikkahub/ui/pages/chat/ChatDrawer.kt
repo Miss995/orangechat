@@ -416,7 +416,7 @@ fun ChatDrawerContent(
                                 // 有旧页面就直接回去；没有（WebView 已被关掉）就给一个起始搜索页。
                                 navController.navigate(
                                     Screen.MiniApp(
-                                        url = me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewHost.webView?.url
+                                        url = me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewHost.savedUrl
                                             ?: "https://www.bing.com",
                                         title = null,
                                     )
