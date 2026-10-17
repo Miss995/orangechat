@@ -683,7 +683,15 @@ class ChatService(
                                     // 【真正落库 · 2026-10-17】上面那个 updateConversation 只更新内存态（见 2408 注释），
                                     // 不落库 → 重开 App 转述就没了。这里补一次真正的保存；
                                     // 并用 forceCompareIds 让保存层别因为"顺序号/选中号没变"就把这条当没动过。
-                                    saveConversation(conversationId, updated, forceCompareIds = setOf(targetId2.toString()))
+                                    // ⚠️ forceCompareIds 要的是【节点 id】，不是消息 id（节点里装着消息，id 是两层）。
+                                    // 这里从 updated 里反查这条消息所在的节点，拿节点的 id 传进去。
+                                    val targetNodeId2 = updated.messageNodes
+                                        .firstOrNull { n -> n.messages.any { it.id == targetId2 } }?.id
+                                    saveConversation(
+                                        conversationId = conversationId,
+                                        conversation = updated,
+                                        forceCompareIds = setOfNotNull(targetNodeId2?.toString())
+                                    )
                                     AppLogBuffer.log(TAG, "imageNote: saved${notes.size} image(s) msg=$targetId2 persisted=force")
                                 }
                                 // 【回声自检 · 2026-10-12】写完立刻回读，确认它真的留在会话里（还是被裁剪/落库洗掉了）
