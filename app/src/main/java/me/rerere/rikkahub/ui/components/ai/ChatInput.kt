@@ -20,6 +20,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ScrollState
 import coil3.compose.AsyncImage
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -72,7 +73,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -220,13 +220,11 @@ fun ChatInput(
     }
 
     var expand by remember { mutableStateOf(ExpandState.Collapsed) }
-    // 【手势打架 · 2026-10-17】输入框自己排不排得下（超过 5 行）。
+    // 【手势打架 · 2026-10-17】输入框自己的滚动状态（外面建好，传给 TextInputRow 里那个 TextField 共享同一实例）。
     // 老判据是数字数（>90 或换行>=4）猜的：53~90 那段明明该滚了，却判成"没得滚"，
     // 于是外层接走手势，滑输入框内部就把附件区拉了出来。
-    // 现在由 TextField 的 onTextLayout 直接报"排没排下"，字号/框宽/中英文混排变了它自己重算。
-    var inputOverflowed by remember { mutableStateOf(false) }
-    // pointerInput(Unit) 只初始化一次，闭包里捕获的是旧值 —— 靠这个读得到最新的。
-    val currentInputOverflowed by rememberUpdatedState(inputOverflowed)
+    // 现在直接问它「还能不能滚」—— 不分字号、不分中英文、不分框宽，文字真排不下才为真。
+    val inputScrollState = rememberScrollState()
     var showInjectionSheet by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
     fun dismissExpand() {
@@ -761,8 +759,8 @@ fun ChatInput(
                                 // 上一版无条件让（Final pass）错在哪：TextField 只要碰到指针就标 consumed
                                 //（它得先防着"这可能是拖选 / 放光标"），外层永远在第一步就退出 →
                                 // 不管有没有字，怎么滑都拉不出附件。
-                                // 【改用真实排版结果 · 2026-10-17】不再按字数猜，问输入框自己排没排下。
-                                if (currentInputOverflowed) {
+                                // 【改用真实滚动状态 · 2026-10-17】不再按字数猜，直接问输入框「你还能不能滚」。
+                                if (inputScrollState.canScrollBackward || inputScrollState.canScrollForward) {
                                     waitForUpOrCancellation(pass = PointerEventPass.Initial)
                                     continue
                                 }
@@ -891,7 +889,7 @@ fun ChatInput(
                                         loading = loading,
                                         onSendMessage = { sendMessage() },
                                         onUsePickedQuote = onUsePickedQuote,
-                                        onInputOverflowChanged = { inputOverflowed = it }
+                                        inputScrollState = inputScrollState
                                     )
                                 }
                             }
@@ -1073,9 +1071,9 @@ private fun TextInputRow(
     onSendMessage: () -> Unit,
     // 【引用一句 2026-10-10】选中提示条上点「引用这句」（要传下来：这个函数有自己的参数列表）
     onUsePickedQuote: (() -> Unit)? = null,
-    // 【手势打架 · 2026-10-17】输入框排没排下（超过 5 行），抛给外面那道手势闸。
-    // TextInputRow 是独立 Composable，主函数里的 state 够不着，只能靠回调传上去。
-    onInputOverflowChanged: (Boolean) -> Unit = {},
+    // 【手势打架 · 2026-10-17】外面建好的滚动状态，传给 TextField 用同一个实例 ——
+    // 这样外面那道手势闸读到的「能不能滚」就是输入框真实的滚动状态。
+    inputScrollState: ScrollState = rememberScrollState(),
 ) {
     val displaySettings = LocalDisplaySettings.current
     val filesManager: FilesManager = koinInject()
@@ -1281,10 +1279,8 @@ private fun TextInputRow(
                 Text(stringResource(R.string.chat_input_placeholder))
             },
             lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
-            // 【手势打架 · 2026-10-17】排版完记一句"排没排下"，给外面那道手势闸用。
-            onTextLayout = {
-                onInputOverflowChanged(getResult()?.didOverflowHeight == true)
-            },
+            // 【手势打架 · 2026-10-17】用外面传进来的实例，外面那道手势闸读的就是它。
+            scrollState = inputScrollState,
             keyboardOptions = KeyboardOptions(
                 imeAction = if (displaySettings.sendOnEnter) ImeAction.Send else ImeAction.Default
             ),
