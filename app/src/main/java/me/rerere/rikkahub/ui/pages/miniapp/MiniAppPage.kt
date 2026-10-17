@@ -385,9 +385,20 @@ fun MiniAppPage(
                                 loadUrl(url)
                             }
                         }.also { wv ->
-                            // 从常驻小窝里摘出来交给 Compose；老实例带回来时不动它当前那一页
+                            // 从常驻小窝里摘出来交给 Compose
                             MiniAppWebViewHost.take(wv)
                             webViewRef.value = wv
+                            // ★ 从链接进来 = 开一个干净的页（2026-10-17 改）。
+                            // 以前这里写的是"老实例带回来时不动它当前那一页"，于是宝每次从链接
+                            // 进来都撞见上一次那个页面还挂在那儿（转着圈），同时又加载了一遍新地址。
+                            // 常驻 WebView 是为了"切走不销毁、猫还能读"，不是"留着上一页"。
+                            // 现在：每次从链接进来都回到干净的起点 —— 清掉历史、再打开目标地址。
+                            // （不带条件：不管上次停在哪一页，从链接进来就是新的一页。）
+                            try {
+                                wv.clearHistory()
+                                wv.loadUrl(url)
+                            } catch (_: Throwable) {
+                            }
                             // 这个 WebView 的 window.innerHeight 量出来是 0，页面自己算不出视口高度，
                             // 所以由这边量好了喂给它（每次布局变化都喂一遍）。
                             wv.addOnLayoutChangeListener { v, _, t, _, b, _, _, _, _ ->

@@ -412,7 +412,15 @@ fun ChatDrawerContent(
                             leadingIcon = { Icon(HugeIcons.Rocket01, null) },
                             onClick = {
                                 showMenuPopup = false
-                                navController.navigate(Screen.MiniAppManager)
+                                // 点小程序按钮直接进浏览器（不再先过一层 Mini Apps 列表页）。
+                                // 有旧页面就直接回去；没有（WebView 已被关掉）就给一个起始搜索页。
+                                navController.navigate(
+                                    Screen.MiniApp(
+                                        url = me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewHost.webView?.url
+                                            ?: "https://www.bing.com",
+                                        title = null,
+                                    )
+                                )
                             }
                         )
                     }

@@ -336,7 +336,15 @@ private fun ChatPageContent(
                         navController.navigate(Screen.ImageGen)
                     },
                     onOpenMiniApps = {
-                        navController.navigate(Screen.MiniAppManager)
+                        // 点小程序按钮直接进浏览器（不再先过一层 Mini Apps 列表页）。
+                        // 有旧页面就直接回去；没有（WebView 已被关掉）就给一个起始搜索页。
+                        navController.navigate(
+                            Screen.MiniApp(
+                                url = me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewHost.webView?.url
+                                    ?: "https://www.bing.com",
+                                title = null,
+                            )
+                        )
                     },
                     // 【引用一句 2026-10-10】选中提示条上点「引用这句」→ 这时候才真的挂进引用条
                     onUsePickedQuote = {
