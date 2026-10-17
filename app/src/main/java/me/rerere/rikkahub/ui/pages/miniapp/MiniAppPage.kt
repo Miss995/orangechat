@@ -404,6 +404,13 @@ fun MiniAppPage(
                                 // （两处都写会加载两遍，页面就叠着画了。）
                             }
                         }.also { wv ->
+                            // ★ 每次进页面都把 client 重挂一次（2026-10-17 修「一直转圈」）。
+                            // client 的回调闭包绑着这一轮 Compose 的状态（isLoading 等）。
+                            // 常驻 WebView 意味着 factory 里那个 create lambda 只会跑一次，
+                            // 之后 obtain() 直接返回老实例 —— 于是 client 一直是第一轮那个，
+                            // onPageFinished 全打到已经销毁的旧状态上，新状态的 isLoading
+                            // 永远等不到 false，页面早加载完了圈还在转。
+                            wv.webViewClient = miniAppWebViewClient
                             // 从常驻小窝里摘出来交给 Compose
                             MiniAppWebViewHost.take(wv)
                             webViewRef.value = wv
