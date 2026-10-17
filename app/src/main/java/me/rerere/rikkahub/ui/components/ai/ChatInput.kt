@@ -72,6 +72,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -219,6 +220,13 @@ fun ChatInput(
     }
 
     var expand by remember { mutableStateOf(ExpandState.Collapsed) }
+    // 【手势打架 · 2026-10-17】输入框自己排不排得下（超过 5 行）。
+    // 老判据是数字数（>90 或换行>=4）猜的：53~90 那段明明该滚了，却判成"没得滚"，
+    // 于是外层接走手势，滑输入框内部就把附件区拉了出来。
+    // 现在由 TextField 的 onTextLayout 直接报"排没排下"，字号/框宽/中英文混排变了它自己重算。
+    var inputOverflowed by remember { mutableStateOf(false) }
+    // pointerInput(Unit) 只初始化一次，闭包里捕获的是旧值 —— 靠这个读得到最新的。
+    val currentInputOverflowed by rememberUpdatedState(inputOverflowed)
     var showInjectionSheet by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
     fun dismissExpand() {
@@ -753,10 +761,8 @@ fun ChatInput(
                                 // 上一版无条件让（Final pass）错在哪：TextField 只要碰到指针就标 consumed
                                 //（它得先防着"这可能是拖选 / 放光标"），外层永远在第一步就退出 →
                                 // 不管有没有字，怎么滑都拉不出附件。
-                                val __inputText = state.textContent.text.toString()
-                                val __inputCanScroll =
-                                    __inputText.length > 90 || __inputText.count { ch -> ch == '\n' } >= 4
-                                if (__inputCanScroll) {
+                                // 【改用真实排版结果 · 2026-10-17】不再按字数猜，问输入框自己排没排下。
+                                if (currentInputOverflowed) {
                                     waitForUpOrCancellation(pass = PointerEventPass.Initial)
                                     continue
                                 }
@@ -1271,6 +1277,10 @@ private fun TextInputRow(
                 Text(stringResource(R.string.chat_input_placeholder))
             },
             lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
+            // 【手势打架 · 2026-10-17】排版完记一句"排没排下"，给外面那道手势闸用。
+            onTextLayout = {
+                inputOverflowed = getResult()?.didOverflowHeight == true
+            },
             keyboardOptions = KeyboardOptions(
                 imeAction = if (displaySettings.sendOnEnter) ImeAction.Send else ImeAction.Default
             ),
