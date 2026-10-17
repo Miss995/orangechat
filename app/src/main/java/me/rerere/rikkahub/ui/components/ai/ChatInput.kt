@@ -890,7 +890,8 @@ fun ChatInput(
                                         state = state,
                                         loading = loading,
                                         onSendMessage = { sendMessage() },
-                                        onUsePickedQuote = onUsePickedQuote
+                                        onUsePickedQuote = onUsePickedQuote,
+                                        onInputOverflowChanged = { inputOverflowed = it }
                                     )
                                 }
                             }
@@ -1072,6 +1073,9 @@ private fun TextInputRow(
     onSendMessage: () -> Unit,
     // 【引用一句 2026-10-10】选中提示条上点「引用这句」（要传下来：这个函数有自己的参数列表）
     onUsePickedQuote: (() -> Unit)? = null,
+    // 【手势打架 · 2026-10-17】输入框排没排下（超过 5 行），抛给外面那道手势闸。
+    // TextInputRow 是独立 Composable，主函数里的 state 够不着，只能靠回调传上去。
+    onInputOverflowChanged: (Boolean) -> Unit = {},
 ) {
     val displaySettings = LocalDisplaySettings.current
     val filesManager: FilesManager = koinInject()
@@ -1279,7 +1283,7 @@ private fun TextInputRow(
             lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
             // 【手势打架 · 2026-10-17】排版完记一句"排没排下"，给外面那道手势闸用。
             onTextLayout = {
-                inputOverflowed = getResult()?.didOverflowHeight == true
+                onInputOverflowChanged(getResult()?.didOverflowHeight == true)
             },
             keyboardOptions = KeyboardOptions(
                 imeAction = if (displaySettings.sendOnEnter) ImeAction.Send else ImeAction.Default
