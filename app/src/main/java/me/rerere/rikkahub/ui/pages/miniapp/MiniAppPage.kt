@@ -61,6 +61,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Earth
 import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.hugeicons.stroke.Refresh01
+import me.rerere.hugeicons.stroke.TransactionHistory
 import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.CustomColors
@@ -343,6 +344,23 @@ fun MiniAppPage(
                                             }
                                         },
                                     )
+                                    // 「回到上次位置」—— 不强制跳，宝点了才回（2026-10-17）
+                                    val lastUrl = MiniAppWebViewHost.savedUrl
+                                    if (!lastUrl.isNullOrBlank() && lastUrl != currentUrl) {
+                                        DropdownMenuItem(
+                                            text = { Text("回到上次位置") },
+                                            leadingIcon = {
+                                                Icon(
+                                                    HugeIcons.TransactionHistory,
+                                                    contentDescription = null
+                                                )
+                                            },
+                                            onClick = {
+                                                showMoreMenu = false
+                                                webView?.loadUrl(lastUrl)
+                                            },
+                                        )
+                                    }
                                 }
                             }
                             IconButton(onClick = {
