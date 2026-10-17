@@ -382,7 +382,8 @@ fun MiniAppPage(
                             WebView(ctx).apply {
                                 applyMiniAppWebViewSettings(this)
                                 webViewClient = miniAppWebViewClient
-                                loadUrl(url)
+                                // 这里不 loadUrl —— 下面 also 里统一加载一次。
+                                // （两处都写会加载两遍，页面就叠着画了。）
                             }
                         }.also { wv ->
                             // 从常驻小窝里摘出来交给 Compose
