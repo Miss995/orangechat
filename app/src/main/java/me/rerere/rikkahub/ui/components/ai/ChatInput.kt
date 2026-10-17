@@ -70,6 +70,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -231,7 +232,8 @@ fun ChatInput(
     // 【分区 · 2026-10-17 宝的方案】输入框在屏幕上的矩形 + 整块面板的屏幕原点。
     // 手势落下来先算落在哪边：框里 = 全归输入框（滚不动也不拉面板）；框外空白 = 才拉/收附件。
     // 空间判断比"滚到边界再传"稳 —— 落点一开始就知道，不用等手指动到哪儿才发现到边界。
-    var fieldRectInWindow by remember { mutableStateOf(Rect.Zero) }
+    // 用 MutableState 对象传（不是 by 委托 —— 委托没法跨函数共享，TextField 在 TextInputRow 里）
+    val fieldRectState = remember { mutableStateOf(Rect.Zero) }
     var surfaceOriginInWindow by remember { mutableStateOf(Offset.Zero) }
     var showInjectionSheet by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
@@ -764,7 +766,7 @@ fun ChatInput(
                                 )
                                 // 【分区判断 · 2026-10-17 宝的方案】手指落在输入框里 -> 这一下全归输入框，
                                 // 哪怕没内容可滚也不拉面板；落在框外的空白（边距、按钮那片）-> 才归外层。
-                                if (fieldRectInWindow.contains(surfaceOriginInWindow + down.position)) {
+                                if (fieldRectState.value.contains(surfaceOriginInWindow + down.position)) {
                                     while (true) {
                                         val e = awaitPointerEvent(PointerEventPass.Initial)
                                         val c = e.changes.firstOrNull { it.id == down.id }
@@ -910,7 +912,8 @@ fun ChatInput(
                                         loading = loading,
                                         onSendMessage = { sendMessage() },
                                         onUsePickedQuote = onUsePickedQuote,
-                                        inputScrollState = inputScrollState
+                                        inputScrollState = inputScrollState,
+                                        fieldRectState = fieldRectState
                                     )
                                 }
                             }
@@ -1095,6 +1098,8 @@ private fun TextInputRow(
     // 【手势打架 · 2026-10-17】外面建好的滚动状态，传给 TextField 用同一个实例 ——
     // 这样外面那道手势闸读到的「能不能滚」就是输入框真实的滚动状态。
     inputScrollState: ScrollState = rememberScrollState(),
+    // 【分区 · 2026-10-17】TextField 把自己在屏幕上的矩形写进来，外面手势闸读它判落点。
+    fieldRectState: MutableState<Rect> = remember { mutableStateOf(Rect.Zero) },
 ) {
     val displaySettings = LocalDisplaySettings.current
     val filesManager: FilesManager = koinInject()
@@ -1291,7 +1296,7 @@ private fun TextInputRow(
             ),
             modifier = Modifier
                 .fillMaxWidth()
-                .onGloballyPositioned { fieldRectInWindow = it.boundsInWindow() }
+                .onGloballyPositioned { fieldRectState.value = it.boundsInWindow() }
                 .contentReceiver(receiveContentListener)
                 .onFocusChanged {
                     isFocused = it.isFocused
