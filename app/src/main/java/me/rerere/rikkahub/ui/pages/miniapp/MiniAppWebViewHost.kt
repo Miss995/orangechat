@@ -141,6 +141,9 @@ internal object MiniAppWebViewHost {
                 savedUrl = current
             }
             target.loadUrl("about:blank")
+            // 顺手清掉历史 —— 不然 canGoBack() 还是 true，顶栏会把「关闭」画成
+            // 「后退」，点它只是往回退一页，退不出去（2026-10-17 宝报的）。
+            target.clearHistory()
         } catch (_: Throwable) {
         }
         (target.parent as? ViewGroup)?.removeView(target)
