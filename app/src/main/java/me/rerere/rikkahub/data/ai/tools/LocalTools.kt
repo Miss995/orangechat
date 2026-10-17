@@ -750,6 +750,7 @@ class LocalTools(
             tools.add(browserClickTool())
             tools.add(browserBackTool())
             tools.add(browserEvalTool())
+            tools.add(browserScreenshotTool())
         }
         return tools
     }

@@ -273,3 +273,62 @@ fun browserBackTool(): Tool = Tool(
         }
     },
 )
+
+/** 把 WebView 当前可见的部分画成 PNG，存进缓存目录。主线程做，失败返回 null。 */
+private suspend fun captureWebView(webView: WebView): java.io.File? =
+    suspendCancellableCoroutine { cont ->
+        Handler(Looper.getMainLooper()).post {
+            try {
+                val w = webView.width
+                val h = webView.height
+                if (w <= 0 || h <= 0) {
+                    if (cont.isActive) cont.resume(null)
+                    return@post
+                }
+                val bmp = android.graphics.Bitmap.createBitmap(
+                    w, h, android.graphics.Bitmap.Config.ARGB_8888
+                )
+                webView.draw(android.graphics.Canvas(bmp))
+                val dir = java.io.File(webView.context.cacheDir, "browser_shots").apply { mkdirs() }
+                val file = java.io.File(dir, "shot_" + System.currentTimeMillis() + ".png")
+                java.io.FileOutputStream(file).use { out ->
+                    bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 92, out)
+                }
+                bmp.recycle()
+                if (cont.isActive) cont.resume(file)
+            } catch (e: Throwable) {
+                if (cont.isActive) cont.resume(null)
+            }
+        }
+    }
+
+/**
+ * 把当前网页"画出来的样子"截成一张图，直接放进对话。
+ *
+ * 走的是 WebView 自己的 draw —— 只截网页那一块，不碰宝的屏幕，也不用无障碍服务。
+ * 图会作为图片 part 回到对话里，于是图片转述会把它讲给猫听（猫就这样"看见"页面）。
+ */
+fun browserScreenshotTool(): Tool = Tool(
+    name = "browser_screenshot",
+    description = "把宝打开着的小程序页面截成一张图（只截网页那块，不碰屏幕，不用无障碍），图片会带进对话。" +
+        "用来\"看一眼\"页面长什么样：排布怪、样式不对、或者只是想看看的时候用它。",
+    parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
+    execute = { _ ->
+        val wv = currentBrowser()
+        if (wv == null) {
+            listOf(UIMessagePart.Text(NO_PAGE))
+        } else {
+            val file = captureWebView(wv)
+            if (file == null) {
+                listOf(
+                    UIMessagePart.Text("截图没成 —— 页面可能还没画出东西，或者这会儿尺寸是 0。等它加载完再试一次。")
+                )
+            } else {
+                listOf(
+                    UIMessagePart.Text("截了一张（" + file.name + "，" + (file.length() / 1024) + " KB）。"),
+                    UIMessagePart.Image(url = "file://" + file.absolutePath),
+                )
+            }
+        }
+    },
+)
