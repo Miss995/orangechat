@@ -853,6 +853,18 @@ fun ChatInput(
                             )
                         )
                 ) {
+                    // 【打印机外观】出纸口：机身顶上那道缝，纸就是从这里出来的
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 26.dp)
+                            .height(2.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color(0xFF050404), Color(0xFF171514))
+                                )
+                            )
+                    )
                     // Background image inside input area (matches content size exactly)
                     if (inputBgAvailable) {
                         AsyncImage(
@@ -1134,7 +1146,7 @@ fun ChatInput(
                                 .height(9.dp)
                                 .background(
                                     Brush.verticalGradient(
-                                        listOf(Color(0xFF1D1A18), Color(0xFF2A2623))
+                                        listOf(Color(0xFF090807), Color(0xFF1C1917), Color(0xFF2B2724))
                                     )
                                 )
                         )
@@ -1143,23 +1155,37 @@ fun ChatInput(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 8.dp)
-                                .height(10.dp)
+                                .height(14.dp)
                                 .background(
                                     Brush.verticalGradient(
-                                        listOf(Color(0xFFFBF8EE), Color(0xFFF2ECDD), Color(0xFFE2DAC6))
+                                        listOf(
+                                            Color(0xFFE8E1CE),
+                                            Color(0xFFF6F1E3),
+                                            Color(0xFFFBF8EE),
+                                            Color(0xFFEFE8D8),
+                                            Color(0xFFDFD7C2),
+                                        )
                                     )
                                 )
                         ) {
-                            // 压痕：只在贴着机器那一线最深
+                            // 机器的投影：纸是压在机身底下的，贴着机器那一头最暗
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(2.dp)
+                                    .height(6.dp)
                                     .background(
                                         Brush.verticalGradient(
-                                            listOf(Color(0x80000000), Color(0x00000000))
+                                            listOf(Color(0x99000000), Color(0x33000000), Color(0x00000000))
                                         )
                                     )
+                            )
+                            // 压痕：纸自己的第一道折
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp, start = 0.dp, end = 0.dp)
+                                    .height(1.dp)
+                                    .background(Color(0x38FFFFFF))
                             )
                         }
 
