@@ -18,6 +18,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -941,26 +943,28 @@ fun ChatInput(
                         // 高度从 0 长到自然高度（顶边贴着缝不动、底边往下推），240ms 缓出；
                         // 收起 150ms 快一点。用 tween 不用 spring —— spring 会带回弹，
                         // 那就又成"弹到界面上"了。
-                        // 【纸票不占位 · 2026-10-18 修正版】
-                        // height(0.dp) 会把子元素约束成"最高 0"，内容直接被压没 —— 不能用那个。
-                        // 用 layout：内容照常测量（它自己知道多高、能画出来），
-                        // 但只向布局报告"占 0 高"，再按自身高度上移，让底边咬住出纸口。
-                        // 咬住机身的那一截：纸票底边落在出纸口下沿，露出缝、又不至于像贴上去。
-                        val paperBitePx = with(LocalDensity.current) { 3.dp.roundToPx() }
+                        // 【纸票 · 2026-10-19 定稿】
+                        // 前面试过两版都不对：
+                        //   ① height(0.dp) —— 给子元素"最高 0"的约束，内容直接被压没；
+                        //   ② layout 报 0 高 + 往上溢出 —— 往上长的方向是消息列表，列表压在
+                        //      它上面（zIndex 只在同一层管用），纸的上半截被列表盖住了。
+                        // 现在改成：在机身里正常占位，用滑入+淡入做动画。
+                        // 代价是弹纸时机身会长一点，但因为是滑进去的，看着像"纸被吸出来"。
+                        AnimatedVisibility(
+                            visible = paperKind != null,
+                            enter = slideInVertically(
+                                initialOffsetY = { -it },
+                                animationSpec = tween(durationMillis = 240, easing = LinearOutSlowInEasing),
+                            ) + fadeIn(animationSpec = tween(durationMillis = 180)),
+                            exit = slideOutVertically(
+                                targetOffsetY = { -it },
+                                animationSpec = tween(durationMillis = 180, easing = LinearOutSlowInEasing),
+                            ) + fadeOut(animationSpec = tween(durationMillis = 140)),
+                        ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .zIndex(1f)
-                                .layout { measurable, constraints ->
-                                    val placeable = measurable.measure(constraints)
-                                    layout(placeable.width, 0) {
-                                        // 按它自己的实际高度算：底边永远停在 +3dp，不管内容多高。
-                                        placeable.place(0, -(placeable.height - paperBitePx))
-                                    }
-                                }
-                                // 【出纸动效已撤 · 2026-10-18】animateContentSize 做高度动画时会
-                                // 把自己裁到当前高度，而这张纸报给布局的高度是 0 —— 于是它一直在裁，
-                                // 纸只剩一半。先直接出现（不做高度动画），等排版稳了再想别的动效。
                         ) {
                         if (paperKind != null) {
                             val picked = state.pickedText ?: ""
@@ -1058,6 +1062,7 @@ fun ChatInput(
                                     }
                                 }
                             }
+                        }
                         }
                         }
                         // ===== 【打印机外观 2026-10-18】顶盖：两颗 LED + 散热孔 + 机身型号 =====
