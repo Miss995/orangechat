@@ -965,6 +965,10 @@ fun ChatInput(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .zIndex(1f)
+                                // 【留一道缝 · 2026-10-19】纸不贴着机身顶：
+                                // 上面空出 4dp，透出机身的深色 —— 看着是"纸浮在出纸口上沿"，
+                                // 而不是"贴在机器顶上"。这道缝就是纸和机器的分界。
+                                .padding(top = 4.dp)
                         ) {
                         if (paperKind != null) {
                             val picked = state.pickedText ?: ""
