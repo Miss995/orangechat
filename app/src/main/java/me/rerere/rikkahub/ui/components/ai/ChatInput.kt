@@ -84,6 +84,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -157,6 +159,11 @@ import kotlin.uuid.Uuid
 enum class ExpandState {
     Collapsed, Files, Panel,
 }
+
+// 【打印机外观 2026-10-18】机身形状：上圆下直（塑料件注塑，上缘是圆角；下缘接纸，是直的）
+private val PrinterBodyShape = RoundedCornerShape(
+    topStart = 14.dp, topEnd = 14.dp, bottomStart = 0.dp, bottomEnd = 0.dp
+)
 
 @Composable
 fun ChatInput(
@@ -815,7 +822,7 @@ fun ChatInput(
                             }
                         }
                     }
-                    .clip(MaterialTheme.shapes.largeIncreased)
+                    .clip(PrinterBodyShape)
                     .then(
                         if (settings.displaySetting.enableBlurEffect) Modifier.hazeEffect(
                             state = hazeState,
@@ -823,15 +830,23 @@ fun ChatInput(
                         )
                         else Modifier
                     ),
-                shape = MaterialTheme.shapes.largeIncreased,
+                shape = PrinterBodyShape,
                 tonalElevation = 0.dp,
-                // When background image is set, make surface transparent so image is visible
-                color = if (inputBgAvailable) Color.Transparent
-                    else if (settings.displaySetting.enableBlurEffect) Color.Transparent
-                    else settings.displaySetting.inputFieldColor?.let { it.toComposeColor() } ?: hazeTintColor,
+                // 【打印机外观 2026-10-18】机身底色一律透明：渐变画在下面那层 Box 上
+                // （Surface 的 color 只能纯色，画不了渐变）
+                color = Color.Transparent,
             ) {
                 // Use Box so background image can match parent size
-                Box {
+                Box(
+                    modifier = if (inputBgAvailable) Modifier
+                        else Modifier.background(
+                            Brush.verticalGradient(
+                                0f to Color(0xFFFDFCFA),
+                                0.18f to Color(0xFFF2EFE8),
+                                1f to Color(0xFFE6E1D6),
+                            )
+                        )
+                ) {
                     // Background image inside input area (matches content size exactly)
                     if (inputBgAvailable) {
                         AsyncImage(
@@ -1281,6 +1296,8 @@ private fun TextInputRow(
         TextField(
             state = state.textContent,
             textStyle = LocalTextStyle.current.copy(
+                // 【打印机外观 2026-10-18】LCD 上的绿光字
+                color = Color(0xFF7FFFA8),
                 fontFamily = when (displaySettings.chatFontFamily) {
                     ChatFontFamily.DEFAULT -> FontFamily.Default
                     ChatFontFamily.SERIF -> FontFamily.Serif
@@ -1304,7 +1321,11 @@ private fun TextInputRow(
                 },
             shape = MaterialTheme.shapes.largeIncreased,
             placeholder = {
-                Text(stringResource(R.string.chat_input_placeholder))
+                // 【打印机外观 2026-10-18】占位字淡一点，像屏上没点亮的像素
+                Text(
+                    text = stringResource(R.string.chat_input_placeholder),
+                    color = Color(0xFF7FFFA8).copy(alpha = 0.35f),
+                )
             },
             lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
             // 【手势打架 · 2026-10-17】用外面传进来的实例，外面那道手势闸读的就是它。
@@ -1320,8 +1341,9 @@ private fun TextInputRow(
             colors = TextFieldDefaults.colors().copy(
                 unfocusedIndicatorColor = Color.Transparent,
                 focusedIndicatorColor = Color.Transparent,
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
+                // 【打印机外观 2026-10-18】LCD：暗绿屏底
+                focusedContainerColor = Color(0xFF0D1712),
+                unfocusedContainerColor = Color(0xFF0D1712),
             ),
             trailingIcon = {
                 if (isFocused) {
