@@ -894,6 +894,10 @@ fun ChatInput(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            // 【缝要压在纸上 · 2026-10-19】纸票在 Column 里、画在出纸口之后，
+                            // 顺序反了 —— 纸一出来就把缝盖住。给缝更高的 zIndex，
+                            // 才能"纸从缝里冒出来、缝压着纸的下沿"。
+                            .zIndex(2f)
                             // 【打印机外观 2026-10-18 宝定的】26 -> 14：出纸口别比纸窄太多，
                             // 免得看着像"纸进去一圈、出来还缩了"
                             .padding(horizontal = 14.dp)
