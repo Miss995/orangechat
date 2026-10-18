@@ -42,7 +42,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -1213,11 +1212,10 @@ fun ChatInput(
                                 )
                         )
                         // 机器底下压着的一沓纸：只露出一道纸边（左右内缩 8dp，躲开机身圆角）
-                        // 【打印机外观 2026-10-18】往下探 6dp —— 纸要长出机身一截，
-                        // 不是被机身底边压住（offset 不占布局，会盖到机身外面）
+                        // 【打印机外观 2026-10-18】不能再在机身里 offset 了 ——
+                        // 一挪，接缝和纸之间就空出一条机身黑，看着像个莫名其妙的凹槽
                         Box(
                             modifier = Modifier
-                                .offset(y = 6.dp)
                                 .fillMaxWidth()
                                 .padding(horizontal = 8.dp)
                                 .height(14.dp)
