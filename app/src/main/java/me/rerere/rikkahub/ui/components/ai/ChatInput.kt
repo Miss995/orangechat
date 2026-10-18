@@ -25,6 +25,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
@@ -1385,14 +1386,20 @@ fun ChatInput(
                                     // 报 0 高、底边压在出纸口下沿 3dp：机身高度不变，纸从缝里冒出来
                                     .layout { measurable, constraints ->
                                         val placeable = measurable.measure(constraints)
-                                        val bite = 3.dp.roundToPx()
+                                        // 出纸口本身有 3dp 高，底部再咬住它的下沿，
+                                        // 纸才是"从缝里出来"而不是"浮在机器顶上"。
+                                        val bite = with(density) { 6.dp.roundToPx() }
                                         layout(placeable.width, 0) {
                                             placeable.place(0, -(placeable.height - bite))
                                         }
                                     }
                                     .graphicsLayer {
                                         alpha = paperAnim
-                                        translationY = -(1f - paperAnim) * size.height
+                                        // 【从缝里长出来 · 2026-10-19】不用 translationY ——
+                                        // 那是"从上往下飘"。纸应该是被机器吸出来的：底部钉住、往上长。
+                                        // 所以缩的是 Y，原点放在底边中心。
+                                        scaleY = paperAnim
+                                        transformOrigin = TransformOrigin(0.5f, 1f)
                                     }
                             ) {
                             if (paperKind != null) {
