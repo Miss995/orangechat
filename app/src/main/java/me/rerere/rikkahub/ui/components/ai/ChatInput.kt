@@ -1151,6 +1151,9 @@ fun ChatInput(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                // 【打印机外观 2026-10-18】屏框底边到接缝上边太挤，
+                                // 补 8dp 上边距（加 column 的 2dp 间距 ≈ 10dp），纸跟着一起往下
+                                .padding(top = 8.dp)
                                 .height(9.dp)
                                 .background(
                                     Brush.verticalGradient(
