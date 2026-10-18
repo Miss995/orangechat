@@ -19,6 +19,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import coil3.compose.AsyncImage
@@ -932,6 +934,20 @@ fun ChatInput(
                             loading -> "interject"
                             else -> null
                         }
+                        // 【出纸动效 · 2026-10-18 宝定的】纸不是"啪"一下出现的：
+                        // 高度从 0 长到自然高度（顶边贴着缝不动、底边往下推），240ms 缓出；
+                        // 收起 150ms 快一点。用 tween 不用 spring —— spring 会带回弹，
+                        // 那就又成"弹到界面上"了。
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateContentSize(
+                                    animationSpec = tween(
+                                        durationMillis = 240,
+                                        easing = LinearOutSlowInEasing,
+                                    )
+                                )
+                        ) {
                         if (paperKind != null) {
                             val picked = state.pickedText ?: ""
                             Surface(
@@ -1027,6 +1043,7 @@ fun ChatInput(
                                     }
                                 }
                             }
+                        }
                         }
                         // ===== 【打印机外观 2026-10-18】顶盖：两颗 LED + 散热孔 + 机身型号 =====
                         Row(
