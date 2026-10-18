@@ -920,6 +920,114 @@ fun ChatInput(
                         modifier = Modifier.padding(top = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
+                        // ===== 【出纸票 · 2026-10-18 宝定的】=====
+                        // 选中/插话/引用/编辑 原来挤在 LCD 屏幕里，被屏框和机身一圈圈挤窄，
+                        // 看着就是"纸进去一圈、出来还缩了"。现在四条统一做成一张从出纸口
+                        // 冒出来的纸票：暖白、上沿直角（贴着那道缝）、下沿收一点点。
+                        // 一次只露一张（宝：输入框不能无限叠加），按要紧程度排优先级。
+                        val paperKind = when {
+                            state.isEditing() -> "edit"
+                            state.pickedText != null -> "picked"
+                            state.quotedMessageId != null -> "quote"
+                            loading -> "interject"
+                            else -> null
+                        }
+                        if (paperKind != null) {
+                            val picked = state.pickedText ?: ""
+                            Surface(
+                                shape = RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp),
+                                color = if (paperKind == "interject" && state.interjectSupplement)
+                                    Color(0xFFD9D2BE) else Color(0xFFE4E0D6),
+                                contentColor = Color(0xFF2B2723),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    when (paperKind) {
+                                        "edit" -> {
+                                            Text(
+                                                text = stringResource(R.string.editing),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            Icon(
+                                                imageVector = HugeIcons.Cancel01,
+                                                contentDescription = stringResource(R.string.cancel_edit),
+                                                modifier = Modifier.clickable { state.clearInput() },
+                                            )
+                                        }
+                                        "picked" -> {
+                                            Text(
+                                                text = "选中了 " + picked.length + " 个字：" +
+                                                    picked.replace("\n", " "),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                            if (onUsePickedQuote != null) {
+                                                Text(
+                                                    text = "引用这句",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = Color(0xFF7A4B14),
+                                                    modifier = Modifier
+                                                        .clickable { onUsePickedQuote() }
+                                                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                                                )
+                                                Spacer(Modifier.width(4.dp))
+                                            }
+                                            Icon(
+                                                imageVector = HugeIcons.Cancel01,
+                                                contentDescription = "取消",
+                                                modifier = Modifier.clickable {
+                                                    state.pickedText = null
+                                                    state.pickedMessageId = null
+                                                },
+                                            )
+                                        }
+                                        "quote" -> {
+                                            Text(
+                                                text = "引用：" + state.quotedPreview.ifBlank { "（一条消息）" },
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                            Icon(
+                                                imageVector = HugeIcons.Cancel01,
+                                                contentDescription = "取消引用",
+                                                modifier = Modifier.clickable {
+                                                    state.quotedMessageId = null
+                                                    state.quotedPreview = ""
+                                                    state.quotedText = null
+                                                },
+                                            )
+                                        }
+                                        else -> {
+                                            Text(
+                                                text = if (state.interjectSupplement)
+                                                    "这是补充上文那条 · 再按取消"
+                                                else "这句是补充上文那条？（按一下）",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        state.interjectSupplement = !state.interjectSupplement
+                                                    },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         // ===== 【打印机外观 2026-10-18】顶盖：两颗 LED + 散热孔 + 机身型号 =====
                         Row(
                             modifier = Modifier
@@ -1444,133 +1552,9 @@ private fun TextInputRow(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        if (state.isEditing()) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(text = stringResource(R.string.editing))
-                    Spacer(Modifier.weight(1f))
-                    Icon(
-                        imageVector = HugeIcons.Cancel01,
-                        contentDescription = stringResource(R.string.cancel_edit),
-                        modifier = Modifier.clickable { state.clearInput() }
-                    )
-                }
-            }
-        }
 
-        // 【插话补充 · 2026-10-13 宝定的】猫在干活时，宝发的话常常是"补她自己上一条"，
-        // 可这个形状是"打断"，猫容易当成一句新话题去接（宝的观察：猫回得快、她回得慢，
-        // 那句补充物理上落在猫回复之后，逻辑上却接她自己上一句）。
-        // 按一下 = 标成"补充"，发送时写进消息；不按 = 新话题，跟以前一样。
-        if (loading) {
-            // 【打印机外观 2026-10-18 宝定的】收成胶囊、靠右对齐
-            // —— 原来 fillMaxWidth 占满整行，看着像方条，不像胶囊
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = if (state.interjectSupplement) MaterialTheme.colorScheme.tertiaryContainer
-                else MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier
-                    .align(Alignment.End)
-                    .clickable {
-                        state.interjectSupplement = !state.interjectSupplement
-                    },
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = if (state.interjectSupplement) "这是补充上文那条 · 再按取消"
-                        else "这句是补充上文那条？（按一下）",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-        }
 
-        // 【消息引用 2026-09-22】引用条：显示被引消息的摘要，右侧一个叉取消。
-        // 形状/配色跟上面那条"编辑中"保持一致，宝一眼能认。
-        if (state.quotedMessageId != null) {
-            // 【打印机外观 2026-10-18 宝定的】胶囊 + 靠右（同上）
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.align(Alignment.End),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "引用：" + state.quotedPreview.ifBlank { "（一条消息）" },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.widthIn(max = 220.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Icon(
-                        imageVector = HugeIcons.Cancel01,
-                        contentDescription = "取消引用",
-                        modifier = Modifier.clickable {
-                            state.quotedMessageId = null
-                            state.quotedPreview = ""
-                            state.quotedText = null
-                        }
-                    )
-                }
-            }
-        }
 
-        // 【引用一句 2026-10-10】选中一段文字 → 冒一条提示，点了才真引用。
-        // 为什么不直接在系统工具条上加一项：Compose 1.12 上 LocalTextToolbar 的覆盖不生效
-        //（Google issue 447192728 / 184950231），详见 ChatMessage.kt 里 SelectableWithQuote 的注释。
-        // 所以系统工具条原样不动，猫在旁边自己冒一条。
-        state.pickedText?.let { picked ->
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "选中了 " + picked.length + " 个字：" + picked.replace("\n", " "),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    if (onUsePickedQuote != null) {
-                        TextButton(onClick = onUsePickedQuote) {
-                            Text("引用这句", style = MaterialTheme.typography.labelMedium)
-                        }
-                        Spacer(Modifier.width(4.dp))
-                    }
-                    Icon(
-                        imageVector = HugeIcons.Cancel01,
-                        contentDescription = "取消",
-                        modifier = Modifier.clickable {
-                            state.pickedText = null
-                            state.pickedMessageId = null
-                        }
-                    )
-                }
-            }
-        }
 
         var isFocused by remember { mutableStateOf(false) }
         var isFullScreen by remember { mutableStateOf(false) }
