@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -827,12 +828,15 @@ fun ChatInput(
                             }
                         }
                     }
-                    .clip(PrinterBodyShape)
+                    // 【打印机外观 2026-10-18】裁切只在开模糊时需要；
+                    // 平时不裁 —— 否则底下那道纸边永远伸不出机身圆角
                     .then(
-                        if (settings.displaySetting.enableBlurEffect) Modifier.hazeEffect(
-                            state = hazeState,
-                            style = HazeMaterials.ultraThin(containerColor = hazeTintColor)
-                        )
+                        if (settings.displaySetting.enableBlurEffect) Modifier
+                            .clip(PrinterBodyShape)
+                            .hazeEffect(
+                                state = hazeState,
+                                style = HazeMaterials.ultraThin(containerColor = hazeTintColor)
+                            )
                         else Modifier
                     ),
                 shape = PrinterBodyShape,
@@ -1209,8 +1213,11 @@ fun ChatInput(
                                 )
                         )
                         // 机器底下压着的一沓纸：只露出一道纸边（左右内缩 8dp，躲开机身圆角）
+                        // 【打印机外观 2026-10-18】往下探 6dp —— 纸要长出机身一截，
+                        // 不是被机身底边压住（offset 不占布局，会盖到机身外面）
                         Box(
                             modifier = Modifier
+                                .offset(y = 6.dp)
                                 .fillMaxWidth()
                                 .padding(horizontal = 8.dp)
                                 .height(14.dp)
