@@ -1154,6 +1154,7 @@ fun ChatInput(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .padding(horizontal = 8.dp)
                                 .height(14.dp)
                                 .background(
                                     // 【打印机外观】纸纹：0~75% 是亮纸，75% 之后转暗（
@@ -1168,24 +1169,27 @@ fun ChatInput(
                                     )
                                 )
                         ) {
-                            // 机器的投影：纸是压在机身底下的，贴着机器那一头最暗
+                            // 【打印机外观】机器的投影：横向铺满纸边，高度只占 5dp，
+                            // 底边留一点不透明 —— 这样它才"压"在纸上，不是悬在半空
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(6.dp)
+                                    .height(5.dp)
                                     .background(
                                         Brush.verticalGradient(
-                                            listOf(Color(0x99000000), Color(0x33000000), Color(0x00000000))
+                                            0.00f to Color(0xB3000000),
+                                            0.60f to Color(0x66000000),
+                                            1.00f to Color(0x2E000000),
                                         )
                                     )
                             )
-                            // 压痕：纸自己的第一道折
+                            // 压痕：阴影和纸的交界，纸在这里折起来
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 6.dp, start = 0.dp, end = 0.dp)
+                                    .padding(top = 5.dp)
                                     .height(1.dp)
-                                    .background(Color(0x38FFFFFF))
+                                    .background(Color(0x40FFFFFF))
                             )
                         }
 
