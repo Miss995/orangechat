@@ -850,9 +850,9 @@ fun ChatInput(
                         drawRect(
                             brush = Brush.verticalGradient(
                                 colors = listOf(
-                                    Color(0xFFC6BCA4),   // 接住机身内纸边的底端
-                                    Color(0xFFD8CFBA),
-                                    Color(0xFFB5AA92),
+                                    Color(0xFFD5D2CA),   // 接住机身内纸边的底端
+                                    Color(0xFFDFDCD4),
+                                    Color(0xFFC7C4BC),
                                 ),
                                 startY = size.height,
                                 endY = size.height + h,
@@ -1243,15 +1243,15 @@ fun ChatInput(
                                 .padding(horizontal = 8.dp)
                                 .height(14.dp)
                                 .background(
-                                    // 【打印机外观】纸纹：0~75% 是亮纸，75% 之后转暗（
-                                    // 让"纸的暗面"从四分之三处开始，别全压在底边）
+                                    // 【打印机外观】纸纹：很浅的暖白，几乎不带黄
+                                    // （原来的米黄叠上投影会发土，看着像旧报纸）
                                     Brush.verticalGradient(
-                                        0.00f to Color(0xFFE8E1CE),
-                                        0.20f to Color(0xFFF6F1E3),
-                                        0.42f to Color(0xFFFBF8EE),
-                                        0.62f to Color(0xFFF2ECDD),
-                                        0.75f to Color(0xFFE3DBC6),
-                                        1.00f to Color(0xFFC6BCA4),
+                                        0.00f to Color(0xFFEDEAE3),
+                                        0.20f to Color(0xFFF7F5F0),
+                                        0.42f to Color(0xFFFCFBF7),
+                                        0.62f to Color(0xFFF4F2EC),
+                                        0.75f to Color(0xFFE9E6DF),
+                                        1.00f to Color(0xFFD5D2CA),
                                     )
                                 )
                         ) {
@@ -1263,9 +1263,9 @@ fun ChatInput(
                                     .height(5.dp)
                                     .background(
                                         Brush.verticalGradient(
-                                            0.00f to Color(0xB3000000),
-                                            0.60f to Color(0x66000000),
-                                            1.00f to Color(0x2E000000),
+                                            0.00f to Color(0x70000000),
+                                            0.60f to Color(0x38000000),
+                                            1.00f to Color(0x14000000),
                                         )
                                     )
                             )
