@@ -774,6 +774,11 @@ fun ChatInput(
             }
 
             // Input area with optional background image
+            // 【机身外面套一层不裁剪的容器 · 2026-10-19】
+            // 机身 Surface 带圆角，圆角会把里面的东西裁到形状里 —— 纸在它肚子里
+            // 怎么改都会被裁（这就是"报0高能治顶、治不了少一半"的原因）。
+            // 所以纸挂到外面来，跟机身并排。
+            Box {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -942,136 +947,6 @@ fun ChatInput(
                             state.quotedMessageId != null -> "quote"
                             loading -> "interject"
                             else -> null
-                        }
-                        // 【出纸动效 · 2026-10-18 宝定的】纸不是"啪"一下出现的：
-                        // 高度从 0 长到自然高度（顶边贴着缝不动、底边往下推），240ms 缓出；
-                        // 收起 150ms 快一点。用 tween 不用 spring —— spring 会带回弹，
-                        // 那就又成"弹到界面上"了。
-                        // 【纸票 · 2026-10-19 定稿】
-                        // 前面试过两版都不对：
-                        //   ① height(0.dp) —— 给子元素"最高 0"的约束，内容直接被压没；
-                        //   ② layout 报 0 高 + 往上溢出 —— 往上长的方向是消息列表，列表压在
-                        //      它上面（zIndex 只在同一层管用），纸的上半截被列表盖住了。
-                        // 现在改成：在机身里正常占位，用滑入+淡入做动画。
-                        // 代价是弹纸时机身会长一点，但因为是滑进去的，看着像"纸被吸出来"。
-                        AnimatedVisibility(
-                            visible = paperKind != null,
-                            enter = slideInVertically(
-                                initialOffsetY = { -it },
-                                animationSpec = tween(durationMillis = 240, easing = LinearOutSlowInEasing),
-                            ) + fadeIn(animationSpec = tween(durationMillis = 180)),
-                            exit = slideOutVertically(
-                                targetOffsetY = { -it },
-                                animationSpec = tween(durationMillis = 180, easing = LinearOutSlowInEasing),
-                            ) + fadeOut(animationSpec = tween(durationMillis = 140)),
-                        ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .zIndex(1f)
-                                // 【留一道缝 · 2026-10-19】纸不贴着机身顶：
-                                // 上面空出 4dp，透出机身的深色 —— 看着是"纸浮在出纸口上沿"，
-                                // 而不是"贴在机器顶上"。这道缝就是纸和机器的分界。
-                                .padding(top = 4.dp)
-                        ) {
-                        if (paperKind != null) {
-                            val picked = state.pickedText ?: ""
-                            Surface(
-                                shape = RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp),
-                                color = if (paperKind == "interject" && state.interjectSupplement)
-                                    Color(0xFFD9D2BE) else Color(0xFFE4E0D6),
-                                contentColor = Color(0xFF2B2723),
-                                shadowElevation = 8.dp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp),
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 5.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    when (paperKind) {
-                                        "edit" -> {
-                                            Text(
-                                                text = stringResource(R.string.editing),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                modifier = Modifier.weight(1f),
-                                            )
-                                            Icon(
-                                                imageVector = HugeIcons.Cancel01,
-                                                contentDescription = stringResource(R.string.cancel_edit),
-                                                modifier = Modifier.clickable { state.clearInput() },
-                                            )
-                                        }
-                                        "picked" -> {
-                                            Text(
-                                                text = "选中了 " + picked.length + " 个字：" +
-                                                    picked.replace("\n", " "),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                modifier = Modifier.weight(1f),
-                                            )
-                                            Spacer(Modifier.width(6.dp))
-                                            if (onUsePickedQuote != null) {
-                                                Text(
-                                                    text = "引用这句",
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    color = Color(0xFF7A4B14),
-                                                    modifier = Modifier
-                                                        .clickable { onUsePickedQuote() }
-                                                        .padding(horizontal = 4.dp, vertical = 2.dp),
-                                                )
-                                                Spacer(Modifier.width(4.dp))
-                                            }
-                                            Icon(
-                                                imageVector = HugeIcons.Cancel01,
-                                                contentDescription = "取消",
-                                                modifier = Modifier.clickable {
-                                                    state.pickedText = null
-                                                    state.pickedMessageId = null
-                                                },
-                                            )
-                                        }
-                                        "quote" -> {
-                                            Text(
-                                                text = "引用：" + state.quotedPreview.ifBlank { "（一条消息）" },
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                modifier = Modifier.weight(1f),
-                                            )
-                                            Spacer(Modifier.width(6.dp))
-                                            Icon(
-                                                imageVector = HugeIcons.Cancel01,
-                                                contentDescription = "取消引用",
-                                                modifier = Modifier.clickable {
-                                                    state.quotedMessageId = null
-                                                    state.quotedPreview = ""
-                                                    state.quotedText = null
-                                                },
-                                            )
-                                        }
-                                        else -> {
-                                            Text(
-                                                text = if (state.interjectSupplement)
-                                                    "这是补充上文那条 · 再按取消"
-                                                else "这句是补充上文那条？（按一下）",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clickable {
-                                                        state.interjectSupplement = !state.interjectSupplement
-                                                    },
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        }
                         }
                         // ===== 【打印机外观 2026-10-18】顶盖：两颗 LED + 散热孔 + 机身型号 =====
                         Row(
@@ -1475,6 +1350,145 @@ fun ChatInput(
                         )
                     }
                 }
+            }
+
+                // ===== 【出纸票 · 挂在机身外面】=====
+                            // 【出纸动效 · 2026-10-18 宝定的】纸不是"啪"一下出现的：
+                            // 高度从 0 长到自然高度（顶边贴着缝不动、底边往下推），240ms 缓出；
+                            // 收起 150ms 快一点。用 tween 不用 spring —— spring 会带回弹，
+                            // 那就又成"弹到界面上"了。
+                            // 【纸票 · 2026-10-19 定稿】
+                            // 前面试过两版都不对：
+                            //   ① height(0.dp) —— 给子元素"最高 0"的约束，内容直接被压没；
+                            //   ② layout 报 0 高 + 往上溢出 —— 往上长的方向是消息列表，列表压在
+                            //      它上面（zIndex 只在同一层管用），纸的上半截被列表盖住了。
+                            // 现在改成：在机身里正常占位，用滑入+淡入做动画。
+                            // 代价是弹纸时机身会长一点，但因为是滑进去的，看着像"纸被吸出来"。
+                            AnimatedVisibility(
+                                visible = paperKind != null,
+                                // 【不顶起机身 · 2026-10-19】报 0 高、底边压在出纸口下沿 3dp，
+                                // 内容是往上画的 —— 机身高度不变，纸从缝里冒出来。
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .layout { measurable, constraints ->
+                                        val placeable = measurable.measure(constraints)
+                                        val bite = 3.dp.roundToPx()
+                                        layout(placeable.width, 0) {
+                                            placeable.place(0, -(placeable.height - bite))
+                                        }
+                                    },
+                                enter = slideInVertically(
+                                    initialOffsetY = { -it },
+                                    animationSpec = tween(durationMillis = 240, easing = LinearOutSlowInEasing),
+                                ) + fadeIn(animationSpec = tween(durationMillis = 180)),
+                                exit = slideOutVertically(
+                                    targetOffsetY = { -it },
+                                    animationSpec = tween(durationMillis = 180, easing = LinearOutSlowInEasing),
+                                ) + fadeOut(animationSpec = tween(durationMillis = 140)),
+                            ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                            ) {
+                            if (paperKind != null) {
+                                val picked = state.pickedText ?: ""
+                                Surface(
+                                    shape = RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp),
+                                    color = if (paperKind == "interject" && state.interjectSupplement)
+                                        Color(0xFFD9D2BE) else Color(0xFFE4E0D6),
+                                    contentColor = Color(0xFF2B2723),
+                                    shadowElevation = 8.dp,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp),
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 5.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        when (paperKind) {
+                                            "edit" -> {
+                                                Text(
+                                                    text = stringResource(R.string.editing),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    modifier = Modifier.weight(1f),
+                                                )
+                                                Icon(
+                                                    imageVector = HugeIcons.Cancel01,
+                                                    contentDescription = stringResource(R.string.cancel_edit),
+                                                    modifier = Modifier.clickable { state.clearInput() },
+                                                )
+                                            }
+                                            "picked" -> {
+                                                Text(
+                                                    text = "选中了 " + picked.length + " 个字：" +
+                                                        picked.replace("\n", " "),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    modifier = Modifier.weight(1f),
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                                if (onUsePickedQuote != null) {
+                                                    Text(
+                                                        text = "引用这句",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = Color(0xFF7A4B14),
+                                                        modifier = Modifier
+                                                            .clickable { onUsePickedQuote() }
+                                                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                                                    )
+                                                    Spacer(Modifier.width(4.dp))
+                                                }
+                                                Icon(
+                                                    imageVector = HugeIcons.Cancel01,
+                                                    contentDescription = "取消",
+                                                    modifier = Modifier.clickable {
+                                                        state.pickedText = null
+                                                        state.pickedMessageId = null
+                                                    },
+                                                )
+                                            }
+                                            "quote" -> {
+                                                Text(
+                                                    text = "引用：" + state.quotedPreview.ifBlank { "（一条消息）" },
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    modifier = Modifier.weight(1f),
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                                Icon(
+                                                    imageVector = HugeIcons.Cancel01,
+                                                    contentDescription = "取消引用",
+                                                    modifier = Modifier.clickable {
+                                                        state.quotedMessageId = null
+                                                        state.quotedPreview = ""
+                                                        state.quotedText = null
+                                                    },
+                                                )
+                                            }
+                                            else -> {
+                                                Text(
+                                                    text = if (state.interjectSupplement)
+                                                        "这是补充上文那条 · 再按取消"
+                                                    else "这句是补充上文那条？（按一下）",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            state.interjectSupplement = !state.interjectSupplement
+                                                        },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            }
+                            }
             }
 
             // Expanded content
