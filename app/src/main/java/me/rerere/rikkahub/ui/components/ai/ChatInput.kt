@@ -89,6 +89,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.asImageBitmap
@@ -1188,11 +1189,35 @@ fun ChatInput(
                                         state.isEmpty() -> Color(0x66FFFFFF)
                                         else -> Color(0xFF1A1310)
                                     }
-                                    Surface(
-                                        modifier = Modifier.fillMaxSize(),
-                                        shape = CircleShape,
-                                        color = containerColor,
-                                        content = {})
+                                    // 【打印机外观 2026-10-18】键帽立体：顶面受光、下沿落影
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    listOf(
+                                                        lerp(containerColor, Color.White, 0.28f),
+                                                        lerp(containerColor, Color.White, 0.07f),
+                                                        containerColor,
+                                                        lerp(containerColor, Color.Black, 0.34f),
+                                                    )
+                                                )
+                                            )
+                                    )
+                                    // 顶面那一小片高光（别铺满，铺满就成塑料糖了）
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopCenter)
+                                            .padding(top = 2.dp)
+                                            .fillMaxWidth(0.54f)
+                                            .height(7.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    listOf(Color.White.copy(alpha = 0.40f), Color.Transparent)
+                                                )
+                                            )
+                                    )
                                     if (showStop) {
                                         KeepScreenOn()
                                         Icon(
@@ -1352,23 +1377,71 @@ fun ChatInput(
     }
 }
 
+// 【打印机外观 2026-10-18】立体圆钮：机身是塑料，键帽也是塑料
+// 顶面提亮一档、下沿压一道暗边，再补一小片顶部高光 —— 凸感全靠这几道
+@Composable
+private fun RaisedCircle(
+    base: Color,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        lerp(base, Color.White, 0.28f),   // 顶面受光
+                        lerp(base, Color.White, 0.07f),
+                        base,
+                        lerp(base, Color.Black, 0.34f),   // 下沿落进阴影
+                    )
+                )
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
+        // 顶面那一小片高光（别铺满，铺满就成塑料糖了）
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 2.dp)
+                .fillMaxWidth(0.54f)
+                .height(7.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.White.copy(alpha = 0.40f), Color.Transparent)
+                    )
+                )
+        )
+    }
+}
+
 @Composable
 private fun ActionIconButton(
     onClick: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.size(30.dp),
-        shape = CircleShape,
-        tonalElevation = 0.dp,
-        color = Color.Transparent,
+    // 【打印机外观 2026-10-18】键帽立体：原本是全透明，一点凸感都没有
+    // 只补极淡的顶亮底暗（不加实底），形状保持原样
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.13f),   // 顶面受光
+                        Color.Transparent,
+                        Color.Black.copy(alpha = 0.22f),   // 下沿落影
+                    )
+                )
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center
-        ) {
-            content()
-        }
+        content()
     }
 }
 
