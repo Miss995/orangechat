@@ -958,12 +958,9 @@ fun ChatInput(
                                         placeable.place(0, -(placeable.height - paperBitePx))
                                     }
                                 }
-                                .animateContentSize(
-                                    animationSpec = tween(
-                                        durationMillis = 240,
-                                        easing = LinearOutSlowInEasing,
-                                    )
-                                )
+                                // 【出纸动效已撤 · 2026-10-18】animateContentSize 做高度动画时会
+                                // 把自己裁到当前高度，而这张纸报给布局的高度是 0 —— 于是它一直在裁，
+                                // 纸只剩一半。先直接出现（不做高度动画），等排版稳了再想别的动效。
                         ) {
                         if (paperKind != null) {
                             val picked = state.pickedText ?: ""
