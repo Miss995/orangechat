@@ -1189,21 +1189,31 @@ fun ChatInput(
                                         state.isEmpty() -> Color(0x66FFFFFF)
                                         else -> Color(0xFF1A1310)
                                     }
-                                    // 【打印机外观 2026-10-18】宝给的定法：键全亮、纯色、不要暗部；
-                                    // 凹陷全靠「键外面紧贴着一圈黑边」—— 范围要细，跟着圆角走。
-                                    // 所以这里做两层：外层是那道黑（只露出 2dp），内层是纯色键面。
+                                    // 【打印机外观 2026-10-18】宝给的定法：三层，从外到内是
+                                    //   ① 一圈黑（把键从机身里切出来）
+                                    //   ② 一圈「键色自己的暗版」（这才是阴影 —— 黑色在深机身里根本看不见，
+                                    //      橘键的影子必须是深橘）
+                                    //   ③ 中间纯亮色（键面全亮，不带任何渐变/暗部）
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .background(Color(0xFF17120F))
+                                            .background(Color(0xFF0C0908))
                                     ) {
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .padding(2.dp)
-                                                .clip(RoundedCornerShape(5.5.dp))
-                                                .background(containerColor)
-                                        )
+                                                .padding(1.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(lerp(containerColor, Color.Black, 0.62f))
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .padding(1.5.dp)
+                                                    .clip(RoundedCornerShape(5.dp))
+                                                    .background(containerColor)
+                                            )
+                                        }
                                     }
                                     if (showStop) {
                                         KeepScreenOn()
