@@ -1189,20 +1189,23 @@ fun ChatInput(
                                         state.isEmpty() -> Color(0x66FFFFFF)
                                         else -> Color(0xFF1A1310)
                                     }
-                                    // 【打印机外观 2026-10-18】键帽立体：只留很轻的顶亮底暗
-                                    // （之前一档提太多，方键帽包不住，看着像鼓出来的糖）
+                                    // 【打印机外观 2026-10-18】键帽改「凹」：嵌进壳里的那种坑
+                                    // 照着宝发的真机器：顶边压暗、底边留一道极淡的反光，图标刻在坑底
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .background(
-                                                Brush.verticalGradient(
-                                                    listOf(
-                                                        lerp(containerColor, Color.White, 0.12f),
-                                                        containerColor,
-                                                        lerp(containerColor, Color.Black, 0.16f),
+                                            .background(lerp(containerColor, Color.Black, 0.16f))
+                                            .drawWithContent {
+                                                drawContent()
+                                                drawRect(
+                                                    brush = Brush.verticalGradient(
+                                                        0.00f to Color.Black.copy(alpha = 0.42f),
+                                                        0.32f to Color.Transparent,
+                                                        0.72f to Color.Transparent,
+                                                        1.00f to Color.White.copy(alpha = 0.10f),
                                                     )
                                                 )
-                                            )
+                                            }
                                     )
                                     if (showStop) {
                                         KeepScreenOn()
@@ -1374,15 +1377,18 @@ private fun ActionIconButton(
         modifier = Modifier
             .size(30.dp)
             .clip(RoundedCornerShape(7.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.07f),   // 顶面受光（很轻）
-                        Color.Transparent,
-                        Color.Black.copy(alpha = 0.10f),   // 下沿落影（很轻）
+            .drawWithContent {
+                drawContent()
+                // 【打印机外观 2026-10-18】侧钮也改凹：顶边压暗、底边极淡反光
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0.00f to Color.Black.copy(alpha = 0.26f),
+                        0.40f to Color.Transparent,
+                        0.75f to Color.Transparent,
+                        1.00f to Color.White.copy(alpha = 0.06f),
                     )
                 )
-            )
+            }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
