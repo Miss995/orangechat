@@ -105,6 +105,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -940,20 +941,21 @@ fun ChatInput(
                         // 高度从 0 长到自然高度（顶边贴着缝不动、底边往下推），240ms 缓出；
                         // 收起 150ms 快一点。用 tween 不用 spring —— spring 会带回弹，
                         // 那就又成"弹到界面上"了。
-                        // 【纸票不占位 · 2026-10-18】外面套一个高度 0 的盒子：
-                        // 纸只浮在机身上方，不参与机身高度计算 —— 弹纸的时候机身不会跟着变形。
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(0.dp)
-                                .zIndex(1f)
-                        ) {
+                        // 【纸票不占位 · 2026-10-18 修正版】
+                        // height(0.dp) 会把子元素约束成"最高 0"，内容直接被压没 —— 不能用那个。
+                        // 用 layout：内容照常测量（它自己知道多高、能画出来），
+                        // 但只向布局报告"占 0 高"，然后整体上移 18dp 画在机身外面。
+                        val paperShiftPx = with(LocalDensity.current) { 18.dp.roundToPx() }
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                // 【纸探出机身 · 2026-10-18】往上 18dp：纸整体上浮，
-                                // 底边落在机身顶边往下 12dp —— 正好压住出纸口那道缝；上半截在机身外面。
-                                .offset(y = (-18).dp)
+                                .zIndex(1f)
+                                .layout { measurable, constraints ->
+                                    val placeable = measurable.measure(constraints)
+                                    layout(placeable.width, 0) {
+                                        placeable.place(0, -paperShiftPx)
+                                    }
+                                }
                                 .animateContentSize(
                                     animationSpec = tween(
                                         durationMillis = 240,
@@ -1057,7 +1059,6 @@ fun ChatInput(
                                     }
                                 }
                             }
-                        }
                         }
                         }
                         // ===== 【打印机外观 2026-10-18】顶盖：两颗 LED + 散热孔 + 机身型号 =====
