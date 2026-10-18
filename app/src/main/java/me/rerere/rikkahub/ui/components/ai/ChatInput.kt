@@ -939,13 +939,19 @@ fun ChatInput(
                         // 高度从 0 长到自然高度（顶边贴着缝不动、底边往下推），240ms 缓出；
                         // 收起 150ms 快一点。用 tween 不用 spring —— spring 会带回弹，
                         // 那就又成"弹到界面上"了。
+                        // 【纸票不占位 · 2026-10-18】外面套一个高度 0 的盒子：
+                        // 纸只浮在机身上方，不参与机身高度计算 —— 弹纸的时候机身不会跟着变形。
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(0.dp)
+                        ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                // 【纸探出机身 · 2026-10-18 宝定的】往上 12dp：上沿越出机身顶边，
-                                // 下半截还压着那道缝 —— 就成了"从出纸口里出来"的样子。
-                                // 只挪视觉、不改占位，所以下面的顶盖不会被推走。
-                                .offset(y = (-12).dp)
+                                // 【纸探出机身 · 2026-10-18】往上 30dp：纸整体上浮，
+                                // 底边落在机身顶边往下 4dp —— 正好压住出纸口那道缝；上半截在机身外面。
+                                .offset(y = (-30).dp)
                                 .animateContentSize(
                                     animationSpec = tween(
                                         durationMillis = 240,
@@ -960,6 +966,7 @@ fun ChatInput(
                                 color = if (paperKind == "interject" && state.interjectSupplement)
                                     Color(0xFFD9D2BE) else Color(0xFFE4E0D6),
                                 contentColor = Color(0xFF2B2723),
+                                shadowElevation = 4.dp,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 14.dp),
@@ -1048,6 +1055,7 @@ fun ChatInput(
                                     }
                                 }
                             }
+                        }
                         }
                         }
                         // ===== 【打印机外观 2026-10-18】顶盖：两颗 LED + 散热孔 + 机身型号 =====
