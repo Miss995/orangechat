@@ -1379,27 +1379,39 @@ private fun ActionIconButton(
     onClick: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    // 【打印机外观 2026-10-18】键帽立体：原本是全透明，一点凸感都没有
-    // 只补极淡的顶亮底暗（不加实底），形状保持原样
+    // 【打印机外观 2026-10-18】跟发送键同一套三层（宝定的）：
+    //   ① 最外一圈黑 —— 把键从机身里切出来
+    //   ② 一圈「机身色自己的暗版」—— 阴影必须是自己颜色的暗色，黑在深机身里看不见
+    //   ③ 中间亮面 —— 键面全亮，不带渐变
     Box(
         modifier = Modifier
             .size(30.dp)
             .clip(RoundedCornerShape(7.dp))
-            .drawWithContent {
-                drawContent()
-                // 【打印机外观 2026-10-18】侧钮也改凹：顶边压暗、底边极淡反光
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0.00f to Color.Black.copy(alpha = 0.26f),
-                        0.40f to Color.Transparent,
-                        0.75f to Color.Transparent,
-                        1.00f to Color.White.copy(alpha = 0.06f),
-                    )
-                )
-            }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
+        // 底下三层（只铺背景，不吃点击 —— 点击在外层那个 Box 上）
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0C0908))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(1.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF221D19))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(1.5.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(Color(0xFF3A342F))
+                )
+            }
+        }
         content()
     }
 }
