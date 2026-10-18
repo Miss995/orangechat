@@ -865,14 +865,14 @@ fun ChatInput(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 26.dp)
-                            .height(5.dp)
+                            .height(3.dp)
                             .clip(RoundedCornerShape(bottomStart = 2.dp, bottomEnd = 2.dp))
                             .background(
                                 Brush.verticalGradient(
-                                    0.00f to Color(0xFF4A433F),   // 上沿：被照到的塑料边
-                                    0.14f to Color(0xFF0B0A09),   // 掉进去
-                                    0.70f to Color(0xFF030202),   // 里面最黑
-                                    1.00f to Color(0xFF231F1C),   // 下沿：一点点返光
+                                    0.00f to Color(0xFF1E1A18),   // 上沿：只是切口的一点毛边，别亮
+                                    0.30f to Color(0xFF050404),   // 掉进去
+                                    0.78f to Color(0xFF010101),   // 里面最黑
+                                    1.00f to Color(0xFF171412),   // 下沿：一点点返光
                                 )
                             )
                     )
