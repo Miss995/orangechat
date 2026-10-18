@@ -43,6 +43,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -840,10 +843,12 @@ fun ChatInput(
                 Box(
                     modifier = if (inputBgAvailable) Modifier
                         else Modifier.background(
+                            // 【打印机外观】机身：深灰塑料外壳
                             Brush.verticalGradient(
-                                0f to Color(0xFFFDFCFA),
-                                0.18f to Color(0xFFF2EFE8),
-                                1f to Color(0xFFE6E1D6),
+                                0f to Color(0xFF3D3936),
+                                0.34f to Color(0xFF312D2A),
+                                0.72f to Color(0xFF282421),
+                                1f to Color(0xFF221F1C),
                             )
                         )
                 ) {
@@ -863,6 +868,52 @@ fun ChatInput(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
+                        // ===== 【打印机外观 2026-10-18】顶盖：两颗 LED + 散热孔 + 机身型号 =====
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 4.dp, end = 4.dp, top = 5.dp, bottom = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        ) {
+                            // 左边那颗：猫在干活时亮绿
+                            Box(
+                                modifier = Modifier
+                                    .width(7.dp).height(7.dp)
+                                    .clip(CircleShape)
+                                    .background(if (loading) Color(0xFF7DDC8A) else Color(0xFF3F4A41))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .width(7.dp).height(7.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF3F4A41))
+                            )
+                            // 散热孔
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Color(0x4D000000)),
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                repeat(16) {
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f).fillMaxHeight()
+                                            .background(Color(0x44000000))
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "CAT-PRINTER",
+                                fontSize = 8.sp,
+                                letterSpacing = 1.5.sp,
+                                color = Color(0x38FFFFFF),
+                            )
+                        }
+
                         if (state.messageContent.isNotEmpty()) {
                             MediaFileInputRow(state = state)
                         }
@@ -883,7 +934,18 @@ fun ChatInput(
                                 )
                             }
 
-                            Box(modifier = Modifier.weight(1f)) {
+                            // 【打印机外观】屏框 + LCD：输入框像嵌在机身里的屏
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(Color(0xFF1A1715), Color(0xFF141210))
+                                        )
+                                    )
+                                    .padding(5.dp)
+                            ) {
                                 if (voiceInputMode) {
                                     // 【重排·第五刀 2026-10-08】语音模式：这根条子占输入框的位子
                                     Surface(
@@ -976,14 +1038,15 @@ fun ChatInput(
                                     // （2026-10-13：含附件 —— 一张图没配字也算。）
                                     val showStop = loading && state.isEmpty()
                                     val containerColor = when {
-                                        showStop -> MaterialTheme.colorScheme.errorContainer
-                                        state.isEmpty() -> MaterialTheme.colorScheme.surfaceContainerHigh
-                                        else -> MaterialTheme.colorScheme.primary
+                                        // 【打印机外观】橙色打印键
+                                        showStop -> Color(0xFFB4402C)
+                                        state.isEmpty() -> Color(0xFF3A342F)
+                                        else -> Color(0xFFE8934A)
                                     }
                                     val contentColor = when {
-                                        showStop -> MaterialTheme.colorScheme.onErrorContainer
-                                        state.isEmpty() -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                        else -> MaterialTheme.colorScheme.onPrimary
+                                        showStop -> Color(0xFFFFFFFF)
+                                        state.isEmpty() -> Color(0x66FFFFFF)
+                                        else -> Color(0xFF1A1310)
                                     }
                                     Surface(
                                         modifier = Modifier.fillMaxSize(),
