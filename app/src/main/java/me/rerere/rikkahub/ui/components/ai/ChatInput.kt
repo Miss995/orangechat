@@ -579,9 +579,10 @@ fun ChatInput(
         inputBgPath.isNotBlank() && File(inputBgPath).exists()
     }
 
-    Surface(
-        color = Color.Transparent,
-    ) {
+    // 【别用 Surface · 2026-10-19】Material 的 Surface 不管 shape 是什么，
+    // 都会把内容裁到自己的边界里。纸票往上画、出了这个容器的顶边 —— 就被它削掉了。
+    // 这里本来只是想要个透明背景，Box 就够，而且不裁。
+    Box {
         Column(
             modifier = modifier
                 .imePadding()
