@@ -1154,17 +1154,17 @@ fun ChatInput(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 8.dp)
                                 .height(14.dp)
                                 .background(
+                                    // 【打印机外观】纸纹：0~75% 是亮纸，75% 之后转暗（
+                                    // 让"纸的暗面"从四分之三处开始，别全压在底边）
                                     Brush.verticalGradient(
-                                        listOf(
-                                            Color(0xFFE8E1CE),
-                                            Color(0xFFF6F1E3),
-                                            Color(0xFFFBF8EE),
-                                            Color(0xFFEFE8D8),
-                                            Color(0xFFDFD7C2),
-                                        )
+                                        0.00f to Color(0xFFE8E1CE),
+                                        0.20f to Color(0xFFF6F1E3),
+                                        0.42f to Color(0xFFFBF8EE),
+                                        0.62f to Color(0xFFF2ECDD),
+                                        0.75f to Color(0xFFE3DBC6),
+                                        1.00f to Color(0xFFC6BCA4),
                                     )
                                 )
                         ) {
