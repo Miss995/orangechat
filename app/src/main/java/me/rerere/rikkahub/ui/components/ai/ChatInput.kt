@@ -944,8 +944,9 @@ fun ChatInput(
                         // 【纸票不占位 · 2026-10-18 修正版】
                         // height(0.dp) 会把子元素约束成"最高 0"，内容直接被压没 —— 不能用那个。
                         // 用 layout：内容照常测量（它自己知道多高、能画出来），
-                        // 但只向布局报告"占 0 高"，然后整体上移 18dp 画在机身外面。
-                        val paperShiftPx = with(LocalDensity.current) { 18.dp.roundToPx() }
+                        // 但只向布局报告"占 0 高"，再按自身高度上移，让底边咬住出纸口。
+                        // 咬住机身的那一截：纸票底边落在出纸口下沿，露出缝、又不至于像贴上去。
+                        val paperBitePx = with(LocalDensity.current) { 3.dp.roundToPx() }
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -953,7 +954,8 @@ fun ChatInput(
                                 .layout { measurable, constraints ->
                                     val placeable = measurable.measure(constraints)
                                     layout(placeable.width, 0) {
-                                        placeable.place(0, -paperShiftPx)
+                                        // 按它自己的实际高度算：底边永远停在 +3dp，不管内容多高。
+                                        placeable.place(0, -(placeable.height - paperBitePx))
                                     }
                                 }
                                 .animateContentSize(
@@ -970,7 +972,7 @@ fun ChatInput(
                                 color = if (paperKind == "interject" && state.interjectSupplement)
                                     Color(0xFFD9D2BE) else Color(0xFFE4E0D6),
                                 contentColor = Color(0xFF2B2723),
-                                shadowElevation = 4.dp,
+                                shadowElevation = 8.dp,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 14.dp),
