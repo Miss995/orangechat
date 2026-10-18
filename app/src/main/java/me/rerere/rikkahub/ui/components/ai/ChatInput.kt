@@ -1469,25 +1469,26 @@ private fun TextInputRow(
         // 那句补充物理上落在猫回复之后，逻辑上却接她自己上一句）。
         // 按一下 = 标成"补充"，发送时写进消息；不按 = 新话题，跟以前一样。
         if (loading) {
+            // 【打印机外观 2026-10-18 宝定的】收成胶囊、靠右对齐
+            // —— 原来 fillMaxWidth 占满整行，看着像方条，不像胶囊
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(50),
                 color = if (state.interjectSupplement) MaterialTheme.colorScheme.tertiaryContainer
                 else MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.clickable {
-                    state.interjectSupplement = !state.interjectSupplement
-                },
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .clickable {
+                        state.interjectSupplement = !state.interjectSupplement
+                    },
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = if (state.interjectSupplement) "这是补充上文那条 · 再按取消"
                         else "这句是补充上文那条？（按一下）",
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -1496,14 +1497,15 @@ private fun TextInputRow(
         // 【消息引用 2026-09-22】引用条：显示被引消息的摘要，右侧一个叉取消。
         // 形状/配色跟上面那条"编辑中"保持一致，宝一眼能认。
         if (state.quotedMessageId != null) {
+            // 【打印机外观 2026-10-18 宝定的】胶囊 + 靠右（同上）
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(50),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.align(Alignment.End),
             ) {
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -1511,7 +1513,7 @@ private fun TextInputRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.widthIn(max = 220.dp),
                     )
                     Spacer(Modifier.width(8.dp))
                     Icon(
