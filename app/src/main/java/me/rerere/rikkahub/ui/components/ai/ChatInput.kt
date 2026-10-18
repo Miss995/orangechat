@@ -48,6 +48,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -945,13 +946,14 @@ fun ChatInput(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(0.dp)
+                                .zIndex(1f)
                         ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                // 【纸探出机身 · 2026-10-18】往上 30dp：纸整体上浮，
-                                // 底边落在机身顶边往下 4dp —— 正好压住出纸口那道缝；上半截在机身外面。
-                                .offset(y = (-30).dp)
+                                // 【纸探出机身 · 2026-10-18】往上 18dp：纸整体上浮，
+                                // 底边落在机身顶边往下 12dp —— 正好压住出纸口那道缝；上半截在机身外面。
+                                .offset(y = (-18).dp)
                                 .animateContentSize(
                                     animationSpec = tween(
                                         durationMillis = 240,
