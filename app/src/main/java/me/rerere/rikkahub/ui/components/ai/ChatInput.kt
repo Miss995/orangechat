@@ -1139,6 +1139,9 @@ fun ChatInput(
                         }
 
                         // ===== 【打印机外观 2026-10-18】底座 =====
+                        // 【打印机外观】接缝和纸包在一起 —— 单独开一个 spacing=0 的 Column，
+                        // 否则外层 Column 的 spacedBy(8.dp) 会在它俩中间撑出一道缝
+                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                         // 底部接缝：机器和纸之间那道深色台
                         Box(
                             modifier = Modifier
@@ -1191,6 +1194,7 @@ fun ChatInput(
                                     .height(1.dp)
                                     .background(Color(0x40FFFFFF))
                             )
+                        }
                         }
 
                     }
