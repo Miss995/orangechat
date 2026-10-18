@@ -48,6 +48,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.matchParentSize
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -946,6 +948,20 @@ fun ChatInput(
                                     )
                                     .padding(5.dp)
                             ) {
+                                // 【打印机外观】LCD 底色（外面那 5dp 露出的是屏框）
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(
+                                                    Color(0xFF0D1A14),
+                                                    Color(0xFF122019),
+                                                    Color(0xFF0A1210),
+                                                )
+                                            )
+                                        )
+                                )
                                 if (voiceInputMode) {
                                     // 【重排·第五刀 2026-10-08】语音模式：这根条子占输入框的位子
                                     Surface(
@@ -994,6 +1010,36 @@ fun ChatInput(
                                         fieldRectState = fieldRectState
                                     )
                                 }
+                                // 【打印机外观】扫描线：细横纹，像真屏
+                                Canvas(modifier = Modifier.matchParentSize()) {
+                                    val step = 3.dp.toPx()
+                                    var y = step
+                                    while (y < size.height) {
+                                        drawLine(
+                                            color = Color(0x12FFFFFF),
+                                            start = Offset(0f, y),
+                                            end = Offset(size.width, y),
+                                            strokeWidth = 1f,
+                                        )
+                                        y += step
+                                    }
+                                }
+                                // 【打印机外观】斜向反光
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .background(
+                                            Brush.linearGradient(
+                                                colors = listOf(
+                                                    Color(0x2EFFFFFF),
+                                                    Color(0x0AFFFFFF),
+                                                    Color.Transparent,
+                                                ),
+                                                start = Offset(0f, 0f),
+                                                end = Offset(420f, 760f),
+                                            )
+                                        )
+                                )
                             }
 
                             // 【重排·第五刀 2026-10-08】语音模式下，这个位子换成「切回文字」
@@ -1390,7 +1436,8 @@ private fun TextInputRow(
                     color = Color(0xFF7FFFA8).copy(alpha = 0.35f),
                 )
             },
-            lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
+            // 【打印机外观】屏是固定大小的：最多两行，再多就在屏里滚
+            lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 2),
             // 【手势打架 · 2026-10-17】用外面传进来的实例，外面那道手势闸读的就是它。
             scrollState = inputScrollState,
             keyboardOptions = KeyboardOptions(
