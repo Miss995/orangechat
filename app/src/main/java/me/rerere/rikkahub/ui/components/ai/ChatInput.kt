@@ -1138,23 +1138,10 @@ fun ChatInput(
                             }
                         }
 
-                        // ===== 【打印机外观 2026-10-18】底座 =====
-                        // 底部接缝：机器和纸之间那道深色台
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(9.dp)
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(Color(0xFF090807), Color(0xFF1C1917), Color(0xFF2B2724))
-                                    )
-                                )
-                        )
                         // 机器底下压着的一沓纸：只露出一道纸边（左右内缩 8dp，躲开机身圆角）
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 8.dp)
                                 .height(14.dp)
                                 .background(
                                     // 【打印机外观】纸纹：0~75% 是亮纸，75% 之后转暗（
@@ -1169,28 +1156,6 @@ fun ChatInput(
                                     )
                                 )
                         ) {
-                            // 【打印机外观】机器的投影：横向铺满纸边，高度只占 5dp，
-                            // 底边留一点不透明 —— 这样它才"压"在纸上，不是悬在半空
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(5.dp)
-                                    .background(
-                                        Brush.verticalGradient(
-                                            0.00f to Color(0xB3000000),
-                                            0.60f to Color(0x66000000),
-                                            1.00f to Color(0x2E000000),
-                                        )
-                                    )
-                            )
-                            // 压痕：阴影和纸的交界，纸在这里折起来
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 5.dp)
-                                    .height(1.dp)
-                                    .background(Color(0x40FFFFFF))
-                            )
                         }
 
                     }
