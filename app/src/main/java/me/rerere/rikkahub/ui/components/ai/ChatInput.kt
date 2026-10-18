@@ -879,14 +879,16 @@ fun ChatInput(
                         )
                     }
                     Column(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        // 【打印机外观 2026-10-18】水平 8dp 不放在这里了 ——
+                        // 接缝要铺到机身左右边缘，内边距挪给顶盖和输入行各自承担
+                        modifier = Modifier.padding(vertical = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         // ===== 【打印机外观 2026-10-18】顶盖：两颗 LED + 散热孔 + 机身型号 =====
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(start = 4.dp, end = 4.dp, top = 5.dp, bottom = 3.dp),
+                                .padding(start = 12.dp, end = 12.dp, top = 5.dp, bottom = 3.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(7.dp),
                         ) {
@@ -934,7 +936,7 @@ fun ChatInput(
 
                         // 【重排·第四刀 2026-10-08】+ 和发送键挪到输入框左右两侧
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                             verticalAlignment = Alignment.Bottom,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
@@ -1150,18 +1152,6 @@ fun ChatInput(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(9.dp)
-                                .layout { measurable, constraints ->
-                                    val extra = 16.dp.roundToPx()
-                                    val placeable = measurable.measure(
-                                        constraints.copy(
-                                            minWidth = constraints.maxWidth + extra,
-                                            maxWidth = constraints.maxWidth + extra,
-                                        )
-                                    )
-                                    layout(placeable.width, placeable.height) {
-                                        placeable.place(-extra / 2, 0)
-                                    }
-                                }
                                 .background(
                                     Brush.verticalGradient(
                                         listOf(Color(0xFF090807), Color(0xFF1C1917), Color(0xFF2B2724))
