@@ -55,6 +55,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -783,7 +789,9 @@ fun ChatInput(
             // 机身 Surface 带圆角，圆角会把里面的东西裁到形状里 —— 纸在它肚子里
             // 怎么改都会被裁（这就是"报0高能治顶、治不了少一半"的原因）。
             // 所以纸挂到外面来，跟机身并排。
-            Box {
+            // 【弹层的锚点 · 2026-10-19】Popup 的位置相对父级，先把这块的实际尺寸记下来
+            var paperAnchorBox by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+            Box(modifier = Modifier.onGloballyPositioned { paperAnchorBox = it.boundsInWindow() }) {
             // 【纸票的状态判据 · 2026-10-19 提到外面】纸挂在机身外面了，
             // 这里得在机身和纸都能看到的地方先算一次。按要紧程度排优先级。
             val paperKind = when {
@@ -1380,27 +1388,32 @@ fun ChatInput(
                                 animationSpec = tween(durationMillis = 240, easing = LinearOutSlowInEasing),
                                 label = "paperAnim",
                             )
+                            // 【纸票改成弹层 · 2026-10-19 宝选的 ②】
+                            // 报 0 高能"不占地方"，但触摸就没有落点 —— 点一次之后就点不动了。
+                            // Popup 不占布局（机身高度不变），又有独立的触摸树（点得到）。
+                            // 位置：底边贴着机身顶边 —— 也就是父级 Box 的顶边。
+                            val paperAnchorRect = paperAnchorBox
+                            if (paperAnchorRect != null && paperKind != null) {
+                                Popup(
+                                    popupPositionProvider = object : PopupPositionProvider {
+                                        override fun calculatePosition(
+                                            anchorBounds: IntRect,
+                                            windowSize: IntSize,
+                                            layoutDirection: LayoutDirection,
+                                            popupContentSize: IntSize
+                                        ): IntOffset = IntOffset(
+                                            paperAnchorRect.left.toInt(),
+                                            paperAnchorRect.top.toInt() - popupContentSize.height
+                                        )
+                                    },
+                                    properties = PopupProperties(focusable = false),
+                                ) {
                             Column(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    // 报 0 高、底边压在出纸口下沿 3dp：机身高度不变，纸从缝里冒出来
-                                    .layout { measurable, constraints ->
-                                        val placeable = measurable.measure(constraints)
-                                        // 【一点不伸进机身 · 2026-10-19 宝定的】
-                                        // 之前是 6dp：纸往下探进机身 6dp 咬住出纸口 —— 但那 6dp
-                                        // 就是"盖住机身"的部分，宝说不符合常理（纸不该压在机器身上）。
-                                        // 改成 0：纸的底边正好落在机身顶边上，一点不压，
-                                        // 底下那道缝就在它正下方 —— 看着还是从缝里出来的。
-                                        val bite = 0
-                                        layout(placeable.width, 0) {
-                                            placeable.place(0, -(placeable.height - bite))
-                                        }
-                                    }
+                                    .width(with(LocalDensity.current) { paperAnchorRect.width.toDp() })
                                     .graphicsLayer {
                                         alpha = paperAnim
-                                        // 【从缝里长出来 · 2026-10-19】不用 translationY ——
-                                        // 那是"从上往下飘"。纸应该是被机器吸出来的：底部钉住、往上长。
-                                        // 所以缩的是 Y，原点放在底边中心。
+                                        // 从缝里长出来：底部钉住、往上长
                                         scaleY = paperAnim
                                         transformOrigin = TransformOrigin(0.5f, 1f)
                                     }
@@ -1502,6 +1515,8 @@ fun ChatInput(
                                     }
                                 }
                             }
+                            }
+                                }
                             }
             }
 
