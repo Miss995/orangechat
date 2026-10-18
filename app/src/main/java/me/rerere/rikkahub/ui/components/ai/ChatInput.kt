@@ -1386,9 +1386,12 @@ fun ChatInput(
                                     // 报 0 高、底边压在出纸口下沿 3dp：机身高度不变，纸从缝里冒出来
                                     .layout { measurable, constraints ->
                                         val placeable = measurable.measure(constraints)
-                                        // 出纸口本身有 3dp 高，底部再咬住它的下沿，
-                                        // 纸才是"从缝里出来"而不是"浮在机器顶上"。
-                                        val bite = with(density) { 6.dp.roundToPx() }
+                                        // 【一点不伸进机身 · 2026-10-19 宝定的】
+                                        // 之前是 6dp：纸往下探进机身 6dp 咬住出纸口 —— 但那 6dp
+                                        // 就是"盖住机身"的部分，宝说不符合常理（纸不该压在机器身上）。
+                                        // 改成 0：纸的底边正好落在机身顶边上，一点不压，
+                                        // 底下那道缝就在它正下方 —— 看着还是从缝里出来的。
+                                        val bite = 0
                                         layout(placeable.width, 0) {
                                             placeable.place(0, -(placeable.height - bite))
                                         }
@@ -1409,7 +1412,7 @@ fun ChatInput(
                                     color = if (paperKind == "interject" && state.interjectSupplement)
                                         Color(0xFFD9D2BE) else Color(0xFFE4E0D6),
                                     contentColor = Color(0xFF2B2723),
-                                    shadowElevation = 8.dp,
+                                    shadowElevation = 4.dp,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 14.dp),
