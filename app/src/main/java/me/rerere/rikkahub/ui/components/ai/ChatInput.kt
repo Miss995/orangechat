@@ -948,9 +948,11 @@ fun ChatInput(
                                     .padding(5.dp)
                             ) {
                                 // 【打印机外观】LCD 底色（外面那 5dp 露出的是屏框）
+                                // 【打印机外观】LCD 底色，圆角 6dp —— 屏是嵌在框里的，不能是直角
                                 Box(
                                     modifier = Modifier
                                         .matchParentSize()
+                                        .clip(RoundedCornerShape(6.dp))
                                         .background(
                                             Brush.verticalGradient(
                                                 listOf(
@@ -1010,7 +1012,11 @@ fun ChatInput(
                                     )
                                 }
                                 // 【打印机外观】扫描线：细横纹，像真屏
-                                Canvas(modifier = Modifier.matchParentSize()) {
+                                Canvas(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .clip(RoundedCornerShape(6.dp))
+                                ) {
                                     val step = 3.dp.toPx()
                                     var y = step
                                     while (y < size.height) {
@@ -1027,6 +1033,7 @@ fun ChatInput(
                                 Box(
                                     modifier = Modifier
                                         .matchParentSize()
+                                        .clip(RoundedCornerShape(6.dp))
                                         .background(
                                             Brush.linearGradient(
                                                 colors = listOf(
@@ -1117,6 +1124,43 @@ fun ChatInput(
                                 }
                             }
                             }
+                        }
+
+                        // ===== 【打印机外观 2026-10-18】底座 =====
+                        // 底部接缝：机器和纸之间那道深色台
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(9.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xFF1D1A18), Color(0xFF2A2623))
+                                    )
+                                )
+                        )
+                        // 机器底下压着的一沓纸：只露出一道纸边（左右内缩 8dp，躲开机身圆角）
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp)
+                                .height(10.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xFFFBF8EE), Color(0xFFF2ECDD), Color(0xFFE2DAC6))
+                                    )
+                                )
+                        ) {
+                            // 压痕：只在贴着机器那一线最深
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(2.dp)
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(Color(0x80000000), Color(0x00000000))
+                                        )
+                                    )
+                            )
                         }
 
                     }
