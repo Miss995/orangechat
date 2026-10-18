@@ -887,7 +887,9 @@ fun ChatInput(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 26.dp)
+                            // 【打印机外观 2026-10-18 宝定的】26 -> 14：出纸口别比纸窄太多，
+                            // 免得看着像"纸进去一圈、出来还缩了"
+                            .padding(horizontal = 14.dp)
                             .height(3.dp)
                             .clip(RoundedCornerShape(bottomStart = 2.dp, bottomEnd = 2.dp))
                             .background(
