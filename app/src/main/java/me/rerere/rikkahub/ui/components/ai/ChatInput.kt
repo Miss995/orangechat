@@ -941,6 +941,10 @@ fun ChatInput(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                // 【纸探出机身 · 2026-10-18 宝定的】往上 12dp：上沿越出机身顶边，
+                                // 下半截还压着那道缝 —— 就成了"从出纸口里出来"的样子。
+                                // 只挪视觉、不改占位，所以下面的顶盖不会被推走。
+                                .offset(y = (-12).dp)
                                 .animateContentSize(
                                     animationSpec = tween(
                                         durationMillis = 240,
