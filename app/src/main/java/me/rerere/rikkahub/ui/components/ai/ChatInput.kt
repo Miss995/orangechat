@@ -89,9 +89,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
@@ -837,7 +839,28 @@ fun ChatInput(
                                 style = HazeMaterials.ultraThin(containerColor = hazeTintColor)
                             )
                         else Modifier
-                    ),
+                    )
+                    // 【打印机外观 2026-10-18】纸要长出机身一截：
+                    // 机身里的纸边到底边就停了，这里在机身外面再补一段同样质感的纸，
+                    // 两截接在一起 = 纸从机器底下露出来（不是被机身压住）
+                    .drawWithContent {
+                        drawContent()
+                        val h = 9.dp.toPx()
+                        val insetX = 8.dp.toPx()
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color(0xFFC6BCA4),   // 接住机身内纸边的底端
+                                    Color(0xFFD8CFBA),
+                                    Color(0xFFB5AA92),
+                                ),
+                                startY = size.height,
+                                endY = size.height + h,
+                            ),
+                            topLeft = Offset(insetX, size.height),
+                            size = Size(size.width - insetX * 2, h),
+                        )
+                    },
                 shape = PrinterBodyShape,
                 tonalElevation = 0.dp,
                 // 【打印机外观 2026-10-18】机身底色一律透明：渐变画在下面那层 Box 上
