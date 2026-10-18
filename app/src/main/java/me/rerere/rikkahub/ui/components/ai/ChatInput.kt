@@ -1162,7 +1162,7 @@ fun ChatInput(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
                                         .size(30.dp)
-                                        .clip(CircleShape)
+                                        .clip(RoundedCornerShape(7.dp))
                                         .combinedClickable(
                                             enabled = loading || !state.isEmpty(),
                                             onClick = {
@@ -1189,32 +1189,18 @@ fun ChatInput(
                                         state.isEmpty() -> Color(0x66FFFFFF)
                                         else -> Color(0xFF1A1310)
                                     }
-                                    // 【打印机外观 2026-10-18】键帽立体：顶面受光、下沿落影
+                                    // 【打印机外观 2026-10-18】键帽立体：只留很轻的顶亮底暗
+                                    // （之前一档提太多，方键帽包不住，看着像鼓出来的糖）
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .background(
                                                 Brush.verticalGradient(
                                                     listOf(
-                                                        lerp(containerColor, Color.White, 0.28f),
-                                                        lerp(containerColor, Color.White, 0.07f),
+                                                        lerp(containerColor, Color.White, 0.12f),
                                                         containerColor,
-                                                        lerp(containerColor, Color.Black, 0.34f),
+                                                        lerp(containerColor, Color.Black, 0.16f),
                                                     )
-                                                )
-                                            )
-                                    )
-                                    // 顶面那一小片高光（别铺满，铺满就成塑料糖了）
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.TopCenter)
-                                            .padding(top = 2.dp)
-                                            .fillMaxWidth(0.54f)
-                                            .height(7.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                Brush.verticalGradient(
-                                                    listOf(Color.White.copy(alpha = 0.40f), Color.Transparent)
                                                 )
                                             )
                                     )
@@ -1377,47 +1363,6 @@ fun ChatInput(
     }
 }
 
-// 【打印机外观 2026-10-18】立体圆钮：机身是塑料，键帽也是塑料
-// 顶面提亮一档、下沿压一道暗边，再补一小片顶部高光 —— 凸感全靠这几道
-@Composable
-private fun RaisedCircle(
-    base: Color,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    Box(
-        modifier = modifier
-            .clip(CircleShape)
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        lerp(base, Color.White, 0.28f),   // 顶面受光
-                        lerp(base, Color.White, 0.07f),
-                        base,
-                        lerp(base, Color.Black, 0.34f),   // 下沿落进阴影
-                    )
-                )
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        content()
-        // 顶面那一小片高光（别铺满，铺满就成塑料糖了）
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 2.dp)
-                .fillMaxWidth(0.54f)
-                .height(7.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = 0.40f), Color.Transparent)
-                    )
-                )
-        )
-    }
-}
-
 @Composable
 private fun ActionIconButton(
     onClick: () -> Unit,
@@ -1428,13 +1373,13 @@ private fun ActionIconButton(
     Box(
         modifier = Modifier
             .size(30.dp)
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(7.dp))
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color.White.copy(alpha = 0.13f),   // 顶面受光
+                        Color.White.copy(alpha = 0.07f),   // 顶面受光（很轻）
                         Color.Transparent,
-                        Color.Black.copy(alpha = 0.22f),   // 下沿落影
+                        Color.Black.copy(alpha = 0.10f),   // 下沿落影（很轻）
                     )
                 )
             )
