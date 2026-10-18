@@ -95,6 +95,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -1143,10 +1144,24 @@ fun ChatInput(
                         // 否则外层 Column 的 spacedBy(8.dp) 会在它俩中间撑出一道缝
                         Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                         // 底部接缝：机器和纸之间那道深色台
+                        // 【打印机外观 2026-10-18】接缝要铺到机身左右边缘 —— 它所在的 Column
+                        // 有 8dp 水平内边距，所以这里放宽 16dp、左移 8dp，把它顶回两侧
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(9.dp)
+                                .layout { measurable, constraints ->
+                                    val extra = 16.dp.roundToPx()
+                                    val placeable = measurable.measure(
+                                        constraints.copy(
+                                            minWidth = constraints.maxWidth + extra,
+                                            maxWidth = constraints.maxWidth + extra,
+                                        )
+                                    )
+                                    layout(placeable.width, placeable.height) {
+                                        placeable.place(-extra / 2, 0)
+                                    }
+                                }
                                 .background(
                                     Brush.verticalGradient(
                                         listOf(Color(0xFF090807), Color(0xFF1C1917), Color(0xFF2B2724))
