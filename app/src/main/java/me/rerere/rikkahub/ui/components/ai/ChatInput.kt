@@ -855,14 +855,20 @@ fun ChatInput(
                         )
                 ) {
                     // 【打印机外观】出纸口：机身顶上那道缝，纸就是从这里出来的
+                    // 2026-10-18 做厚度：上沿一道塑料切口的高光，中间落下去变黑，
+                    // 下沿再返一点亮 —— 三层才像一条缝，一条渐变永远像贴纸
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 26.dp)
-                            .height(2.dp)
+                            .height(5.dp)
+                            .clip(RoundedCornerShape(bottomStart = 2.dp, bottomEnd = 2.dp))
                             .background(
                                 Brush.verticalGradient(
-                                    listOf(Color(0xFF050404), Color(0xFF171514))
+                                    0.00f to Color(0xFF4A433F),   // 上沿：被照到的塑料边
+                                    0.14f to Color(0xFF0B0A09),   // 掉进去
+                                    0.70f to Color(0xFF030202),   // 里面最黑
+                                    1.00f to Color(0xFF231F1C),   // 下沿：一点点返光
                                 )
                             )
                     )
@@ -880,8 +886,9 @@ fun ChatInput(
                     }
                     Column(
                         // 【打印机外观 2026-10-18】水平 8dp 不放在这里了 ——
-                        // 接缝要铺到机身左右边缘，内边距挪给顶盖和输入行各自承担
-                        modifier = Modifier.padding(vertical = 4.dp),
+                        // 接缝要铺到机身左右边缘，内边距挪给顶盖和输入行各自承担。
+                        // 底边也不留了：纸要一直排到机身底部，把那块黑盖掉
+                        modifier = Modifier.padding(top = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         // ===== 【打印机外观 2026-10-18】顶盖：两颗 LED + 散热孔 + 机身型号 =====
@@ -893,18 +900,58 @@ fun ChatInput(
                             horizontalArrangement = Arrangement.spacedBy(7.dp),
                         ) {
                             // 左边那颗：猫在干活时亮绿
+                            // 2026-10-18 加体积：亮的时候外面一圈光晕、灯珠自己带球面渐变；
+                            // 灭的时候是凹进去的（上暗下亮），不是一个贴上去的圆片
                             Box(
                                 modifier = Modifier
-                                    .width(7.dp).height(7.dp)
-                                    .clip(CircleShape)
-                                    .background(if (loading) Color(0xFF7DDC8A) else Color(0xFF3F4A41))
-                            )
+                                    .width(13.dp).height(13.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (loading) {
+                                    Box(
+                                        modifier = Modifier
+                                            .matchParentSize()
+                                            .clip(CircleShape)
+                                            .background(
+                                                Brush.radialGradient(
+                                                    listOf(Color(0x997DDC8A), Color(0x007DDC8A))
+                                                )
+                                            )
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .width(7.dp).height(7.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (loading) {
+                                                Brush.verticalGradient(
+                                                    listOf(Color(0xFFC4F5CC), Color(0xFF4FAE60))
+                                                )
+                                            } else {
+                                                Brush.verticalGradient(
+                                                    listOf(Color(0xFF262C29), Color(0xFF4D5950))
+                                                )
+                                            }
+                                        )
+                                )
+                            }
                             Box(
                                 modifier = Modifier
-                                    .width(7.dp).height(7.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF3F4A41))
-                            )
+                                    .width(13.dp).height(13.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(7.dp).height(7.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(Color(0xFF262C29), Color(0xFF4D5950))
+                                            )
+                                        )
+                                )
+                            }
                             // 散热孔
                             Row(
                                 modifier = Modifier
