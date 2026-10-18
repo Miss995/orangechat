@@ -12,6 +12,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibility as TopAnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -779,6 +780,15 @@ fun ChatInput(
             // 怎么改都会被裁（这就是"报0高能治顶、治不了少一半"的原因）。
             // 所以纸挂到外面来，跟机身并排。
             Box {
+            // 【纸票的状态判据 · 2026-10-19 提到外面】纸挂在机身外面了，
+            // 这里得在机身和纸都能看到的地方先算一次。按要紧程度排优先级。
+            val paperKind = when {
+                state.isEditing() -> "edit"
+                state.pickedText != null -> "picked"
+                state.quotedMessageId != null -> "quote"
+                loading -> "interject"
+                else -> null
+            }
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -941,13 +951,6 @@ fun ChatInput(
                         // 看着就是"纸进去一圈、出来还缩了"。现在四条统一做成一张从出纸口
                         // 冒出来的纸票：暖白、上沿直角（贴着那道缝）、下沿收一点点。
                         // 一次只露一张（宝：输入框不能无限叠加），按要紧程度排优先级。
-                        val paperKind = when {
-                            state.isEditing() -> "edit"
-                            state.pickedText != null -> "picked"
-                            state.quotedMessageId != null -> "quote"
-                            loading -> "interject"
-                            else -> null
-                        }
                         // ===== 【打印机外观 2026-10-18】顶盖：两颗 LED + 散热孔 + 机身型号 =====
                         Row(
                             modifier = Modifier
@@ -1364,7 +1367,7 @@ fun ChatInput(
                             //      它上面（zIndex 只在同一层管用），纸的上半截被列表盖住了。
                             // 现在改成：在机身里正常占位，用滑入+淡入做动画。
                             // 代价是弹纸时机身会长一点，但因为是滑进去的，看着像"纸被吸出来"。
-                            AnimatedVisibility(
+                            TopAnimatedVisibility(
                                 visible = paperKind != null,
                                 // 【不顶起机身 · 2026-10-19】报 0 高、底边压在出纸口下沿 3dp，
                                 // 内容是往上画的 —— 机身高度不变，纸从缝里冒出来。
