@@ -1189,24 +1189,41 @@ fun ChatInput(
                                         state.isEmpty() -> Color(0x66FFFFFF)
                                         else -> Color(0xFF1A1310)
                                     }
-                                    // 【打印机外观 2026-10-18】键帽改「凹」：嵌进壳里的那种坑
-                                    // 照着宝发的真机器：顶边压暗、底边留一道极淡的反光，图标刻在坑底
+                                    // 【打印机外观 2026-10-18】「又凹又凸」：壳上开个坑，坑里躺一颗凸的键
+                                    // 宝要的就是这个感觉 —— 键是嵌进去的，但它自己还鼓着。
+                                    // 外层 = 坑（压暗 + 顶暗底亮的内阴影）；内层 = 键（缩 1.5dp，顶亮底暗）
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .background(lerp(containerColor, Color.Black, 0.16f))
+                                            .background(lerp(containerColor, Color.Black, 0.34f))
                                             .drawWithContent {
                                                 drawContent()
                                                 drawRect(
                                                     brush = Brush.verticalGradient(
-                                                        0.00f to Color.Black.copy(alpha = 0.42f),
-                                                        0.32f to Color.Transparent,
-                                                        0.72f to Color.Transparent,
-                                                        1.00f to Color.White.copy(alpha = 0.10f),
+                                                        0.00f to Color.Black.copy(alpha = 0.52f),
+                                                        0.30f to Color.Transparent,
+                                                        0.68f to Color.Transparent,
+                                                        1.00f to Color.White.copy(alpha = 0.12f),
                                                     )
                                                 )
                                             }
-                                    )
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(1.5.dp)
+                                                .clip(RoundedCornerShape(5.5.dp))
+                                                .background(
+                                                    Brush.verticalGradient(
+                                                        listOf(
+                                                            lerp(containerColor, Color.White, 0.17f),
+                                                            containerColor,
+                                                            lerp(containerColor, Color.Black, 0.15f),
+                                                        )
+                                                    )
+                                                )
+                                        )
+                                    }
                                     if (showStop) {
                                         KeepScreenOn()
                                         Icon(
