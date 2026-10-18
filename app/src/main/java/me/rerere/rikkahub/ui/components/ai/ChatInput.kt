@@ -24,6 +24,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import coil3.compose.AsyncImage
@@ -1367,31 +1369,30 @@ fun ChatInput(
                             //      它上面（zIndex 只在同一层管用），纸的上半截被列表盖住了。
                             // 现在改成：在机身里正常占位，用滑入+淡入做动画。
                             // 代价是弹纸时机身会长一点，但因为是滑进去的，看着像"纸被吸出来"。
-                            TopAnimatedVisibility(
-                                visible = paperKind != null,
-                                // 【不顶起机身 · 2026-10-19】报 0 高、底边压在出纸口下沿 3dp，
-                                // 内容是往上画的 —— 机身高度不变，纸从缝里冒出来。
+                            // 【自己做的滑入淡入 · 2026-10-19】
+                            // 不用 AnimatedVisibility：它在 Column 作用域里有重载，
+                            // 编译器会优先挑那个扩展版本，Kotlin 直接报"隐式接收者"。
+                            // 自己用 alpha + translationY 做，效果一样，还不受作用域限制。
+                            val paperAnim by animateFloatAsState(
+                                targetValue = if (paperKind != null) 1f else 0f,
+                                animationSpec = tween(durationMillis = 240, easing = LinearOutSlowInEasing),
+                                label = "paperAnim",
+                            )
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    // 报 0 高、底边压在出纸口下沿 3dp：机身高度不变，纸从缝里冒出来
                                     .layout { measurable, constraints ->
                                         val placeable = measurable.measure(constraints)
                                         val bite = 3.dp.roundToPx()
                                         layout(placeable.width, 0) {
                                             placeable.place(0, -(placeable.height - bite))
                                         }
-                                    },
-                                enter = slideInVertically(
-                                    initialOffsetY = { -it },
-                                    animationSpec = tween(durationMillis = 240, easing = LinearOutSlowInEasing),
-                                ) + fadeIn(animationSpec = tween(durationMillis = 180)),
-                                exit = slideOutVertically(
-                                    targetOffsetY = { -it },
-                                    animationSpec = tween(durationMillis = 180, easing = LinearOutSlowInEasing),
-                                ) + fadeOut(animationSpec = tween(durationMillis = 140)),
-                            ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
+                                    }
+                                    .graphicsLayer {
+                                        alpha = paperAnim
+                                        translationY = -(1f - paperAnim) * size.height
+                                    }
                             ) {
                             if (paperKind != null) {
                                 val picked = state.pickedText ?: ""
@@ -1489,7 +1490,6 @@ fun ChatInput(
                                         }
                                     }
                                 }
-                            }
                             }
                             }
             }
