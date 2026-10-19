@@ -1481,7 +1481,11 @@ fun ChatInput(
                             if (paperKind != null) {
                                 val picked = state.pickedText ?: ""
                                 Surface(
-                                    shape = RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp),
+                                    // 【合页 · 2026-10-20 宝："两个合不上"】纸票换成在上之后，圆角没跟着换，
+                                    // 两张都朝中间顶，中间就合不上。现在它只圆上面两个角；单独一张时四角都圆。
+                                    shape = if (me.rerere.rikkahub.data.ai.PrinterStatus.active)
+                                        RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
+                                    else RoundedCornerShape(3.dp),
                                     color = if (paperKind == "interject" && state.interjectSupplement)
                                         Color(0xFFD9D2BE) else Color(0xFFE4E0D6),
                                     contentColor = Color(0xFF2B2723),
@@ -1597,7 +1601,9 @@ fun ChatInput(
                             ) {
                                 val psteps = me.rerere.rikkahub.data.ai.PrinterStatus.steps
                                 Surface(
-                                    shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp),
+                                    shape = if (paperKind != null)
+                                        RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp)
+                                    else RoundedCornerShape(3.dp),
                                     color = Color(0xFFEDE9DF),
                                     contentColor = Color(0xFF2B2723),
                                     shadowElevation = 4.dp,
