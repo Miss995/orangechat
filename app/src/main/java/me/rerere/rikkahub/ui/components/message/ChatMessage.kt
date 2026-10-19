@@ -960,9 +960,9 @@ private fun MessagePartsBlock(
                                     onDismiss = { imgTextMenuOpen = false },
                                     // 【单图消息编辑不了 · 2026-10-19】长按图片的菜单里补一个编辑出口。
                                     // 图片吃掉了点击，只有长按走得到这儿。
-                                    onEdit = if (message.role == MessageRole.USER) {
-                                        { onUserMessageClick?.invoke() }
-                                    } else null,
+                                    // 不用自己判角色：外层已经在 232 行做过「USER 才给 onEdit」，
+                                    // AI 消息传进来的本来就是 null，这一项自然不出现。
+                                    onEdit = onUserMessageClick,
                                     onViewAiNote = if (imgAiNote.isNullOrBlank()) null else {
                                         { imgAiNoteOpen = true }
                                     },
