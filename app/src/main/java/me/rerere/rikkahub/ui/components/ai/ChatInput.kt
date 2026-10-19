@@ -1480,6 +1480,13 @@ fun ChatInput(
                                     .padding(horizontal = 14.dp)
                                     .clip(RoundedCornerShape(3.dp))
                                     .background(Color(0xFFEDE9DF))
+                                    // 【平滑上移 · 2026-10-20 宝："互相怼了一下，把有一个压到下面去了"】
+                                    // 根儿是两张纸各长各的：纸票是硬切（高度瞬间多一截），
+                                    // 状态纸自己带展开动画 —— 两个时间对不上，就互相顶。
+                                    // 现在高度统一交给这一层过渡，里面谁出现都只是"这张纸变高了"。
+                                    .animateContentSize(
+                                        animationSpec = tween(200, easing = LinearOutSlowInEasing)
+                                    )
                             ) {
                             // ★ 状态纸 · 2026-10-20 宝换的方向：纸不假装变成气泡，
                             // 它报"机器现在在干嘛"——门控/召回/拼请求/正在回复。
@@ -1592,14 +1599,9 @@ fun ChatInput(
                             }
                             AnimatedVisibility(
                                 visible = me.rerere.rikkahub.data.ai.PrinterStatus.active,
-                                enter = expandVertically(
-                                    expandFrom = Alignment.Bottom,
-                                    animationSpec = tween(200)
-                                ),
-                                exit = shrinkVertically(
-                                    shrinkTowards = Alignment.Bottom,
-                                    animationSpec = tween(200)
-                                ),
+                                // 【高度不归它管 · 2026-10-20】只管透明度，高度由外层 animateContentSize 统一过渡。
+                                enter = fadeIn(tween(160)),
+                                exit = fadeOut(tween(160)),
                             ) {
                                 val psteps = me.rerere.rikkahub.data.ai.PrinterStatus.steps
                                 Surface(
