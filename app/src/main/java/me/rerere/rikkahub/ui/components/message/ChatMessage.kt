@@ -290,6 +290,8 @@ fun ChatMessage(
                 // 【点按菜单 · 2026-10-10】原来点用户消息 = 编辑，现在点按统一是"弹操作菜单"，
                 // 编辑挪进菜单里（只给用户消息）。
                 onUserMessageClick = null,
+                // 用户消息才给编辑（AI 的回复本来就不能编辑）
+                onEdit = if (message.role == MessageRole.USER) onEdit else null,
                 // 【点按菜单 · 2026-10-10】只有正文响应点击：局部坐标 + Column 的窗口坐标换算
                 onBodyTap = if (!loading && !isInterjection) {
                     { localOffset ->
@@ -518,6 +520,9 @@ private fun MessagePartsBlock(
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onUserMessageClick: (() -> Unit)? = null,
+    // 【编辑 · 2026-10-19】onUserMessageClick 在 10-10「点按菜单」那次被置成 null 了
+    //（编辑挪进了点按菜单里），所以图片长按菜单不能挂它 —— 得单独送一个进来。
+    onEdit: (() -> Unit)? = null,
     // 【点按菜单 · 2026-10-10】只有正文响应点击：局部坐标回调 + 正文块窗口位置上报
     onBodyTap: ((Offset) -> Unit)? = null,
     onBodyPlaced: ((Offset) -> Unit)? = null,
@@ -962,7 +967,7 @@ private fun MessagePartsBlock(
                                     // 图片吃掉了点击，只有长按走得到这儿。
                                     // 不用自己判角色：外层已经在 232 行做过「USER 才给 onEdit」，
                                     // AI 消息传进来的本来就是 null，这一项自然不出现。
-                                    onEdit = onUserMessageClick,
+                                    onEdit = onEdit,
                                     onViewAiNote = if (imgAiNote.isNullOrBlank()) null else {
                                         { imgAiNoteOpen = true }
                                     },

@@ -250,8 +250,10 @@ internal fun PaperAttachmentStack(
             // 一张纸 38dp，七张就把输入框顶出屏幕了。最多露两行（含间距 78dp），
             // 再多就在纸仓里往上滑 —— 纸仓是个窗口，纸可以抽，但不能把机器顶翻。
             .heightIn(max = 78.dp)
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 1.dp),
+            .verticalScroll(rememberScrollState()),
+        // 【别再在背景之后留白 · 2026-10-19 宝说"上面一条黑线"】
+        // 原来这里有个 padding(bottom = 1.dp)，它排在 background 后面 ——
+        // 那 1dp 没有背景盖着，露出的就是底下的深色机身，看着就是一条黑线。
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         state.messageContent.fastForEach { part ->
