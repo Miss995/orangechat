@@ -1421,6 +1421,12 @@ fun ChatInput(
                                 val attachSheetWidth = with(LocalDensity.current) {
                                     (paperAnchorRect.width - 16.dp.toPx()).toDp()
                                 }
+                                // 【键盘会被它挡住 · 2026-10-19 宝实测】
+                                // Popup 是贴在屏幕最上层的一层画，不是布局里的东西 ——
+                                // 所以它既撑不动机身，也不会给键盘让路，键盘直接从它身上穿过去。
+                                // 判据用「键盘开没开」：开着就往上翻（底边贴机身底边、纸往上叠），
+                                // 收起来再垂下去。
+                                val keyboardUp = WindowInsets.isImeVisible
                                 Popup(
                                     popupPositionProvider = object : PopupPositionProvider {
                                         override fun calculatePosition(
@@ -1431,7 +1437,12 @@ fun ChatInput(
                                         ): IntOffset = IntOffset(
                                             // 左边内缩 8dp：跟机身底下那道纸边左右对齐
                                             anchorBounds.left + attachEdgePx,
-                                            anchorBounds.bottom
+                                            // 键盘开着 → 往上翻；关着 → 从机器底下垂下来
+                                            if (keyboardUp) {
+                                                anchorBounds.bottom - popupContentSize.height
+                                            } else {
+                                                anchorBounds.bottom
+                                            }
                                         )
                                     },
                                     properties = PopupProperties(focusable = false),
