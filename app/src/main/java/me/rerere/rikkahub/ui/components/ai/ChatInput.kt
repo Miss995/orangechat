@@ -1472,8 +1472,14 @@ fun ChatInput(
                                     properties = PopupProperties(focusable = false),
                                 ) {
                             Column(
+                                // 【一张纸 · 2026-10-20 宝："为啥不能拼成同一张纸啊"】
+                                // 真正的做法不是把两张纸的圆角凑齐，是让它们都坐在同一层纸底上：
+                                // 这里铺一次底色（纸边留白 14dp），下面两张纸背景全透明、不带阴影。
                                 modifier = Modifier
                                     .width(with(LocalDensity.current) { paperAnchorRect.width.toDp() })
+                                    .padding(horizontal = 14.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(Color(0xFFEDE9DF))
                             ) {
                             // ★ 状态纸 · 2026-10-20 宝换的方向：纸不假装变成气泡，
                             // 它报"机器现在在干嘛"——门控/召回/拼请求/正在回复。
@@ -1483,16 +1489,12 @@ fun ChatInput(
                                 Surface(
                                     // 【合页 · 2026-10-20 宝："两个合不上"】纸票换成在上之后，圆角没跟着换，
                                     // 两张都朝中间顶，中间就合不上。现在它只圆上面两个角；单独一张时四角都圆。
-                                    shape = if (me.rerere.rikkahub.data.ai.PrinterStatus.active)
-                                        RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
-                                    else RoundedCornerShape(3.dp),
-                                    color = if (paperKind == "interject" && state.interjectSupplement)
-                                        Color(0xFFD9D2BE) else Color(0xFFE4E0D6),
+                                    shape = RoundedCornerShape(0.dp),
+                                    color = Color.Transparent,
                                     contentColor = Color(0xFF2B2723),
-                                    shadowElevation = 4.dp,
+                                    shadowElevation = 0.dp,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 14.dp)
                                         // 【只缩纸票自己 · 2026-10-20】原来这个动画套在整列上，
                                         // 把状态纸也一起从底部长出来（所以它出现得慢、还分层）。
                                         .graphicsLayer {
@@ -1601,15 +1603,12 @@ fun ChatInput(
                             ) {
                                 val psteps = me.rerere.rikkahub.data.ai.PrinterStatus.steps
                                 Surface(
-                                    shape = if (paperKind != null)
-                                        RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp)
-                                    else RoundedCornerShape(3.dp),
-                                    color = Color(0xFFEDE9DF),
+                                    shape = RoundedCornerShape(0.dp),
+                                    color = Color.Transparent,
                                     contentColor = Color(0xFF2B2723),
-                                    shadowElevation = 4.dp,
+                                    shadowElevation = 0.dp,
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 14.dp),
+                                        .fillMaxWidth(),
                                 ) {
                                     // 【内部滑动 · 2026-10-20 宝要的】不挤出去，纸固定三行高，
                                     // 多的在里面滑 —— 记录全留着，想翻哪步花了多久就往上拨。
