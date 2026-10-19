@@ -810,7 +810,11 @@ fun ChatInput(
                 chatLifecycleOwner.lifecycle.addObserver(observer)
                 onDispose { chatLifecycleOwner.lifecycle.removeObserver(observer) }
             }
-            Box(modifier = Modifier.onGloballyPositioned { paperAnchorBox = it.boundsInWindow() }) {
+            // 【外层从 Box 改成 Column · 2026-10-19】附件要放在机身「下面」当兄弟节点 ——
+            // Box 是叠着的（会盖在机身上），Column 是排着的（把整块往上顶）。
+            androidx.compose.foundation.layout.Column(
+                modifier = Modifier.onGloballyPositioned { paperAnchorBox = it.boundsInWindow() }
+            ) {
             // 【纸票的状态判据 · 2026-10-19 提到外面】纸挂在机身外面了，
             // 这里得在机身和纸都能看到的地方先算一次。按要紧程度排优先级。
             val paperKind = when {
@@ -1408,48 +1412,19 @@ fun ChatInput(
                             // Popup 不占布局（机身高度不变），又有独立的触摸树（点得到）。
                             // 位置：底边贴着机身顶边 —— 也就是父级 Box 的顶边。
                             val paperAnchorRect = paperAnchorBox
-                            // 【附件 · 也走弹层 · 2026-10-19 宝定的】
-                            // 放机身里就必然占高度 —— 一张纸就把机器撑高一截，宝说不行。
-                            // 跟引用那张纸票同一个办法：Popup 不占布局、有自己的触摸树，
-                            // 机身高度一个像素都不变。位置：顶边贴着机身底边，往下伸出来，
-                            // 左右跟那道纸边对齐（内缩 8dp）。
-                            val attachSheet = state.messageContent.isNotEmpty()
-                            if (paperAnchorRect != null && attachSheet && pageActive) {
-                                // 这两个值必须在 composition 里先算好：
-                                // calculatePosition 不是 @Composable，里面碰 LocalDensity 会直接编译不过。
-                                val attachEdgePx = with(LocalDensity.current) { 8.dp.roundToPx() }
-                                val attachSheetWidth = with(LocalDensity.current) {
-                                    (paperAnchorRect.width - 16.dp.toPx()).toDp()
-                                }
-                                // 【键盘会被它挡住 · 2026-10-19 宝实测】
-                                // Popup 是贴在屏幕最上层的一层画，不是布局里的东西 ——
-                                // 所以它既撑不动机身，也不会给键盘让路，键盘直接从它身上穿过去。
-                                // 判据用「键盘开没开」：开着就往上翻（底边贴机身底边、纸往上叠），
-                                // 收起来再垂下去。
-                                val keyboardUp = WindowInsets.isImeVisible
-                                Popup(
-                                    popupPositionProvider = object : PopupPositionProvider {
-                                        override fun calculatePosition(
-                                            anchorBounds: IntRect,
-                                            windowSize: IntSize,
-                                            layoutDirection: LayoutDirection,
-                                            popupContentSize: IntSize
-                                        ): IntOffset = IntOffset(
-                                            // 左边内缩 8dp：跟机身底下那道纸边左右对齐
-                                            anchorBounds.left + attachEdgePx,
-                                            // 键盘开着 → 往上翻；关着 → 从机器底下垂下来
-                                            if (keyboardUp) {
-                                                anchorBounds.bottom - popupContentSize.height
-                                            } else {
-                                                anchorBounds.bottom
-                                            }
-                                        )
-                                    },
-                                    properties = PopupProperties(focusable = false),
+                            // 【附件 · 顶输入框 · 2026-10-19 宝定的第三版】
+                            // 前两版都不对：
+                            //   ① 塞机身肚子里 —— 机身被拉长；
+                            //   ② 做成 Popup —— 不占布局、没有体积，键盘直接从它身上穿过去，还盖住机身底边。
+                            // 现在放机身「下面」，跟机身并排当一个兄弟节点：它自己占一行，
+                            // 把整块往上顶。机身一个像素都不长，键盘来了也会让路。
+                            if (state.messageContent.isNotEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp)
                                 ) {
-                                    Column(modifier = Modifier.width(attachSheetWidth)) {
-                                        PaperAttachmentStack(state = state)
-                                    }
+                                    PaperAttachmentStack(state = state)
                                 }
                             }
                             if (paperAnchorRect != null && paperKind != null && pageActive) {
