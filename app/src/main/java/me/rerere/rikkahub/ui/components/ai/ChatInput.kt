@@ -299,7 +299,7 @@ fun ChatInput(
     LaunchedEffect(flyingPaper) {
         if (flyingPaper != null) {
             flyAnim.snapTo(0f)
-            flyAnim.animateTo(1f, tween(durationMillis = 1600, easing = LinearEasing))
+            flyAnim.animateTo(1f, tween(durationMillis = 900, easing = LinearEasing))
             flyingPaper = null
         }
     }
@@ -1471,8 +1471,11 @@ fun ChatInput(
                                             layoutDirection: LayoutDirection,
                                             popupContentSize: IntSize
                                         ): IntOffset = IntOffset(
-                                            anchorBounds.left,
-                                            anchorBounds.top - popupContentSize.height
+                                            // 【跟插话条用同一个依据 · 2026-10-19】
+                                            // 原来用 anchorBounds（Popup 自己的父级），跟纸票不是同一个参照，
+                                            // 所以它悬在插话条上面。这里换成纸票缓存的那份窗口坐标。
+                                            paperAnchorRect.left.toInt(),
+                                            paperAnchorRect.top.toInt() - popupContentSize.height
                                         )
                                     },
                                     properties = PopupProperties(focusable = false),
@@ -1484,11 +1487,14 @@ fun ChatInput(
                                                 // 【放慢 · 2026-10-19 宝说"看不出来，太快了"】
                                                 // 原来整段 760ms，走纸六格每格才 78ms —— 一闪就没了。
                                                 // 现在 1.6 秒：冒出来 240ms、走纸 1040ms（每格约 170ms）、淡出 320ms。
-                                                val emerge = (fly / 0.15f).coerceIn(0f, 1f)
+                                                // 【再调 · 2026-10-19 宝说"走的太慢，消息都上屏了它才出现"】
+                                                // 冒出来那一下从 240ms 压到 90ms（先看见纸，再谈走）；
+                                                // 走纸 630ms（六格每格约 105ms）；淡出 180ms。
+                                                val emerge = (fly / 0.10f).coerceIn(0f, 1f)
                                                 scaleX = emerge
                                                 scaleY = emerge
                                                 transformOrigin = TransformOrigin(0.5f, 1f)
-                                                val walk = ((fly - 0.15f) / 0.65f).coerceIn(0f, 1f)
+                                                val walk = ((fly - 0.10f) / 0.70f).coerceIn(0f, 1f)
                                                 val stepped = floor(walk * 6f) / 6f
                                                 translationY = -78.dp.toPx() * stepped
                                                 alpha = if (fly > 0.80f) ((1f - fly) / 0.20f).coerceIn(0f, 1f) else 1f
