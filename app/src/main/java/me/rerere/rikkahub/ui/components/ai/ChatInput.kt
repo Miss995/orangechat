@@ -1478,71 +1478,6 @@ fun ChatInput(
                             // ★ 状态纸 · 2026-10-20 宝换的方向：纸不假装变成气泡，
                             // 它报"机器现在在干嘛"——门控/召回/拼请求/正在回复。
                             // 全是真的，就不用接了，也不会穿帮。
-                            AnimatedVisibility(
-                                visible = me.rerere.rikkahub.data.ai.PrinterStatus.active,
-                                enter = expandVertically(
-                                    expandFrom = Alignment.Bottom,
-                                    animationSpec = tween(200)
-                                ),
-                                exit = shrinkVertically(
-                                    shrinkTowards = Alignment.Bottom,
-                                    animationSpec = tween(200)
-                                ),
-                            ) {
-                                val psteps = me.rerere.rikkahub.data.ai.PrinterStatus.steps
-                                Surface(
-                                    shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp),
-                                    color = Color(0xFFEDE9DF),
-                                    contentColor = Color(0xFF2B2723),
-                                    shadowElevation = 4.dp,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 14.dp),
-                                ) {
-                                    // 【内部滑动 · 2026-10-20 宝要的】不挤出去，纸固定三行高，
-                                    // 多的在里面滑 —— 记录全留着，想翻哪步花了多久就往上拨。
-                                    // 手势不打架：Popup 是独立窗口，手指落在纸面上就归它。
-                                    val stScroll = rememberScrollState()
-                                    LaunchedEffect(psteps.size) {
-                                        stScroll.animateScrollTo(stScroll.maxValue)
-                                    }
-                                    Column(
-                                        modifier = Modifier
-                                            // 【最多三行 · 2026-10-20】原来高度写死 60dp，只印一行时也占三行，
-                                            // 把底下那张纸票顶下去了。改成"长到三行为止"。
-                                            .heightIn(max = 60.dp)
-                                            .verticalScroll(stScroll)
-                                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                                    ) {
-                                        psteps.forEach { pstep ->
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = pstep.label,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontFamily = FontFamily.Monospace,
-                                                    color = Color(0xFF4A443C),
-                                                    modifier = Modifier.weight(1f),
-                                                )
-                                                if (pstep.elapsedMs > 0) {
-                                                    Text(
-                                                        text = String.format("%.1fs", pstep.elapsedMs / 1000f),
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontFamily = FontFamily.Monospace,
-                                                        color = Color(0xFF8A8070),
-                                                    )
-                                                    Spacer(Modifier.width(6.dp))
-                                                }
-                                                Text(
-                                                    text = if (pstep.done) "✓" else "…",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontFamily = FontFamily.Monospace,
-                                                    color = if (pstep.done) Color(0xFF6B7A4B) else Color(0xFFB08A3E),
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                             if (paperKind != null) {
                                 val picked = state.pickedText ?: ""
                                 Surface(
@@ -1643,6 +1578,71 @@ fun ChatInput(
                                                         .clickable {
                                                             state.interjectSupplement = !state.interjectSupplement
                                                         },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            AnimatedVisibility(
+                                visible = me.rerere.rikkahub.data.ai.PrinterStatus.active,
+                                enter = expandVertically(
+                                    expandFrom = Alignment.Bottom,
+                                    animationSpec = tween(200)
+                                ),
+                                exit = shrinkVertically(
+                                    shrinkTowards = Alignment.Bottom,
+                                    animationSpec = tween(200)
+                                ),
+                            ) {
+                                val psteps = me.rerere.rikkahub.data.ai.PrinterStatus.steps
+                                Surface(
+                                    shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp),
+                                    color = Color(0xFFEDE9DF),
+                                    contentColor = Color(0xFF2B2723),
+                                    shadowElevation = 4.dp,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp),
+                                ) {
+                                    // 【内部滑动 · 2026-10-20 宝要的】不挤出去，纸固定三行高，
+                                    // 多的在里面滑 —— 记录全留着，想翻哪步花了多久就往上拨。
+                                    // 手势不打架：Popup 是独立窗口，手指落在纸面上就归它。
+                                    val stScroll = rememberScrollState()
+                                    LaunchedEffect(psteps.size) {
+                                        stScroll.animateScrollTo(stScroll.maxValue)
+                                    }
+                                    Column(
+                                        modifier = Modifier
+                                            // 【最多三行 · 2026-10-20】原来高度写死 60dp，只印一行时也占三行，
+                                            // 把底下那张纸票顶下去了。改成"长到三行为止"。
+                                            .heightIn(max = 44.dp)
+                                            .verticalScroll(stScroll)
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        psteps.forEach { pstep ->
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = pstep.label,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = Color(0xFF4A443C),
+                                                    modifier = Modifier.weight(1f),
+                                                )
+                                                if (pstep.elapsedMs > 0) {
+                                                    Text(
+                                                        text = String.format("%.1fs", pstep.elapsedMs / 1000f),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        color = Color(0xFF8A8070),
+                                                    )
+                                                    Spacer(Modifier.width(6.dp))
+                                                }
+                                                Text(
+                                                    text = if (pstep.done) "✓" else "…",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = if (pstep.done) Color(0xFF6B7A4B) else Color(0xFFB08A3E),
                                                 )
                                             }
                                         }
