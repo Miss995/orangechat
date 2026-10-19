@@ -1597,13 +1597,12 @@ fun ChatInput(
                                 visible = me.rerere.rikkahub.data.ai.PrinterStatus.active,
                                 // 【自己长 · 2026-10-20】高度动画必须由纸自己长（expandVertically 会把内容裁在里面），
                                 // 不能让外层 animateContentSize 代劳 —— 那个会让内容先漏出去一截。
-                                // 【躲开那一帧 · 2026-10-20】Popup 的高度是"上一轮"的，纸长起来的第一帧
-                                // 它还按旧高度摆 → 新内容漏出去一截。这一帧先透明（延迟 48ms ≈ 3 帧），
-                                // 等定位修正了再淡入，人就看不见那一下了。
+                                // 【试过躲那一帧，失败 · 2026-10-20】加 fadeIn 延迟后宝说"更夸张了"
+                                // —— 补丁路走到头了，回到单纯的高度动画。
                                 enter = expandVertically(
                                     expandFrom = Alignment.Bottom,
                                     animationSpec = tween(200)
-                                ) + fadeIn(animationSpec = tween(durationMillis = 150, delayMillis = 48)),
+                                ),
                                 exit = shrinkVertically(
                                     shrinkTowards = Alignment.Bottom,
                                     animationSpec = tween(200)
