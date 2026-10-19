@@ -1335,12 +1335,10 @@ fun ChatInput(
                                         0.00f to Color(0xFFEDEAE3),
                                         0.20f to Color(0xFFF7F5F0),
                                         0.42f to Color(0xFFFCFBF7),
-                                        0.62f to Color(0xFFF4F2EC),
-                                        // 【纸的厚度别压太狠 · 2026-10-19 宝说"黑线"]
-                                        // 原来 0.75→1.00 一路压到 #D5D2CA，看着就是一条黑边。
-                                        // 现在只轻轻收一点，末段还是纸，不是线。
-                                        0.88f to Color(0xFFF4F2EC),
-                                        1.00f to Color(0xFFEAE6DF),
+                                        // 【不做"纸的厚度"了 · 2026-10-19 宝选的 ②】
+                                        // 这块现在的意思是「纸从机器里出来、一路往下」，
+                                        // 纸边单独收一道边反而把纸截断了 —— 干脆到底都是同一个白。
+                                        1.00f to Color(0xFFF4F2EC),
                                     )
                                 )
                         ) {
