@@ -1621,7 +1621,10 @@ fun ChatInput(
                                         modifier = Modifier
                                             // 【最多三行 · 2026-10-20】原来高度写死 60dp，只印一行时也占三行，
                                             // 把底下那张纸票顶下去了。改成"长到三行为止"。
-                                            .heightIn(max = 44.dp)
+                                            // 【纸不跟着内容长 · 2026-10-20 宝："每次有新内容升上去整体就要弹一下"】
+                                    // 弹的根儿不是动画：纸的底边贴着输入框，每加一行纸就变高，
+                                    // Popup 只能往上顶 —— 整张纸就跳一下。纸的尺寸得固定，多的在里面滑。
+                                    .height(44.dp)
                                             .verticalScroll(stScroll)
                                             .padding(horizontal = 10.dp, vertical = 6.dp)
                                     ) {
