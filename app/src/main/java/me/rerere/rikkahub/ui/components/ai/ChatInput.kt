@@ -1548,6 +1548,52 @@ fun ChatInput(
                                         transformOrigin = TransformOrigin(0.5f, 1f)
                                     }
                             ) {
+                            // ★ 状态纸 · 2026-10-20 宝换的方向：纸不假装变成气泡，
+                            // 它报"机器现在在干嘛"——门控/召回/拼请求/正在回复。
+                            // 全是真的，就不用接了，也不会穿帮。
+                            if (me.rerere.rikkahub.data.ai.PrinterStatus.active) {
+                                val psteps = me.rerere.rikkahub.data.ai.PrinterStatus.steps
+                                Surface(
+                                    shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp),
+                                    color = Color(0xFFEDE9DF),
+                                    contentColor = Color(0xFF2B2723),
+                                    shadowElevation = 4.dp,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 22.dp),
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        psteps.forEach { pstep ->
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = pstep.label,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = Color(0xFF4A443C),
+                                                    modifier = Modifier.weight(1f),
+                                                )
+                                                if (pstep.elapsedMs > 0) {
+                                                    Text(
+                                                        text = String.format("%.1fs", pstep.elapsedMs / 1000f),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        color = Color(0xFF8A8070),
+                                                    )
+                                                    Spacer(Modifier.width(6.dp))
+                                                }
+                                                Text(
+                                                    text = if (pstep.done) "✓" else "…",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = if (pstep.done) Color(0xFF6B7A4B) else Color(0xFFB08A3E),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             if (paperKind != null) {
                                 val picked = state.pickedText ?: ""
                                 Surface(

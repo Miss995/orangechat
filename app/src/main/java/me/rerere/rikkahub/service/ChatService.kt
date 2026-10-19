@@ -1740,6 +1740,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                     }
                 },
             ).onCompletion {
+                me.rerere.rikkahub.data.ai.PrinterStatus.finish()
                 // 取消 Live Update 通知
                 cancelLiveUpdateNotification(conversationId)
 

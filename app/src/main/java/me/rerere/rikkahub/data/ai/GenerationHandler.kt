@@ -197,6 +197,9 @@ class GenerationHandler(
         // 历史里任何一条斜杠命令（如 /mcp、/潮汐岛）都会让之后所有普通消息生成误入斜杠命令模式
         // → 工具被 SLASH_COMMAND_SAFE_TOOLS 白名单关掉（宝：直执行成功但 AI 生成时工具全 not found）。
         // 改成只查「最后一条 USER 消息」：普通消息后命令检测自然失效；真发 / 命令且未直执行（AI 兜底）才生效。
+        // 【打印机状态 · 2026-10-20】开一张新纸：纸报"机器现在在干嘛"
+        PrinterStatus.begin("拼请求")
+
         val lastUserMessage = messages.asReversed().firstOrNull { it.role == MessageRole.USER }
         val slashCommandText = lastUserMessage?.let { msg ->
             val text = msg.parts.filterIsInstance<UIMessagePart.Text>()
@@ -795,12 +798,14 @@ class GenerationHandler(
                             ?.takeIf { it.apiKey.isNotBlank() }
                             ?.let { me.rerere.rikkahub.data.service.QueryKeywordExtractor(apiKey = it.apiKey) }
                         // 【2026-09-24 召回留痕】改用带原因的 judge（needsRecall 壳保留，别处仍在用）
+                        PrinterStatus.next("门控判断")
                         val gate = if (recallGate) null else MemoryIntentJudge.judge(queryText, judgeProvider)
                         // 【2026-09-24 召回留痕】门控判"不需要召回"时也回报一句，界面才看得见"为什么没搜"
                         if (gate != null && !gate.needs) {
                             onRecallDebug?.invoke("门控：${gate.reason}（未召回） · 命中 0 条")
                         }
                         if (gate?.needs == true) {
+                            PrinterStatus.next("召回记忆")
                             recallGateReason = gate.reason
                             onRecallGatePassed()
                             // 时间定位：从用户消息解析时间范围（date_from/date_to），传给事件召回/OB 搜索
@@ -1262,6 +1267,7 @@ class GenerationHandler(
                     stream = false
                 )
             )
+            PrinterStatus.next("小猫正在回复")
             val chunk = providerImpl.generateText(
                 providerSetting = provider,
                 messages = finalMessages,
