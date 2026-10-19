@@ -9,6 +9,7 @@ package me.rerere.rikkahub.ui.components.ai
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -230,6 +232,11 @@ internal fun PaperAttachmentStack(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // 【封顶 · 2026-10-19 宝发现的"能无限叠加"】
+            // 一张纸 38dp，七张就把输入框顶出屏幕了。最多露两行（含间距 78dp），
+            // 再多就在纸仓里往上滑 —— 纸仓是个窗口，纸可以抽，但不能把机器顶翻。
+            .heightIn(max = 78.dp)
+            .verticalScroll(rememberScrollState())
             .padding(bottom = 1.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
