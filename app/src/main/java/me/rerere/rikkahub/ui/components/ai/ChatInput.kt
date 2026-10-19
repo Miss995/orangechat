@@ -249,28 +249,16 @@ fun ChatInput(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
-    // 【出纸 · 2026-10-19】发送时把这段话单独印一张纸、从顶盖那道缝里送出去。
-    // 存的是文字快照 —— onSendClick 之后输入框就空了，纸上的字得提前留下来。
-    // ⚠️ 必须声明在 sendMessage 前面：局部函数只能看见它上头声明的东西。
-    var flyingPaper by remember { mutableStateOf<String?>(null) }
-
     fun sendMessage() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
         // 【插话 2026-09-25 宝的需求】输入框里有内容时，即使猫在忙也按「发送」走：
         // 宝能在猫干活的时候把话塞进来。空着才是「停止」。
         // （2026-10-13：这里的「有内容」含附件 —— 一张图没配字也算。）
-        // 【出纸 · 2026-10-19】先在发送前把字拍下来（发完输入框就清了）
-        // ⚠️ 字在 textContent（TextFieldState）里，不在 messageContent ——
-        // 那个 list 只装附件，还专门把文字 part 过滤掉了（ChatInputState:73），
-        // 所以之前从它里取 Text，取到的永远是空，纸一张都没印出来。
-        val outgoing = state.textContent.text.toString().trim()
         if (loading && state.isEmpty()) {
             onCancelClick()
         } else {
             onSendClick()
-            // 空着发（比如只发图）就不出这张纸 —— 没有字可印
-            if (outgoing.isNotEmpty()) flyingPaper = outgoing
         }
     }
 
@@ -294,15 +282,6 @@ fun ChatInput(
     var surfaceOriginInWindow by remember { mutableStateOf(Offset.Zero) }
     var showInjectionSheet by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
-    // 【出纸 · 2026-10-19】纸的字快照声明在上面（sendMessage 要用，局部函数没法往后看）。
-    val flyAnim = remember { Animatable(0f) }
-    LaunchedEffect(flyingPaper) {
-        if (flyingPaper != null) {
-            flyAnim.snapTo(0f)
-            flyAnim.animateTo(1f, tween(durationMillis = 900, easing = LinearEasing))
-            flyingPaper = null
-        }
-    }
     fun dismissExpand() {
         expand = ExpandState.Collapsed
         showInjectionSheet = false
@@ -1456,70 +1435,6 @@ fun ChatInput(
                                     PaperAttachmentStack(state = state)
                                 }
                             }
-                            // 【出纸 · 2026-10-19】点发送时，这段话印成一张纸，从顶盖那道缝往外走。
-                            // 三段：① 从缝里冒出来（底部钉住、纵向长开）
-                            //      ② 一格一格往上走（走纸，不是滑行 —— 用 floor 分六格）
-                            //      ③ 走出机身之后淡出，交给聊天区
-                            // 撕开那一半还没做，先看这个走纸的感觉对不对。
-                            if (flyingPaper != null && paperAnchorRect != null) {
-                                val fly = flyAnim.value
-                                Popup(
-                                    popupPositionProvider = object : PopupPositionProvider {
-                                        override fun calculatePosition(
-                                            anchorBounds: IntRect,
-                                            windowSize: IntSize,
-                                            layoutDirection: LayoutDirection,
-                                            popupContentSize: IntSize
-                                        ): IntOffset = IntOffset(
-                                            // 【跟插话条用同一个依据 · 2026-10-19】
-                                            // 原来用 anchorBounds（Popup 自己的父级），跟纸票不是同一个参照，
-                                            // 所以它悬在插话条上面。这里换成纸票缓存的那份窗口坐标。
-                                            paperAnchorRect.left.toInt(),
-                                            paperAnchorRect.top.toInt() - popupContentSize.height
-                                        )
-                                    },
-                                    properties = PopupProperties(focusable = false),
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(with(LocalDensity.current) { paperAnchorRect.width.toDp() })
-                                            .graphicsLayer {
-                                                // 【放慢 · 2026-10-19 宝说"看不出来，太快了"】
-                                                // 原来整段 760ms，走纸六格每格才 78ms —— 一闪就没了。
-                                                // 现在 1.6 秒：冒出来 240ms、走纸 1040ms（每格约 170ms）、淡出 320ms。
-                                                // 【再调 · 2026-10-19 宝说"走的太慢，消息都上屏了它才出现"】
-                                                // 冒出来那一下从 240ms 压到 90ms（先看见纸，再谈走）；
-                                                // 走纸 630ms（六格每格约 105ms）；淡出 180ms。
-                                                val emerge = (fly / 0.10f).coerceIn(0f, 1f)
-                                                scaleX = emerge
-                                                scaleY = emerge
-                                                transformOrigin = TransformOrigin(0.5f, 1f)
-                                                val walk = ((fly - 0.10f) / 0.70f).coerceIn(0f, 1f)
-                                                val stepped = floor(walk * 6f) / 6f
-                                                translationY = -78.dp.toPx() * stepped
-                                                alpha = if (fly > 0.80f) ((1f - fly) / 0.20f).coerceIn(0f, 1f) else 1f
-                                            }
-                                    ) {
-                                        Surface(
-                                            shape = RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp),
-                                            color = Color(0xFFF4F2EC),
-                                            contentColor = Color(0xFF2B2723),
-                                            shadowElevation = 3.dp,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 14.dp),
-                                        ) {
-                                            Text(
-                                                text = flyingPaper.orEmpty(),
-                                                maxLines = 3,
-                                                overflow = TextOverflow.Ellipsis,
-                                                fontSize = 11.sp,
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
                             if (paperAnchorRect != null && paperKind != null && pageActive) {
                                 Popup(
                                     popupPositionProvider = object : PopupPositionProvider {
@@ -1541,12 +1456,6 @@ fun ChatInput(
                             Column(
                                 modifier = Modifier
                                     .width(with(LocalDensity.current) { paperAnchorRect.width.toDp() })
-                                    .graphicsLayer {
-                                        alpha = paperAnim
-                                        // 从缝里长出来：底部钉住、往上长
-                                        scaleY = paperAnim
-                                        transformOrigin = TransformOrigin(0.5f, 1f)
-                                    }
                             ) {
                             // ★ 状态纸 · 2026-10-20 宝换的方向：纸不假装变成气泡，
                             // 它报"机器现在在干嘛"——门控/召回/拼请求/正在回复。
@@ -1560,7 +1469,7 @@ fun ChatInput(
                                     shadowElevation = 4.dp,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 22.dp),
+                                        .padding(horizontal = 14.dp),
                                 ) {
                                     Column(
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
@@ -1604,7 +1513,14 @@ fun ChatInput(
                                     shadowElevation = 4.dp,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 14.dp),
+                                        .padding(horizontal = 14.dp)
+                                        // 【只缩纸票自己 · 2026-10-20】原来这个动画套在整列上，
+                                        // 把状态纸也一起从底部长出来（所以它出现得慢、还分层）。
+                                        .graphicsLayer {
+                                            alpha = paperAnim
+                                            scaleY = paperAnim
+                                            transformOrigin = TransformOrigin(0.5f, 1f)
+                                        },
                                 ) {
                                     Row(
                                         modifier = Modifier

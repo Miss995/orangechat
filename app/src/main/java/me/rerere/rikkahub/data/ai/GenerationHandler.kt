@@ -1188,6 +1188,7 @@ class GenerationHandler(
         memTrace("3-send stream=$stream", finalMessages)
 
         if (stream) {
+            PrinterStatus.next("小猫正在回复")
             aiLoggingManager.addLog(
                 AILogging.Generation(
                     params = params,
