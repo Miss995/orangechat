@@ -313,7 +313,11 @@ private fun PaperAttachmentCard(
 ) {
     Surface(
         shape = RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp),
-        color = Color(0xFFE4E0D6),
+        // 【跟纸边同一个白 · 2026-10-19 宝说有色差】
+        // 原来用的是引用纸票那支暖灰 #E4E0D6 —— 那是「纸票」的颜色；
+        // 机身底下那道纸边是另一支更亮的暖白（#F7F5F0 → #FCFBF7 → #D5D2CA 渐变）。
+        // 两支白摆在一起，附件那段就像隔了一层灰。纸边不动，附件改吃纸边这支。
+        color = Color(0xFFF8F6F1),
         contentColor = Color(0xFF2B2723),
         shadowElevation = 0.dp,
         modifier = Modifier.fillMaxWidth(),
