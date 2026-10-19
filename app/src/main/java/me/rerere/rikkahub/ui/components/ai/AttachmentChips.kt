@@ -240,8 +240,8 @@ internal fun PaperAttachmentStack(
             // 现在让附件从纸边那个暗色起步、几 dp 内渐到纸面白 —— 同一张纸往下延伸。
             .background(
                 Brush.verticalGradient(
-                    0.00f to Color(0xFFDEDAD2),
-                    0.06f to Color(0xFFEFECE6),
+                    0.00f to Color(0xFFEAE6DF),
+                    0.06f to Color(0xFFF3F1EB),
                     0.16f to Color(0xFFF8F6F1),
                     1.00f to Color(0xFFF8F6F1),
                 )
