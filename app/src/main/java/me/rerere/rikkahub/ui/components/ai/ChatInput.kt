@@ -290,7 +290,7 @@ fun ChatInput(
         if (me.rerere.rikkahub.data.ai.PrinterStatus.active) {
             statusHolding = true
         } else {
-            delay(260)
+            delay(220)
             statusHolding = false
         }
     }
@@ -1486,7 +1486,7 @@ fun ChatInput(
                                 ),
                                 exit = shrinkVertically(
                                     shrinkTowards = Alignment.Bottom,
-                                    animationSpec = tween(240)
+                                    animationSpec = tween(200)
                                 ),
                             ) {
                                 val psteps = me.rerere.rikkahub.data.ai.PrinterStatus.steps
@@ -1557,9 +1557,11 @@ fun ChatInput(
                                         // 【只缩纸票自己 · 2026-10-20】原来这个动画套在整列上，
                                         // 把状态纸也一起从底部长出来（所以它出现得慢、还分层）。
                                         .graphicsLayer {
+                                            // 【不弹 · 2026-10-20 宝："太 q 弹了"】原来用 scaleY 从 0 长到 1，
+                                            // 那是把整张纸压扁再弹开 —— 字跟着变形，所以看着"啵"一下。
+                                            // 改成淡入 + 从缝里往上冒几像素，纸不变形。
                                             alpha = paperAnim
-                                            scaleY = paperAnim
-                                            transformOrigin = TransformOrigin(0.5f, 1f)
+                                            translationY = (1f - paperAnim) * 6.dp.toPx()
                                         },
                                 ) {
                                     Row(
