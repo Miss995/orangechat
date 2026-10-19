@@ -299,7 +299,7 @@ fun ChatInput(
     LaunchedEffect(flyingPaper) {
         if (flyingPaper != null) {
             flyAnim.snapTo(0f)
-            flyAnim.animateTo(1f, tween(durationMillis = 760, easing = LinearEasing))
+            flyAnim.animateTo(1f, tween(durationMillis = 1600, easing = LinearEasing))
             flyingPaper = null
         }
     }
@@ -1481,11 +1481,14 @@ fun ChatInput(
                                         modifier = Modifier
                                             .width(with(LocalDensity.current) { paperAnchorRect.width.toDp() })
                                             .graphicsLayer {
-                                                val emerge = (fly / 0.18f).coerceIn(0f, 1f)
+                                                // 【放慢 · 2026-10-19 宝说"看不出来，太快了"】
+                                                // 原来整段 760ms，走纸六格每格才 78ms —— 一闪就没了。
+                                                // 现在 1.6 秒：冒出来 240ms、走纸 1040ms（每格约 170ms）、淡出 320ms。
+                                                val emerge = (fly / 0.15f).coerceIn(0f, 1f)
                                                 scaleX = emerge
                                                 scaleY = emerge
                                                 transformOrigin = TransformOrigin(0.5f, 1f)
-                                                val walk = ((fly - 0.18f) / 0.62f).coerceIn(0f, 1f)
+                                                val walk = ((fly - 0.15f) / 0.65f).coerceIn(0f, 1f)
                                                 val stepped = floor(walk * 6f) / 6f
                                                 translationY = -78.dp.toPx() * stepped
                                                 alpha = if (fly > 0.80f) ((1f - fly) / 0.20f).coerceIn(0f, 1f) else 1f
