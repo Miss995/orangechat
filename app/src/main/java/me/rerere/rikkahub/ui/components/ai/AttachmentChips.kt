@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
@@ -35,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -232,6 +234,18 @@ internal fun PaperAttachmentStack(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // 【接住纸边 · 2026-10-19 宝说"连不上"】
+            // 机身底下那道纸边，最底下是 #D5D2CA（纸的厚度，暗的）；
+            // 附件原来是整片 #F8F6F1（亮的）。一暗一亮贴在一起，看着就是两张纸。
+            // 现在让附件从纸边那个暗色起步、几 dp 内渐到纸面白 —— 同一张纸往下延伸。
+            .background(
+                Brush.verticalGradient(
+                    0.00f to Color(0xFFD5D2CA),
+                    0.06f to Color(0xFFEDEAE3),
+                    0.16f to Color(0xFFF8F6F1),
+                    1.00f to Color(0xFFF8F6F1),
+                )
+            )
             // 【封顶 · 2026-10-19 宝发现的"能无限叠加"】
             // 一张纸 38dp，七张就把输入框顶出屏幕了。最多露两行（含间距 78dp），
             // 再多就在纸仓里往上滑 —— 纸仓是个窗口，纸可以抽，但不能把机器顶翻。
@@ -311,16 +325,12 @@ private fun PaperAttachmentCard(
     leading: @Composable () -> Unit,
     onRemove: () -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp),
-        // 【跟纸边同一个白 · 2026-10-19 宝说有色差】
-        // 原来用的是引用纸票那支暖灰 #E4E0D6 —— 那是「纸票」的颜色；
-        // 机身底下那道纸边是另一支更亮的暖白（#F7F5F0 → #FCFBF7 → #D5D2CA 渐变）。
-        // 两支白摆在一起，附件那段就像隔了一层灰。纸边不动，附件改吃纸边这支。
-        color = Color(0xFFF8F6F1),
-        contentColor = Color(0xFF2B2723),
-        shadowElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth(),
+    // 【单张不再自带底色 · 2026-10-19】底色由外面那层整组渐变提供，
+    // 这样几张之间不会有各自的"边"，看着是同一张纸往下排。
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp))
     ) {
         Row(
             modifier = Modifier
