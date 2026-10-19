@@ -22,6 +22,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.graphicsLayer
@@ -138,6 +140,7 @@ import com.dokar.sonner.ToastType
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.materials.HazeMaterials
+import kotlin.math.floor
 import kotlinx.coroutines.Job
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
@@ -252,7 +255,18 @@ fun ChatInput(
         // 【插话 2026-09-25 宝的需求】输入框里有内容时，即使猫在忙也按「发送」走：
         // 宝能在猫干活的时候把话塞进来。空着才是「停止」。
         // （2026-10-13：这里的「有内容」含附件 —— 一张图没配字也算。）
-        if (loading && state.isEmpty()) onCancelClick() else onSendClick()
+        // 【出纸 · 2026-10-19】先在发送前把字拍下来（发完输入框就清了）
+        val outgoing = state.messageContent
+            .filterIsInstance<UIMessagePart.Text>()
+            .joinToString("") { it.text }
+            .trim()
+        if (loading && state.isEmpty()) {
+            onCancelClick()
+        } else {
+            onSendClick()
+            // 空着发（比如只发图）就不出这张纸 —— 没有字可印
+            if (outgoing.isNotEmpty()) flyingPaper = outgoing
+        }
     }
 
     fun sendMessageWithoutAnswer() {
@@ -275,6 +289,17 @@ fun ChatInput(
     var surfaceOriginInWindow by remember { mutableStateOf(Offset.Zero) }
     var showInjectionSheet by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
+    // 【出纸 · 2026-10-19】发送时把这段话单独印一张纸、从顶盖那道缝里送出去。
+    // 存的是文字快照 —— onSendClick 之后输入框就空了，纸上的字得提前留下来。
+    var flyingPaper by remember { mutableStateOf<String?>(null) }
+    val flyAnim = remember { Animatable(0f) }
+    LaunchedEffect(flyingPaper) {
+        if (flyingPaper != null) {
+            flyAnim.snapTo(0f)
+            flyAnim.animateTo(1f, tween(durationMillis = 760, easing = LinearEasing))
+            flyingPaper = null
+        }
+    }
     fun dismissExpand() {
         expand = ExpandState.Collapsed
         showInjectionSheet = false
@@ -1426,6 +1451,61 @@ fun ChatInput(
                                         .padding(horizontal = 8.dp)
                                 ) {
                                     PaperAttachmentStack(state = state)
+                                }
+                            }
+                            // 【出纸 · 2026-10-19】点发送时，这段话印成一张纸，从顶盖那道缝往外走。
+                            // 三段：① 从缝里冒出来（底部钉住、纵向长开）
+                            //      ② 一格一格往上走（走纸，不是滑行 —— 用 floor 分六格）
+                            //      ③ 走出机身之后淡出，交给聊天区
+                            // 撕开那一半还没做，先看这个走纸的感觉对不对。
+                            if (flyingPaper != null && paperAnchorRect != null) {
+                                val fly = flyAnim.value
+                                Popup(
+                                    popupPositionProvider = object : PopupPositionProvider {
+                                        override fun calculatePosition(
+                                            anchorBounds: IntRect,
+                                            windowSize: IntSize,
+                                            layoutDirection: LayoutDirection,
+                                            popupContentSize: IntSize
+                                        ): IntOffset = IntOffset(
+                                            anchorBounds.left,
+                                            anchorBounds.top - popupContentSize.height
+                                        )
+                                    },
+                                    properties = PopupProperties(focusable = false),
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(with(LocalDensity.current) { paperAnchorRect.width.toDp() })
+                                            .graphicsLayer {
+                                                val emerge = (fly / 0.18f).coerceIn(0f, 1f)
+                                                scaleX = emerge
+                                                scaleY = emerge
+                                                transformOrigin = TransformOrigin(0.5f, 1f)
+                                                val walk = ((fly - 0.18f) / 0.62f).coerceIn(0f, 1f)
+                                                val stepped = floor(walk * 6f) / 6f
+                                                translationY = -78.dp.toPx() * stepped
+                                                alpha = if (fly > 0.80f) ((1f - fly) / 0.20f).coerceIn(0f, 1f) else 1f
+                                            }
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp),
+                                            color = Color(0xFFF4F2EC),
+                                            contentColor = Color(0xFF2B2723),
+                                            shadowElevation = 3.dp,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 14.dp),
+                                        ) {
+                                            Text(
+                                                text = flyingPaper.orEmpty(),
+                                                maxLines = 3,
+                                                overflow = TextOverflow.Ellipsis,
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            )
+                                        }
+                                    }
                                 }
                             }
                             if (paperAnchorRect != null && paperKind != null && pageActive) {
