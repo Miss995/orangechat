@@ -55,8 +55,9 @@ object PrinterStatus {
         }
         lastAt = now
         _steps.add(Step(label))
-        // 纸只留四行，新的进来旧的从上面滚出去（不然一张长条会挡住聊天）
-        while (_steps.size > 4) _steps.removeAt(0)
+        // 【不挤出去 · 2026-10-20 宝要的】纸只在窗口里滑，记录全留着 ——
+        // 想回头看哪步花了多久就往上翻。只留个上限防一场超长对话把内存撑爆。
+        while (_steps.size > 60) _steps.removeAt(0)
     }
 
     /** 收尾：把最后一条也打勾，纸开始往回收 */

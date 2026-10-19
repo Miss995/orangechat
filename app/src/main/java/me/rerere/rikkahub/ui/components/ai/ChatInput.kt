@@ -71,6 +71,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -1471,8 +1472,18 @@ fun ChatInput(
                                         .fillMaxWidth()
                                         .padding(horizontal = 14.dp),
                                 ) {
+                                    // 【内部滑动 · 2026-10-20 宝要的】不挤出去，纸固定三行高，
+                                    // 多的在里面滑 —— 记录全留着，想翻哪步花了多久就往上拨。
+                                    // 手势不打架：Popup 是独立窗口，手指落在纸面上就归它。
+                                    val stScroll = rememberScrollState()
+                                    LaunchedEffect(psteps.size) {
+                                        stScroll.animateScrollTo(stScroll.maxValue)
+                                    }
                                     Column(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                        modifier = Modifier
+                                            .height(60.dp)
+                                            .verticalScroll(stScroll)
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
                                     ) {
                                         psteps.forEach { pstep ->
                                             Row(verticalAlignment = Alignment.CenterVertically) {
