@@ -1415,6 +1415,12 @@ fun ChatInput(
                             // 左右跟那道纸边对齐（内缩 8dp）。
                             val attachSheet = state.messageContent.isNotEmpty()
                             if (paperAnchorRect != null && attachSheet && pageActive) {
+                                // 这两个值必须在 composition 里先算好：
+                                // calculatePosition 不是 @Composable，里面碰 LocalDensity 会直接编译不过。
+                                val attachEdgePx = with(LocalDensity.current) { 8.dp.roundToPx() }
+                                val attachSheetWidth = with(LocalDensity.current) {
+                                    (paperAnchorRect.width - 16.dp.toPx()).toDp()
+                                }
                                 Popup(
                                     popupPositionProvider = object : PopupPositionProvider {
                                         override fun calculatePosition(
@@ -1424,20 +1430,13 @@ fun ChatInput(
                                             popupContentSize: IntSize
                                         ): IntOffset = IntOffset(
                                             // 左边内缩 8dp：跟机身底下那道纸边左右对齐
-                                            anchorBounds.left + with(LocalDensity.current) { 8.dp.toPx() }.toInt(),
+                                            anchorBounds.left + attachEdgePx,
                                             anchorBounds.bottom
                                         )
                                     },
                                     properties = PopupProperties(focusable = false),
                                 ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .width(
-                                                with(LocalDensity.current) {
-                                                    (paperAnchorRect.width - 16.dp.toPx()).toDp()
-                                                }
-                                            )
-                                    ) {
+                                    Column(modifier = Modifier.width(attachSheetWidth)) {
                                         PaperAttachmentStack(state = state)
                                     }
                                 }
