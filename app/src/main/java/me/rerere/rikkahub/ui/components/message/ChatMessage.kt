@@ -958,6 +958,11 @@ private fun MessagePartsBlock(
                             if (imgTextMenuOpen) {
                                 ImageTextMenuDialog(
                                     onDismiss = { imgTextMenuOpen = false },
+                                    // 【单图消息编辑不了 · 2026-10-19】长按图片的菜单里补一个编辑出口。
+                                    // 图片吃掉了点击，只有长按走得到这儿。
+                                    onEdit = if (message.role == MessageRole.USER) {
+                                        { onUserMessageClick?.invoke() }
+                                    } else null,
                                     onViewAiNote = if (imgAiNote.isNullOrBlank()) null else {
                                         { imgAiNoteOpen = true }
                                     },

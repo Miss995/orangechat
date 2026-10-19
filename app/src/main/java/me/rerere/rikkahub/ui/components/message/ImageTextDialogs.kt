@@ -38,6 +38,11 @@ internal fun ImageTextMenuDialog(
     onDismiss: () -> Unit,
     onRecognize: () -> Unit,
     onViewAiNote: (() -> Unit)? = null,
+    /** 【整条消息只有一张图时编辑不了 · 2026-10-19 宝发现的】
+     *  图片自己吃得掉点击（点了开大图），所以外层气泡的点击永远收不到 ——
+     *  「单图消息」就永远进不了编辑。这里补一个出口：长按图片 → 这个菜单 → 编辑。
+     *  null = 不是用户消息（AI 消息本来就不能编辑）。*/
+    onEdit: (() -> Unit)? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -70,6 +75,25 @@ internal fun ImageTextMenuDialog(
                     ) {
                         Text(
                             text = "查看 AI 理解（它怎么读这张图的）",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                        )
+                    }
+                }
+                // 【单图消息补编辑入口 · 2026-10-19】只在用户消息时出现
+                if (onEdit != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        onClick = {
+                            onDismiss()
+                            onEdit()
+                        },
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = "编辑这条消息",
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
                         )
