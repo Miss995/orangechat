@@ -249,6 +249,11 @@ fun ChatInput(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
+    // 【出纸 · 2026-10-19】发送时把这段话单独印一张纸、从顶盖那道缝里送出去。
+    // 存的是文字快照 —— onSendClick 之后输入框就空了，纸上的字得提前留下来。
+    // ⚠️ 必须声明在 sendMessage 前面：局部函数只能看见它上头声明的东西。
+    var flyingPaper by remember { mutableStateOf<String?>(null) }
+
     fun sendMessage() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
@@ -289,9 +294,7 @@ fun ChatInput(
     var surfaceOriginInWindow by remember { mutableStateOf(Offset.Zero) }
     var showInjectionSheet by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
-    // 【出纸 · 2026-10-19】发送时把这段话单独印一张纸、从顶盖那道缝里送出去。
-    // 存的是文字快照 —— onSendClick 之后输入框就空了，纸上的字得提前留下来。
-    var flyingPaper by remember { mutableStateOf<String?>(null) }
+    // 【出纸 · 2026-10-19】纸的字快照声明在上面（sendMessage 要用，局部函数没法往后看）。
     val flyAnim = remember { Animatable(0f) }
     LaunchedEffect(flyingPaper) {
         if (flyingPaper != null) {
