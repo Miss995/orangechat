@@ -43,6 +43,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -1481,7 +1482,9 @@ fun ChatInput(
                                     }
                                     Column(
                                         modifier = Modifier
-                                            .height(60.dp)
+                                            // 【最多三行 · 2026-10-20】原来高度写死 60dp，只印一行时也占三行，
+                                            // 把底下那张纸票顶下去了。改成"长到三行为止"。
+                                            .heightIn(max = 60.dp)
                                             .verticalScroll(stScroll)
                                             .padding(horizontal = 10.dp, vertical = 6.dp)
                                     ) {
