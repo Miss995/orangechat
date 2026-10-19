@@ -230,8 +230,7 @@ internal fun PaperAttachmentStack(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp)
-            .padding(bottom = 2.dp),
+            .padding(bottom = 1.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         state.messageContent.fastForEach { part ->

@@ -1300,13 +1300,6 @@ fun ChatInput(
                         // 【打印机外观】接缝和纸包在一起 —— 单独开一个 spacing=0 的 Column，
                         // 否则外层 Column 的 spacedBy(8.dp) 会在它俩中间撑出一道缝
                         Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                        // 【附件 · 从纸仓里露出来 · 2026-10-19 宝定的位置：输入框下面】
-                        // 原来挂在机身顶上（LCD 上方），是一排 Material 胶囊，跟这台机器没有关系。
-                        // 现在放到 LCD 下面、接缝上面 —— 进来是从入纸口吞进去，出去是从出纸口吐出来。
-                        // （两个动画那批再做，这里先把纸摆对地方。）
-                        if (state.messageContent.isNotEmpty()) {
-                            PaperAttachmentStack(state = state)
-                        }
                         // 底部接缝：机器和纸之间那道深色台
                         // 【打印机外观 2026-10-18】接缝要铺到机身左右边缘 —— 它所在的 Column
                         // 有 8dp 水平内边距，所以这里放宽 16dp、左移 8dp，把它顶回两侧
@@ -1323,6 +1316,19 @@ fun ChatInput(
                                     )
                                 )
                         )
+                        // 【附件 · 机器底下露出来的那张纸 · 2026-10-19 宝定的位置】
+                        // 上一版放在接缝上面（机器肚子里），宝说不对 —— 要在接缝下面、
+                        // 跟那道纸边同一个位置：纸是从机器底下伸出来的，不是在肚子里飘着。
+                        // 左右跟纸边一样内缩 8dp，宽度缩到纸边的口径，不再横跨整个机身。
+                        if (state.messageContent.isNotEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp)
+                            ) {
+                                PaperAttachmentStack(state = state)
+                            }
+                        }
                         // 机器底下压着的一沓纸：只露出一道纸边（左右内缩 8dp，躲开机身圆角）
                         // 【打印机外观 2026-10-18】不能再在机身里 offset 了 ——
                         // 一挪，接缝和纸之间就空出一条机身黑，看着像个莫名其妙的凹槽
