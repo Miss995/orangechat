@@ -1316,19 +1316,6 @@ fun ChatInput(
                                     )
                                 )
                         )
-                        // 【附件 · 机器底下露出来的那张纸 · 2026-10-19 宝定的位置】
-                        // 上一版放在接缝上面（机器肚子里），宝说不对 —— 要在接缝下面、
-                        // 跟那道纸边同一个位置：纸是从机器底下伸出来的，不是在肚子里飘着。
-                        // 左右跟纸边一样内缩 8dp，宽度缩到纸边的口径，不再横跨整个机身。
-                        if (state.messageContent.isNotEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 8.dp)
-                            ) {
-                                PaperAttachmentStack(state = state)
-                            }
-                        }
                         // 机器底下压着的一沓纸：只露出一道纸边（左右内缩 8dp，躲开机身圆角）
                         // 【打印机外观 2026-10-18】不能再在机身里 offset 了 ——
                         // 一挪，接缝和纸之间就空出一条机身黑，看着像个莫名其妙的凹槽
@@ -1421,6 +1408,40 @@ fun ChatInput(
                             // Popup 不占布局（机身高度不变），又有独立的触摸树（点得到）。
                             // 位置：底边贴着机身顶边 —— 也就是父级 Box 的顶边。
                             val paperAnchorRect = paperAnchorBox
+                            // 【附件 · 也走弹层 · 2026-10-19 宝定的】
+                            // 放机身里就必然占高度 —— 一张纸就把机器撑高一截，宝说不行。
+                            // 跟引用那张纸票同一个办法：Popup 不占布局、有自己的触摸树，
+                            // 机身高度一个像素都不变。位置：顶边贴着机身底边，往下伸出来，
+                            // 左右跟那道纸边对齐（内缩 8dp）。
+                            val attachSheet = state.messageContent.isNotEmpty()
+                            if (paperAnchorRect != null && attachSheet && pageActive) {
+                                Popup(
+                                    popupPositionProvider = object : PopupPositionProvider {
+                                        override fun calculatePosition(
+                                            anchorBounds: IntRect,
+                                            windowSize: IntSize,
+                                            layoutDirection: LayoutDirection,
+                                            popupContentSize: IntSize
+                                        ): IntOffset = IntOffset(
+                                            // 左边内缩 8dp：跟机身底下那道纸边左右对齐
+                                            anchorBounds.left + with(LocalDensity.current) { 8.dp.toPx() }.toInt(),
+                                            anchorBounds.bottom
+                                        )
+                                    },
+                                    properties = PopupProperties(focusable = false),
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .width(
+                                                with(LocalDensity.current) {
+                                                    (paperAnchorRect.width - 16.dp.toPx()).toDp()
+                                                }
+                                            )
+                                    ) {
+                                        PaperAttachmentStack(state = state)
+                                    }
+                                }
+                            }
                             if (paperAnchorRect != null && paperKind != null && pageActive) {
                                 Popup(
                                     popupPositionProvider = object : PopupPositionProvider {
