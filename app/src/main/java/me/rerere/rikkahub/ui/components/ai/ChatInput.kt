@@ -261,10 +261,10 @@ fun ChatInput(
         // 宝能在猫干活的时候把话塞进来。空着才是「停止」。
         // （2026-10-13：这里的「有内容」含附件 —— 一张图没配字也算。）
         // 【出纸 · 2026-10-19】先在发送前把字拍下来（发完输入框就清了）
-        val outgoing = state.messageContent
-            .filterIsInstance<UIMessagePart.Text>()
-            .joinToString("") { it.text }
-            .trim()
+        // ⚠️ 字在 textContent（TextFieldState）里，不在 messageContent ——
+        // 那个 list 只装附件，还专门把文字 part 过滤掉了（ChatInputState:73），
+        // 所以之前从它里取 Text，取到的永远是空，纸一张都没印出来。
+        val outgoing = state.textContent.text.toString().trim()
         if (loading && state.isEmpty()) {
             onCancelClick()
         } else {
