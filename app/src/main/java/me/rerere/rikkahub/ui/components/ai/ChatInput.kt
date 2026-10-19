@@ -1336,8 +1336,11 @@ fun ChatInput(
                                         0.20f to Color(0xFFF7F5F0),
                                         0.42f to Color(0xFFFCFBF7),
                                         0.62f to Color(0xFFF4F2EC),
-                                        0.75f to Color(0xFFE9E6DF),
-                                        1.00f to Color(0xFFD5D2CA),
+                                        // 【纸的厚度别压太狠 · 2026-10-19 宝说"黑线"]
+                                        // 原来 0.75→1.00 一路压到 #D5D2CA，看着就是一条黑边。
+                                        // 现在只轻轻收一点，末段还是纸，不是线。
+                                        0.80f to Color(0xFFEFECE6),
+                                        1.00f to Color(0xFFDEDAD2),
                                     )
                                 )
                         ) {
