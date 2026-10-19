@@ -104,6 +104,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -282,6 +283,17 @@ fun ChatInput(
     // 用 MutableState 对象传（不是 by 委托 —— 委托没法跨函数共享，TextField 在 TextInputRow 里）
     val fieldRectState = remember { mutableStateOf(Rect.Zero) }
     var surfaceOriginInWindow by remember { mutableStateOf(Offset.Zero) }
+    // 【状态纸的收纸动画 · 2026-10-20 宝："收回去的时候也做个动画，感觉他好像突然飞走了一样"】
+    // 纸收回去要缩完再撤弹窗，所以这里多留 260ms（弹窗条件用它撑着）。
+    var statusHolding by remember { mutableStateOf(false) }
+    LaunchedEffect(me.rerere.rikkahub.data.ai.PrinterStatus.active) {
+        if (me.rerere.rikkahub.data.ai.PrinterStatus.active) {
+            statusHolding = true
+        } else {
+            delay(260)
+            statusHolding = false
+        }
+    }
     var showInjectionSheet by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
     fun dismissExpand() {
@@ -1437,7 +1449,11 @@ fun ChatInput(
                                     PaperAttachmentStack(state = state)
                                 }
                             }
-                            if (paperAnchorRect != null && paperKind != null && pageActive) {
+                            // 【放宽 · 2026-10-20】原来非要 paperKind != null 才开这个弹窗，
+                            // 结果普通发送（没引用没插话）时状态纸压根不显示。现在状态纸也能单独撑起它。
+                            if (paperAnchorRect != null && pageActive &&
+                                (paperKind != null || statusHolding)
+                            ) {
                                 Popup(
                                     popupPositionProvider = object : PopupPositionProvider {
                                         override fun calculatePosition(
@@ -1462,7 +1478,17 @@ fun ChatInput(
                             // ★ 状态纸 · 2026-10-20 宝换的方向：纸不假装变成气泡，
                             // 它报"机器现在在干嘛"——门控/召回/拼请求/正在回复。
                             // 全是真的，就不用接了，也不会穿帮。
-                            if (me.rerere.rikkahub.data.ai.PrinterStatus.active) {
+                            AnimatedVisibility(
+                                visible = me.rerere.rikkahub.data.ai.PrinterStatus.active,
+                                enter = expandVertically(
+                                    expandFrom = Alignment.Bottom,
+                                    animationSpec = tween(200)
+                                ),
+                                exit = shrinkVertically(
+                                    shrinkTowards = Alignment.Bottom,
+                                    animationSpec = tween(240)
+                                ),
+                            ) {
                                 val psteps = me.rerere.rikkahub.data.ai.PrinterStatus.steps
                                 Surface(
                                     shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp),
