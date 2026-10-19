@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,10 +33,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
 import androidx.core.net.toUri
 import coil3.compose.AsyncImage
@@ -189,6 +192,155 @@ private fun AttachmentChip(
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 【附件 · 从纸仓里露出来的那张纸 · 2026-10-19】
+ * 原来附件是 MediaFileInputRow：一排横向的 Material 胶囊，挂在机身顶上、LCD 上面。
+ * 问题是语言不统一 —— 整台机器是"塑料件圆角 + 纸直角 + 暖白"，
+ * 胶囊却是大圆角、横跨整机、还带描边，像在机身上贴了张标签。
+ * 引用/选中/插话/编辑 已经统一成纸票了，附件再单独一套，就是一台机器上两种纸。
+ * 所以这里给打印机的版本：一条一张、直角、暖白，从底部纸仓往上排。
+ * （放到哪儿由 ChatInput 决定：LCD 下面、接缝上面。）
+ */
+@Composable
+internal fun PaperAttachmentStack(
+    state: ChatInputState,
+) {
+    val filesManager: FilesManager = koinInject()
+    val managedFiles by filesManager.observe().collectAsState(initial = emptyList())
+    val displayNameByRelativePath = remember(managedFiles) {
+        managedFiles.associate { it.relativePath to it.displayName }
+    }
+    val displayNameByFileName = remember(managedFiles) {
+        managedFiles.associate { it.relativePath.substringAfterLast('/') to it.displayName }
+    }
+
+    fun removePart(part: UIMessagePart, url: String) {
+        state.messageContent = state.messageContent.filterNot { it == part }
+        if (state.shouldDeleteFileOnRemove(part)) {
+            filesManager.deleteChatFiles(listOf(url.toUri()))
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp)
+            .padding(bottom = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        state.messageContent.fastForEach { part ->
+            when (part) {
+                is UIMessagePart.Image -> PaperAttachmentCard(
+                    title = attachmentNameFromUrl(
+                        url = part.url,
+                        fallback = "image",
+                        displayNameByRelativePath = displayNameByRelativePath,
+                        displayNameByFileName = displayNameByFileName
+                    ),
+                    leading = {
+                        AsyncImage(
+                            model = part.url,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(RoundedCornerShape(2.dp)),
+                        )
+                    },
+                    onRemove = { removePart(part, part.url) }
+                )
+
+                is UIMessagePart.Video -> PaperAttachmentCard(
+                    title = attachmentNameFromUrl(
+                        url = part.url,
+                        fallback = "video",
+                        displayNameByRelativePath = displayNameByRelativePath,
+                        displayNameByFileName = displayNameByFileName
+                    ),
+                    leading = { AttachmentLeadingIcon(icon = HugeIcons.Video01) },
+                    onRemove = { removePart(part, part.url) }
+                )
+
+                is UIMessagePart.Audio -> PaperAttachmentCard(
+                    title = attachmentNameFromUrl(
+                        url = part.url,
+                        fallback = "audio",
+                        displayNameByRelativePath = displayNameByRelativePath,
+                        displayNameByFileName = displayNameByFileName
+                    ),
+                    leading = { AttachmentLeadingIcon(icon = HugeIcons.MusicNote03) },
+                    onRemove = { removePart(part, part.url) }
+                )
+
+                is UIMessagePart.Document -> PaperAttachmentCard(
+                    title = attachmentNameFromUrl(
+                        url = part.url,
+                        fallback = part.fileName,
+                        displayNameByRelativePath = displayNameByRelativePath,
+                        displayNameByFileName = displayNameByFileName
+                    ),
+                    leading = { AttachmentLeadingIcon(icon = HugeIcons.Files02) },
+                    onRemove = { removePart(part, part.url) }
+                )
+
+                else -> Unit
+            }
+        }
+    }
+}
+
+/**
+ * 一张附件纸：上沿直角（贴着纸仓那道缝）、下沿收 3dp。
+ * 颜色跟引用那张纸票同一支暖白，字用纸上的墨色，不用主题色 —— 主题是给界面用的，纸不是。
+ */
+@Composable
+private fun PaperAttachmentCard(
+    title: String,
+    leading: @Composable () -> Unit,
+    onRemove: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp),
+        color = Color(0xFFE4E0D6),
+        contentColor = Color(0xFF2B2723),
+        shadowElevation = 0.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(38.dp)
+                .padding(start = 6.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            leading()
+            Text(
+                text = title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 11.sp,
+                color = Color(0xFF3A342C),
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .size(24.dp)
+                    .clickable(onClick = onRemove),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = HugeIcons.Cancel01,
+                    contentDescription = null,
+                    tint = Color(0xFF6B635A),
+                    modifier = Modifier.size(14.dp),
                 )
             }
         }

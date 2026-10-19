@@ -88,6 +88,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -95,6 +96,9 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -792,6 +796,20 @@ fun ChatInput(
             // 所以纸挂到外面来，跟机身并排。
             // 【弹层的锚点 · 2026-10-19】Popup 的位置相对父级，先把这块的实际尺寸记下来
             var paperAnchorBox by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+            // 【纸票跟着页面走 · 2026-10-19】Popup 是独立的一层窗口，不归聊天页管 ——
+            // 页面切走（比如去设置）时没人通知它，就留在原地飘着。
+            // 用 Activity 的 resume 状态当判据：不在前台就把纸票关掉。
+            val chatLifecycleOwner = LocalLifecycleOwner.current
+            var pageActive by remember {
+                mutableStateOf(chatLifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+            }
+            DisposableEffect(chatLifecycleOwner) {
+                val observer = LifecycleEventObserver { _, _ ->
+                    pageActive = chatLifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                }
+                chatLifecycleOwner.lifecycle.addObserver(observer)
+                onDispose { chatLifecycleOwner.lifecycle.removeObserver(observer) }
+            }
             Box(modifier = Modifier.onGloballyPositioned { paperAnchorBox = it.boundsInWindow() }) {
             // 【纸票的状态判据 · 2026-10-19 提到外面】纸挂在机身外面了，
             // 这里得在机身和纸都能看到的地方先算一次。按要紧程度排优先级。
@@ -1050,10 +1068,6 @@ fun ChatInput(
                             )
                         }
 
-                        if (state.messageContent.isNotEmpty()) {
-                            MediaFileInputRow(state = state)
-                        }
-
                         // 【重排·第四刀 2026-10-08】+ 和发送键挪到输入框左右两侧
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
@@ -1286,6 +1300,13 @@ fun ChatInput(
                         // 【打印机外观】接缝和纸包在一起 —— 单独开一个 spacing=0 的 Column，
                         // 否则外层 Column 的 spacedBy(8.dp) 会在它俩中间撑出一道缝
                         Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                        // 【附件 · 从纸仓里露出来 · 2026-10-19 宝定的位置：输入框下面】
+                        // 原来挂在机身顶上（LCD 上方），是一排 Material 胶囊，跟这台机器没有关系。
+                        // 现在放到 LCD 下面、接缝上面 —— 进来是从入纸口吞进去，出去是从出纸口吐出来。
+                        // （两个动画那批再做，这里先把纸摆对地方。）
+                        if (state.messageContent.isNotEmpty()) {
+                            PaperAttachmentStack(state = state)
+                        }
                         // 底部接缝：机器和纸之间那道深色台
                         // 【打印机外观 2026-10-18】接缝要铺到机身左右边缘 —— 它所在的 Column
                         // 有 8dp 水平内边距，所以这里放宽 16dp、左移 8dp，把它顶回两侧
@@ -1394,7 +1415,7 @@ fun ChatInput(
                             // Popup 不占布局（机身高度不变），又有独立的触摸树（点得到）。
                             // 位置：底边贴着机身顶边 —— 也就是父级 Box 的顶边。
                             val paperAnchorRect = paperAnchorBox
-                            if (paperAnchorRect != null && paperKind != null) {
+                            if (paperAnchorRect != null && paperKind != null && pageActive) {
                                 Popup(
                                     popupPositionProvider = object : PopupPositionProvider {
                                         override fun calculatePosition(
@@ -1403,8 +1424,11 @@ fun ChatInput(
                                             layoutDirection: LayoutDirection,
                                             popupContentSize: IntSize
                                         ): IntOffset = IntOffset(
-                                            paperAnchorRect.left.toInt(),
-                                            paperAnchorRect.top.toInt() - popupContentSize.height
+                                            // 【跟手 · 2026-10-19】anchorBounds 是系统每次布局后给的实时位置；
+                                            // paperAnchorRect 是自己缓存的那一份，输入框一挪它就落后几帧，
+                                            // 看着就是「纸票跟不上输入框」。位置一律用实时的这份。
+                                            anchorBounds.left,
+                                            anchorBounds.top - popupContentSize.height
                                         )
                                     },
                                     properties = PopupProperties(focusable = false),
