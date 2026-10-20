@@ -1523,8 +1523,9 @@ fun ChatInput(
                         modifier = Modifier
                             .fillMaxWidth()
                             // 【比纸边窄 · 2026-10-21 宝："附件面板的宽度会大于纸边的宽度，要稍微往回缩一点"】
-                            // 上面那张纸是屏幕减 44（外面 8 + 自己 14），面板原来是屏幕减 16，宽出 28。
-                            .padding(horizontal = 14.dp)
+                            // 14 缩过头（宝："现在又太窄了"）。上面那张纸的面板 7 是她认可的，
+                            // 附件面板也用同一个数，两张纸的边才对得上。
+                            .padding(horizontal = 7.dp)
                             .clip(RoundedCornerShape(0.dp))
                             .then(
                                 if (settings.displaySetting.enableBlurEffect) Modifier.hazeEffect(
