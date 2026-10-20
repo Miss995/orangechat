@@ -616,6 +616,41 @@ fun ChatInput(
     // 都会把内容裁到自己的边界里。纸票往上画、出了这个容器的顶边 —— 就被它削掉了。
     // 这里本来只是想要个透明背景，Box 就够，而且不裁。
     Box {
+        // 【纸票的状态判据 · 2026-10-19 提到最外层 · 2026-10-20 搬到这里】
+        // 纸要从机身那个 Column 里搬出来、挂到 Box 上，那判据得先在 Box 层算好。
+        // 它只依赖 state / loading，两个都是函数参数，放这儿拿得到。
+        val paperKind = when {
+            state.isEditing() -> "edit"
+            state.pickedText != null -> "picked"
+            state.quotedMessageId != null -> "quote"
+            loading -> "interject"
+            else -> null
+        }
+        // 【纸的滑入淡入 · 2026-10-20 跟着纸一起搬到外层】
+        // 不用 AnimatedVisibility：它在 Column 作用域里有重载，
+        // 编译器会优先挑那个扩展版本，Kotlin 直接报"隐式接收者"。
+        // 自己用 alpha + translationY 做，效果一样，还不受作用域限制。
+        val paperAnim by animateFloatAsState(
+            targetValue = if (paperKind != null) 1f else 0f,
+            animationSpec = tween(durationMillis = 240, easing = LinearOutSlowInEasing),
+            label = "paperAnim",
+        )
+        // 【弹层的锚点 · 2026-10-19】Popup 的位置相对父级，先把这块的实际尺寸记下来
+        var paperAnchorBox by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        // 【纸票跟着页面走 · 2026-10-19】Popup 是独立的一层窗口，不归聊天页管 ——
+        // 页面切走（比如去设置）时没人通知它，就留在原地飘着。
+        // 用 Activity 的 resume 状态当判据：不在前台就把纸票关掉。
+        val chatLifecycleOwner = LocalLifecycleOwner.current
+        var pageActive by remember {
+            mutableStateOf(chatLifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+        }
+        DisposableEffect(chatLifecycleOwner) {
+            val observer = LifecycleEventObserver { _, _ ->
+                pageActive = chatLifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            }
+            chatLifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { chatLifecycleOwner.lifecycle.removeObserver(observer) }
+        }
         Column(
             modifier = modifier
                 .imePadding()
@@ -815,36 +850,11 @@ fun ChatInput(
             // 机身 Surface 带圆角，圆角会把里面的东西裁到形状里 —— 纸在它肚子里
             // 怎么改都会被裁（这就是"报0高能治顶、治不了少一半"的原因）。
             // 所以纸挂到外面来，跟机身并排。
-            // 【弹层的锚点 · 2026-10-19】Popup 的位置相对父级，先把这块的实际尺寸记下来
-            var paperAnchorBox by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
-            // 【纸票跟着页面走 · 2026-10-19】Popup 是独立的一层窗口，不归聊天页管 ——
-            // 页面切走（比如去设置）时没人通知它，就留在原地飘着。
-            // 用 Activity 的 resume 状态当判据：不在前台就把纸票关掉。
-            val chatLifecycleOwner = LocalLifecycleOwner.current
-            var pageActive by remember {
-                mutableStateOf(chatLifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
-            }
-            DisposableEffect(chatLifecycleOwner) {
-                val observer = LifecycleEventObserver { _, _ ->
-                    pageActive = chatLifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
-                }
-                chatLifecycleOwner.lifecycle.addObserver(observer)
-                onDispose { chatLifecycleOwner.lifecycle.removeObserver(observer) }
-            }
             // 【外层从 Box 改成 Column · 2026-10-19】附件要放在机身「下面」当兄弟节点 ——
             // Box 是叠着的（会盖在机身上），Column 是排着的（把整块往上顶）。
             androidx.compose.foundation.layout.Column(
                 modifier = Modifier.onGloballyPositioned { paperAnchorBox = it.boundsInWindow() }
             ) {
-            // 【纸票的状态判据 · 2026-10-19 提到外面】纸挂在机身外面了，
-            // 这里得在机身和纸都能看到的地方先算一次。按要紧程度排优先级。
-            val paperKind = when {
-                state.isEditing() -> "edit"
-                state.pickedText != null -> "picked"
-                state.quotedMessageId != null -> "quote"
-                loading -> "interject"
-                else -> null
-            }
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1420,20 +1430,6 @@ fun ChatInput(
                             //      它上面（zIndex 只在同一层管用），纸的上半截被列表盖住了。
                             // 现在改成：在机身里正常占位，用滑入+淡入做动画。
                             // 代价是弹纸时机身会长一点，但因为是滑进去的，看着像"纸被吸出来"。
-                            // 【自己做的滑入淡入 · 2026-10-19】
-                            // 不用 AnimatedVisibility：它在 Column 作用域里有重载，
-                            // 编译器会优先挑那个扩展版本，Kotlin 直接报"隐式接收者"。
-                            // 自己用 alpha + translationY 做，效果一样，还不受作用域限制。
-                            val paperAnim by animateFloatAsState(
-                                targetValue = if (paperKind != null) 1f else 0f,
-                                animationSpec = tween(durationMillis = 240, easing = LinearOutSlowInEasing),
-                                label = "paperAnim",
-                            )
-                            // 【纸票改成弹层 · 2026-10-19 宝选的 ②】
-                            // 报 0 高能"不占地方"，但触摸就没有落点 —— 点一次之后就点不动了。
-                            // Popup 不占布局（机身高度不变），又有独立的触摸树（点得到）。
-                            // 位置：底边贴着机身顶边 —— 也就是父级 Box 的顶边。
-                            val paperAnchorRect = paperAnchorBox
                             // 【附件 · 顶输入框 · 2026-10-19 宝定的第三版】
                             // 前两版都不对：
                             //   ① 塞机身肚子里 —— 机身被拉长；
@@ -1451,219 +1447,6 @@ fun ChatInput(
                             }
                             // 【放宽 · 2026-10-20】原来非要 paperKind != null 才开这个弹窗，
                             // 结果普通发送（没引用没插话）时状态纸压根不显示。现在状态纸也能单独撑起它。
-                            if (paperAnchorRect != null && pageActive &&
-                                (paperKind != null || statusHolding)
-                            ) {
-                                Popup(
-                                    popupPositionProvider = object : PopupPositionProvider {
-                                        override fun calculatePosition(
-                                            anchorBounds: IntRect,
-                                            windowSize: IntSize,
-                                            layoutDirection: LayoutDirection,
-                                            popupContentSize: IntSize
-                                        ): IntOffset = IntOffset(
-                                            // 【跟手 · 2026-10-19】anchorBounds 是系统每次布局后给的实时位置；
-                                            // paperAnchorRect 是自己缓存的那一份，输入框一挪它就落后几帧，
-                                            // 看着就是「纸票跟不上输入框」。位置一律用实时的这份。
-                                            anchorBounds.left,
-                                            anchorBounds.top - popupContentSize.height
-                                        )
-                                    },
-                                    properties = PopupProperties(focusable = false),
-                                ) {
-                            Column(
-                                // 【一张纸 · 2026-10-20 宝："为啥不能拼成同一张纸啊"】
-                                // 真正的做法不是把两张纸的圆角凑齐，是让它们都坐在同一层纸底上：
-                                // 这里铺一次底色（纸边留白 14dp），下面两张纸背景全透明、不带阴影。
-                                modifier = Modifier
-                                    .width(with(LocalDensity.current) { paperAnchorRect.width.toDp() })
-                                    .padding(horizontal = 14.dp)
-                                    .clip(RoundedCornerShape(3.dp))
-                                    .background(Color(0xFFEDE9DF))
-                                    // 【不用 animateContentSize · 2026-10-20 宝："怎么改都在第二张跳出来的时候往下陷一点"】
-                                    // 那个 API 是"内容先按最终高度排好，外框再动画追上去"——纸变高的那一瞬，
-                                    // 内容已经先漏出一截，看着就是往下陷。高度动画得由纸自己长（内容被裁在里面）。
-                            ) {
-                            // ★ 状态纸 · 2026-10-20 宝换的方向：纸不假装变成气泡，
-                            // 它报"机器现在在干嘛"——门控/召回/拼请求/正在回复。
-                            // 全是真的，就不用接了，也不会穿帮。
-                            if (paperKind != null) {
-                                val picked = state.pickedText ?: ""
-                                Surface(
-                                    // 【合页 · 2026-10-20 宝："两个合不上"】纸票换成在上之后，圆角没跟着换，
-                                    // 两张都朝中间顶，中间就合不上。现在它只圆上面两个角；单独一张时四角都圆。
-                                    shape = RoundedCornerShape(0.dp),
-                                    color = Color.Transparent,
-                                    contentColor = Color(0xFF2B2723),
-                                    shadowElevation = 0.dp,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        // 【只缩纸票自己 · 2026-10-20】原来这个动画套在整列上，
-                                        // 把状态纸也一起从底部长出来（所以它出现得慢、还分层）。
-                                        .graphicsLayer {
-                                            // 【不弹 · 2026-10-20 宝："太 q 弹了"】原来用 scaleY 从 0 长到 1，
-                                            // 那是把整张纸压扁再弹开 —— 字跟着变形，所以看着"啵"一下。
-                                            // 改成淡入 + 从缝里往上冒几像素，纸不变形。
-                                            alpha = paperAnim
-                                            translationY = (1f - paperAnim) * 6.dp.toPx()
-                                        },
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 5.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        when (paperKind) {
-                                            "edit" -> {
-                                                Text(
-                                                    text = stringResource(R.string.editing),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    modifier = Modifier.weight(1f),
-                                                )
-                                                Icon(
-                                                    imageVector = HugeIcons.Cancel01,
-                                                    contentDescription = stringResource(R.string.cancel_edit),
-                                                    modifier = Modifier.clickable { state.clearInput() },
-                                                )
-                                            }
-                                            "picked" -> {
-                                                Text(
-                                                    text = "选中了 " + picked.length + " 个字：" +
-                                                        picked.replace("\n", " "),
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    modifier = Modifier.weight(1f),
-                                                )
-                                                Spacer(Modifier.width(6.dp))
-                                                if (onUsePickedQuote != null) {
-                                                    Text(
-                                                        text = "引用这句",
-                                                        style = MaterialTheme.typography.labelMedium,
-                                                        color = Color(0xFF7A4B14),
-                                                        modifier = Modifier
-                                                            .clickable { onUsePickedQuote() }
-                                                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                                                    )
-                                                    Spacer(Modifier.width(4.dp))
-                                                }
-                                                Icon(
-                                                    imageVector = HugeIcons.Cancel01,
-                                                    contentDescription = "取消",
-                                                    modifier = Modifier.clickable {
-                                                        state.pickedText = null
-                                                        state.pickedMessageId = null
-                                                    },
-                                                )
-                                            }
-                                            "quote" -> {
-                                                Text(
-                                                    text = "引用：" + state.quotedPreview.ifBlank { "（一条消息）" },
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    modifier = Modifier.weight(1f),
-                                                )
-                                                Spacer(Modifier.width(6.dp))
-                                                Icon(
-                                                    imageVector = HugeIcons.Cancel01,
-                                                    contentDescription = "取消引用",
-                                                    modifier = Modifier.clickable {
-                                                        state.quotedMessageId = null
-                                                        state.quotedPreview = ""
-                                                        state.quotedText = null
-                                                    },
-                                                )
-                                            }
-                                            else -> {
-                                                Text(
-                                                    text = if (state.interjectSupplement)
-                                                        "这是补充上文那条 · 再按取消"
-                                                    else "这句是补充上文那条？（按一下）",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .clickable {
-                                                            state.interjectSupplement = !state.interjectSupplement
-                                                        },
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            AnimatedVisibility(
-                                visible = me.rerere.rikkahub.data.ai.PrinterStatus.active,
-                                // 【自己长 · 2026-10-20】高度动画必须由纸自己长（expandVertically 会把内容裁在里面），
-                                // 不能让外层 animateContentSize 代劳 —— 那个会让内容先漏出去一截。
-                                // 【一次性到位 · 2026-10-20】错位的根不在"哪一帧"，在"每一帧"：
-                                // Popup 每帧都用上一帧的尺寸算位置，而 expandVertically 让高度一直在变
-                                // → 整段动画里它一直在错。去掉高度动画：高度瞬间到位，只错一次跳变，
-                                // 同时淡入，那一下基本看不见。
-                                enter = fadeIn(animationSpec = tween(durationMillis = 170)),
-                                // 退出也一次性收掉：高度逐帧缩同样会一直在错
-                                exit = fadeOut(animationSpec = tween(durationMillis = 140)),
-                            ) {
-                                val psteps = me.rerere.rikkahub.data.ai.PrinterStatus.steps
-                                Surface(
-                                    shape = RoundedCornerShape(0.dp),
-                                    color = Color.Transparent,
-                                    contentColor = Color(0xFF2B2723),
-                                    shadowElevation = 0.dp,
-                                    modifier = Modifier
-                                        .fillMaxWidth(),
-                                ) {
-                                    // 【内部滑动 · 2026-10-20 宝要的】不挤出去，纸固定三行高，
-                                    // 多的在里面滑 —— 记录全留着，想翻哪步花了多久就往上拨。
-                                    // 手势不打架：Popup 是独立窗口，手指落在纸面上就归它。
-                                    val stScroll = rememberScrollState()
-                                    LaunchedEffect(psteps.size) {
-                                        stScroll.animateScrollTo(stScroll.maxValue)
-                                    }
-                                    Column(
-                                        modifier = Modifier
-                                            // 【最多三行 · 2026-10-20】原来高度写死 60dp，只印一行时也占三行，
-                                            // 把底下那张纸票顶下去了。改成"长到三行为止"。
-                                            // 【纸不跟着内容长 · 2026-10-20 宝："每次有新内容升上去整体就要弹一下"】
-                                    // 弹的根儿不是动画：纸的底边贴着输入框，每加一行纸就变高，
-                                    // Popup 只能往上顶 —— 整张纸就跳一下。纸的尺寸得固定，多的在里面滑。
-                                    .height(44.dp)
-                                            .verticalScroll(stScroll)
-                                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                                    ) {
-                                        psteps.forEach { pstep ->
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = pstep.label,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontFamily = FontFamily.Monospace,
-                                                    color = Color(0xFF4A443C),
-                                                    modifier = Modifier.weight(1f),
-                                                )
-                                                if (pstep.elapsedMs > 0) {
-                                                    Text(
-                                                        text = String.format("%.1fs", pstep.elapsedMs / 1000f),
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontFamily = FontFamily.Monospace,
-                                                        color = Color(0xFF8A8070),
-                                                    )
-                                                    Spacer(Modifier.width(6.dp))
-                                                }
-                                                Text(
-                                                    text = if (pstep.done) "✓" else "…",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontFamily = FontFamily.Monospace,
-                                                    color = if (pstep.done) Color(0xFF6B7A4B) else Color(0xFFB08A3E),
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            }
-                                }
-                            }
             }
 
             // Expanded content
@@ -1713,6 +1496,216 @@ fun ChatInput(
                         )
                     }
                 }
+            }
+        }
+        if (paperAnchorBox != null && pageActive &&
+            (paperKind != null || statusHolding)
+        ) {
+            // 【非空取样 · 2026-10-20】paperAnchorBox 是可变 state，Kotlin 不会做非空推断，
+            // 先取出来存成局部 val，下面一律用它。
+            val anchorBox = paperAnchorBox!!
+            // 【改成普通布局节点 · 2026-10-20】
+            // Popup 的定位要压在「当前多高」上，可高度得等内容量完才知道 ——
+            // 每一帧都在拿上一帧的高度补账，看着就是纸往下压一下。
+            // 现在底边由 align 钉死、再往上让一个输入区的高度：
+            // 纸怎么长都只往上顶，底边不动。
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .offset { IntOffset(0, -anchorBox.height.toInt()) }
+            ) {
+        Column(
+            // 【一张纸 · 2026-10-20 宝："为啥不能拼成同一张纸啊"】
+            // 真正的做法不是把两张纸的圆角凑齐，是让它们都坐在同一层纸底上：
+            // 这里铺一次底色（纸边留白 14dp），下面两张纸背景全透明、不带阴影。
+            modifier = Modifier
+                .width(with(LocalDensity.current) { anchorBox.width.toDp() })
+                .padding(horizontal = 14.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(Color(0xFFEDE9DF))
+                // 【不用 animateContentSize · 2026-10-20 宝："怎么改都在第二张跳出来的时候往下陷一点"】
+                // 那个 API 是"内容先按最终高度排好，外框再动画追上去"——纸变高的那一瞬，
+                // 内容已经先漏出一截，看着就是往下陷。高度动画得由纸自己长（内容被裁在里面）。
+        ) {
+        // ★ 状态纸 · 2026-10-20 宝换的方向：纸不假装变成气泡，
+        // 它报"机器现在在干嘛"——门控/召回/拼请求/正在回复。
+        // 全是真的，就不用接了，也不会穿帮。
+        if (paperKind != null) {
+            val picked = state.pickedText ?: ""
+            Surface(
+                // 【合页 · 2026-10-20 宝："两个合不上"】纸票换成在上之后，圆角没跟着换，
+                // 两张都朝中间顶，中间就合不上。现在它只圆上面两个角；单独一张时四角都圆。
+                shape = RoundedCornerShape(0.dp),
+                color = Color.Transparent,
+                contentColor = Color(0xFF2B2723),
+                shadowElevation = 0.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 【只缩纸票自己 · 2026-10-20】原来这个动画套在整列上，
+                    // 把状态纸也一起从底部长出来（所以它出现得慢、还分层）。
+                    .graphicsLayer {
+                        // 【不弹 · 2026-10-20 宝："太 q 弹了"】原来用 scaleY 从 0 长到 1，
+                        // 那是把整张纸压扁再弹开 —— 字跟着变形，所以看着"啵"一下。
+                        // 改成淡入 + 从缝里往上冒几像素，纸不变形。
+                        alpha = paperAnim
+                        translationY = (1f - paperAnim) * 6.dp.toPx()
+                    },
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    when (paperKind) {
+                        "edit" -> {
+                            Text(
+                                text = stringResource(R.string.editing),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Icon(
+                                imageVector = HugeIcons.Cancel01,
+                                contentDescription = stringResource(R.string.cancel_edit),
+                                modifier = Modifier.clickable { state.clearInput() },
+                            )
+                        }
+                        "picked" -> {
+                            Text(
+                                text = "选中了 " + picked.length + " 个字：" +
+                                    picked.replace("\n", " "),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            if (onUsePickedQuote != null) {
+                                Text(
+                                    text = "引用这句",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color(0xFF7A4B14),
+                                    modifier = Modifier
+                                        .clickable { onUsePickedQuote() }
+                                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                                )
+                                Spacer(Modifier.width(4.dp))
+                            }
+                            Icon(
+                                imageVector = HugeIcons.Cancel01,
+                                contentDescription = "取消",
+                                modifier = Modifier.clickable {
+                                    state.pickedText = null
+                                    state.pickedMessageId = null
+                                },
+                            )
+                        }
+                        "quote" -> {
+                            Text(
+                                text = "引用：" + state.quotedPreview.ifBlank { "（一条消息）" },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Icon(
+                                imageVector = HugeIcons.Cancel01,
+                                contentDescription = "取消引用",
+                                modifier = Modifier.clickable {
+                                    state.quotedMessageId = null
+                                    state.quotedPreview = ""
+                                    state.quotedText = null
+                                },
+                            )
+                        }
+                        else -> {
+                            Text(
+                                text = if (state.interjectSupplement)
+                                    "这是补充上文那条 · 再按取消"
+                                else "这句是补充上文那条？（按一下）",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        state.interjectSupplement = !state.interjectSupplement
+                                    },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        AnimatedVisibility(
+            visible = me.rerere.rikkahub.data.ai.PrinterStatus.active,
+            // 【自己长 · 2026-10-20】高度动画必须由纸自己长（expandVertically 会把内容裁在里面），
+            // 不能让外层 animateContentSize 代劳 —— 那个会让内容先漏出去一截。
+            // 【一次性到位 · 2026-10-20】错位的根不在"哪一帧"，在"每一帧"：
+            // Popup 每帧都用上一帧的尺寸算位置，而 expandVertically 让高度一直在变
+            // → 整段动画里它一直在错。去掉高度动画：高度瞬间到位，只错一次跳变，
+            // 同时淡入，那一下基本看不见。
+            enter = fadeIn(animationSpec = tween(durationMillis = 170)),
+            // 退出也一次性收掉：高度逐帧缩同样会一直在错
+            exit = fadeOut(animationSpec = tween(durationMillis = 140)),
+        ) {
+            val psteps = me.rerere.rikkahub.data.ai.PrinterStatus.steps
+            Surface(
+                shape = RoundedCornerShape(0.dp),
+                color = Color.Transparent,
+                contentColor = Color(0xFF2B2723),
+                shadowElevation = 0.dp,
+                modifier = Modifier
+                    .fillMaxWidth(),
+            ) {
+                // 【内部滑动 · 2026-10-20 宝要的】不挤出去，纸固定三行高，
+                // 多的在里面滑 —— 记录全留着，想翻哪步花了多久就往上拨。
+                // 手势不打架：Popup 是独立窗口，手指落在纸面上就归它。
+                val stScroll = rememberScrollState()
+                LaunchedEffect(psteps.size) {
+                    stScroll.animateScrollTo(stScroll.maxValue)
+                }
+                Column(
+                    modifier = Modifier
+                        // 【最多三行 · 2026-10-20】原来高度写死 60dp，只印一行时也占三行，
+                        // 把底下那张纸票顶下去了。改成"长到三行为止"。
+                        // 【纸不跟着内容长 · 2026-10-20 宝："每次有新内容升上去整体就要弹一下"】
+                // 弹的根儿不是动画：纸的底边贴着输入框，每加一行纸就变高，
+                // Popup 只能往上顶 —— 整张纸就跳一下。纸的尺寸得固定，多的在里面滑。
+                .height(44.dp)
+                        .verticalScroll(stScroll)
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    psteps.forEach { pstep ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = pstep.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFF4A443C),
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (pstep.elapsedMs > 0) {
+                                Text(
+                                    text = String.format("%.1fs", pstep.elapsedMs / 1000f),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFF8A8070),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            Text(
+                                text = if (pstep.done) "✓" else "…",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (pstep.done) Color(0xFF6B7A4B) else Color(0xFFB08A3E),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        }
             }
         }
     }
