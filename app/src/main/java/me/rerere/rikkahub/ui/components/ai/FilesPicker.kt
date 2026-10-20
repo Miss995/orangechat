@@ -36,6 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -110,7 +111,10 @@ internal fun FilesPicker(
         // 改成等分 Row —— 每格 weight(1f)，谁也不会把谁挤下去。
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // 【不再留缝 · 2026-10-21 宝："那几个图标干脆就摆整齐吧"】
+            // 原来每格之间 8dp，而分栏线画在格子右边缘 —— 线就落不进缝中央，
+            // 四条竖线看着各偏各的。改成不留缝：格子首尾相接，线正好就是分界线。
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             TakePicButton(onLaunchCamera = onTakePic, modifier = Modifier.weight(1f))
 
@@ -163,7 +167,17 @@ internal fun FilesPicker(
                     )
                 }
             },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             modifier = Modifier
+                .drawBehind {
+                    val w = 1.dp.toPx()
+                    drawLine(
+                        color = Color(0xFFD3CCBF),
+                        start = Offset(0f, size.height - w / 2f),
+                        end = Offset(size.width, size.height - w / 2f),
+                        strokeWidth = w,
+                    )
+                }
                 .clickable {
                     onShowInjectionSheetChange(true)
                 },
@@ -189,6 +203,7 @@ internal fun FilesPicker(
                     )
                 }
             },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             modifier = Modifier
                 .clickable {
                     onShowCompressDialogChange(true)
@@ -342,8 +357,9 @@ private fun BigIconTextButton(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
+            // 【不按灰底 · 2026-10-21 宝截图："拍照"那格按下去整块泛灰，纸上不该有这种反应】
             .clickable(
-                interactionSource = interactionSource, indication = LocalIndication.current, onClick = onClick
+                interactionSource = interactionSource, indication = null, onClick = onClick
             )
             .semantics {
                 role = Role.Button
