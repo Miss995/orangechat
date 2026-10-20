@@ -1308,7 +1308,9 @@ fun ChatInput(
                     exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
                 ) {
                     // 【重排·第七刀 2026-10-08】面板套娃：点「当前会话」在它上面升起一层
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // 【合成一整张纸 · 2026-10-21 宝选方案一：只用一道细实线分栏】
+                    // 原来是 8dp，两块纸之间塌出一段空。缩到 1dp —— 纸底透出来正好是一条线。
+                    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                         if (showSessionPanel) {
                             // 【重排·第十八刀补2 2026-10-09】外壳圆角跟着高度走（20dp 配三四十 dp 的壳=胶囊）
                             Surface(
@@ -1344,6 +1346,7 @@ fun ChatInput(
                                         label = "定时",
                                         modifier = Modifier.weight(1f),
                                         compact = true,
+                                        showDivider = false,
                                     ) {
                                         onScheduleClick()
                                         expand = ExpandState.Collapsed
@@ -1387,6 +1390,7 @@ fun ChatInput(
                                     }
                                     PanelCell(
                                         label = "聊天历史",
+                                        showDivider = false,
                                         modifier = Modifier.weight(1f),
                                         compact = true,
                                     ) {
@@ -1432,6 +1436,7 @@ fun ChatInput(
                                     }
                                     PanelCell(
                                         label = "小应用",
+                                        showDivider = false,
                                         modifier = Modifier.weight(1f),
                                         compact = true,
                                     ) {
@@ -1483,6 +1488,7 @@ fun ChatInput(
                                 ) { showLegacyPanel = !showLegacyPanel }
                                 PanelCell(
                                     label = if (showToolPanel) "小工具·开" else "小工具",
+                                    showDivider = false,
                                     modifier = Modifier.width(72.dp),
                                 ) { showToolPanel = !showToolPanel }
                             }
@@ -2101,6 +2107,7 @@ private fun PanelCell(
     label: String,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    showDivider: Boolean = true,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -2110,22 +2117,21 @@ private fun PanelCell(
         // 【第十八刀补 2026-10-09】圆角跟着高度走：格子矮了圆角不缩，就成了"扁胶囊"。
         modifier = modifier
             .clickable(onClick = onClick)
-            // 【虚线框 · 2026-10-20 宝："里面的内容不要用其他颜色，就用虚线框起来就行了"】
-            // 外面那圈已经染成纸边的米色，格子再用色就变成两层色块。
-            // 所以格子不上色，只描一圈 1dp 虚线把范围划出来。
+            // 【细实线分栏 · 2026-10-21 宝选方案一】
+            // 上一版是满纸虚线框，看着像填空表。改成格子之间只画一条竖线，
+            // 上下各留 22% 不画到底 —— 像纸上印的分栏，不像表格格。
             .drawBehind {
-                val r: Float = if (compact) 5.dp.toPx() else 6.dp.toPx()
-                val dash = floatArrayOf(4.dp.toPx(), 3.dp.toPx())
-                drawRoundRect(
-                    color = Color(0xFF8A8078),
-                    cornerRadius = CornerRadius(r, r),
-                    style = Stroke(
-                        width = 1.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(dash, 0f),
-                    ),
-                )
+                if (showDivider) {
+                    val w = 1.dp.toPx()
+                    drawLine(
+                        color = Color(0xFFD3CCBF),
+                        start = Offset(size.width - w / 2f, size.height * 0.22f),
+                        end = Offset(size.width - w / 2f, size.height * 0.78f),
+                        strokeWidth = w,
+                    )
+                }
             },
-        shape = RoundedCornerShape(if (compact) 5.dp else 6.dp),
+        shape = RoundedCornerShape(0.dp),
         color = Color.Transparent,
     ) {
         Column(
