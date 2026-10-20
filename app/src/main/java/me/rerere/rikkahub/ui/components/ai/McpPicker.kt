@@ -6,6 +6,10 @@
 
 package me.rerere.rikkahub.ui.components.ai
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -201,8 +205,12 @@ fun McpPickerListItem(
                 )
             }
         },
+        // 【跟另外两条一样 · 2026-10-21 宝："MCP 这个为啥还是自己一个样子"】
+        // 它是从 McpPicker 搬进来的独立组件，默认带一层 Material 容器色 + 大圆角，
+        // 贴在纸上就是一块白豆腐。改成透明 + 细线方框，跟扩展管理、压缩历史排一排。
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = modifier
-            .clip(MaterialTheme.shapes.large)
+            .border(1.dp, Color(0xFFD3CCBF), RoundedCornerShape(0.dp))
             .clickable {
                 showMcpPicker = true
             },
