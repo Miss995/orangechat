@@ -1547,7 +1547,10 @@ fun ChatInput(
                 .width(with(LocalDensity.current) { anchorBox.width.toDp() })
                 .padding(horizontal = 14.dp)
                 .clip(RoundedCornerShape(3.dp))
-                .background(Color(0xFFEDE9DF))
+                // 【跟附件纸同色 · 2026-10-20 宝："要跟下面那个纸边保持同一个颜色"】
+                // 附件纸面是 #F8F6F1（它顶上那一小段 #F4F2EC 是为接住机身的暗纸边）。
+                // 原来这里是 #EDE9DF，比它暗一档、还偏黄，两张纸贴一起就看得出是两张。
+                .background(Color(0xFFF8F6F1))
                 // 【不用 animateContentSize · 2026-10-20 宝："怎么改都在第二张跳出来的时候往下陷一点"】
                 // 那个 API 是"内容先按最终高度排好，外框再动画追上去"——纸变高的那一瞬，
                 // 内容已经先漏出一截，看着就是往下陷。高度动画得由纸自己长（内容被裁在里面）。
