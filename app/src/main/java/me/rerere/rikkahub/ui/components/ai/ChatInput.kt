@@ -1470,14 +1470,16 @@ fun ChatInput(
                             //   ② 做成 Popup —— 不占布局、没有体积，键盘直接从它身上穿过去，还盖住机身底边。
                             // 现在放机身「下面」，跟机身并排当一个兄弟节点：它自己占一行，
                             // 把整块往上顶。机身一个像素都不长，键盘来了也会让路。
-                            if (state.messageContent.isNotEmpty()) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 8.dp)
-                                ) {
-                                    PaperAttachmentStack(state = state)
-                                }
+                            // 【这道门去掉了 · 2026-10-20 宝："完全没看出来动画在哪里"】
+                            // 原来 messageContent 一空，整个组件就不画了 —— 数据清了、组件也没了，
+                            // 附件吸入那 0.44 秒压根没机会播。
+                            // 现在交给组件自己处理空：它内部留着"上一次的样子"，把纸画完、飞走，飞完再清。
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp)
+                            ) {
+                                PaperAttachmentStack(state = state)
                             }
                             // 【放宽 · 2026-10-20】原来非要 paperKind != null 才开这个弹窗，
                             // 结果普通发送（没引用没插话）时状态纸压根不显示。现在状态纸也能单独撑起它。
