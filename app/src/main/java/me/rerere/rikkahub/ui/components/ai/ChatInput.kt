@@ -1727,13 +1727,12 @@ fun ChatInput(
                     // 按基线在上下分配，每行实际比 lineHeight 高一点点。两行就是多出来的那一截，
                     // 正好够露出第三行的边。Trim.Both = 把行高上下多余的空隙全切掉，
                     // 每行真的等于 15sp，高度就能钉准。
-                    platformStyle = PlatformTextStyle(
-                        includeFontPadding = false,
-                        lineHeightStyle = LineHeightStyle(
-                            alignment = LineHeightStyle.Alignment.Center,
-                            trim = LineHeightStyle.Trim.Both,
-                        ),
+                    // ⚠️ lineHeightStyle 是 TextStyle 的，不是 PlatformTextStyle 的（编译踩过）。
+                    lineHeightStyle = LineHeightStyle(
+                        alignment = LineHeightStyle.Alignment.Center,
+                        trim = LineHeightStyle.Trim.Both,
                     ),
+                    platformStyle = PlatformTextStyle(includeFontPadding = false),
                 )
                 val pstepLineH = with(LocalDensity.current) { 15.sp.toDp() }
                 val pstepMaxH = pstepLineH * 2 + 12.dp
