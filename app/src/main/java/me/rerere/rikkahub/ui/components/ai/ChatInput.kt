@@ -118,6 +118,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.asImageBitmap
@@ -1313,7 +1316,7 @@ fun ChatInput(
                                     .clip(RoundedCornerShape(12.dp)),
                                 shape = RoundedCornerShape(12.dp),
                                 tonalElevation = 0.dp,
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                color = Color(0xFFF4F2EC),
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -1357,7 +1360,7 @@ fun ChatInput(
                                     .clip(RoundedCornerShape(12.dp)),
                                 shape = RoundedCornerShape(12.dp),
                                 tonalElevation = 0.dp,
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                color = Color(0xFFF4F2EC),
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -1402,7 +1405,7 @@ fun ChatInput(
                                     .clip(RoundedCornerShape(12.dp)),
                                 shape = RoundedCornerShape(12.dp),
                                 tonalElevation = 0.dp,
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                color = Color(0xFFF4F2EC),
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -1447,7 +1450,7 @@ fun ChatInput(
                                 .clip(RoundedCornerShape(20.dp)),
                             shape = RoundedCornerShape(20.dp),
                             tonalElevation = 0.dp,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            color = Color(0xFFF4F2EC),
                         ) {
                             Row(
                                 modifier = Modifier
@@ -2104,13 +2107,26 @@ private fun PanelCell(
         // 格子明明只有一行字，却被撑出大片空白（宝："能开一家蜜雪冰城"）。
         // 改用 modifier.clickable，高度就由内容自己说了算（compact 才真的生效）。
         // 【第十八刀补 2026-10-09】圆角跟着高度走：格子矮了圆角不缩，就成了"扁胶囊"。
-        modifier = modifier.clickable(onClick = onClick),
-        // 【跟机身一体 · 2026-10-20 宝："位置没问题，改颜色大小不？"】
-        // 原来是一张浅色卡片：圆角 12、surfaceContainerHighest。
-        // 那套是"贴在浅色界面上的按钮"，放在深色机身下面像两块白纸片。
-        // 改成机身自己的暗面 —— 底 #2A2521、字暖灰、圆角收小、留白压薄。
+        modifier = modifier
+            .clickable(onClick = onClick)
+            // 【虚线框 · 2026-10-20 宝："里面的内容不要用其他颜色，就用虚线框起来就行了"】
+            // 外面那圈已经染成纸边的米色，格子再用色就变成两层色块。
+            // 所以格子不上色，只描一圈 1dp 虚线把范围划出来。
+            .drawBehind {
+                val r = (if (compact) 5.dp else 6.dp).toPx()
+                drawRoundRect(
+                    color = Color(0xFF8A8078),
+                    cornerRadius = CornerRadius(r, r),
+                    style = Stroke(
+                        width = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(
+                            floatArrayOf(4.dp.toPx(), 3.dp.toPx()), 0f
+                        ),
+                    ),
+                )
+            },
         shape = RoundedCornerShape(if (compact) 5.dp else 6.dp),
-        color = Color(0xFF2A2521),
+        color = Color.Transparent,
     ) {
         Column(
             modifier = Modifier
@@ -2121,7 +2137,7 @@ private fun PanelCell(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFFC9C0B5),
+                color = Color(0xFF3A342F),
             )
         }
     }
