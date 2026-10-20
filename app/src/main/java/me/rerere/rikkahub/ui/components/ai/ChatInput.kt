@@ -672,196 +672,6 @@ fun ChatInput(
                 .padding(horizontal = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // 【重排·第三刀 2026-10-08】新面板：点 + 从输入框「上方」弹出的小面板
-            // 内容先占位（宝：先看形态，之后再定哪几个常用的挪进来）
-            AnimatedVisibility(
-                visible = expand == ExpandState.Panel,
-                enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
-                exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
-            ) {
-                // 【重排·第七刀 2026-10-08】面板套娃：点「当前会话」在它上面升起一层
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (showSessionPanel) {
-                        // 【重排·第十八刀补2 2026-10-09】外壳圆角跟着高度走（20dp 配三四十 dp 的壳=胶囊）
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp)),
-                            shape = RoundedCornerShape(12.dp),
-                            tonalElevation = 0.dp,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                PanelCell(
-                                    label = if (requestEditMode) "编辑·开" else "编辑",
-                                    modifier = Modifier.weight(1f),
-                                    compact = true,
-                                ) { onToggleRequestEdit() }
-                                PanelCell(
-                                    label = "通话",
-                                    modifier = Modifier.weight(1f),
-                                    compact = true,
-                                ) { onVoiceCall() }
-                                PanelCell(
-                                    label = if (previewMode) "预览·开" else "预览",
-                                    modifier = Modifier.weight(1f),
-                                    compact = true,
-                                ) { onTogglePreview() }
-                                PanelCell(
-                                    label = "定时",
-                                    modifier = Modifier.weight(1f),
-                                    compact = true,
-                                ) {
-                                    onScheduleClick()
-                                    expand = ExpandState.Collapsed
-                                }
-                            }
-                        }
-                    }
-
-                    // 【重排·第十刀 2026-10-09】「遗拾旧事」子面板：三个入口都跳现成页面
-                    if (showLegacyPanel) {
-                        // 【重排·第十八刀补2 2026-10-09】外壳圆角跟着高度走（20dp 配三四十 dp 的壳=胶囊）
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp)),
-                            shape = RoundedCornerShape(12.dp),
-                            tonalElevation = 0.dp,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                PanelCell(
-                                    label = "搜索聊天",
-                                    modifier = Modifier.weight(1f),
-                                    compact = true,
-                                ) {
-                                    onOpenSearch()
-                                    expand = ExpandState.Collapsed
-                                }
-                                PanelCell(
-                                    label = "收藏夹",
-                                    modifier = Modifier.weight(1f),
-                                    compact = true,
-                                ) {
-                                    onOpenFavorites()
-                                    expand = ExpandState.Collapsed
-                                }
-                                PanelCell(
-                                    label = "聊天历史",
-                                    modifier = Modifier.weight(1f),
-                                    compact = true,
-                                ) {
-                                    onOpenChatHistory()
-                                    expand = ExpandState.Collapsed
-                                }
-                            }
-                        }
-                    }
-
-                    // 【重排·第十二刀 2026-10-09】「小工具」子面板：翻译 / 图像生成 / 小应用
-                    if (showToolPanel) {
-                        // 【重排·第十八刀补2 2026-10-09】外壳圆角跟着高度走（20dp 配三四十 dp 的壳=胶囊）
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp)),
-                            shape = RoundedCornerShape(12.dp),
-                            tonalElevation = 0.dp,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                PanelCell(
-                                    label = "翻译",
-                                    modifier = Modifier.weight(1f),
-                                    compact = true,
-                                ) {
-                                    onOpenTranslator()
-                                    expand = ExpandState.Collapsed
-                                }
-                                PanelCell(
-                                    label = "图像生成",
-                                    modifier = Modifier.weight(1f),
-                                    compact = true,
-                                ) {
-                                    onOpenImageGen()
-                                    expand = ExpandState.Collapsed
-                                }
-                                PanelCell(
-                                    label = "小应用",
-                                    modifier = Modifier.weight(1f),
-                                    compact = true,
-                                ) {
-                                    onOpenMiniApps()
-                                    expand = ExpandState.Collapsed
-                                }
-                            }
-                        }
-                    }
-
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            // 【抬一层 · 2026-10-20 宝：输入框上面放了状态纸和纸票之后，这排点不了了】
-                            // 不猜是谁压的，直接把它抬到最上面 —— 不管打印机或纸怎么长上来，它都点得到。
-                            .zIndex(3f)
-                            .clip(RoundedCornerShape(20.dp)),
-                        shape = RoundedCornerShape(20.dp),
-                        tonalElevation = 0.dp,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 10.dp, vertical = 10.dp)
-                                // 【重排·第十刀 2026-10-09】格子能横着滑（宝选的 b：以后再加格不用重排）
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            PanelCell(label = "语音", modifier = Modifier.width(72.dp)) {
-                                voiceInputMode = true
-                                expand = ExpandState.Collapsed
-                            }
-                            PanelCell(label = "设置", modifier = Modifier.width(72.dp)) {
-                                onOpenSettings()
-                                expand = ExpandState.Collapsed
-                            }
-                            PanelCell(label = "切换聊天", modifier = Modifier.width(72.dp)) {
-                                onOpenSessionPanel()
-                                expand = ExpandState.Collapsed
-                            }
-                            PanelCell(
-                                label = if (showSessionPanel) "当前会话·开" else "当前会话",
-                                modifier = Modifier.width(72.dp),
-                            ) { showSessionPanel = !showSessionPanel }
-                            PanelCell(
-                                label = if (showLegacyPanel) "遗拾旧事·开" else "遗拾旧事",
-                                modifier = Modifier.width(72.dp),
-                            ) { showLegacyPanel = !showLegacyPanel }
-                            PanelCell(
-                                label = if (showToolPanel) "小工具·开" else "小工具",
-                                modifier = Modifier.width(72.dp),
-                            ) { showToolPanel = !showToolPanel }
-                        }
-                    }
-                }
-            }
-
             // Input area with optional background image
             // 【机身外面套一层不裁剪的容器 · 2026-10-19】
             // 机身 Surface 带圆角，圆角会把里面的东西裁到形状里 —— 纸在它肚子里
@@ -1486,6 +1296,196 @@ fun ChatInput(
                             ) {
                                 PaperAttachmentStack(state = state)
                             }
+                // 【重排·第三刀 2026-10-08】新面板：点 + 从输入框「上方」弹出的小面板
+                // 内容先占位（宝：先看形态，之后再定哪几个常用的挪进来）
+                AnimatedVisibility(
+                    visible = expand == ExpandState.Panel,
+                    enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
+                ) {
+                    // 【重排·第七刀 2026-10-08】面板套娃：点「当前会话」在它上面升起一层
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (showSessionPanel) {
+                            // 【重排·第十八刀补2 2026-10-09】外壳圆角跟着高度走（20dp 配三四十 dp 的壳=胶囊）
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp)),
+                                shape = RoundedCornerShape(12.dp),
+                                tonalElevation = 0.dp,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    PanelCell(
+                                        label = if (requestEditMode) "编辑·开" else "编辑",
+                                        modifier = Modifier.weight(1f),
+                                        compact = true,
+                                    ) { onToggleRequestEdit() }
+                                    PanelCell(
+                                        label = "通话",
+                                        modifier = Modifier.weight(1f),
+                                        compact = true,
+                                    ) { onVoiceCall() }
+                                    PanelCell(
+                                        label = if (previewMode) "预览·开" else "预览",
+                                        modifier = Modifier.weight(1f),
+                                        compact = true,
+                                    ) { onTogglePreview() }
+                                    PanelCell(
+                                        label = "定时",
+                                        modifier = Modifier.weight(1f),
+                                        compact = true,
+                                    ) {
+                                        onScheduleClick()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                }
+                            }
+                        }
+
+                        // 【重排·第十刀 2026-10-09】「遗拾旧事」子面板：三个入口都跳现成页面
+                        if (showLegacyPanel) {
+                            // 【重排·第十八刀补2 2026-10-09】外壳圆角跟着高度走（20dp 配三四十 dp 的壳=胶囊）
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp)),
+                                shape = RoundedCornerShape(12.dp),
+                                tonalElevation = 0.dp,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    PanelCell(
+                                        label = "搜索聊天",
+                                        modifier = Modifier.weight(1f),
+                                        compact = true,
+                                    ) {
+                                        onOpenSearch()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                    PanelCell(
+                                        label = "收藏夹",
+                                        modifier = Modifier.weight(1f),
+                                        compact = true,
+                                    ) {
+                                        onOpenFavorites()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                    PanelCell(
+                                        label = "聊天历史",
+                                        modifier = Modifier.weight(1f),
+                                        compact = true,
+                                    ) {
+                                        onOpenChatHistory()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                }
+                            }
+                        }
+
+                        // 【重排·第十二刀 2026-10-09】「小工具」子面板：翻译 / 图像生成 / 小应用
+                        if (showToolPanel) {
+                            // 【重排·第十八刀补2 2026-10-09】外壳圆角跟着高度走（20dp 配三四十 dp 的壳=胶囊）
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp)),
+                                shape = RoundedCornerShape(12.dp),
+                                tonalElevation = 0.dp,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    PanelCell(
+                                        label = "翻译",
+                                        modifier = Modifier.weight(1f),
+                                        compact = true,
+                                    ) {
+                                        onOpenTranslator()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                    PanelCell(
+                                        label = "图像生成",
+                                        modifier = Modifier.weight(1f),
+                                        compact = true,
+                                    ) {
+                                        onOpenImageGen()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                    PanelCell(
+                                        label = "小应用",
+                                        modifier = Modifier.weight(1f),
+                                        compact = true,
+                                    ) {
+                                        onOpenMiniApps()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                }
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                // 【抬一层 · 2026-10-20 宝：输入框上面放了状态纸和纸票之后，这排点不了了】
+                                // 不猜是谁压的，直接把它抬到最上面 —— 不管打印机或纸怎么长上来，它都点得到。
+                                .zIndex(3f)
+                                .clip(RoundedCornerShape(20.dp)),
+                            shape = RoundedCornerShape(20.dp),
+                            tonalElevation = 0.dp,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 10.dp)
+                                    // 【重排·第十刀 2026-10-09】格子能横着滑（宝选的 b：以后再加格不用重排）
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                PanelCell(label = "语音", modifier = Modifier.width(72.dp)) {
+                                    voiceInputMode = true
+                                    expand = ExpandState.Collapsed
+                                }
+                                PanelCell(label = "设置", modifier = Modifier.width(72.dp)) {
+                                    onOpenSettings()
+                                    expand = ExpandState.Collapsed
+                                }
+                                PanelCell(label = "切换聊天", modifier = Modifier.width(72.dp)) {
+                                    onOpenSessionPanel()
+                                    expand = ExpandState.Collapsed
+                                }
+                                PanelCell(
+                                    label = if (showSessionPanel) "当前会话·开" else "当前会话",
+                                    modifier = Modifier.width(72.dp),
+                                ) { showSessionPanel = !showSessionPanel }
+                                PanelCell(
+                                    label = if (showLegacyPanel) "遗拾旧事·开" else "遗拾旧事",
+                                    modifier = Modifier.width(72.dp),
+                                ) { showLegacyPanel = !showLegacyPanel }
+                                PanelCell(
+                                    label = if (showToolPanel) "小工具·开" else "小工具",
+                                    modifier = Modifier.width(72.dp),
+                                ) { showToolPanel = !showToolPanel }
+                            }
+                        }
+                    }
+                }
+
                             // 【放宽 · 2026-10-20】原来非要 paperKind != null 才开这个弹窗，
                             // 结果普通发送（没引用没插话）时状态纸压根不显示。现在状态纸也能单独撑起它。
             }
