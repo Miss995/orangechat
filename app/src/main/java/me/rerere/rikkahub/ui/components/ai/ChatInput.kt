@@ -1522,6 +1522,9 @@ fun ChatInput(
             // 现在底边由 align 钉死、再往上让一个输入区的高度：
             // 纸怎么长都只往上顶，底边不动。
             Box(
+                // 【纸自己这层也要居中 · 2026-10-20】外面那个 Box 管不到里面 ——
+                // 纸的 Column 有固定宽度（跟着机身），这层默认从左边排，看着就偏左。
+                contentAlignment = Alignment.TopCenter,
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
