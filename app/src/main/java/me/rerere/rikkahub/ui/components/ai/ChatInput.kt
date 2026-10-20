@@ -118,6 +118,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.drawRoundRect
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.CornerRadius
@@ -2117,15 +2119,14 @@ private fun PanelCell(
             // 外面那圈已经染成纸边的米色，格子再用色就变成两层色块。
             // 所以格子不上色，只描一圈 1dp 虚线把范围划出来。
             .drawBehind {
-                val r = (if (compact) 5.dp else 6.dp).toPx()
+                val r: Float = if (compact) 5.dp.toPx() else 6.dp.toPx()
+                val dash = floatArrayOf(4.dp.toPx(), 3.dp.toPx())
                 drawRoundRect(
                     color = Color(0xFF8A8078),
                     cornerRadius = CornerRadius(r, r),
                     style = Stroke(
                         width = 1.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(
-                            floatArrayOf(4.dp.toPx(), 3.dp.toPx()), 0f
-                        ),
+                        pathEffect = PathEffect.dashPathEffect(dash, 0f),
                     ),
                 )
             },
