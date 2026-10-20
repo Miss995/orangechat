@@ -1602,11 +1602,8 @@ fun ChatInput(
                                 // → 整段动画里它一直在错。去掉高度动画：高度瞬间到位，只错一次跳变，
                                 // 同时淡入，那一下基本看不见。
                                 enter = fadeIn(animationSpec = tween(durationMillis = 170)),
+                                // 退出也一次性收掉：高度逐帧缩同样会一直在错
                                 exit = fadeOut(animationSpec = tween(durationMillis = 140)),
-                                exit = shrinkVertically(
-                                    shrinkTowards = Alignment.Bottom,
-                                    animationSpec = tween(200)
-                                ),
                             ) {
                                 val psteps = me.rerere.rikkahub.data.ai.PrinterStatus.steps
                                 Surface(
