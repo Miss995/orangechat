@@ -1566,10 +1566,15 @@ fun ChatInput(
                     }
             ) {
         Column(
+            // 【纸封顶 · 2026-10-20 宝的截图："后面那坨紫色，简直是完美覆盖"】
+            // 纸是从缝里往上长的，长高了就一路顶到输入框上方那排面板上，把人家的点击全挡住。
+            // 面板在 Column 里、纸在根 Box 里 —— 不在同一层，zIndex 管不着。
+            // 所以从高度上封：最多长这么高，多出来的在纸自己里面滑。
             // 【一张纸 · 2026-10-20 宝："为啥不能拼成同一张纸啊"】
             // 真正的做法不是把两张纸的圆角凑齐，是让它们都坐在同一层纸底上：
             // 这里铺一次底色（纸边留白 14dp），下面两张纸背景全透明、不带阴影。
             modifier = Modifier
+                .heightIn(max = 96.dp)
                 .width(with(LocalDensity.current) { anchorBox.width.toDp() })
                 .padding(horizontal = 14.dp)
                 .clip(RoundedCornerShape(3.dp))
