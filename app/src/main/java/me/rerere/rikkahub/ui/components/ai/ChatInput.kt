@@ -615,7 +615,11 @@ fun ChatInput(
     // 【别用 Surface · 2026-10-19】Material 的 Surface 不管 shape 是什么，
     // 都会把内容裁到自己的边界里。纸票往上画、出了这个容器的顶边 —— 就被它削掉了。
     // 这里本来只是想要个透明背景，Box 就够，而且不裁。
-    Box {
+    // 【量底边 · 2026-10-20】纸要靠 align 贴在这个 Box 的底边，所以得知道它到底在哪。
+    Box(
+        modifier = Modifier.onGloballyPositioned { rootBoxRect = it.boundsInWindow() },
+        contentAlignment = Alignment.TopCenter,
+    ) {
         // 【纸票的状态判据 · 2026-10-19 提到最外层 · 2026-10-20 搬到这里】
         // 纸要从机身那个 Column 里搬出来、挂到 Box 上，那判据得先在 Box 层算好。
         // 它只依赖 state / loading，两个都是函数参数，放这儿拿得到。
@@ -635,6 +639,10 @@ fun ChatInput(
             animationSpec = tween(durationMillis = 240, easing = LinearOutSlowInEasing),
             label = "paperAnim",
         )
+        // 【纸的定位基准 · 2026-10-20】纸贴着 Box 底边，要往上让到机身的顶边 ——
+        // 这两个坐标各量一次，差值就是「该挪多少」。
+        var rootBoxRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        var surfaceRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
         // 【弹层的锚点 · 2026-10-19】Popup 的位置相对父级，先把这块的实际尺寸记下来
         var paperAnchorBox by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
         // 【纸票跟着页面走 · 2026-10-19】Popup 是独立的一层窗口，不归聊天页管 ——
@@ -858,7 +866,10 @@ fun ChatInput(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onGloballyPositioned { surfaceOriginInWindow = it.localToWindow(Offset.Zero) }
+                    .onGloballyPositioned {
+                        surfaceOriginInWindow = it.localToWindow(Offset.Zero)
+                        surfaceRect = it.boundsInWindow()
+                    }
                     // 【第二刀 2026-10-08】在输入框整块上滑 -> 拉起附件区（跟点 + 同一个动作）
                     // 用 Initial pass 只观察、不消费，免得抢掉输入框自己的手势
                     .pointerInput(Unit) {
@@ -1513,7 +1524,13 @@ fun ChatInput(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .offset { IntOffset(0, -anchorBox.height.toInt()) }
+                    .offset {
+                        // 【贴机身顶边 · 2026-10-20】纸的底边现在在 Box 底边，
+                        // 往上让「Box 底 → 机身顶」这段距离，底边就正好压在机身顶边上。
+                        val boxBottom = rootBoxRect?.bottom ?: 0f
+                        val surfTop = surfaceRect?.top ?: boxBottom
+                        IntOffset(0, -(boxBottom - surfTop).toInt())
+                    }
             ) {
         Column(
             // 【一张纸 · 2026-10-20 宝："为啥不能拼成同一张纸啊"】
