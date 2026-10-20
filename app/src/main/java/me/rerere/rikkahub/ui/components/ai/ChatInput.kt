@@ -614,6 +614,11 @@ fun ChatInput(
 
     // 【别用 Surface · 2026-10-19】Material 的 Surface 不管 shape 是什么，
     // 都会把内容裁到自己的边界里。纸票往上画、出了这个容器的顶边 —— 就被它削掉了。
+    // 【纸的定位基准 · 2026-10-20】纸贴着 Box 底边，要往上让到机身的顶边 ——
+    // 这两个坐标各量一次，差值就是「该挪多少」。
+    // 必须声明在 Box 外面：Box 的参数里就要用它，声明在里面够不着。
+    var rootBoxRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    var surfaceRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     // 这里本来只是想要个透明背景，Box 就够，而且不裁。
     // 【量底边 · 2026-10-20】纸要靠 align 贴在这个 Box 的底边，所以得知道它到底在哪。
     Box(
@@ -639,10 +644,6 @@ fun ChatInput(
             animationSpec = tween(durationMillis = 240, easing = LinearOutSlowInEasing),
             label = "paperAnim",
         )
-        // 【纸的定位基准 · 2026-10-20】纸贴着 Box 底边，要往上让到机身的顶边 ——
-        // 这两个坐标各量一次，差值就是「该挪多少」。
-        var rootBoxRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
-        var surfaceRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
         // 【弹层的锚点 · 2026-10-19】Popup 的位置相对父级，先把这块的实际尺寸记下来
         var paperAnchorBox by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
         // 【纸票跟着页面走 · 2026-10-19】Popup 是独立的一层窗口，不归聊天页管 ——
