@@ -103,24 +103,26 @@ internal fun FilesPicker(
             .fillMaxWidth()
             .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        FlowRow(
+        // 【四个一行 · 2026-10-21 宝："哪有四个这么放的"】
+        // 原来是 FlowRow：按钮各带 32dp 横向内边距，三个挤满一行、第四个被顶到下一行。
+        // 改成等分 Row —— 每格 weight(1f)，谁也不会把谁挤下去。
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            TakePicButton(onLaunchCamera = onTakePic)
+            TakePicButton(onLaunchCamera = onTakePic, modifier = Modifier.weight(1f))
 
-            ImagePickButton(onClick = onPickImage)
+            ImagePickButton(onClick = onPickImage, modifier = Modifier.weight(1f))
 
             if (provider != null && provider is ProviderSetting.Google) {
-                AudioPickButton(onClick = onPickAudio)
+                AudioPickButton(onClick = onPickAudio, modifier = Modifier.weight(1f))
             }
 
             // 视频按钮对所有 provider 显示：纯文本模型(DeepSeek 等)靠
             // VideoNarrationTransformer 自动转述成文本，Google 等原生视频模型直接收
-            VideoPickButton(onClick = onPickVideo)
+            VideoPickButton(onClick = onPickVideo, modifier = Modifier.weight(1f))
 
-            FilePickButton(onClick = onPickFile)
+            FilePickButton(onClick = onPickFile, modifier = Modifier.weight(1f))
         }
 
         HorizontalDivider(
@@ -264,8 +266,8 @@ private fun InjectionQuickConfigSheet(
 }
 
 @Composable
-private fun ImagePickButton(onClick: () -> Unit = {}) {
-    BigIconTextButton(icon = {
+private fun ImagePickButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.Image02, null)
     }, text = {
         Text(stringResource(R.string.photo))
@@ -275,13 +277,13 @@ private fun ImagePickButton(onClick: () -> Unit = {}) {
 }
 
 @Composable
-fun TakePicButton(onLaunchCamera: () -> Unit = {}) {
+fun TakePicButton(onLaunchCamera: () -> Unit = {}, modifier: Modifier = Modifier) {
     val cameraPermission = rememberPermissionState(PermissionCamera)
 
     PermissionManager(
         permissionState = cameraPermission
     ) {
-        BigIconTextButton(icon = {
+        BigIconTextButton(modifier = modifier, icon = {
             Icon(HugeIcons.Camera01, null)
         }, text = {
             Text(stringResource(R.string.take_picture))
@@ -296,8 +298,8 @@ fun TakePicButton(onLaunchCamera: () -> Unit = {}) {
 }
 
 @Composable
-fun VideoPickButton(onClick: () -> Unit = {}) {
-    BigIconTextButton(icon = {
+fun VideoPickButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.Video01, null)
     }, text = {
         Text(stringResource(R.string.video))
@@ -307,8 +309,8 @@ fun VideoPickButton(onClick: () -> Unit = {}) {
 }
 
 @Composable
-fun AudioPickButton(onClick: () -> Unit = {}) {
-    BigIconTextButton(icon = {
+fun AudioPickButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.MusicNote03, null)
     }, text = {
         Text(stringResource(R.string.audio))
@@ -318,8 +320,8 @@ fun AudioPickButton(onClick: () -> Unit = {}) {
 }
 
 @Composable
-fun FilePickButton(onClick: () -> Unit = {}) {
-    BigIconTextButton(icon = {
+fun FilePickButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.Files02, null)
     }, text = {
         Text(stringResource(R.string.upload_file))
@@ -345,14 +347,15 @@ private fun BigIconTextButton(
             .semantics {
                 role = Role.Button
             }
-            .wrapContentWidth(),
+            .fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Surface(
             tonalElevation = 2.dp, shape = RoundedCornerShape(8.dp)
         ) {
             Box(
-                modifier = Modifier.padding(horizontal = 32.dp, vertical = 16.dp)
+                // 【32 → 12 · 2026-10-21】四个挤一行后每格只有 80 出头，32 的内边距把图标顶出去了
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp)
             ) {
                 icon()
             }
