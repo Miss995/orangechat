@@ -170,12 +170,15 @@ private fun AttachmentChip(
     leading: @Composable () -> Unit,
     onRemove: () -> Unit,
 ) {
+    // 【附件卡片也当纸 · 2026-10-21 宝："有图片的话会有缝"】
+    // 原来是圆角 18 的白卡片，坐在米色纸上面，接缝一眼就看出来是两套东西。
+    // 改成纸色 + 直角（纸是裁出来的），边框调成纸上的细线色。
     Surface(
-        shape = RoundedCornerShape(18.dp),
-        tonalElevation = 1.dp,
+        shape = RoundedCornerShape(0.dp),
+        tonalElevation = 0.dp,
         shadowElevation = 0.dp,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+        color = Color(0xFFF8F6F1),
+        border = BorderStroke(1.dp, Color(0xFFD3CCBF))
     ) {
         Row(
             modifier = Modifier
