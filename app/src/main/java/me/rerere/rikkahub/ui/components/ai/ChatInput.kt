@@ -2105,19 +2105,23 @@ private fun PanelCell(
         // 改用 modifier.clickable，高度就由内容自己说了算（compact 才真的生效）。
         // 【第十八刀补 2026-10-09】圆角跟着高度走：格子矮了圆角不缩，就成了"扁胶囊"。
         modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(if (compact) 8.dp else 12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        // 【跟机身一体 · 2026-10-20 宝："位置没问题，改颜色大小不？"】
+        // 原来是一张浅色卡片：圆角 12、surfaceContainerHighest。
+        // 那套是"贴在浅色界面上的按钮"，放在深色机身下面像两块白纸片。
+        // 改成机身自己的暗面 —— 底 #2A2521、字暖灰、圆角收小、留白压薄。
+        shape = RoundedCornerShape(if (compact) 5.dp else 6.dp),
+        color = Color(0xFF2A2521),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = if (compact) 4.dp else 12.dp),
+                .padding(vertical = if (compact) 3.dp else 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Color(0xFFC9C0B5),
             )
         }
     }
