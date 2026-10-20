@@ -1746,8 +1746,12 @@ fun ChatInput(
                 // 现在是「长到两行为止」：一行占一行，两行占两行，再多就封顶在里面滑。
                 // 纸已经是普通节点、底边钉死，长高只往上顶，不会再弹。
                 .heightIn(max = pstepMaxH)
-                        .verticalScroll(stScroll)
+                        // 【padding 往上挪 · 2026-10-20 宝的直觉："会不会是边边的空太多了"】
+                        // 原来 padding 在 verticalScroll 之后（内层）= 它是滚动内容的一部分，
+                        // 那 6dp 会跟着内容一起滚，把"两行"的可见空间吃掉一块 —— 于是第三行的边
+                        // 从底下那 6dp 的位置里漏出来。挪到滚动区外面，两行就是干干净净两行。
                         .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .verticalScroll(stScroll)
                 ) {
                     psteps.forEach { pstep ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
