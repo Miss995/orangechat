@@ -89,6 +89,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.runtime.Composable
@@ -1713,11 +1714,17 @@ fun ChatInput(
                 // 【高度按行高算，不写死 · 2026-10-20 宝："不是刚好两行，是两行加第三行的一底"】
                 // 写死 44dp 是把行高当成 16dp 估的，实际 labelSmall 每行比它矮，
                 // 两行排完还剩一点，第三行就露了个头。现在直接读字体的行高来算。
-                val pstepLhRaw = MaterialTheme.typography.labelSmall.lineHeight
-                val pstepLineH = with(LocalDensity.current) {
-                    // 兜底：字体里没写行高就读出 Unspecified，用 16sp 顶
-                    (if (pstepLhRaw.isSp) pstepLhRaw else 16.sp).toDp()
-                }
+                // 【钉死行高 · 2026-10-20 宝："还是两行多一点第三行的边"】
+                // 上一版读的是 labelSmall 的行高，但这两行字用的是 Monospace ——
+                // 字体都不一样，行高当然对不上。而且 Android 的文字默认带上下内边距，
+                // 那部分不算在 lineHeight 里，所以两行永远多出一个尾巴。
+                // 现在两边一起钉死：行高 15sp + 关掉内边距，高度就按这两个数算，不会再飘。
+                val pstepTextStyle = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 15.sp,
+                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                )
+                val pstepLineH = with(LocalDensity.current) { 15.sp.toDp() }
                 val pstepMaxH = pstepLineH * 2 + 12.dp
                 LaunchedEffect(psteps.size) {
                     stScroll.animateScrollTo(stScroll.maxValue)
@@ -1736,16 +1743,14 @@ fun ChatInput(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = pstep.label,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontFamily = FontFamily.Monospace,
+                                style = pstepTextStyle,
                                 color = Color(0xFF4A443C),
                                 modifier = Modifier.weight(1f),
                             )
                             if (pstep.elapsedMs > 0) {
                                 Text(
                                     text = String.format("%.1fs", pstep.elapsedMs / 1000f),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = FontFamily.Monospace,
+                                    style = pstepTextStyle,
                                     color = Color(0xFF8A8070),
                                 )
                                 Spacer(Modifier.width(6.dp))
