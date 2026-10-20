@@ -1316,6 +1316,7 @@ fun ChatInput(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .padding(horizontal = 14.dp)
                                     .clip(RoundedCornerShape(0.dp)),
                                 shape = RoundedCornerShape(0.dp),
                                 tonalElevation = 0.dp,
@@ -1361,6 +1362,7 @@ fun ChatInput(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .padding(horizontal = 14.dp)
                                     .clip(RoundedCornerShape(0.dp)),
                                 shape = RoundedCornerShape(0.dp),
                                 tonalElevation = 0.dp,
@@ -1407,6 +1409,7 @@ fun ChatInput(
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .padding(horizontal = 14.dp)
                                     .clip(RoundedCornerShape(0.dp)),
                                 shape = RoundedCornerShape(0.dp),
                                 tonalElevation = 0.dp,
@@ -1450,6 +1453,7 @@ fun ChatInput(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .padding(horizontal = 14.dp)
                                 // 【抬一层 · 2026-10-20 宝：输入框上面放了状态纸和纸票之后，这排点不了了】
                                 // 不猜是谁压的，直接把它抬到最上面 —— 不管打印机或纸怎么长上来，它都点得到。
                                 .zIndex(3f)
