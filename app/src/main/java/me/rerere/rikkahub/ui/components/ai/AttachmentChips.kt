@@ -6,6 +6,9 @@
 
 package me.rerere.rikkahub.ui.components.ai
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,6 +33,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -38,6 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -231,6 +239,28 @@ internal fun PaperAttachmentStack(
         }
     }
 
+    // 【附件吸入 · 2026-10-20 宝：发送的时候，附件吸入、还有抖一下】
+    // 麻烦的地方：消息一发出去，messageContent 当场就被清空，纸跟着没了，动画没地方播。
+    // 所以在这儿留一份上一次的样子，清空时拿它再画一遍、飞完再真清。
+    var lastParts by remember { mutableStateOf<List<UIMessagePart>>(emptyList()) }
+    val liveParts = state.messageContent
+    LaunchedEffect(liveParts) {
+        if (liveParts.isNotEmpty()) lastParts = liveParts
+    }
+    val showing = if (liveParts.isNotEmpty()) liveParts else lastParts
+    val flying = liveParts.isEmpty() && lastParts.isNotEmpty()
+
+    // 进度 0→1，多张按 index 错开 80ms（原型的 i*80）
+    val flyAnim = remember { Animatable(0f) }
+    LaunchedEffect(flying) {
+        if (flying) {
+            flyAnim.snapTo(0f)
+            val totalMs = 440 + ((showing.size.coerceAtLeast(1)) - 1) * 80
+            flyAnim.animateTo(1f, tween(durationMillis = totalMs, easing = LinearEasing))
+            lastParts = emptyList()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -256,7 +286,18 @@ internal fun PaperAttachmentStack(
         // 那 1dp 没有背景盖着，露出的就是底下的深色机身，看着就是一条黑线。
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        state.messageContent.fastForEach { part ->
+        showing.forEachIndexed { index, part ->
+            // 每张自己的进度（前面按 index 错开 80ms）
+            val fp = if (flying) cardProgress(flyAnim.value, index, showing.size) else 0f
+            Box(
+                modifier = Modifier.graphicsLayer {
+                    // 从底边压 —— 纸是被下面吸上去的，不是从中间缩
+                    transformOrigin = TransformOrigin(0.5f, 1f)
+                    translationY = -19.dp.toPx() * flyY(fp)
+                    scaleY = flyScaleY(fp)
+                    alpha = flyAlpha(fp)
+                }
+            ) {
             when (part) {
                 is UIMessagePart.Image -> PaperAttachmentCard(
                     title = attachmentNameFromUrl(
@@ -312,6 +353,7 @@ internal fun PaperAttachmentStack(
                 )
 
                 else -> Unit
+            }
             }
         }
     }
@@ -411,3 +453,32 @@ private fun attachmentNameFromUrl(
 
     return fallback
 }
+
+// 【吸入动画的关键帧 · 2026-10-20】照 input-proto.html 的 suckIn 搬的：
+//   .44s cubic-bezier(.5,0,.85,.5)，0% Y0/scale1 → 45% Y-9/.72 → 78% Y-15/.35 → 100% Y-19/.06/alpha0
+// Compose 里没有分段关键帧，就把进度掰成三段线性走，形状一样。
+
+/** 全局进度 → 第 index 张自己的进度（前面按 index 错开 80ms） */
+private fun cardProgress(global: Float, index: Int, total: Int): Float {
+    val totalMs = 440f + (total.coerceAtLeast(1) - 1) * 80f
+    val startMs = index * 80f
+    return ((global * totalMs - startMs) / 440f).coerceIn(0f, 1f)
+}
+
+/** 往上挪的比例（0~1，乘 19dp 就是位移） */
+private fun flyY(p: Float): Float = when {
+    p < 0.45f -> (p / 0.45f) * (9f / 19f)
+    p < 0.78f -> (9f + (p - 0.45f) / 0.33f * 6f) / 19f
+    else -> (15f + (p - 0.78f) / 0.22f * 4f) / 19f
+}
+
+/** 纵向压扁：1 → .72 → .35 → .06 */
+private fun flyScaleY(p: Float): Float = when {
+    p < 0.45f -> 1f - (p / 0.45f) * 0.28f
+    p < 0.78f -> 0.72f - (p - 0.45f) / 0.33f * 0.37f
+    else -> (0.35f - (p - 0.78f) / 0.22f * 0.29f).coerceAtLeast(0.06f)
+}
+
+/** 最后那一下才淡出（原型里到 78% 都还是 1） */
+private fun flyAlpha(p: Float): Float =
+    if (p < 0.85f) 1f else (1f - (p - 0.85f) / 0.15f).coerceAtLeast(0f)

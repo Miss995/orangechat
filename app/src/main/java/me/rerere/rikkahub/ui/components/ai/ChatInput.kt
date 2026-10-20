@@ -867,9 +867,28 @@ fun ChatInput(
             androidx.compose.foundation.layout.Column(
                 modifier = Modifier.onGloballyPositioned { paperAnchorBox = it.boundsInWindow() }
             ) {
+            // 【机身抖一下 · 2026-10-20 宝："附件吸入、还有抖一下"】
+            // 只认"附件从有变没"那一刻 —— 也就是发送。别的时候一律不抖。
+            var hadAttachments by remember { mutableStateOf(false) }
+            val machineShake = remember { Animatable(0f) }
+            LaunchedEffect(state.messageContent.isNotEmpty()) {
+                val has = state.messageContent.isNotEmpty()
+                if (hadAttachments && !has) {
+                    machineShake.snapTo(0f)
+                    machineShake.animateTo(1f, tween(durationMillis = 200, easing = LinearEasing))
+                    machineShake.snapTo(0f)
+                }
+                hadAttachments = has
+            }
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // 【抖 · 2026-10-20】原型 machShake 是"往下 1.6px 再回来"，
+                    // 一个 sin 半波就够了：0→1→0。
+                    .graphicsLayer {
+                        translationY = kotlin.math.sin(machineShake.value * kotlin.math.PI).toFloat() *
+                            1.6f.dp.toPx()
+                    }
                     .onGloballyPositioned {
                         surfaceOriginInWindow = it.localToWindow(Offset.Zero)
                         surfaceRect = it.boundsInWindow()
