@@ -632,7 +632,10 @@ fun ChatInput(
             state.isEditing() -> "edit"
             state.pickedText != null -> "picked"
             state.quotedMessageId != null -> "quote"
-            loading -> "interject"
+            // 【等状态纸一起 · 2026-10-20 宝："让他晚一点出现，和那个状态纸一起出现"】
+            // 只用 loading 的话，猫一开工它就出现 —— 那会儿锚点还没量好、位置没落定，
+            // 看着就是在半空悬一下才接到输入框上。statusHolding 是状态纸那道门，两个同开同关。
+            loading && statusHolding -> "interject"
             else -> null
         }
         // 【纸的滑入淡入 · 2026-10-20 跟着纸一起搬到外层】
@@ -1688,12 +1691,11 @@ fun ChatInput(
                 }
                 Column(
                     modifier = Modifier
-                        // 【最多三行 · 2026-10-20】原来高度写死 60dp，只印一行时也占三行，
-                        // 把底下那张纸票顶下去了。改成"长到三行为止"。
-                        // 【纸不跟着内容长 · 2026-10-20 宝："每次有新内容升上去整体就要弹一下"】
-                // 弹的根儿不是动画：纸的底边贴着输入框，每加一行纸就变高，
-                // Popup 只能往上顶 —— 整张纸就跳一下。纸的尺寸得固定，多的在里面滑。
-                .height(44.dp)
+                        // 【封顶两行 · 2026-10-20 宝："一行就一行，两行就两行，三行还是两行"】
+                // 原来写死 44dp（正好两行），只印一行时也占两行，多出半行就挤得难受。
+                // 现在是「长到两行为止」：一行占一行，两行占两行，再多就封顶在里面滑。
+                // 纸已经是普通节点、底边钉死，长高只往上顶，不会再弹。
+                .heightIn(max = 44.dp)
                         .verticalScroll(stScroll)
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
