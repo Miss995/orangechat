@@ -36,6 +36,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -126,7 +128,8 @@ internal fun FilesPicker(
         }
 
         HorizontalDivider(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFFD3CCBF),
         )
 
         if (mcpServers.isNotEmpty()) {
@@ -161,7 +164,6 @@ internal fun FilesPicker(
                 }
             },
             modifier = Modifier
-                .clip(MaterialTheme.shapes.large)
                 .clickable {
                     onShowInjectionSheetChange(true)
                 },
@@ -188,7 +190,6 @@ internal fun FilesPicker(
                 }
             },
             modifier = Modifier
-                .clip(MaterialTheme.shapes.large)
                 .clickable {
                     onShowCompressDialogChange(true)
                 },
@@ -350,8 +351,20 @@ private fun BigIconTextButton(
             .fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // 【格子不铺色 · 2026-10-21】原来是 tonalElevation=2 的灰底圆角块，
+        // 放在纸上就是一排贴上去的卡片。改成透明 + 右边一条细线，跟上面那排面板同一套分栏。
         Surface(
-            tonalElevation = 2.dp, shape = RoundedCornerShape(8.dp)
+            color = Color.Transparent,
+            shape = RoundedCornerShape(0.dp),
+            modifier = Modifier.drawBehind {
+                val w = 1.dp.toPx()
+                drawLine(
+                    color = Color(0xFFD3CCBF),
+                    start = Offset(size.width - w / 2f, size.height * 0.22f),
+                    end = Offset(size.width - w / 2f, size.height * 0.78f),
+                    strokeWidth = w,
+                )
+            },
         ) {
             Box(
                 // 【32 → 12 · 2026-10-21】四个挤一行后每格只有 80 出头，32 的内边距把图标顶出去了

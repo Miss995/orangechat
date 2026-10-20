@@ -1516,10 +1516,13 @@ fun ChatInput(
                     dismissExpand()
                 }
                 if (expand == ExpandState.Files) {
+                    // 【附件面板换成纸 · 2026-10-21 宝半夜的"坏建议"，接受】
+                    // 上面是打印纸、下面是白卡片，两套东西拼在一起。这里让它也变成一张纸：
+                    // 直角（纸是裁出来的，不做圆角）、纸底（跟上面那张同色 #F8F6F1）。
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(0.dp))
                             .then(
                                 if (settings.displaySetting.enableBlurEffect) Modifier.hazeEffect(
                                     state = hazeState,
@@ -1527,9 +1530,10 @@ fun ChatInput(
                                 )
                                 else Modifier
                             ),
-                        shape = RoundedCornerShape(20.dp),
+                        shape = RoundedCornerShape(0.dp),
                         tonalElevation = 0.dp,
-                        color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else hazeTintColor,
+                        color = Color(0xFFF8F6F1),
+                        contentColor = Color(0xFF3A342E),
                     ) {
                         FilesPicker(
                             conversation = conversation,
