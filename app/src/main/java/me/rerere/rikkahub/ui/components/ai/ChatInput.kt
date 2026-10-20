@@ -1507,7 +1507,10 @@ fun ChatInput(
             // Expanded content
             Box(
                 modifier = Modifier
-                    .animateContentSize()
+                    // 【从底下顶上来 · 2026-10-21 宝："磨一下附件面板的升起和收回"】
+                    // animateContentSize 默认从 TopStart 长，看着是往下摊开；
+                    // 对齐到底边才是"从机身底下翻上来、收回去也往底边收"。
+                    .animateContentSize(alignment = Alignment.BottomStart)
                     .fillMaxWidth()
             ) {
                 BackHandler(
@@ -1973,6 +1976,10 @@ private fun TextInputRow(
                 }
             },
             colors = TextFieldDefaults.colors().copy(
+                // 【光标跟字走 · 2026-10-21 宝："输入框的那个光标颜色"原来是蓝的，
+                // 那支蓝是 Material 默认的，跟这块暗绿屏完全不搭。屏上的字是 #7FFFA8，
+                // 光标就取同一个色 —— 它本来就是"下一笔要落在哪"的意思，该跟字同源。
+                cursorColor = Color(0xFF7FFFA8),
                 unfocusedIndicatorColor = Color.Transparent,
                 focusedIndicatorColor = Color.Transparent,
                 // 【打印机外观 2026-10-18】LCD：暗绿屏底

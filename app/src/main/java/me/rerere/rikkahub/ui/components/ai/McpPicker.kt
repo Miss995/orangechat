@@ -185,7 +185,13 @@ fun McpPickerListItem(
     ListItem(
         leadingContent = {
             if (loading) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                // 【棕色 · 2026-10-21 宝："MCP 服务器连接状态那个圈圈的颜色...改成跟线条一样的棕色"】
+                // 线条色 #D3CCBF 太浅，转起来几乎看不见，取同族深一档的 #A89E92。
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = Color(0xFFA89E92),
+                    trackColor = Color(0x33A89E92),
+                )
             } else {
                 Icon(
                     imageVector = HugeIcons.McpServer,
