@@ -1689,6 +1689,15 @@ fun ChatInput(
                 // 多的在里面滑 —— 记录全留着，想翻哪步花了多久就往上拨。
                 // 手势不打架：Popup 是独立窗口，手指落在纸面上就归它。
                 val stScroll = rememberScrollState()
+                // 【高度按行高算，不写死 · 2026-10-20 宝："不是刚好两行，是两行加第三行的一底"】
+                // 写死 44dp 是把行高当成 16dp 估的，实际 labelSmall 每行比它矮，
+                // 两行排完还剩一点，第三行就露了个头。现在直接读字体的行高来算。
+                val pstepLhRaw = MaterialTheme.typography.labelSmall.lineHeight
+                val pstepLineH = with(LocalDensity.current) {
+                    // 兜底：字体里没写行高就读出 Unspecified，用 16sp 顶
+                    (if (pstepLhRaw.isSp) pstepLhRaw else 16.sp).toDp()
+                }
+                val pstepMaxH = pstepLineH * 2 + 12.dp
                 LaunchedEffect(psteps.size) {
                     stScroll.animateScrollTo(stScroll.maxValue)
                 }
@@ -1698,7 +1707,7 @@ fun ChatInput(
                 // 原来写死 44dp（正好两行），只印一行时也占两行，多出半行就挤得难受。
                 // 现在是「长到两行为止」：一行占一行，两行占两行，再多就封顶在里面滑。
                 // 纸已经是普通节点、底边钉死，长高只往上顶，不会再弹。
-                .heightIn(max = 44.dp)
+                .heightIn(max = pstepMaxH)
                         .verticalScroll(stScroll)
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
