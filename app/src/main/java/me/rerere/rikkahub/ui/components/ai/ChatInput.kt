@@ -875,7 +875,7 @@ fun ChatInput(
                 val has = state.messageContent.isNotEmpty()
                 if (hadAttachments && !has) {
                     machineShake.snapTo(0f)
-                    machineShake.animateTo(1f, tween(durationMillis = 200, easing = LinearEasing))
+                    machineShake.animateTo(1f, tween(durationMillis = 280, easing = LinearEasing))
                     machineShake.snapTo(0f)
                 }
                 hadAttachments = has
@@ -887,7 +887,7 @@ fun ChatInput(
                     // 一个 sin 半波就够了：0→1→0。
                     .graphicsLayer {
                         translationY = kotlin.math.sin(machineShake.value * kotlin.math.PI).toFloat() *
-                            1.6f.dp.toPx()
+                            3f.dp.toPx()
                     }
                     .onGloballyPositioned {
                         surfaceOriginInWindow = it.localToWindow(Offset.Zero)
