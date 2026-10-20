@@ -6,6 +6,9 @@
 
 package me.rerere.rikkahub.ui.components.ai
 
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
+import androidx.compose.runtime.CompositionLocalProvider
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.BackHandler
@@ -1929,6 +1932,15 @@ private fun TextInputRow(
                 }
             }
         }
+            // 【手柄跟字走 · 2026-10-21 宝："这个蓝色的可以改吗"】
+            // 蓝色那个不是光标，是长按选字时那两个水滴手柄（Android 系统默认色）。
+            // 光标走 colors.cursorColor，手柄走 CompositionLocalProvider，两条不同的路。
+            CompositionLocalProvider(
+                LocalTextSelectionColors provides TextSelectionColors(
+                    handleColor = Color(0xFF7FFFA8),
+                    backgroundColor = Color(0xFF7FFFA8).copy(alpha = 0.25f),
+                )
+            ) {
         TextField(
             state = state.textContent,
             textStyle = LocalTextStyle.current.copy(
@@ -2002,6 +2014,7 @@ private fun TextInputRow(
                 }
             } else null,
         )
+            }
         if (isFullScreen) {
             FullScreenEditor(state = state) {
                 isFullScreen = false
