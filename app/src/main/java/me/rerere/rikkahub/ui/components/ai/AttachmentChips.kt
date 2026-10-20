@@ -177,7 +177,7 @@ private fun AttachmentChip(
         shape = RoundedCornerShape(0.dp),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
-        color = Color(0xFFF8F6F1),
+        color = Color(0xFFFAF9F6),
         border = BorderStroke(1.dp, Color(0xFFD3CCBF))
     ) {
         Row(
@@ -269,14 +269,14 @@ internal fun PaperAttachmentStack(
             .fillMaxWidth()
             // 【接住纸边 · 2026-10-19 宝说"连不上"】
             // 机身底下那道纸边，最底下是 #D5D2CA（纸的厚度，暗的）；
-            // 附件原来是整片 #F8F6F1（亮的）。一暗一亮贴在一起，看着就是两张纸。
+            // 附件原来是整片 #FAF9F6（亮的）。一暗一亮贴在一起，看着就是两张纸。
             // 现在让附件从纸边那个暗色起步、几 dp 内渐到纸面白 —— 同一张纸往下延伸。
             .background(
                 Brush.verticalGradient(
                     0.00f to Color(0xFFF4F2EC),
                     0.06f to Color(0xFFF7F5F0),
-                    0.16f to Color(0xFFF8F6F1),
-                    1.00f to Color(0xFFF8F6F1),
+                    0.16f to Color(0xFFFAF9F6),
+                    1.00f to Color(0xFFFAF9F6),
                 )
             )
             // 【封顶 · 2026-10-19 宝发现的"能无限叠加"】

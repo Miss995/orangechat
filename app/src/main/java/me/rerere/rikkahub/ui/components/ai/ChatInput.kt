@@ -1518,7 +1518,7 @@ fun ChatInput(
                 if (expand == ExpandState.Files) {
                     // 【附件面板换成纸 · 2026-10-21 宝半夜的"坏建议"，接受】
                     // 上面是打印纸、下面是白卡片，两套东西拼在一起。这里让它也变成一张纸：
-                    // 直角（纸是裁出来的，不做圆角）、纸底（跟上面那张同色 #F8F6F1）。
+                    // 直角（纸是裁出来的，不做圆角）、纸底（跟上面那张同色 #FAF9F6）。
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1536,7 +1536,7 @@ fun ChatInput(
                             ),
                         shape = RoundedCornerShape(0.dp),
                         tonalElevation = 0.dp,
-                        color = Color(0xFFF8F6F1),
+                        color = Color(0xFFFAF9F6),
                         contentColor = Color(0xFF3A342E),
                     ) {
                         FilesPicker(
@@ -1601,9 +1601,9 @@ fun ChatInput(
                 .padding(horizontal = 14.dp)
                 .clip(RoundedCornerShape(3.dp))
                 // 【跟附件纸同色 · 2026-10-20 宝："要跟下面那个纸边保持同一个颜色"】
-                // 附件纸面是 #F8F6F1（它顶上那一小段 #F4F2EC 是为接住机身的暗纸边）。
+                // 附件纸面是 #FAF9F6（它顶上那一小段 #F4F2EC 是为接住机身的暗纸边）。
                 // 原来这里是 #EDE9DF，比它暗一档、还偏黄，两张纸贴一起就看得出是两张。
-                .background(Color(0xFFF8F6F1))
+                .background(Color(0xFFFAF9F6))
                 // 【不用 animateContentSize · 2026-10-20 宝："怎么改都在第二张跳出来的时候往下陷一点"】
                 // 那个 API 是"内容先按最终高度排好，外框再动画追上去"——纸变高的那一瞬，
                 // 内容已经先漏出一截，看着就是往下陷。高度动画得由纸自己长（内容被裁在里面）。
