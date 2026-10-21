@@ -1521,7 +1521,7 @@ fun ChatInput(
                 ) {
                     dismissExpand()
                 }
-                AnimatedVisibility(
+                TopAnimatedVisibility(
                     visible = expand == ExpandState.Files,
                     // 【收起动画 · 2026-10-21 宝："下滑收回的那个动画"】
                     // 原来这里是裸 if，只靠外层 animateContentSize —— 它管高度变化，
