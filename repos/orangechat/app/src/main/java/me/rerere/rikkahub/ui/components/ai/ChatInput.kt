@@ -1531,8 +1531,11 @@ fun ChatInput(
                     // 原来这里是裸 if，只靠外层 animateContentSize —— 它管高度变化，
                     // 管不了"内容被整个摘掉"，所以收起是瞬切。改成跟 Panel 面板同一套，
                     // 底边对齐 = 从机身底下翻上来、收回去也往底边收。
-                    enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
-                    exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
+                    // 【去掉淡入淡出 · 2026-10-21 宝：动画过程中纸是半透明的，后面的字透出来】
+                    // fade 让 alpha 从 1 掉到 0，中途就成了半透明。只留高度动画，
+                    // 纸全程不透明，往底边收进去像被抽走。
+                    enter = expandVertically(expandFrom = Alignment.Bottom),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Bottom),
                 ) {
                     // 【附件面板换成纸 · 2026-10-21 宝半夜的"坏建议"，接受】
                     // 上面是打印纸、下面是白卡片，两套东西拼在一起。这里让它也变成一张纸：
