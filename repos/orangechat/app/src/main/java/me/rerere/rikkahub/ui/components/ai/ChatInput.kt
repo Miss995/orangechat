@@ -1508,7 +1508,11 @@ fun ChatInput(
             }
 
             // Expanded content
-            Box(
+            // 【2026-10-21 第五次修】Box 改 Column：这个 Compose 版本里
+            // AnimatedVisibility 只有 ColumnScope/RowScope 扩展版，顶层那个解析不到
+            // （全限定名也一样）。这里只有 BackHandler（副作用、不占位）+ 附件面板一个内容，
+            // 换成 Column 布局不变，但作用域对了。
+            Column(
                 modifier = Modifier
                     // 【从底下顶上来 · 2026-10-21 宝："磨一下附件面板的升起和收回"】
                     // animateContentSize 默认从 TopStart 长，看着是往下摊开；
