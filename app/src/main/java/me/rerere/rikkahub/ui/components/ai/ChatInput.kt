@@ -1521,7 +1521,15 @@ fun ChatInput(
                 ) {
                     dismissExpand()
                 }
-                if (expand == ExpandState.Files) {
+                AnimatedVisibility(
+                    visible = expand == ExpandState.Files,
+                    // 【收起动画 · 2026-10-21 宝："下滑收回的那个动画"】
+                    // 原来这里是裸 if，只靠外层 animateContentSize —— 它管高度变化，
+                    // 管不了"内容被整个摘掉"，所以收起是瞬切。改成跟 Panel 面板同一套，
+                    // 底边对齐 = 从机身底下翻上来、收回去也往底边收。
+                    enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
+                ) {
                     // 【附件面板换成纸 · 2026-10-21 宝半夜的"坏建议"，接受】
                     // 上面是打印纸、下面是白卡片，两套东西拼在一起。这里让它也变成一张纸：
                     // 直角（纸是裁出来的，不做圆角）、纸底（跟上面那张同色 #FAF9F6）。
