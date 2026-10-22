@@ -393,11 +393,27 @@
     });
   }
 
+  /* 自动贴底：用户一滑动就让位，不抢 */
+  let autoStick = true;
+  stream.addEventListener('scroll', () => {
+    const near = stream.scrollHeight - stream.scrollTop - stream.clientHeight < 80;
+    autoStick = near;
+  }, {passive:true});
+
   function scrollBottom(){
-    const jump = () => { stream.scrollTop = stream.scrollHeight; };
+    autoStick = true;
+    const jump = () => {
+      if (!autoStick) return;
+      stream.scrollTop = stream.scrollHeight;
+    };
     jump();
     requestAnimationFrame(jump);
-    [120, 400, 900, 1600].forEach(t => setTimeout(jump, t));
+    // 密集补 2.5 秒，覆盖字体/图片/DOM 排位
+    let n = 0;
+    const iv = setInterval(() => {
+      jump();
+      if (++n > 25) clearInterval(iv);
+    }, 100);
   }
 
   /* ---------- 数据 ---------- */
