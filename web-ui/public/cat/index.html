@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>橘仔 · 纸上聊天</title>
+<style>
+  :root{
+    --paper:#F4EEE2;
+    --paper-2:#FBF7EE;
+    --ink:#39332B;
+    --ink-2:#6F6659;
+    --ink-3:#A69C8C;
+    --line:#DED3BF;
+    --orange:#CE7B3C;
+    --screen:#1E3A2A;
+    --screen-txt:#8FE0A8;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0}
+  body{
+    background:#DCD4C5;
+    color:var(--ink);
+    font:14.5px/1.9 "Songti SC","Noto Serif SC","Source Han Serif SC",serif;
+    font-weight:300;
+    letter-spacing:.15px;
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+
+  /* ======= 纸 ======= */
+  .stream{
+    flex:1;min-height:0;overflow-y:auto;
+    margin:0 22px;
+    background-color:var(--paper);
+    background-image:
+      repeating-linear-gradient(0deg, rgba(150,132,100,.020) 0 1px, transparent 1px 3px),
+      radial-gradient(130% 85% at 50% 32%, rgba(255,255,255,0) 52%, rgba(138,118,84,.055) 100%);
+    background-attachment:local,local;
+    padding:calc(env(safe-area-inset-top) + 26px) 18px 26px;
+    scrollbar-width:none;-ms-overflow-style:none;
+  }
+  .stream::-webkit-scrollbar{display:none;width:0;height:0}
+
+  /* ======= 日期 ======= */
+  .day{
+    text-align:center;
+    font-size:11px;letter-spacing:3px;
+    color:var(--ink-3);
+    margin:20px 0 26px;
+    opacity:.85;
+  }
+  .day:first-child{margin-top:4px}
+
+  /* ======= 一条消息 ======= */
+  .msg{
+    padding:22px 0 12px;border-bottom:1px solid var(--line);
+    display:flex;flex-direction:column;
+  }
+  .msg:last-child{border-bottom:none;padding-bottom:6px}
+
+  .body{white-space:pre-wrap;word-break:break-word;order:1}
+  .body p{margin:0 0 14px}
+  .body p:last-child{margin-bottom:0}
+  .body em{font-style:normal;color:var(--ink-3)}
+  .body a{color:var(--orange);text-decoration:none;border-bottom:1px dotted var(--line)}
+
+  /* 思考链 */
+  .think{
+    order:0;margin-bottom:12px;
+    font-size:12.5px;line-height:1.85;color:var(--ink-3);
+    letter-spacing:.3px;
+  }
+  .think summary{
+    cursor:pointer;list-style:none;
+    color:var(--ink-3);opacity:.8;font-size:11.5px;letter-spacing:1px;
+    display:flex;align-items:center;gap:5px;
+  }
+  .think summary::-webkit-details-marker{display:none}
+  .think summary::before{content:"▸";font-size:9px;opacity:.6;transition:transform .2s}
+  .think[open] summary::before{transform:rotate(90deg)}
+  .think .t-body{
+    margin-top:8px;padding-left:10px;
+    border-left:1px solid var(--line);
+    white-space:pre-wrap;word-break:break-word;
+  }
+
+  /* 署名 */
+  .by{
+    font-size:10.5px;letter-spacing:1.1px;
+    margin-top:10px;
+    display:flex;justify-content:flex-end;align-items:baseline;gap:6px;
+    order:9;
+  }
+  .by::before{content:"——";color:var(--ink-3);letter-spacing:0}
+  .by .who{font-weight:600}
+  .msg.ai .by .who{color:var(--orange)}
+  .msg.me .by .who{color:var(--ink-2)}
+  .by .t{color:var(--ink-3);letter-spacing:.4px;font-size:10px}
+
+  /* ======= 打印机动效（发送中） ======= */
+  .printing{
+    font-size:12px;color:var(--ink-3);letter-spacing:2px;
+    padding:16px 0 10px;order:1;
+  }
+  .printing::after{
+    content:"";
+    animation:dots 1.4s steps(4,end) infinite;
+  }
+  @keyframes dots{0%{content:""}25%{content:"·"}50%{content:"··"}75%{content:"···"}100%{content:""}}
+
+  /* ======= 底部：打印机 ======= */
+  .dock{
+    flex:0 0 auto;
+    padding:0 22px calc(env(safe-area-inset-bottom) + 8px);
+    background:#DCD4C5;
+    position:relative;
+  }
+  .hint{
+    text-align:center;font-size:10.5px;letter-spacing:1.4px;
+    color:var(--ink-3);opacity:.8;
+    padding:6px 0 4px;
+  }
+  .mach{
+    position:relative;
+    margin:0 10px;
+    background:linear-gradient(180deg,#4A4A46,#3A3A37 70%);
+    border-radius:14px 14px 0 0;
+    padding:10px 12px 12px;
+    box-shadow:0 3px 10px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.10);
+  }
+  /* 纸从机器下面露出来 */
+  .paper-stand{
+    height:9px;margin:0 16px;
+    background:var(--paper-2);
+    border-radius:0 0 2px 2px;
+    box-shadow:0 2px 4px rgba(0,0,0,.08);
+  }
+  .lcd{
+    background:var(--screen);
+    border-radius:5px;
+    padding:8px 10px;
+    box-shadow:inset 0 0 12px rgba(0,0,0,.55), inset 0 1px 2px rgba(0,0,0,.6);
+    position:relative;overflow:hidden;
+  }
+  .lcd::after{  /* 扫描线 */
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 1px, transparent 1px 3px);
+  }
+  textarea{
+    width:100%;border:0;outline:none;resize:none;background:transparent;
+    color:var(--screen-txt);
+    font:13.5px/1.55 "SF Mono",ui-monospace,Menlo,monospace;
+    letter-spacing:.6px;
+    min-height:38px;max-height:110px;
+    text-shadow:0 0 6px rgba(143,224,168,.45);
+    position:relative;z-index:1;
+  }
+  textarea::placeholder{color:rgba(143,224,168,.32)}
+  .row{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-top:9px;gap:8px;
+  }
+  .plus{
+    width:30px;height:26px;flex:0 0 auto;
+    display:grid;place-items:center;
+    background:#2C2C29;color:#B9B3A6;
+    border:0;border-radius:4px;
+    font-size:16px;line-height:1;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  .plus:active{background:#242422}
+  .send{
+    flex:1;
+    height:28px;
+    background:linear-gradient(180deg,#E0D6C2,#CEC2AA);
+    color:#3A342C;
+    border:0;border-radius:4px;
+    font:600 12.5px/1 -apple-system,"PingFang SC",sans-serif;
+    letter-spacing:3px;
+    box-shadow:0 1px 0 rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.5);
+  }
+  .send:active{background:linear-gradient(180deg,#CFC3AC,#BFB29A)}
+  .send:disabled{opacity:.45}
+  .brand{
+    text-align:center;font-size:8.5px;letter-spacing:2.2px;
+    color:#8D8578;opacity:.65;
+    padding-top:7px;
+  }
+
+  /* ======= 登录 / 遮罩 ======= */
+  .veil{
+    position:fixed;inset:0;z-index:50;
+    background:rgba(220,212,197,.96);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:14px;padding:30px;
+    font-size:13px;color:var(--ink-2);
+  }
+  .veil.hide{display:none}
+  .veil input{
+    width:100%;max-width:240px;
+    padding:11px 14px;border:1px solid var(--line);border-radius:6px;
+    background:var(--paper-2);color:var(--ink);
+    font:14px/1 -apple-system,sans-serif;outline:none;text-align:center;
+  }
+  .veil button{
+    padding:10px 26px;border:0;border-radius:6px;
+    background:var(--orange);color:#fff;
+    font:600 13px/1 -apple-system,sans-serif;letter-spacing:1px;
+  }
+  .err{color:#B4562F;font-size:11.5px;min-height:16px;text-align:center}
+</style>
+</head>
+<body>
+
+<div class="stream" id="stream"></div>
+
+<div class="dock">
+  <div class="hint" id="hint">在这儿敲字，屏幕会亮…</div>
+  <div class="mach">
+    <div class="lcd">
+      <textarea id="ta" rows="1" placeholder="说点什么"></textarea>
+    </div>
+    <div class="row">
+      <button class="plus" id="plus">+</button>
+      <button class="send" id="send">打印</button>
+    </div>
+  </div>
+  <div class="paper-stand"></div>
+  <div class="brand">CAT-PRINTER · MODEL VII</div>
+</div>
+
+<div class="veil" id="veil">
+  <div style="font-size:12px;letter-spacing:2px;color:var(--ink-3)">橘籽家的门</div>
+  <input id="pw" type="password" placeholder="访问密码" autocomplete="current-password">
+  <button id="go">进 门</button>
+  <div class="err" id="err"></div>
+</div>
+
+<script>
+(function(){
+  const API = location.origin;            // 同源，页面就在 8080 上
+  const K_TOKEN = 'orangecat_token_v1';
+  const K_CONV  = 'orangecat_conv_v1';
+
+  const $ = id => document.getElementById(id);
+  const stream = $('stream'), veil = $('veil'), pw = $('pw'), errEl = $('err');
+  const ta = $('ta'), sendBtn = $('send'), plusBtn = $('plus'), hint = $('hint');
+
+  let convId = localStorage.getItem(K_CONV) || null;
+  let busy = false;
+
+  /* ---------- 工具 ---------- */
+  const token = () => localStorage.getItem(K_TOKEN) || '';
+  const setToken = t => t ? localStorage.setItem(K_TOKEN, t) : localStorage.removeItem(K_TOKEN);
+
+  async function api(path, opts){
+    opts = opts || {};
+    const h = Object.assign({'Content-Type':'application/json'}, opts.headers || {});
+    const t = token();
+    if (t) h['Authorization'] = 'Bearer ' + t;
+    const r = await fetch(API + path, Object.assign({}, opts, {headers:h}));
+    if (r.status === 401) { setToken(''); showVeil('登录过期了，再进一次'); throw new Error('401'); }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const ct = r.headers.get('content-type') || '';
+    return ct.includes('json') ? r.json() : r.text();
+  }
+
+  function esc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  /* 取 part 的类型（Kotlin 是 @SerialName，序列化后字段大概率叫 type） */
+  function ptype(p){
+    return p.type || p['@type'] || p.SerialName || p.kind || '';
+  }
+
+  function hhmm(iso){
+    if (!iso) return '';
+    try{
+      const d = new Date(iso);
+      if (isNaN(d)) return '';
+      return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    }catch(e){ return ''; }
+  }
+
+  function dayLabel(iso){
+    if (!iso) return '';
+    try{
+      const d = new Date(iso);
+      if (isNaN(d)) return '';
+      return d.getFullYear() + '年' + (d.getMonth()+1) + '月' + d.getDate() + '日';
+    }catch(e){ return ''; }
+  }
+
+  /* ---------- 渲染 ---------- */
+  function el(tag, cls, txt){
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (txt != null) n.textContent = txt;
+    return n;
+  }
+
+  /* 把 \\n换行 + 段落 粗略排成 <p> */
+  function bodyNode(text){
+    const d = el('div','body');
+    const paras = String(text || '').split(/\n{2,}/);
+    paras.forEach(seg => {
+      if (!seg.trim()) return;
+      const p = document.createElement('p');
+      p.innerHTML = esc(seg).replace(/\n/g,'<br>');
+      d.appendChild(p);
+    });
+    if (!d.childNodes.length) d.appendChild(el('p','',' '));
+    return d;
+  }
+
+  function msgNode(m, role){
+    const isAI = (role === 'assistant');
+    const wrap = el('div','msg ' + (isAI ? 'ai' : 'me'));
+
+    const parts = m.parts || [];
+    let reasoning = '';
+    let text = '';
+
+    parts.forEach(p => {
+      const t = ptype(p);
+      if (t === 'reasoning') {
+        reasoning += (p.reasoning || '') ;
+      } else if (t === 'text') {
+        text += (p.text || '');
+      } else if (t === 'image') {
+        text += '\n[图片]';
+      } else if (t === 'tool' || t === 'tool_call') {
+        // 暂时略过工具块，等下一步补
+      }
+    });
+
+    if (reasoning.trim()) {
+      const d = document.createElement('details');
+      d.className = 'think';
+      const s = document.createElement('summary');
+      s.textContent = '思考';
+      d.appendChild(s);
+      const b = el('div','t-body', reasoning.trim());
+      d.appendChild(b);
+      wrap.appendChild(d);
+    }
+
+    if (text.trim()) wrap.appendChild(bodyNode(text.trim()));
+
+    const by = el('div','by');
+    const who = el('span','who', isAI ? '橘仔' : '宝');
+    const t = el('span','t', hhmm(m.createdAt));
+    by.appendChild(who); by.appendChild(t);
+    wrap.appendChild(by);
+
+    return wrap;
+  }
+
+  function renderConversation(conv){
+    stream.innerHTML = '';
+    const nodes = conv.messages || [];
+    if (!nodes.length){
+      const d = el('div','day','还没有话');
+      stream.appendChild(d);
+      return;
+    }
+    let lastDay = '';
+    nodes.forEach(node => {
+      const msgs = node.messages || [];
+      const idx = Math.min(Math.max(node.selectIndex || 0, 0), msgs.length - 1);
+      const m = msgs[idx];
+      if (!m) return;
+
+      const dl = dayLabel(m.createdAt);
+      if (dl && dl !== lastDay){
+        stream.appendChild(el('div','day', dl));
+        lastDay = dl;
+      }
+      stream.appendChild(msgNode(m, m.role));
+    });
+  }
+
+  function scrollBottom(){
+    requestAnimationFrame(() => { stream.scrollTop = stream.scrollHeight; });
+  }
+
+  /* ---------- 数据 ---------- */
+  async function loadList(){
+    const res = await api('/api/conversations/paged?offset=0&limit=20');
+    const items = (res && res.items) || [];
+    if (!items.length) throw new Error('没有会话');
+    // 优先用上次记的；否则取最近更新的
+    let target = items.find(x => x.id === convId) || items[0];
+    convId = target.id;
+    localStorage.setItem(K_CONV, convId);
+    return convId;
+  }
+
+  async function loadConv(){
+    if (!convId) await loadList();
+    const conv = await api('/api/conversations/' + convId);
+    renderConversation(conv);
+    scrollBottom();
+    return conv;
+  }
+
+  /* ---------- 登录 ---------- */
+  function showVeil(msg){
+    veil.classList.remove('hide');
+    errEl.textContent = msg || '';
+    setTimeout(() => pw.focus(), 100);
+  }
+
+  async function login(){
+    const p = pw.value.trim();
+    if (!p){ errEl.textContent = '密码呢'; return; }
+    errEl.textContent = '';
+    try{
+      const r = await fetch(API + '/api/auth/token', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({password:p})
+      });
+      if (!r.ok){ errEl.textContent = '不对，再试一次'; return; }
+      const j = await r.json();
+      setToken(j.token);
+      veil.classList.add('hide');
+      boot();
+    }catch(e){
+      errEl.textContent = '连不上：' + e.message;
+    }
+  }
+
+  /* ---------- 发送 ---------- */
+  async function doSend(){
+    const txt = ta.value.trim();
+    if (!txt || busy) return;
+    busy = true;
+    sendBtn.disabled = true;
+    ta.value = '';
+    autoGrow();
+
+    // 先把自己那句画上去（不等服务器）
+    const tmp = {role:'user', parts:[{type:'text', text:txt}], createdAt:new Date().toISOString()};
+    const node = msgNode(tmp, 'user');
+    stream.appendChild(node);
+    scrollBottom();
+
+    const printing = el('div','printing',' · · ·');
+    printing.className = 'printing';
+    printing.textContent = '打印中';
+    stream.appendChild(printing);
+    scrollBottom();
+
+    try{
+      await api('/api/conversations/' + convId + '/messages', {
+        method:'POST',
+        body: JSON.stringify({parts:[{type:'text', text:txt}]})
+      });
+      await waitForReply();
+    }catch(e){
+      printing.remove();
+      const er = el('div','msg');
+      er.appendChild(bodyNode('（没送出去：' + e.message + '）'));
+      stream.appendChild(er);
+      scrollBottom();
+    }finally{
+      busy = false;
+      sendBtn.disabled = false;
+    }
+  }
+
+  async function waitForReply(){
+    const t0 = Date.now();
+    while (Date.now() - t0 < 180000){
+      await new Promise(r => setTimeout(r, 1200));
+      let conv;
+      try { conv = await api('/api/conversations/' + convId); } catch(e){ continue; }
+      if (!conv.isGenerating){
+        renderConversation(conv);
+        scrollBottom();
+        return;
+      }
+    }
+    throw new Error('等太久了');
+  }
+
+  /* ---------- 输入框 ---------- */
+  function autoGrow(){
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 110) + 'px';
+  }
+  ta.addEventListener('input', () => { autoGrow(); hint.textContent = ta.value ? '…' : '在这儿敲字，屏幕会亮…'; });
+  ta.addEventListener('focus', () => { hint.textContent = '…'; });
+  ta.addEventListener('blur', () => { if (!ta.value) hint.textContent = '在这儿敲字，屏幕会亮…'; });
+  sendBtn.addEventListener('click', doSend);
+  plusBtn.addEventListener('click', () => { hint.textContent = '附件还没接'; });
+
+  /* ---------- 启动 ---------- */
+  async function boot(){
+    try{
+      await loadConv();
+    }catch(e){
+      stream.innerHTML = '';
+      stream.appendChild(el('div','day','读不到：' + e.message));
+    }
+  }
+
+  $('go').addEventListener('click', login);
+  pw.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+
+  if (!token()) showVeil('');
+  else { veil.classList.add('hide'); boot(); }
+
+  // 回到前台时刷一次
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && token() && !busy) loadConv().catch(()=>{});
+  });
+})();
+</script>
+</body>
+</html>
