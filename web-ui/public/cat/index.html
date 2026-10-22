@@ -315,8 +315,14 @@
     return d;
   }
 
+  function isAssistant(role){
+    const r = String(role || '').toLowerCase();
+    // 不认字面值：只要不是 user/human，就当是猫
+    return !(r === 'user' || r === 'human');
+  }
+
   function msgNode(m, role){
-    const isAI = (role === 'assistant');
+    const isAI = isAssistant(m && m.role ? m.role : role);
     const wrap = el('div','msg ' + (isAI ? 'ai' : 'me'));
 
     const parts = m.parts || [];
@@ -367,7 +373,12 @@
       return;
     }
     let lastDay = '';
-    nodes.forEach(node => {
+    const MAX = 80;
+    const shown = nodes.length > MAX ? nodes.slice(-MAX) : nodes;
+    if (nodes.length > MAX) {
+      stream.appendChild(el('div','day','（上面还有 ' + (nodes.length - MAX) + ' 条）'));
+    }
+    shown.forEach(node => {
       const msgs = node.messages || [];
       const idx = Math.min(Math.max(node.selectIndex || 0, 0), msgs.length - 1);
       const m = msgs[idx];
@@ -383,7 +394,10 @@
   }
 
   function scrollBottom(){
-    requestAnimationFrame(() => { stream.scrollTop = stream.scrollHeight; });
+    const jump = () => { stream.scrollTop = stream.scrollHeight; };
+    jump();
+    requestAnimationFrame(jump);
+    [120, 400, 900, 1600].forEach(t => setTimeout(jump, t));
   }
 
   /* ---------- 数据 ---------- */
