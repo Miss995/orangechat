@@ -165,7 +165,10 @@ fun Route.conversationRoutes(
         // GET /api/conversations/{id} - Get single conversation
         get("/{id}") {
             val uuid = call.parameters["id"].toUuid("conversation id")
-            val conversation = conversationRepo.getConversationById(uuid)
+            // 2026-10-23：原来不传 loadLimit → loadMessageNodes 从最早一条往后读，
+            // 吃到 1200 万字符的解析预算就停，结果只返回很久以前的那批（几万条的历史只回到 1695 条）。
+            // 传 loadLimit 后从"最后 N 条"开始读，保证拿到的是最新的一批。
+            val conversation = conversationRepo.getConversationById(uuid, loadLimit = 400)
                 ?: throw NotFoundException("Conversation not found")
 
             val isGenerating = chatService.getGenerationJobStateFlow(uuid).first() != null
