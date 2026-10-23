@@ -364,9 +364,17 @@
     return wrap;
   }
 
+  function nodeTime(n){
+    const v = (n && n.createdAt)
+      || (n && n.messages && n.messages[0] && n.messages[0].createdAt);
+    return Date.parse(v || '') || 0;
+  }
+
   function renderConversation(conv){
     stream.innerHTML = '';
-    const nodes = conv.messages || [];
+    const raw = conv.messages || [];
+    // 按时间正序，保证 slice(-MAX) 取到的是最新的
+    const nodes = raw.slice().sort((a, b) => nodeTime(a) - nodeTime(b));
     if (!nodes.length){
       const d = el('div','day','还没有话');
       stream.appendChild(d);
@@ -419,11 +427,15 @@
   /* ---------- 数据 ---------- */
   async function loadList(){
     const res = await api('/api/conversations/paged?offset=0&limit=20');
-    const items = (res && res.items) || [];
+    const items = ((res && res.items) || []).slice();
     if (!items.length) throw new Error('没有会话');
-    // 优先用上次记的；否则取最近更新的
-    let target = items.find(x => x.id === convId) || items[0];
-    convId = target.id;
+    // 永远打开最近在聊的那个：按更新时间倒序
+    items.sort((a, b) => {
+      const ta = Date.parse(a.updateAt || a.update_at || 0) || 0;
+      const tb = Date.parse(b.updateAt || b.update_at || 0) || 0;
+      return tb - ta;
+    });
+    convId = items[0].id;
     localStorage.setItem(K_CONV, convId);
     return convId;
   }
