@@ -460,8 +460,17 @@
       const p = n => String(n).padStart(2,'0');
       up = p(d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
     }
-    const n = ((conv && conv.messages) || []).length;
-    el1.textContent = t + (up ? ' · ' + up : '') + ' · ' + n + ' 条';
+    const arr = (conv && conv.messages) || [];
+    const n = arr.length;
+    const fmt = v => {
+      const d = new Date(v || 0);
+      if (isNaN(d.getTime())) return '—';
+      const p = x => String(x).padStart(2,'0');
+      return p(d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    };
+    const head = n ? fmt(nodeTime(arr[0])) : '—';
+    const tail = n ? fmt(nodeTime(arr[n-1])) : '—';
+    el1.textContent = t + (up ? ' · 更新 ' + up : '') + ' · ' + n + ' 条 · 首 ' + head + ' 末 ' + tail;
   }
 
   let pickerEl = null;
