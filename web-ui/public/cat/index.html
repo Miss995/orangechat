@@ -28,6 +28,14 @@
   }
 
   /* ======= 纸 ======= */
+  .convbar{position:fixed;top:0;left:0;right:0;z-index:30;display:flex;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 4px) 20px 4px;font-size:11px;letter-spacing:.5px;color:var(--ink-3);background:linear-gradient(180deg,rgba(233,225,207,.97),rgba(233,225,207,.86));border-bottom:1px solid rgba(120,100,70,.10);backdrop-filter:blur(8px)}
+  .cv-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cv-act{color:#b4550f;border:1px solid rgba(180,85,15,.35);border-radius:999px;padding:1px 9px;cursor:pointer;flex:none}
+  .cv-ver{color:#b9ae98;font-size:10px;flex:none}
+  .picker{position:fixed;left:14px;right:14px;top:calc(env(safe-area-inset-top) + 34px);z-index:40;max-height:60vh;overflow-y:auto;background:#f6f0e2;border-radius:14px;box-shadow:0 12px 34px rgba(60,45,20,.22);padding:6px}
+  .pick-it{padding:10px 12px;font-size:12.5px;color:#5a4c33;border-radius:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pick-it.on{background:rgba(180,85,15,.10);color:#b4550f}
+  .pick-it:active{background:rgba(120,100,70,.10)}
   .stream{
     flex:1;min-height:0;overflow-y:auto;
     margin:0 22px;
@@ -36,7 +44,7 @@
       repeating-linear-gradient(0deg, rgba(150,132,100,.020) 0 1px, transparent 1px 3px),
       radial-gradient(130% 85% at 50% 32%, rgba(255,255,255,0) 52%, rgba(138,118,84,.055) 100%);
     background-attachment:local,local;
-    padding:calc(env(safe-area-inset-top) + 26px) 18px 26px;
+    padding:calc(env(safe-area-inset-top) + 34px) 18px 26px;
     scrollbar-width:none;-ms-overflow-style:none;
   }
   .stream::-webkit-scrollbar{display:none;width:0;height:0}
@@ -212,6 +220,7 @@
 </head>
 <body>
 
+<div class="convbar" id="convbar"><span class="cv-name" id="cvName">…</span><span class="cv-act" id="cvAct">切换</span><span class="cv-ver" id="cvVer">v3</span></div>
 <div class="stream" id="stream"></div>
 
 <div class="dock">
@@ -245,8 +254,10 @@
   const $ = id => document.getElementById(id);
   const stream = $('stream'), veil = $('veil'), pw = $('pw'), errEl = $('err');
   const ta = $('ta'), sendBtn = $('send'), plusBtn = $('plus'), hint = $('hint');
+  const cvAct = $('cvAct'); if (cvAct) cvAct.onclick = () => openPicker();
 
   let convId = localStorage.getItem(K_CONV) || null;
+  let manualConv = null;   // 用户手动切过的会话，优先
   let busy = false;
 
   /* ---------- 工具 ---------- */
@@ -435,15 +446,59 @@
       const tb = Date.parse(b.updateAt || b.update_at || 0) || 0;
       return tb - ta;
     });
-    convId = items[0].id;
+    convId = manualConv || items[0].id;
     localStorage.setItem(K_CONV, convId);
     return convId;
+  }
+
+  function paintConvBar(conv){
+    const el1 = $('cvName'); if (!el1) return;
+    const t = (conv && conv.title && conv.title.trim()) || ('无名 · ' + String((conv&&conv.id)||'').slice(0,8));
+    let up = '';
+    if (conv && conv.updateAt){
+      const d = new Date(conv.updateAt);
+      const p = n => String(n).padStart(2,'0');
+      up = p(d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+    const n = ((conv && conv.messages) || []).length;
+    el1.textContent = t + (up ? ' · ' + up : '') + ' · ' + n + ' 条';
+  }
+
+  let pickerEl = null;
+  function closePicker(){ if (pickerEl){ pickerEl.remove(); pickerEl = null; } }
+
+  async function openPicker(){
+    if (pickerEl){ closePicker(); return; }
+    const res = await api('/api/conversations/paged?offset=0&limit=20');
+    const items = ((res && res.items) || []).slice();
+    items.sort((a,b) => (Date.parse(b.updateAt||b.update_at||0)||0) - (Date.parse(a.updateAt||a.update_at||0)||0));
+
+    pickerEl = document.createElement('div');
+    pickerEl.className = 'picker';
+    items.forEach(it => {
+      const b = document.createElement('div');
+      b.className = 'pick-it' + (it.id === convId ? ' on' : '');
+      const p = n => String(n).padStart(2,'0');
+      const d = new Date(it.updateAt || it.update_at || 0);
+      const up = isNaN(d.getTime()) ? '?' : (p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()));
+      b.textContent = ((it.title && it.title.trim()) || ('无名 · ' + String(it.id).slice(0,8))) + '　' + up;
+      b.onclick = async () => {
+        manualConv = it.id;
+        convId = it.id;
+        localStorage.setItem(K_CONV, convId);
+        closePicker();
+        try { await loadConv(); } catch(e) {}
+      };
+      pickerEl.appendChild(b);
+    });
+    document.body.appendChild(pickerEl);
   }
 
   async function loadConv(){
     if (!convId) await loadList();
     const conv = await api('/api/conversations/' + convId);
     renderConversation(conv);
+    paintConvBar(conv);
     scrollBottom();
     return conv;
   }
