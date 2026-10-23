@@ -1575,7 +1575,12 @@ private fun msgEpochSecond(msg: UIMessage): Long? = runCatching {
  *    N > 0    = 只保留最近 N 条消息里的思考链（按消息条数算，跟 contextGroupSize 同一个量纲）。
  *
  * 为什么要留"最近 N 条"：多步工具调用时，模型要能看见自己上一步为什么决定去查某个东西，
- * 全摘会让它在回合内"失忆"。摘掉的换成一段 [推理] 占位，保持 parts 结构不被破坏。
+ * 全摘会让它在回合内"失忆"。
+ *
+ * 【2026-10-23 改】摘掉的就是摘掉，不再换成 [推理] 占位符。三条理由：
+ *   ① 三个字不能让模型想起什么，跟空着是一回事（等价于零内容）；
+ *   ② 它是非空白的，会把"只有思考没有正文"的脏消息撑成合法消息，混过上传过滤；
+ *   ③ 模型会照着上下文里的形状学，看见 [推理] 就开始自己写方括号标记。
  */
 private fun slimHistoricalReasoning(messages: List<UIMessage>, keepRecent: Int): List<UIMessage> {
     if (messages.isEmpty() || keepRecent < 0) return messages
@@ -1587,17 +1592,19 @@ private fun slimHistoricalReasoning(messages: List<UIMessage>, keepRecent: Int):
             result.add(msg)
         } else {
             var touched = false
-            val newParts: List<UIMessagePart> = msg.parts.map { part ->
+            val newParts: List<UIMessagePart> = msg.parts.mapNotNull { part ->
                 if (part is UIMessagePart.Reasoning) {
                     touched = true
-                    UIMessagePart.Text("[推理]")
+                    null
                 } else {
                     part
                 }
             }
             if (touched) {
                 changed = true
-                result.add(msg.copy(parts = newParts))
+                // parts 被摘光 = 这条只剩思考、没有正文也没有工具，整条不出
+                // （那种消息发出去也是脏的，发送过滤那边本来就会丢）
+                if (newParts.isNotEmpty()) result.add(msg.copy(parts = newParts))
             } else {
                 result.add(msg)
             }
