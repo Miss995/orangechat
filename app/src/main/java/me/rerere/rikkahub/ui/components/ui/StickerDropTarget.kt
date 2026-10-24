@@ -14,7 +14,9 @@ import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.toAndroidDragEvent
 import androidx.compose.ui.platform.LocalContext
+import java.io.File
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.ai.transformers.ImageDescriber
 import me.rerere.rikkahub.data.sticker.StickerStore
 
 /**
@@ -56,10 +58,10 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
                 }.getOrNull()
 
                 scope.launch {
-                    var saved = 0
+                    val savedFiles = mutableListOf<File>()
                     try {
                         for (uri in uris) {
-                            if (StickerStore.saveFromUri(context, uri) != null) saved++
+                            StickerStore.saveFromUri(context, uri)?.let { savedFiles += File(it) }
                         }
                     } finally {
                         // ② 复制完再放
@@ -67,7 +69,17 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
                             runCatching { permissions.release() }
                         }
                     }
-                    currentOnSaved.value(saved)
+                    // 先报「存好了」，别让描述卡住反馈
+                    currentOnSaved.value(savedFiles.size)
+
+                    // ③ 顺手让视觉模型看一眼，把描述写进 sidecar。
+                    //    以后发出去直接复用这份，不再多看一次（一张表情包一辈子只看一次）。
+                    //    失败就算了 —— 没有描述不影响用，只是猫认不出它是哪张。
+                    for (f in savedFiles) {
+                        if (StickerStore.readNote(f) != null) continue
+                        ImageDescriber.describe("file://" + f.absolutePath)
+                            ?.let { StickerStore.saveNote(f, it) }
+                    }
                 }
                 return true
             }

@@ -23,12 +23,27 @@ object StickerStore {
         return d
     }
 
-    /** 新的排前面（按修改时间倒序） */
+    /** 新的排前面（按修改时间倒序）；`xxx.txt` 是描述 sidecar，不算表情包 */
     fun list(context: Context): List<File> =
         dir(context).listFiles()
-            ?.filter { it.isFile && it.length() > 0 }
+            ?.filter { it.isFile && it.length() > 0 && !it.name.endsWith(".txt") }
             ?.sortedByDescending { it.lastModified() }
             ?: emptyList()
+
+    /**
+     * 描述 sidecar：跟图同名的 `xxx.gif.txt`，一行文本。
+     *
+     * 存进来的时候让视觉模型看一眼写在这儿；以后发出去就直接复用这份，
+     * 不再多看一次（一张表情包一辈子只被看一次）。
+     */
+    fun readNote(file: File): String? = runCatching {
+        val f = File(file.parentFile, file.name + ".txt")
+        if (f.exists()) f.readText().trim().ifBlank { null } else null
+    }.getOrNull()
+
+    fun saveNote(file: File, text: String) {
+        runCatching { File(file.parentFile, file.name + ".txt").writeText(text.trim()) }
+    }
 
     /** 存一张进来；成功返回绝对路径，失败返回 null */
     fun saveFromUri(context: Context, uri: Uri): String? {
