@@ -1265,6 +1265,15 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
             val existingNodeIndex = conv.messageNodes.indexOfFirst { node ->
                 node.messages.any { it.id == aiMessage.id }
             }
+            // 【强制比较 · 2026-10-24】保存层第一道闸只比 nodeIndex/selectIndex，而这里每次
+            // 更新只改 parts（内容），两个数都不动 → 会被判成"没动过"，一条都不写。
+            // 2026-10-24 日志实证：08:33:39 首写 (1/301)，之后全 (0/301)，页面上永远停在第一版。
+            // 所以把"这条消息所在的节点 id"报给保存层，让它跳过第一道闸、读全文细比。
+            val forceIds = if (existingNodeIndex >= 0) {
+                setOf(conv.messageNodes[existingNodeIndex].id.toString())
+            } else {
+                emptySet()
+            }
             val updated = if (existingNodeIndex >= 0) {
                 // 已存在该 id 的 node：保留 node id，只更新其 messages
                 val oldNode = conv.messageNodes[existingNodeIndex]
@@ -1283,7 +1292,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 conv.copy(messageNodes = conv.messageNodes + aiMessage.toMessageNode())
             }
             chatService.updateConversation(conversationId, updated)
-            chatService.saveConversation(conversationId, updated)
+            chatService.saveConversation(conversationId, updated, forceIds)
         }
     }
 
