@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.components.ui
 
+import android.os.Build
+import android.view.DragAndDropPermissions
+import android.view.View
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.runtime.Composable
@@ -19,7 +22,7 @@ import me.rerere.rikkahub.data.sticker.StickerStore
  * 【拖图片存表情包 · 2026-10-24】
  *
  * 宝实测：抖音没有「分享到其它应用」的入口，但**可以把图拖出来**。
- * 安卓的跨 App 拖拽要求两个 App 同时在屏幕上，所以用法是分屏/小窗拖进橘仔。
+ * 安卓的跨 App 拖拽要求两个 App 同时在屏幕上，所以用法是分屏 / 小窗拖进橘仔。
  *
  * ⚠️ 两个关键点：
  *   ① 必须**立刻** requestDragAndDropPermissions，否则 content:// 读不出字节（SecurityException）
@@ -29,9 +32,10 @@ import me.rerere.rikkahub.data.sticker.StickerStore
 @Composable
 fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
     val context = LocalContext.current
-    val view = LocalView.current
+    // 显式声明成 android.view.View：不写类型时编译器对 current 的推断会让方法解析失败
+    val hostView: View = LocalView.current
     val scope = rememberCoroutineScope()
-    val currentOnSaved by rememberUpdatedState(onSaved)
+    val currentOnSaved = rememberUpdatedState(onSaved)
 
     val target = remember {
         object : DragAndDropTarget {
@@ -46,10 +50,14 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
                 }
                 if (uris.isEmpty()) return false
 
-                // ① 立刻要权限
-                val permissions = runCatching {
-                    view.requestDragAndDropPermissions(androidEvent)
-                }.getOrNull()
+                // ① 立刻要权限（读 content:// 全指着它）
+                var permissions: DragAndDropPermissions? = null
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    permissions = runCatching {
+                        hostView.requestDragAndDropPermissions(androidEvent)
+                    }.getOrNull()
+                }
+                val heldPermissions = permissions
 
                 scope.launch {
                     var saved = 0
@@ -58,9 +66,12 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
                             if (StickerStore.saveFromUri(context, uri) != null) saved++
                         }
                     } finally {
-                        runCatching { permissions?.release() }
+                        // ② 复制完再放
+                        if (heldPermissions != null) {
+                            runCatching { heldPermissions.release() }
+                        }
                     }
-                    currentOnSaved(saved)
+                    currentOnSaved.value(saved)
                 }
                 return true
             }
