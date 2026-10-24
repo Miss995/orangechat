@@ -652,7 +652,12 @@ class ChatService(
                         // 【同步等它写完 · 2026-10-12】不用 appScope.launch：转述必须在这条消息
                         // 变成请求之前写进会话，否则发出去那一步（OcrTransformer）读到的还是没有格子的快照。
                         runCatching {
-                                val notes = imageParts2.associate { it.url to ImageDescriber.describe(it.url) }
+                                // 【2026-10-24】抽屉里已经有 imageNote（表情包、或上次填过的）就不再跑模型。
+                                // 之前这里是无条件 describe，导致发表情包这条路每发一次都白跑一遍视觉模型。
+                                val notes = imageParts2.associate { it.url ->
+                                    val cached = it.metadata?.get("imageNote")?.jsonPrimitive?.contentOrNull
+                                    it.url to (cached?.takeIf { c -> c.isNotBlank() } ?: ImageDescriber.describe(it.url))
+                                }
                                 session.saveMutex.withLock {
                                     val cur = session.state.value
                                     val updated = cur.copy(
