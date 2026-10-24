@@ -168,6 +168,7 @@ import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.FullScreen
 import me.rerere.hugeicons.stroke.Voice
 import me.rerere.hugeicons.stroke.Zap
+import me.rerere.rikkahub.ui.components.ui.StickerSheet
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
@@ -281,6 +282,17 @@ fun ChatInput(
     }
 
     var expand by remember { mutableStateOf(ExpandState.Collapsed) }
+    // 【表情包面板 · 2026-10-24】长按「＋」弹出来
+    var showStickerSheet by remember { mutableStateOf(false) }
+    if (showStickerSheet) {
+        StickerSheet(
+            onDismiss = { showStickerSheet = false },
+            onPick = { file ->
+                state.addImages(listOf(Uri.fromFile(file)))
+                showStickerSheet = false
+            },
+        )
+    }
     // 【手势打架 · 2026-10-17】输入框自己的滚动状态（外面建好，传给 TextInputRow 里那个 TextField 共享同一实例）。
     // 老判据是数字数（>90 或换行>=4）猜的：53~90 那段明明该滚了，却判成"没得滚"，
     // 于是外层接走手势，滑输入框内部就把附件区拉了出来。
@@ -968,7 +980,9 @@ fun ChatInput(
                             ActionIconButton(
                                 onClick = {
                                     expandToggle(ExpandState.Panel)
-                                }) {
+                                },
+                                // 【表情包 · 2026-10-24】长按直接弹表情面板（宝要的"直接一点"）
+                                onLongClick = { showStickerSheet = true }) {
                                 Icon(
                                     imageVector = if (expand == ExpandState.Panel) HugeIcons.Cancel01 else HugeIcons.Add01,
                                     contentDescription = stringResource(R.string.more_options)
@@ -1842,6 +1856,7 @@ fun ChatInput(
 @Composable
 private fun ActionIconButton(
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     // 【打印机外观 2026-10-18】跟发送键同一套三层（宝定的）：
@@ -1852,7 +1867,7 @@ private fun ActionIconButton(
         modifier = Modifier
             .size(30.dp)
             .clip(RoundedCornerShape(7.dp))
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         contentAlignment = Alignment.Center,
     ) {
         // 底下三层（只铺背景，不吃点击 —— 点击在外层那个 Box 上）
