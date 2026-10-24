@@ -438,6 +438,27 @@ class LocalTools(
                 val pageCount = maxOf(1, (files.size + perPage - 1) / perPage)
                 val p = page.coerceIn(1, pageCount)
                 val slice = files.drop((p - 1) * perPage).take(perPage)
+                // 本页里还没描述的，当场补一次（每次最多 3 张，别把工具卡太久）。
+                // 失败的原因也写进 sidecar，这样界面上看得见断在哪一步。
+                var filled = 0
+                for (f in slice) {
+                    if (filled >= 3) break
+                    if (me.rerere.rikkahub.data.sticker.StickerStore.readNote(f) != null) continue
+                    val r = runCatching {
+                        me.rerere.rikkahub.data.ai.transformers.ImageDescriber
+                            .describe("file://" + f.absolutePath)
+                    }
+                    val note = r.getOrNull()
+                    if (note != null) {
+                        me.rerere.rikkahub.data.sticker.StickerStore.saveNote(f, note)
+                    } else {
+                        me.rerere.rikkahub.data.sticker.StickerStore.saveNote(
+                            f,
+                            "【失败】" + (r.exceptionOrNull()?.message ?: "describe 返回 null")
+                        )
+                    }
+                    filled++
+                }
                 val sb = StringBuilder("共 ${files.size} 张 · 第 $p/$pageCount 页\n")
                 slice.forEachIndexed { i, f ->
                     val no = (p - 1) * perPage + i + 1
