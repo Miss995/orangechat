@@ -1,8 +1,8 @@
 package me.rerere.rikkahub.ui.components.ui
 
-import android.os.Build
-import android.view.DragAndDropPermissions
-import android.view.View
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.runtime.Composable
@@ -14,7 +14,6 @@ import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.toAndroidDragEvent
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.sticker.StickerStore
 
@@ -25,15 +24,16 @@ import me.rerere.rikkahub.data.sticker.StickerStore
  * 安卓的跨 App 拖拽要求两个 App 同时在屏幕上，所以用法是分屏 / 小窗拖进橘仔。
  *
  * ⚠️ 两个关键点：
- *   ① 必须**立刻** requestDragAndDropPermissions，否则 content:// 读不出字节（SecurityException）
+ *   ① 必须**立刻**拿权限，否则 content:// 读不出字节（SecurityException）
+ *      —— 而且这个方法是 **Activity.requestDragAndDropPermissions(DragEvent)**，
+ *         不是 View 的（2026-10-24 查文档才确认，前面两版都栽在这个"以为"上）
  *   ② 复制完再 release，别提前放
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
     val context = LocalContext.current
-    // 显式声明成 android.view.View：不写类型时编译器对 current 的推断会让方法解析失败
-    val hostView: View = LocalView.current
+    val activity = remember(context) { context.findActivityOrNull() }
     val scope = rememberCoroutineScope()
     val currentOnSaved = rememberUpdatedState(onSaved)
 
@@ -50,14 +50,10 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
                 }
                 if (uris.isEmpty()) return false
 
-                // ① 立刻要权限（读 content:// 全指着它）
-                var permissions: DragAndDropPermissions? = null
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    permissions = runCatching {
-                        hostView.requestDragAndDropPermissions(androidEvent)
-                    }.getOrNull()
-                }
-                val heldPermissions = permissions
+                // ① 立刻拿权限（minSdk 26，API 24+ 的东西可以直接调）
+                val permissions = runCatching {
+                    activity?.requestDragAndDropPermissions(androidEvent)
+                }.getOrNull()
 
                 scope.launch {
                     var saved = 0
@@ -67,8 +63,8 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
                         }
                     } finally {
                         // ② 复制完再放
-                        if (heldPermissions != null) {
-                            runCatching { heldPermissions.release() }
+                        if (permissions != null) {
+                            runCatching { permissions.release() }
                         }
                     }
                     currentOnSaved.value(saved)
@@ -85,4 +81,10 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
         },
         target = target
     )
+}
+
+private tailrec fun Context.findActivityOrNull(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivityOrNull()
+    else -> null
 }
