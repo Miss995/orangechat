@@ -287,7 +287,7 @@ private fun AssistantLocalToolContent(
                     )
                 }
             )
-            ListItem(
+            item(
                 headlineContent = { Text("表情包") },
                 supportingContent = { Text("让橘仔翻你存进来的表情包（分页列，不一次吐一长串），还能把某一张直接发进对话。") },
                 trailingContent = {
