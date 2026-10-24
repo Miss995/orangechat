@@ -62,21 +62,17 @@ class SaveStickerActivity : Activity() {
         runCatching { Toast.makeText(this, text, Toast.LENGTH_SHORT).show() }
     }
 
-    @Suppress("DEPRECATION")
     private fun collectImageUris(intent: Intent?): List<Uri> {
         if (intent == null) return emptyList()
+        // ⚠️ 不用 getParcelableExtra / getParcelableArrayListExtra：这两个在 API 33 被泛型化了，
+        //   Kotlin 解析到泛型重载时 T 推断不出来（2026-10-24 构建失败就是这一行）。
+        //   直接从 extras 里按 Any 取，不碰泛型。
+        val raw = intent.extras?.get(Intent.EXTRA_STREAM)
         return when (intent.action) {
-            // ⚠️ 用非泛型版本：泛型 getParcelableExtra<T> 是 API 33 才加的，
-            // minSdk 低时调它要编译期版本判断，直接用非泛型更省事
-            Intent.ACTION_SEND -> {
-                val single = intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
-                listOfNotNull(single)
-            }
+            Intent.ACTION_SEND -> listOfNotNull(raw as? Uri)
 
-            Intent.ACTION_SEND_MULTIPLE -> {
-                val many = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
-                many?.filterIsInstance<Uri>() ?: emptyList()
-            }
+            Intent.ACTION_SEND_MULTIPLE ->
+                (raw as? List<*>)?.filterIsInstance<Uri>() ?: emptyList()
 
             else -> emptyList()
         }
