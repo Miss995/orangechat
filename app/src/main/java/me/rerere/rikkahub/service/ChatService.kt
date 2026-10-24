@@ -654,9 +654,9 @@ class ChatService(
                         runCatching {
                                 // 【2026-10-24】抽屉里已经有 imageNote（表情包、或上次填过的）就不再跑模型。
                                 // 之前这里是无条件 describe，导致发表情包这条路每发一次都白跑一遍视觉模型。
-                                val notes = imageParts2.associate { it.url ->
-                                    val cached = it.metadata?.get("imageNote")?.jsonPrimitive?.contentOrNull
-                                    it.url to (cached?.takeIf { c -> c.isNotBlank() } ?: ImageDescriber.describe(it.url))
+                                val notes = imageParts2.associate { part ->
+                                    val cachedNote = part.metadata?.get("imageNote")?.jsonPrimitive?.contentOrNull
+                                    part.url to (cachedNote?.takeIf { c -> c.isNotBlank() } ?: ImageDescriber.describe(part.url))
                                 }
                                 session.saveMutex.withLock {
                                     val cur = session.state.value
