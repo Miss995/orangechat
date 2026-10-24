@@ -18,8 +18,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.data.ai.transformers.ImageDescriber
 import me.rerere.rikkahub.data.sticker.StickerStore
+
+private const val STICKER_TAG = "Sticker"
 
 /**
  * 【拖图片存表情包 · 2026-10-24】
@@ -83,10 +86,24 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
                     // ③ 顺手让视觉模型看一眼，把描述写进 sidecar。
                     //    以后发出去直接复用这份，不再多看一次（一张表情包一辈子只看一次）。
                     //    失败就算了 —— 没有描述不影响用，只是猫认不出它是哪张。
+                    AppLogBuffer.log(STICKER_TAG, "存好 ${savedFiles.size} 张，开始描述")
                     for (f in savedFiles) {
-                        if (StickerStore.readNote(f) != null) continue
-                        ImageDescriber.describe("file://" + f.absolutePath)
-                            ?.let { StickerStore.saveNote(f, it) }
+                        if (StickerStore.readNote(f) != null) {
+                            AppLogBuffer.log(STICKER_TAG, "${f.name} 已有描述，跳过")
+                            continue
+                        }
+                        val note = ImageDescriber.describe("file://" + f.absolutePath)
+                        AppLogBuffer.log(
+                            STICKER_TAG,
+                            "describe ${f.name}: " + if (note == null) "null" else "${note.length} 字"
+                        )
+                        if (note != null) {
+                            StickerStore.saveNote(f, note)
+                            AppLogBuffer.log(
+                                STICKER_TAG,
+                                "saveNote ${f.name}: 回读=" + (StickerStore.readNote(f) != null)
+                            )
+                        }
                     }
                 }
                 return true
