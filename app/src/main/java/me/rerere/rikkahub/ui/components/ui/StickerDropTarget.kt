@@ -7,7 +7,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draganddrop.DragAndDropEvent
@@ -15,6 +14,9 @@ import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.toAndroidDragEvent
 import androidx.compose.ui.platform.LocalContext
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.ai.transformers.ImageDescriber
 import me.rerere.rikkahub.data.sticker.StickerStore
@@ -31,12 +33,18 @@ import me.rerere.rikkahub.data.sticker.StickerStore
  *         不是 View 的（2026-10-24 查文档才确认，前面两版都栽在这个"以为"上）
  *   ② 复制完再 release，别提前放
  */
+/**
+ * 【2026-10-24 修】描述那步不能挂在 rememberCoroutineScope 上 —— 它跟 Compose 页面
+ * 绑定，宝存完图一离开页面，协程就被取消，describe 断在半路，`.txt` 永远写不进去。
+ * 改用跟页面无关的后台 scope：存完就走，描述慢慢跑完。
+ */
+private val stickerBgScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivityOrNull() }
-    val scope = rememberCoroutineScope()
     val currentOnSaved = rememberUpdatedState(onSaved)
 
     val target = remember {
@@ -57,7 +65,7 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
                     activity?.requestDragAndDropPermissions(androidEvent)
                 }.getOrNull()
 
-                scope.launch {
+                stickerBgScope.launch {
                     val savedFiles = mutableListOf<File>()
                     try {
                         for (uri in uris) {
