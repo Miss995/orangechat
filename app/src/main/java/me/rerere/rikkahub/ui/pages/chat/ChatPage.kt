@@ -81,6 +81,7 @@ import me.rerere.rikkahub.service.VoiceCallService
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.ScheduleMessageDialog
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.components.ui.rememberStickerDropModifier
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.Navigator
 import me.rerere.rikkahub.ui.hooks.ChatInputState
@@ -289,7 +290,19 @@ private fun ChatPageContent(
 
     Surface(
         color = MaterialTheme.colorScheme.background,
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            // 【拖图片存表情包 · 2026-10-24】宝实测：抖音不给「分享到其它应用」，但图能拖出来。
+            // 分屏/小窗把图拖进这一页，松手就复制进 filesDir/stickers。
+            .then(
+                rememberStickerDropModifier { n ->
+                    if (n > 0) {
+                        toaster.show("存进表情包了 · $n 张")
+                    } else {
+                        toaster.show("没存下来（这张图可能读不到）", type = ToastType.Warning)
+                    }
+                }
+            )
     ) {
         AssistantBackground(setting = setting)
         Scaffold(
