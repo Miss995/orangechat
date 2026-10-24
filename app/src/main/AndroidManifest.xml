@@ -163,6 +163,30 @@
       android:name=".ui.activity.BiometricPromptActivity"
       android:exported="false"
       android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+    <!-- 【存表情包 · 2026-10-24】任何 App 点「分享 → 图片」都能选到它，
+         收到就直接复制进 filesDir/stickers，窗口透明、不进最近任务 -->
+    <activity
+      android:name=".ui.activity.SaveStickerActivity"
+      android:excludeFromRecents="true"
+      android:exported="true"
+      android:noHistory="true"
+      android:taskAffinity=""
+      android:theme="@android:style/Theme.Translucent.NoTitleBar">
+      <intent-filter>
+        <action android:name="android.intent.action.SEND" />
+
+        <category android:name="android.intent.category.DEFAULT" />
+
+        <data android:mimeType="image/*" />
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.SEND_MULTIPLE" />
+
+        <category android:name="android.intent.category.DEFAULT" />
+
+        <data android:mimeType="image/*" />
+      </intent-filter>
+    </activity>
     <activity
       android:name="com.yalantis.ucrop.UCropActivity"
       android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
