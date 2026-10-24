@@ -287,6 +287,23 @@ private fun AssistantLocalToolContent(
                     )
                 }
             )
+            ListItem(
+                headlineContent = { Text("表情包") },
+                supportingContent = { Text("让橘仔翻你存进来的表情包（分页列，不一次吐一长串），还能把某一张直接发进对话。") },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.Sticker),
+                        onCheckedChange = {
+                            val newLocalTools = if (it) {
+                                assistant.localTools + LocalToolOption.Sticker
+                            } else {
+                                assistant.localTools - LocalToolOption.Sticker
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
         }
     }
 }
