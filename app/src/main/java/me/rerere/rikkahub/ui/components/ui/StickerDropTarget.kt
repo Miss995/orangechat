@@ -86,11 +86,20 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
                     //    失败也写一句进去 —— 不然界面只显示“还没描述”，分不清是没跑还是跑了没成。
                     for (f in savedFiles) {
                         if (StickerStore.readNote(f) != null) continue
-                        val note = ImageDescriber.describe("file://" + f.absolutePath)
+                        val result = runCatching { ImageDescriber.describe("file://" + f.absolutePath) }
+                        if (result.isFailure) {
+                            val e = result.exceptionOrNull()
+                            StickerStore.saveNote(
+                                f,
+                                "【失败】describe 抛异常：" + (e?.message ?: e?.javaClass?.simpleName ?: "未知")
+                            )
+                            continue
+                        }
+                        val note = result.getOrNull()
                         if (note != null) {
                             StickerStore.saveNote(f, note)
                         } else {
-                            StickerStore.saveNote(f, "【失败】describe 返回 null（没跑到 / 没配 OCR 模型 / 读图出错）")
+                            StickerStore.saveNote(f, "【失败】describe 返回 null（多半是没配 OCR 模型）")
                         }
                     }
                 }
