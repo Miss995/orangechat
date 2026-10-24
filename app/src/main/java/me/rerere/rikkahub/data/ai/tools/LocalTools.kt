@@ -462,10 +462,15 @@ class LocalTools(
                 val sb = StringBuilder("共 ${files.size} 张 · 第 $p/$pageCount 页\n")
                 slice.forEachIndexed { i, f ->
                     val no = (p - 1) * perPage + i + 1
-                    val note = me.rerere.rikkahub.data.sticker.StickerStore.readNote(f)
-                        ?.replace("\n", " ")?.take(90)
+                    // 描述是三段式的（原文照抄 / 画面简述 / 图片理解），列表里只要画面简述那段，
+                    // 没有那段就退回整段。别把三段全贴出来 —— 一页 12 张会吃掉一大截上下文。
+                    val raw = me.rerere.rikkahub.data.sticker.StickerStore.readNote(f)
+                    val brief = raw?.let {
+                        val m = Regex("【画面简述】([\\s\\S]*?)(?=【|$)").find(it)
+                        (m?.groupValues?.get(1) ?: it).replace("\\s+".toRegex(), " ").trim()
+                    }?.take(60)
                     sb.append("$no. ${f.name} —— ")
-                    sb.append(if (note.isNullOrBlank()) "（还没描述）" else note)
+                    sb.append(if (brief.isNullOrBlank()) "（还没描述）" else brief)
                     sb.append("\n")
                 }
                 if (pageCount > 1) sb.append("（换页传 page）")
