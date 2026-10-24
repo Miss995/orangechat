@@ -142,6 +142,15 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("browser")
     data object Browser : LocalToolOption()
+
+    /**
+     * 【表情包 · 2026-10-24】宝存进来的表情包仓库。开启后注册 sticker_list / sticker_send：
+     * 猫能翻仓库（分页，不一次吐一长串）、能把某一张直接发进对话。
+     * 描述存在同名的 .txt sidecar 里（memory 371）。
+     */
+    @Serializable
+    @SerialName("sticker")
+    data object Sticker : LocalToolOption()
 }
  
 class LocalTools(
@@ -401,6 +410,83 @@ class LocalTools(
         )
     }
  
+    /**
+     * 【表情包 · 2026-10-24】列仓库。分页，避免一次吐一长串（宝担心这个）。
+     */
+    val stickerListTool by lazy {
+        Tool(
+            name = "sticker_list",
+            description = """
+                List the sticker library (images/GIFs the user saved). Paged, 12 per page.
+                Each entry shows an index, the file name (id) and a short description if one was saved.
+                To send one into the chat, pass its file name to sticker_send.
+            """.trimIndent().replace("\n", " "),
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("page", buildJsonObject {
+                            put("type", "integer")
+                            put("description", "Page number starting at 1. 12 stickers per page.")
+                        })
+                    }
+                )
+            },
+            execute = {
+                val page = it.jsonObject["page"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 1
+                val files = me.rerere.rikkahub.data.sticker.StickerStore.list(context)
+                val perPage = 12
+                val pageCount = maxOf(1, (files.size + perPage - 1) / perPage)
+                val p = page.coerceIn(1, pageCount)
+                val slice = files.drop((p - 1) * perPage).take(perPage)
+                val sb = StringBuilder("共 ${files.size} 张 · 第 $p/$pageCount 页\n")
+                slice.forEachIndexed { i, f ->
+                    val no = (p - 1) * perPage + i + 1
+                    val note = me.rerere.rikkahub.data.sticker.StickerStore.readNote(f)
+                        ?.replace("\n", " ")?.take(90)
+                    sb.append("$no. ${f.name} —— ")
+                    sb.append(if (note.isNullOrBlank()) "（还没描述）" else note)
+                    sb.append("\n")
+                }
+                if (pageCount > 1) sb.append("（换页传 page）")
+                listOf(UIMessagePart.Text(sb.toString().trim()))
+            }
+        )
+    }
+
+    /**
+     * 【表情包 · 2026-10-24】把仓库里的一张发进对话 —— 工具输出直接带一张图。
+     */
+    val stickerSendTool by lazy {
+        Tool(
+            name = "sticker_send",
+            description = """
+                Send one sticker from the library into the chat. It appears as an image in your reply.
+                Pass the file name (the id) from sticker_list. One sticker per call.
+            """.trimIndent().replace("\n", " "),
+            parameters = {
+                InputSchema.Obj(
+                    properties = buildJsonObject {
+                        put("id", buildJsonObject {
+                            put("type", "string")
+                            put("description", "Sticker file name from sticker_list")
+                        })
+                    },
+                    required = listOf("id")
+                )
+            },
+            execute = {
+                val id = it.jsonObject["id"]?.jsonPrimitive?.contentOrNull?.trim()
+                    ?: error("id is required")
+                val dir = me.rerere.rikkahub.data.sticker.StickerStore.dir(context)
+                val f = java.io.File(dir, id).takeIf { it.isFile && it.length() > 0 }
+                    ?: me.rerere.rikkahub.data.sticker.StickerStore.list(context)
+                        .firstOrNull { it.name == id }
+                    ?: error("没有叫 $id 的表情包（先用 sticker_list 看看有哪些）")
+                listOf(UIMessagePart.Image("file://${f.absolutePath}"))
+            }
+        )
+    }
+
     val ttsTool by lazy {
         Tool(
             name = "text_to_speech",
@@ -743,6 +829,10 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.Music)) {
             tools.add(eryuMusicTool)
+        }
+        if (options.contains(LocalToolOption.Sticker)) {
+            tools.add(stickerListTool)
+            tools.add(stickerSendTool)
         }
         if (options.contains(LocalToolOption.Browser)) {
             tools.add(browserReadTool())
