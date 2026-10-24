@@ -159,6 +159,10 @@ class ChatInputState {
     fun shouldDeleteFileOnRemove(part: UIMessagePart): Boolean {
         val url = part.attachmentUrlOrNull() ?: return false
         if (!url.startsWith("file:")) return false
+        // 【表情包 · 2026-10-24】filesDir/stickers 里的是"原件"（表情包本体），
+        // 不是 App 复制出来的临时副本 —— 取消附件不能连它一起删掉。
+        // bug 现场：面板点一张 → 变成附件 → 取消 → 那张从面板里永远消失，就是这一行干的。
+        if (url.contains("/stickers/")) return false
         return !isEditing() || url !in editingAttachmentUrls
     }
 
