@@ -508,7 +508,13 @@ class LocalTools(
                     ?: me.rerere.rikkahub.data.sticker.StickerStore.list(context)
                         .firstOrNull { it.name == id }
                     ?: error("没有叫 $id 的表情包（先用 sticker_list 看看有哪些）")
-                listOf(UIMessagePart.Image("file://${f.absolutePath}"))
+                // 【2026-10-24】带上 sidecar 里存的三段描述。OcrTransformer 的 noteFor() 会先看
+                // metadata["imageNote"]，有就直接用、不再为这张表情包多跑一次视觉模型。
+                // 宝算过账：不带的话，一次「发表情包 → 她回一张」花四趟钱。
+                val noteJson = me.rerere.rikkahub.data.sticker.StickerStore.readNote(f)
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { n -> buildJsonObject { put("imageNote", n) } }
+                listOf(UIMessagePart.Image("file://${f.absolutePath}", metadata = noteJson))
             }
         )
     }
