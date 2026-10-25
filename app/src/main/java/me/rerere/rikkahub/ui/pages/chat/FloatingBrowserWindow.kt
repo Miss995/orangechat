@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 import android.view.ViewGroup
+import android.webkit.WebView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,6 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -35,11 +37,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewHost
+import me.rerere.rikkahub.ui.pages.miniapp.applyMiniAppWebViewSettings
 import kotlin.math.roundToInt
 
 /**
@@ -166,8 +170,33 @@ fun FloatingBrowserWindow(
                 //   全局只有一只（MiniAppWebViewHost 单例），所以是「借」不是「造」：
                 //   从它现在待的地方（小程序页 或 那个看不见的窝）摘下来，挂到这儿。
                 //   摘的时候先 removeView —— 一个 View 只能有一个爹。
-                val wv = MiniAppWebViewHost.webView
-                if (wv == null) {
+                //   没有的话就自己造一只（MiniAppWebViewHost.obtainHeadless）——
+                //   配置直接调小程序页那套 applyMiniAppWebViewSettings，两边一模一样。
+                val ctx = LocalContext.current
+                var wv by remember { mutableStateOf<WebView?>(MiniAppWebViewHost.webView) }
+                LaunchedEffect(Unit) {
+                    if (wv == null) {
+                        MiniAppWebViewHost.rememberHost(ctx)
+                        // ★ 必须在 IO 线程调：obtainHeadless 内部是
+                        //   「post 到主线程造 WebView + latch.await(5s) 等结果」。
+                        //   要是在主线程调，主线程一 await，那个 post 就排不上队，
+                        //   必然死等满 5 秒再返回 null —— 界面还会僵在那儿。
+                        val created = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            MiniAppWebViewHost.obtainHeadless {
+                                applyMiniAppWebViewSettings(it)
+                            }
+                        }
+                        if (created != null) {
+                            // 有意先开一个真页面再交给 Compose：
+                            // about:blank 是"没有 contentSize"的，等挂上来再 loadUrl
+                            // 会让它先按 0 高度量一次（小程序那轮 vh=0 的同类坑）。
+                            created.loadUrl(MiniAppWebViewHost.savedUrl ?: "https://rickycat.asia")
+                        }
+                        wv = created
+                    }
+                }
+                val cur = wv
+                if (cur == null) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -184,8 +213,8 @@ fun FloatingBrowserWindow(
                 } else {
                     AndroidView(
                         factory = {
-                            (wv.parent as? ViewGroup)?.removeView(wv)
-                            wv
+                            (cur.parent as? ViewGroup)?.removeView(cur)
+                            cur
                         },
                         modifier = Modifier.fillMaxSize(),
                     )
