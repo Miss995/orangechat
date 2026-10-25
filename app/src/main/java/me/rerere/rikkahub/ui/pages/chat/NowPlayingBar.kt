@@ -112,6 +112,9 @@ internal object NowPlaying {
                 (JSONTokener(raw).nextValue() as? String) ?: return null
             } else raw
             val o = JSONObject(inner)
+            // 播到结尾就收起来：播放条的意义是「现在在播什么」，播完了留着只会让人以为还在放。
+            // 手动暂停不算（暂停时 currentTime 还没到末尾，ended 是 false）。
+            if (o.optBoolean("ended", false)) return null
             val song = o.optJSONObject("song") ?: return null
             val name = song.optString("name").ifBlank { return null }
             NowPlayingSnap(
@@ -135,6 +138,7 @@ internal object NowPlaying {
             return JSON.stringify({
               song: { name: s.name || '', artist: s.artist || '', songId: s.songId || '' },
               paused: !!audio.paused,
+              ended: !!audio.ended || (!!audio.paused && audio.duration > 0 && audio.currentTime >= audio.duration - 0.4),
               t: Math.round((audio.currentTime || 0) * 10) / 10,
               dur: Math.round((audio.duration || 0) * 10) / 10
             });

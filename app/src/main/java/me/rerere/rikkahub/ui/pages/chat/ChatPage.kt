@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -307,9 +308,6 @@ private fun ChatPageContent(
         AssistantBackground(setting = setting)
         Scaffold(
             bottomBar = {
-                Column {
-                    // 【现在在播 2026-10-25】eryu 网页放着音乐时，这条会自己冒出来；没在播就不占位。
-                    NowPlayingBar()
                 ChatInput(
                     state = inputState,
                     loading = loadingJob != null,
@@ -483,11 +481,17 @@ private fun ChatPageContent(
                         vm.handleCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
                     },
                 )
-                }
             },
             containerColor = Color.Transparent,
         ) { innerPadding ->
             Box(modifier = Modifier.fillMaxSize()) {
+                // 【现在在播 2026-10-25】浮在消息区最上面，不占位；eryu 放着歌时才有。
+                NowPlayingBar(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(horizontal = 8.dp)
+                )
             ChatList(
                 innerPadding = innerPadding,
                 conversation = conversation,
