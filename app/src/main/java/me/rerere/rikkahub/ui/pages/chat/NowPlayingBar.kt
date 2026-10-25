@@ -91,9 +91,12 @@ internal object NowPlaying {
 
     private fun call(cmd: String, then: () -> Unit) {
         val wv = MiniAppWebViewHost.webView ?: return
+        // ⚠️ 别把 if 写进字符串模板里：模板内再嵌双引号会让词法分析器分不清结尾
+        //（2026-10-25 构建 #614 报的就是这个：NowPlayingBar.kt:96 Expecting '}'）
+        val fn = if (cmd == "toggle") "togglePlay" else "playNext"
         main.post {
             try {
-                wv.evaluateJavascript("try{ (${cmd == "toggle" ? "togglePlay" : "playNext"}()) }catch(e){}") {
+                wv.evaluateJavascript("try{ ($fn()) }catch(e){}") {
                     then()
                 }
             } catch (_: Throwable) {
