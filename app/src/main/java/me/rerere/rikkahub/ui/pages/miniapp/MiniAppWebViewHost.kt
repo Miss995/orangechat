@@ -108,8 +108,12 @@ internal object MiniAppWebViewHost {
         (target.parent as? ViewGroup)?.removeView(target)
     }
 
-    /** 页面走了：放回小窝，不销毁。 */
-    fun back(target: WebView) {
+    /** 页面走了：放回小窝，不销毁。
+     *
+     * @param clearPage 走之前要不要把页面清成 about:blank。
+     *   小程序页要清（窝里不留旧内容，下次进来不撞「旧页面 + 转圈」）；
+     *   浮窗不要清（关掉只是想把它藏起来，下次点开还要接着看原来的页面）。 */
+    fun back(target: WebView, clearPage: Boolean = true) {
         val activity = findActivity(target.context)
         val root = rootView ?: (activity?.window?.decorView as? ViewGroup) ?: return
         val box = park ?: FrameLayout(activity ?: target.context).also { layout ->
@@ -135,16 +139,18 @@ internal object MiniAppWebViewHost {
         // ★ 只存路径，不存页面（2026-10-17）。
         // 走之前把当前网址记下来，再把页面清成空白 ——
         // 窝里那只是一片 about:blank，下次进来就不会撞见「旧内容 + 转圈」。
-        try {
-            val current = target.url
-            if (!current.isNullOrBlank() && !current.startsWith("about:")) {
-                savedUrl = current
+        if (clearPage) {
+            try {
+                val current = target.url
+                if (!current.isNullOrBlank() && !current.startsWith("about:")) {
+                    savedUrl = current
+                }
+                target.loadUrl("about:blank")
+                // 顺手清掉历史 —— 不然 canGoBack() 还是 true，顶栏会把「关闭」画成
+                // 「后退」，点它只是往回退一页，退不出去（2026-10-17 宝报的）。
+                target.clearHistory()
+            } catch (_: Throwable) {
             }
-            target.loadUrl("about:blank")
-            // 顺手清掉历史 —— 不然 canGoBack() 还是 true，顶栏会把「关闭」画成
-            // 「后退」，点它只是往回退一页，退不出去（2026-10-17 宝报的）。
-            target.clearHistory()
-        } catch (_: Throwable) {
         }
         (target.parent as? ViewGroup)?.removeView(target)
         box.addView(target)

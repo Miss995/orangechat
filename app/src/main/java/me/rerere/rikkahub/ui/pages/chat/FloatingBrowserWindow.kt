@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import android.view.ViewGroup
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -30,11 +32,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewHost
 import kotlin.math.roundToInt
 
 /**
@@ -57,6 +62,14 @@ fun FloatingBrowserWindow(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // ★ 2026-10-26：窗子藏起来（visible 变 false）那一下，要把借来的 WebView 还回窝。
+    //   不能让它没了爹 —— 没爹的 WebView 会自己停掉 JS，猫那边就摸不到东西了。
+    //   clearPage = false：藏起来不是「关掉页面」，下次点开还要接着看原来那页。
+    DisposableEffect(Unit) {
+        onDispose {
+            MiniAppWebViewHost.webView?.let { MiniAppWebViewHost.back(it, clearPage = false) }
+        }
+    }
     if (!visible) return
 
     val density = LocalDensity.current
@@ -133,7 +146,12 @@ fun FloatingBrowserWindow(
                         modifier = Modifier
                             .size(30.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable { onClose() },
+                            .clickable {
+                            MiniAppWebViewHost.webView?.let {
+                                MiniAppWebViewHost.back(it, clearPage = false)
+                            }
+                            onClose()
+                        },
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
@@ -144,17 +162,32 @@ fun FloatingBrowserWindow(
                     }
                 }
 
-                // ── 身体：将来放 WebView，现在占位 ──
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFFF3F1ED)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "网页会放在这儿\n（明天接）",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF8A8578),
+                // ── 身体：借用小程序那只 WebView（2026-10-26 接上） ──
+                //   全局只有一只（MiniAppWebViewHost 单例），所以是「借」不是「造」：
+                //   从它现在待的地方（小程序页 或 那个看不见的窝）摘下来，挂到这儿。
+                //   摘的时候先 removeView —— 一个 View 只能有一个爹。
+                val wv = MiniAppWebViewHost.webView
+                if (wv == null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFFF3F1ED)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "网页没在开着\n先去小程序打开一个",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF8A8578),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                } else {
+                    AndroidView(
+                        factory = {
+                            (wv.parent as? ViewGroup)?.removeView(wv)
+                            wv
+                        },
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
