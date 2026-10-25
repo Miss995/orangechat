@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Alignment
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -485,13 +484,6 @@ private fun ChatPageContent(
             containerColor = Color.Transparent,
         ) { innerPadding ->
             Box(modifier = Modifier.fillMaxSize()) {
-                // 【现在在播 2026-10-25】浮在消息区最上面，不占位；eryu 放着歌时才有。
-                NowPlayingBar(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .statusBarsPadding()
-                        .padding(horizontal = 8.dp)
-                )
             ChatList(
                 innerPadding = innerPadding,
                 conversation = conversation,
@@ -605,6 +597,14 @@ private fun ChatPageContent(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = innerPadding.calculateTopPadding() + 8.dp),
+                )
+                // 【现在在播 2026-10-25】浮在消息区最上面，不占位；eryu 放着歌时才有。
+                // 必须写在 ChatList 后面 —— Box 按顺序叠，后写的在上面（写前面会被消息盖住）。
+                NowPlayingBar(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = innerPadding.calculateTopPadding() + 8.dp)
+                        .padding(horizontal = 8.dp)
                 )
             }
         }
