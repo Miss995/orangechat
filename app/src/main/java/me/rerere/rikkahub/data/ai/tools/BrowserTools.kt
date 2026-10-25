@@ -274,7 +274,23 @@ fun browserBackTool(): Tool = Tool(
     },
 )
 
-/** 把 WebView 当前可见的部分画成 PNG，存进缓存目录。主线程做，失败返回 null。 */
+/** 从 View 的 context 往上找 Activity 的 Window（PixelCopy 要它）。 */
+private fun findHostWindow(view: android.view.View): android.view.Window? {
+    var ctx = view.context
+    while (ctx is android.content.ContextWrapper) {
+        if (ctx is android.app.Activity) return ctx.window
+        ctx = ctx.baseContext
+    }
+    return (ctx as? android.app.Activity)?.window
+}
+
+/**
+ * 把 WebView 当前可见的部分抓成 PNG，存进缓存目录。主线程做，失败返回 null。
+ *
+ * 优先走 PixelCopy：它是问系统要「这块窗口合成之后长什么样」，所以网页里的视频
+ * （硬件叠加层，不在 View 画布上）也能带上。PixelCopy 拿不到时再退回 draw ——
+ * draw 只画 View 树，视频层会是空的。
+ */
 private suspend fun captureWebView(webView: WebView): java.io.File? =
     suspendCancellableCoroutine { cont ->
         Handler(Looper.getMainLooper()).post {
@@ -288,14 +304,49 @@ private suspend fun captureWebView(webView: WebView): java.io.File? =
                 val bmp = android.graphics.Bitmap.createBitmap(
                     w, h, android.graphics.Bitmap.Config.ARGB_8888
                 )
-                webView.draw(android.graphics.Canvas(bmp))
                 val dir = java.io.File(webView.context.cacheDir, "browser_shots").apply { mkdirs() }
                 val file = java.io.File(dir, "shot_" + System.currentTimeMillis() + ".png")
-                java.io.FileOutputStream(file).use { out ->
-                    bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 92, out)
+
+                fun saveFile() {
+                    try {
+                        java.io.FileOutputStream(file).use { out ->
+                            bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 92, out)
+                        }
+                        bmp.recycle()
+                        if (cont.isActive) cont.resume(file)
+                    } catch (e: Throwable) {
+                        if (cont.isActive) cont.resume(null)
+                    }
                 }
-                bmp.recycle()
-                if (cont.isActive) cont.resume(file)
+
+                fun fallbackDraw() {
+                    try {
+                        webView.draw(android.graphics.Canvas(bmp))
+                        saveFile()
+                    } catch (e: Throwable) {
+                        if (cont.isActive) cont.resume(null)
+                    }
+                }
+
+                val win = findHostWindow(webView)
+                if (win == null || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) {
+                    fallbackDraw()
+                } else {
+                    val loc = IntArray(2)
+                    webView.getLocationInWindow(loc)
+                    val rect = android.graphics.Rect(loc[0], loc[1], loc[0] + w, loc[1] + h)
+                    try {
+                        android.view.PixelCopy.request(
+                            win, rect, bmp,
+                            { result ->
+                                if (result == android.view.PixelCopy.SUCCESS) saveFile() else fallbackDraw()
+                            },
+                            Handler(Looper.getMainLooper())
+                        )
+                    } catch (e: Throwable) {
+                        fallbackDraw()
+                    }
+                }
             } catch (e: Throwable) {
                 if (cont.isActive) cont.resume(null)
             }
