@@ -282,7 +282,9 @@ class ConversationRepository(
     suspend fun updateConversation(
         conversation: Conversation,
         windowFirstIndex: Int? = null,
-        forceCompareIds: Set<String> = emptySet()
+        forceCompareIds: Set<String> = emptySet(),
+        /** 【只加不减 · 2026-10-25】调用方明确点名要删的格。窗口版不再自动删任何东西。 */
+        deleteIds: Set<String> = emptySet()
     ) {
         // 【2026-09-29 排查 · 窗口版保存为什么半秒】在保存链路各段插计时点，跑一轮看日志
         // （筛 ConvRepo）就知道那几百毫秒归谁。
@@ -298,16 +300,20 @@ class ConversationRepository(
 
                 // 【保存提速 · 2026-10-14】第一道闸：只读元信息（顺序号/选中号/长度/条数），不碰 messages 列 ——
                 // 既避免个别行 blob 过大抛异常，也免掉每次保存都把整个会话的内容读一遍。
-                val existingMetas = messageNodeDAO.getNodeMetasOfConversation(conversation.id.toString())
+                val existingMetas = if (windowFirstIndex != null) {
+                    // 【保存提速 · 2026-10-25】窗口版：只查这次真要写的那些格的元信息。
+                    // 老实现在这里扫整个会话（两万多格）只为算 protectedIds / toDeleteIds，
+                    // 现在改成"只删调用方点名的那几条"，这两个用途都不需要全库了 —— 28679 行 → 300 行。
+                    messageNodeDAO.getNodeMetasByIds(conversation.messageNodes.map { it.id.toString() })
+                } else {
+                    // 全量版（压缩/重建等整表覆盖）仍然读全表：那种场景真需要知道库里还剩什么。
+                    messageNodeDAO.getNodeMetasOfConversation(conversation.id.toString())
+                }
                 val existingIds = existingMetas.map { it.id }
                 val __tB = System.currentTimeMillis()
-                // existingIds 按 node_index ASC 排序 → 前 windowFirstIndex 个是窗口外历史（受保护）
-                val protectedCount = windowFirstIndex?.coerceAtLeast(0) ?: 0
-                val protectedIds = if (protectedCount > 0) {
-                    existingIds.take(protectedCount).toSet()
-                } else {
-                    emptySet()
-                }
+                // 【只加不减 · 2026-10-25】窗口版不再算 protectedIds —— 因为压根不自动删了，
+                // 窗口外历史自然不会被碰。全量版下面的 toDeleteIds 仍然按老逻辑算。
+                val protectedIds: Set<String> = emptySet()
 
                 // 【nodeIndex 对齐 2026-08-27】窗口版保存不再重写 nodeIndex（baseIndex+index 依赖
                 // firstIndex 与数据库实际对齐，一旦对不齐就整体错位 → 窗口越加载越旧（宝实测重启倒退）。
@@ -316,7 +322,13 @@ class ConversationRepository(
                 val __tC = System.currentTimeMillis()
                 val metaById = existingMetas.associateBy { it.id }
                 val existingNodeIndexById: Map<String, Int> = existingMetas.associate { it.id to it.nodeIndex }
-                val maxExistingNodeIndex = existingNodeIndexById.values.maxOrNull() ?: -1
+                val maxExistingNodeIndex = if (windowFirstIndex != null) {
+                    // 【保存提速 · 2026-10-25】窗口版只读到窗口内那 300 条，算不出库里真实的最大序号；
+                    // 不另查的话新节点会跟窗口外的旧节点撞号。这条走 node_index 索引，代价接近 0。
+                    messageNodeDAO.getMaxNodeIndex(conversation.id.toString()) ?: -1
+                } else {
+                    existingNodeIndexById.values.maxOrNull() ?: -1
+                }
                 val newEntities = conversation.messageNodes.mapIndexed { index, node ->
                     val nid = node.id.toString()
                     val preservedIndex = existingNodeIndexById[nid]
@@ -382,8 +394,16 @@ class ConversationRepository(
                 val toUpsert = maybeChanged.filter { newEntity ->
                     existingById[newEntity.id] != newEntity
                 }
-                // 窗口版保存时，窗口外历史（protectedIds）即使不在传入列表中也不删除
-                val toDeleteIds = (existingIds - newById.keys) - protectedIds
+                // 【只加不减 · 2026-10-25】
+                //   窗口版：只删调用方明确点名的（deleteMessage 报上来的那几条）。
+                //          不再做"库里有的 - 这次传的"这种推断 —— 那需要知道全库有什么，
+                //          既贵（每次扫两万多行）又危险（窗口起点算偏就会误删历史）。
+                //   全量版：保持老逻辑（整表覆盖场景确实需要清理多余行）。
+                val toDeleteIds = if (windowFirstIndex != null) {
+                    deleteIds
+                } else {
+                    (existingIds - newById.keys) - protectedIds
+                }
                 val __tE = System.currentTimeMillis()
 
                 if (toDeleteIds.isNotEmpty()) {

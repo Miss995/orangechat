@@ -3006,7 +3006,9 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
     suspend fun saveConversation(
         conversationId: Uuid,
         conversation: Conversation,
-        forceCompareIds: Set<String> = emptySet()
+        forceCompareIds: Set<String> = emptySet(),
+        /** 【只加不减 · 2026-10-25】调用方明确点名要删的格（只有删消息会传）。 */
+        deleteIds: Set<String> = emptySet()
     ) {
         val exists = conversationRepo.existsConversationById(conversation.id)
         if (!exists && conversation.title.isBlank() && conversation.messageNodes.isEmpty()) {
@@ -3091,7 +3093,7 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         if (!exists) {
             conversationRepo.insertConversation(updatedConversation)
         } else {
-            conversationRepo.updateConversation(updatedConversation, effectiveFirstIndex, forceCompareIds)
+            conversationRepo.updateConversation(updatedConversation, effectiveFirstIndex, forceCompareIds, deleteIds)
         }
 
         // 更新懒加载窗口边界
@@ -3342,7 +3344,12 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             return
         }
 
-        saveConversation(conversationId, updatedConversation)
+        // 【只加不减 · 2026-10-25】窗口版不再自动推断"库里多的就是该删的"，
+        // 所以删除要由这里明确报上去：新旧两份 nodes 一比，消失的那些格就是该删的。
+        val removedNodeIds = currentConversation.messageNodes.map { it.id.toString() }.toSet() -
+            updatedConversation.messageNodes.map { it.id.toString() }.toSet()
+
+        saveConversation(conversationId, updatedConversation, deleteIds = removedNodeIds)
     }
 
     suspend fun deleteMessage(

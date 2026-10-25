@@ -53,6 +53,29 @@ interface MessageNodeDAO {
     suspend fun getNodeMetasOfConversation(conversationId: String): List<NodeMeta>
 
     /**
+     * 【保存提速 · 2026-10-25】按 id 批量查元信息 —— 只查这次真要写的那些格，不扫全表。
+     *
+     * 窗口版保存手里只有最近 300 条，可老实现每次都要把这个会话两万多格的元信息读一遍
+     * （只为算 protectedIds 和 toDeleteIds）。改成"只删调用方明确点名的那几条"之后，
+     * 这两个用途都不需要全库了，直接按 id 查这 300 条即可：28679 行 → 300 行。
+     */
+    @Query(
+        "SELECT id, node_index AS nodeIndex, select_index AS selectIndex " +
+            "FROM message_node WHERE id IN (:ids)"
+    )
+    suspend fun getNodeMetasByIds(ids: List<String>): List<NodeMeta>
+
+    /**
+     * 【保存提速 · 2026-10-25】只取本会话最大的 node_index。
+     *
+     * 窗口版只读到窗口内那 300 条时，算不出"库里真实的最大序号"，
+     * 新节点从窗口内最大值 +1 开始排会跟窗口外的旧节点撞号。
+     * 这条走 node_index 索引，代价接近 0。
+     */
+    @Query("SELECT MAX(node_index) FROM message_node WHERE conversation_id = :conversationId")
+    suspend fun getMaxNodeIndex(conversationId: String): Int?
+
+    /**
      * 【分支清理 · 2026-10-05】只挑"多版本"的格（messages 数组长度 > 1），只返回 id。
      *
      * 用 json_array_length() 在 SQL 层判断，**不把 messages 内容带进 CursorWindow**，
