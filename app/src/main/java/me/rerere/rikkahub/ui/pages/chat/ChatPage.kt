@@ -16,6 +16,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
@@ -81,7 +87,6 @@ import me.rerere.rikkahub.service.VoiceCallService
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.ScheduleMessageDialog
 import me.rerere.rikkahub.ui.context.LocalNavController
-import me.rerere.rikkahub.ui.components.ui.rememberStickerDropModifier
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.Navigator
 import me.rerere.rikkahub.ui.hooks.ChatInputState
@@ -290,19 +295,7 @@ private fun ChatPageContent(
 
     Surface(
         color = MaterialTheme.colorScheme.background,
-        modifier = Modifier
-            .fillMaxSize()
-            // 【拖图片存表情包 · 2026-10-24】宝实测：抖音不给「分享到其它应用」，但图能拖出来。
-            // 分屏/小窗把图拖进这一页，松手就复制进 filesDir/stickers。
-            .then(
-                rememberStickerDropModifier { n ->
-                    if (n > 0) {
-                        toaster.show("存进表情包了 · $n 张")
-                    } else {
-                        toaster.show("没存下来（这张图可能读不到）", type = ToastType.Warning)
-                    }
-                }
-            )
+        modifier = Modifier.fillMaxSize()
     ) {
         AssistantBackground(setting = setting)
         Scaffold(
@@ -598,14 +591,30 @@ private fun ChatPageContent(
                         .align(Alignment.TopCenter)
                         .padding(top = innerPadding.calculateTopPadding() + 8.dp),
                 )
-                // 【现在在播 2026-10-25】浮在消息区最上面，不占位；eryu 放着歌时才有。
-                // 必须写在 ChatList 后面 —— Box 按顺序叠，后写的在上面（写前面会被消息盖住）。
-                NowPlayingBar(
+
+                // 【浮层·网页小窗 2026-10-25】右边一个小圆钮，点开就是网页窗（骨架版，还没接 WebView）
+                var showFloatWindow by remember { mutableStateOf(false) }
+                FloatingBrowserWindow(
+                    visible = showFloatWindow,
+                    onClose = { showFloatWindow = false },
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = innerPadding.calculateTopPadding() + 8.dp)
-                        .padding(horizontal = 8.dp)
+                        .align(Alignment.TopEnd)
+                        .padding(top = innerPadding.calculateTopPadding() + 8.dp),
                 )
+                if (!showFloatWindow) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = innerPadding.calculateTopPadding() + 8.dp, end = 10.dp)
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { showFloatWindow = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("▣", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
         }
     }
