@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.chat
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -126,9 +127,7 @@ fun FloatingBrowserWindow(
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
-                            .pointerInput(Unit) {
-                                detectTapGesturesCompat { onClose() }
-                            }
+                            .clickable { onClose() }
                             .padding(horizontal = 4.dp)
                     )
                 }
@@ -177,14 +176,4 @@ fun FloatingBrowserWindow(
             )
         }
     }
-}
-
-/**
- * 轻量点击 —— 只认「按一下」，不认拖动。
- * Compose 的 detectTapGestures 是 foundation 里的扩展，单独包一层免得 import 打架。
- */
-private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectTapGesturesCompat(
-    onTap: () -> Unit,
-) {
-    androidx.compose.foundation.gestures.detectTapGestures(onTap = { onTap() })
 }
