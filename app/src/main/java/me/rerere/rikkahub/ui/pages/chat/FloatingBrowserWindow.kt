@@ -30,7 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -60,20 +59,22 @@ fun FloatingBrowserWindow(
     if (!visible) return
 
     val density = LocalDensity.current
-    val config = LocalConfiguration.current
-    val screenW = config.screenWidthDp.dp
-    val screenH = config.screenHeightDp.dp
 
-    // 窗子的位置（左上角）+ 大小，全用 dp
+    // 窗子大小（dp）
     var widthDp by remember { mutableFloatStateOf(230f) }
     var heightDp by remember { mutableFloatStateOf(340f) }
 
-    // 初始位置：靠右，但不贴边；上下留在屏幕上半部（不吃输入框那块）
-    var offsetX by remember { mutableFloatStateOf((screenW.value - 230f - 12f).coerceAtLeast(8f)) }
-    var offsetY by remember { mutableFloatStateOf((screenH.value * 0.18f).coerceAtLeast(8f)) }
+    /**
+     * 拖动偏移 —— 从 0 起，相对「外面给的定位」（ChatPage 那边是 align(TopEnd) + 留边）。
+     *
+     * ★ 2026-10-25 修：之前拿 screenWidthDp 自己算初始 X，结果那个数跟实际可用宽度对不上，
+     *   窗子被推到屏幕外，右上角的 ✕ 看不见也点不到（宝：「一点就收不回去了」）。
+     *   现在不自己算 —— 起点交给外面摆，这里只负责「从起点挪了多少」。
+     *   往左上只能挪到 0（也就是回到起点），往右下最多挪到父容器的边界。
+     */
+    var dragX by remember { mutableFloatStateOf(0f) }
+    var dragY by remember { mutableFloatStateOf(0f) }
 
-    val maxW = screenW.value
-    val maxH = screenH.value
     val minW = 140f
     val minH = 180f
 
@@ -82,8 +83,8 @@ fun FloatingBrowserWindow(
             .width(widthDp.dp)
             .height(heightDp.dp)
             .offset { IntOffset(
-                with(density) { offsetX.dp.roundToPx() },
-                with(density) { offsetY.dp.roundToPx() },
+                dragX.dp.roundToPx(),
+                dragY.dp.roundToPx(),
             ) }
     ) {
         Surface(
@@ -117,19 +118,25 @@ fun FloatingBrowserWindow(
                                 change.consume()
                                 val dx = drag.x / density.density
                                 val dy = drag.y / density.density
-                                offsetX = (offsetX + dx).coerceIn(0f, (maxW - widthDp).coerceAtLeast(0f))
-                                offsetY = (offsetY + dy).coerceIn(0f, (maxH - heightDp).coerceAtLeast(0f))
+                                // 起点在右上角：X 只能往左（负数），Y 只能往下（正数）
+                                dragX = (dragX + dx).coerceAtMost(0f)
+                                dragY = (dragY + dy).coerceAtLeast(0f)
                             }
                         }
                     )
-                    Text(
-                        text = "✕",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Box(
                         modifier = Modifier
-                            .clickable { onClose() }
-                            .padding(horizontal = 4.dp)
-                    )
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onClose() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "✕",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
 
                 // ── 身体：将来放 WebView，现在占位 ──
@@ -158,11 +165,8 @@ fun FloatingBrowserWindow(
                         change.consume()
                         val dx = drag.x / density.density
                         val dy = drag.y / density.density
-                        widthDp = (widthDp + dx).coerceIn(minW, maxW)
-                        heightDp = (heightDp + dy).coerceIn(minH, maxH)
-                        // 拉大之后别让它跑出屏幕
-                        offsetX = offsetX.coerceIn(0f, (maxW - widthDp).coerceAtLeast(0f))
-                        offsetY = offsetY.coerceIn(0f, (maxH - heightDp).coerceAtLeast(0f))
+                        widthDp = (widthDp + dx).coerceIn(minW, 480f)
+                        heightDp = (heightDp + dy).coerceIn(minH, 720f)
                     }
                 }
         ) {
