@@ -104,16 +104,8 @@ fun FloatingBrowserWindow(
                         .fillMaxWidth()
                         .height(34.dp)
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = "网页",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.pointerInput(Unit) {
+                        .pointerInput(Unit) {
+                            // ★ 2026-10-25：整条顶栏都能拖（之前只有「网页」两个字能拖，太难点中）
                             detectDragGestures { change, drag ->
                                 change.consume()
                                 val dx = drag.x / density.density
@@ -123,6 +115,15 @@ fun FloatingBrowserWindow(
                                 dragY = (dragY + dy).coerceAtLeast(0f)
                             }
                         }
+                        .padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "网页",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Box(
                         modifier = Modifier
