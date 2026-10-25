@@ -1898,7 +1898,17 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 // 又会从折叠条变回独立消息（宝原话："只有在你那条消息发出来之后才会跳回去"）。
                 // 这个 internal 的 updateConversation 只写内存、不落库、不重写 nodeIndex。
                 updateConversation(conversationId, latest)
-                saveConversation(conversationId, latest)
+                // 【报账 · 2026-10-25】上面可能会改内容而完全不动序号（合并插话 / 挂引用 / 工具结果回填），
+                // 而保存层的第一道闸只比 node_index + select_index —— 那种改动它看不见。
+                // 这里把"最后那条猫回复"报上去，让保存层强制读它全文细比。
+                // 只多读一条，代价可以忽略。
+                val lastAssistantNodeId = latest.messageNodes
+                    .lastOrNull { it.currentMessage.role == MessageRole.ASSISTANT }?.id
+                saveConversation(
+                    conversationId = conversationId,
+                    conversation = latest,
+                    forceCompareIds = setOfNotNull(lastAssistantNodeId?.toString()),
+                )
                 latest
             }
             // 【插话丢条排查 2026-09-30】收尾时报一次条数和最后一条的角色：
