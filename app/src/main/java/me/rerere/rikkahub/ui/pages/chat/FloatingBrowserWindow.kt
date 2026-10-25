@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -59,6 +60,7 @@ fun FloatingBrowserWindow(
     if (!visible) return
 
     val density = LocalDensity.current
+    val screenWp = LocalConfiguration.current.screenWidthDp.toFloat()
 
     // 窗子大小（dp）
     var widthDp by remember { mutableFloatStateOf(230f) }
@@ -110,8 +112,10 @@ fun FloatingBrowserWindow(
                                 change.consume()
                                 val dx = drag.x / density.density
                                 val dy = drag.y / density.density
-                                // 起点在右上角：X 只能往左（负数），Y 只能往下（正数）
-                                dragX = (dragX + dx).coerceAtMost(0f)
+                                // ★ 2026-10-25 修：之前 X 锁成"只能往左"，宝往右拖它一动不动，
+                                //   手指在动窗子不动 = 看起来像反着跑。现在两边都能拖，
+                                //   只拦住"别整个跑出屏幕"（往右最多让窗子右边缘贴屏幕右边）。
+                                dragX = (dragX + dx).coerceIn(-(screenWp - widthDp).coerceAtLeast(0f), 0f)
                                 dragY = (dragY + dy).coerceAtLeast(0f)
                             }
                         }
