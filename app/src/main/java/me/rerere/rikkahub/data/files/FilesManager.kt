@@ -212,6 +212,9 @@ class FilesManager(
         val relativePaths = mutableSetOf<String>()
         uris.filter { it.toString().startsWith("file:") }.forEach { uri ->
             val file = uri.toFile()
+            // 【表情包 · 2026-10-25】filesDir/stickers 是共享库存，不是某条消息的私有附件。
+            // 删消息 / 删会话时不该连它一起删 —— bug 现场：昨天存了十七八张，今天只剩十一张。
+            if (file.absolutePath.contains("/stickers/")) return@forEach
             getRelativePathInFilesDir(file)?.let { relativePaths.add(it) }
             if (file.exists()) {
                 file.delete()
