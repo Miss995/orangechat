@@ -107,6 +107,7 @@ import me.rerere.rikkahub.data.ai.transformers.QuotedMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.TimeReminderTransformer
 import me.rerere.rikkahub.data.ai.transformers.VoiceMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.WorkspaceReminderTransformer
+import me.rerere.rikkahub.data.ai.transformers.XhsLinkTransformer
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.workspace.WorkspaceShellStatus
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -183,6 +184,9 @@ private val inputTransformers by lazy {
         // 【插话补充 · 2026-10-13 宝定的】按了"这句是补充上文那条"的消息，
         // 在它前面插一条短消息（不落库，只活在请求里）。
         InterjectSupplementTransformer,
+        // 【小红书链接展开 · 2026-10-25】链接进来就替猫抓开：标题/正文拼进消息、图落成 Image part。
+        // 抓不到一律原样放行，失败不阻塞对话。
+        XhsLinkTransformer,
     )
 }
 
