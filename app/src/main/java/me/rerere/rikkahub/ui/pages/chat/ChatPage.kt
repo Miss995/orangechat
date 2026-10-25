@@ -307,6 +307,9 @@ private fun ChatPageContent(
         AssistantBackground(setting = setting)
         Scaffold(
             bottomBar = {
+                Column {
+                    // 【现在在播 2026-10-25】eryu 网页放着音乐时，这条会自己冒出来；没在播就不占位。
+                    NowPlayingBar()
                 ChatInput(
                     state = inputState,
                     loading = loadingJob != null,
@@ -480,6 +483,7 @@ private fun ChatPageContent(
                         vm.handleCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
                     },
                 )
+                }
             },
             containerColor = Color.Transparent,
         ) { innerPadding ->
