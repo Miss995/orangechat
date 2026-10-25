@@ -7,7 +7,7 @@
 package me.rerere.rikkahub.data.ai.transformers
 
 import android.content.Context
-import android.util.Log
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -67,36 +67,56 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        // 只认最后一条用户消息
-        val lastIndex = messages.indexOfLast { it.role == MessageRole.USER }
-        if (lastIndex < 0) return messages
+        /*
+         * 【只认"真的带链接的那条"，不认"最后一条用户消息" · 2026-10-25 踩过的坑】
+         *
+         * 第一版写的是「indexOfLast { role == USER }」——看着天经地义，实际一次都没跑成。
+         * 原因：请求的末尾还挂着一条系统注入（「以下是系统消息注入：当前时间…」），
+         * 它也是 USER 角色、排在最后。于是找到的是它 → 里面没链接 → 直接返回，
+         * 整个 transformer 等于不存在（连一行日志都没留）。
+         *
+         * 现在改成从后往前扫，找第一条文字里真含小红书链接的。
+         * 这样不管注入在链的哪一头，都指向正确的那条消息。
+         */
+        var targetIndex = -1
+        for (i in messages.indices.reversed()) {
+            val m = messages[i]
+            if (m.role != MessageRole.USER) continue
+            val has = m.parts.any { p ->
+                p is UIMessagePart.Text && linkRegex.containsMatchIn(p.text)
+            }
+            if (has) {
+                targetIndex = i
+                break
+            }
+        }
+        if (targetIndex < 0) return messages
 
-        val target = messages[lastIndex]
-        val textParts = target.parts.filterIsInstance<UIMessagePart.Text>()
-        if (textParts.isEmpty()) return messages
-
-        // 找链接
-        val link = textParts
+        val target = messages[targetIndex]
+        val link = target.parts
             .asSequence()
+            .filterIsInstance<UIMessagePart.Text>()
             .flatMap { part -> linkRegex.findAll(part.text).map { it.value } }
             .firstOrNull()
             ?: return messages
+
+        AppLogBuffer.log(TAG, "found link=$link idx=$targetIndex/${messages.size}")
 
         val extra = cache[link] ?: run {
             val fetched = try {
                 withContext(Dispatchers.IO) { fetchNote(link) }
             } catch (e: Exception) {
-                Log.w(TAG, "fetch failed: ${e.javaClass.simpleName} ${e.message}")
+                AppLogBuffer.log(TAG, "fetch FAILED: ${e.javaClass.simpleName}: ${e.message}")
                 null
             }
             if (fetched == null || fetched.isEmpty()) {
                 // 失败也记一笔，避免同一条链接反复重试
                 cache[link] = emptyList()
-                Log.w(TAG, "expand failed, pass through: $link")
+                AppLogBuffer.log(TAG, "expand FAILED, pass through: $link")
                 return messages
             }
             cache[link] = fetched
-            Log.i(TAG, "expanded ${fetched.size} parts for $link")
+            AppLogBuffer.log(TAG, "expanded ${fetched.size} parts for $link")
             fetched
         }
 
@@ -105,7 +125,7 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
         // 塞进那条消息末尾
         val newParts = target.parts + extra
         val newMessage = target.copy(parts = newParts)
-        return messages.toMutableList().also { it[lastIndex] = newMessage }
+        return messages.toMutableList().also { it[targetIndex] = newMessage }
     }
 
     // ---------------------------------------------------------------- 抓页面
@@ -113,14 +133,14 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
     private fun fetchNote(link: String): List<UIMessagePart>? {
         val html = httpGet(link) ?: return null
         val stateJson = extractInitialState(html) ?: run {
-            Log.w(TAG, "no __INITIAL_STATE__, len=${html.length}")
+            AppLogBuffer.log(TAG, "no __INITIAL_STATE__, len=${html.length}")
             return null
         }
 
         val state = try {
             json.parseToJsonElement(stateJson).jsonObject
         } catch (e: Exception) {
-            Log.w(TAG, "state parse failed: ${e.message}")
+            AppLogBuffer.log(TAG, "state parse failed: ${e.message}")
             return null
         }
 
@@ -184,7 +204,7 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
         // 下载配图 → Image part（能走后面已有的转述链路）
         val saved = downloadImages(urls)
         saved.forEach { parts.add(UIMessagePart.Image(url = "file://${it.absolutePath}")) }
-        if (saved.isNotEmpty()) Log.i(TAG, "images saved: ${saved.size}/${urls.size}")
+        if (saved.isNotEmpty()) AppLogBuffer.log(TAG, "images saved: ${saved.size}/${urls.size}")
 
         return parts
     }
@@ -216,12 +236,12 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
                 setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9")
             }
             if (conn.responseCode !in 200..299) {
-                Log.w(TAG, "http ${conn.responseCode} for $url")
+                AppLogBuffer.log(TAG, "http ${conn.responseCode} for $url")
                 return null
             }
             conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
         } catch (e: Exception) {
-            Log.w(TAG, "httpGet ${e.javaClass.simpleName}: ${e.message}")
+            AppLogBuffer.log(TAG, "httpGet ${e.javaClass.simpleName}: ${e.message}")
             null
         } finally {
             runCatching { conn?.disconnect() }
@@ -237,7 +257,7 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
             val f = try {
                 downloadOne(u, dir, idx)
             } catch (e: Exception) {
-                Log.w(TAG, "img[$idx] ${e.javaClass.simpleName}: ${e.message}")
+                AppLogBuffer.log(TAG, "img[$idx] ${e.javaClass.simpleName}: ${e.message}")
                 null
             }
             if (f != null) out.add(f)
@@ -257,7 +277,7 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
                 setRequestProperty("Referer", "https://www.xiaohongshu.com/")
             }
             if (conn.responseCode !in 200..299) {
-                Log.w(TAG, "img[$idx] http ${conn.responseCode}")
+                AppLogBuffer.log(TAG, "img[$idx] http ${conn.responseCode}")
                 return null
             }
             val ext = guessExt(url, conn.contentType)
