@@ -7,6 +7,8 @@
 package me.rerere.rikkahub.data.ai.transformers
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -26,6 +28,7 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import java.io.File
+import java.io.FileOutputStream
 import kotlin.time.Duration.Companion.days
 
 private const val TAG = "VideoNarrationTransformer"
@@ -44,6 +47,12 @@ object VideoNarrationTransformer : InputMessageTransformer, KoinComponent {
 
     /** 视频文件转 base64 后要满足上游约 10MB 约束，留余量按 7MB 限 */
     private const val MAX_VIDEO_BYTES = 7L * 1024 * 1024
+
+    /** 【抽帧 · 2026-10-25】模型看得见图但不看视频时，抽几帧给它看 */
+    private const val FRAME_COUNT = 5
+
+    /** 【抽帧 · 2026-10-25】每帧缩到长边多少像素（太大 base64 会撑爆请求） */
+    private const val MAX_FRAME_SIDE = 720
 
     private const val DEFAULT_NARRATION_PROMPT = "你是视频理解助手。请仔细观看这段视频，用中文详细描述视频内容（画面、人物、动作、字幕、场景变化、情节发展等）。如果画面没有明显内容，请如实说明。"
 
@@ -86,33 +95,37 @@ object VideoNarrationTransformer : InputMessageTransformer, KoinComponent {
         }
         if (!hasVideos) return messages
 
+        // 【抽帧 · 2026-10-25】模型看得见图、只是不看视频 → 抽几帧直接给它看，
+        // 不用再绕一趟转述模型（省一次调用，也不丢细节）。
+        // 连图都看不了的模型（纯文本）才退回老路：让视觉模型转述成文字。
+        val canSeeImages = ctx.model.inputModalities.contains(Modality.IMAGE)
+
         return withContext(Dispatchers.IO) {
             try {
-                ctx.processingStatus.value = "正在转述视频..."
+                ctx.processingStatus.value = if (canSeeImages) "正在抽取视频画面..." else "正在转述视频..."
                 messages.map { message ->
                     message.copy(
-                        parts = message.parts.map { part ->
+                        parts = message.parts.flatMap { part ->
                             when {
-                                // 最外层视频: 转述成文字
+                                // 最外层视频
                                 part is UIMessagePart.Video && part.url.startsWith("file:") -> {
-                                    UIMessagePart.Text(performNarration(part))
+                                    videoToParts(part, canSeeImages)
                                 }
 
-                                // Tool.output 里的视频: 递归扫描, 把视频替换成转述文字
+                                // Tool.output 里的视频: 递归扫描, 同一套规则
                                 part is UIMessagePart.Tool -> {
-                                    part.copy(
-                                        output = part.output.map { outputPart ->
-                                            when {
-                                                outputPart is UIMessagePart.Video && outputPart.url.startsWith("file:") -> {
-                                                    UIMessagePart.Text(performNarration(outputPart))
-                                                }
-                                                else -> outputPart
+                                    listOf(
+                                        part.copy(
+                                            output = part.output.flatMap { outputPart ->
+                                                if (outputPart is UIMessagePart.Video && outputPart.url.startsWith("file:")) {
+                                                    videoToParts(outputPart, canSeeImages)
+                                                } else listOf(outputPart)
                                             }
-                                        }
+                                        )
                                     )
                                 }
 
-                                else -> part
+                                else -> listOf(part)
                             }
                         }
                     )
@@ -121,6 +134,93 @@ object VideoNarrationTransformer : InputMessageTransformer, KoinComponent {
                 ctx.processingStatus.value = null
             }
         }
+    }
+
+    /**
+     * 【抽帧 · 2026-10-25】把一个视频 part 变成「一句说明 + N 张图」。
+     * 模型看得见图 → 抽帧直发；连图都看不了 → 退回转述。
+     */
+    private suspend fun videoToParts(
+        part: UIMessagePart.Video,
+        canSeeImages: Boolean,
+    ): List<UIMessagePart> {
+        if (!canSeeImages) return listOf(UIMessagePart.Text(performNarration(part)))
+
+        val frames = runCatching { extractFrames(part) }.getOrNull().orEmpty()
+        if (frames.isEmpty()) {
+            // 抽不出帧（文件坏 / 时长读不到）→ 退回转述，别让这条视频整个消失
+            return listOf(UIMessagePart.Text(performNarration(part)))
+        }
+
+        return buildList {
+            add(UIMessagePart.Text(framesNote(frames.size)))
+            frames.forEach { add(UIMessagePart.Image(url = "file://${it.absolutePath}")) }
+        }
+    }
+
+    /** 说明文字：让模型知道这几张图是同一段视频的帧，不是几件不同的事。 */
+    private fun framesNote(count: Int): String = """
+        <video_frames>
+           这是用户发来的一段视频。下面 $count 张图是从这段视频里按时间先后平均取的帧，不是 $count 张不同的图。
+           请把它们连起来当成同一段视频看。
+        </video_frames>
+        * video_frames 上面的图是从用户发的视频里抽出来的画面，不是用户另外发的图片。
+    """.trimIndent()
+
+    /**
+     * 【抽帧 · 2026-10-25】按时间平均取 FRAME_COUNT 帧，缩到长边 MAX_FRAME_SIDE 存成 jpg。
+     * 结果按视频路径缓存，同一个视频只抽一次。
+     */
+    private fun extractFrames(part: UIMessagePart.Video): List<File> {
+        val videoFile = File(part.url.removePrefix("file://"))
+        if (!videoFile.exists()) return emptyList()
+
+        val dir = File(get<Context>().cacheDir, "video_frames").apply { mkdirs() }
+        val key = videoFile.absolutePath.hashCode().toString()
+
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(videoFile.absolutePath)
+            val durationMs = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
+            if (durationMs <= 0L) return emptyList()
+
+            (1..FRAME_COUNT).mapNotNull { i ->
+                runCatching {
+                    val out = File(dir, "${key}_$i.jpg")
+                    if (!out.exists() || out.length() == 0L) {
+                        val tMs = durationMs * i / (FRAME_COUNT + 1)   // 均分，避开片头片尾
+                        val bitmap = retriever.getFrameAtTime(
+                            tMs * 1000L,
+                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        ) ?: return@runCatching null
+                        val scaled = scaleDown(bitmap, MAX_FRAME_SIDE)
+                        FileOutputStream(out).use { scaled.compress(Bitmap.CompressFormat.JPEG, 80, it) }
+                        if (scaled !== bitmap) bitmap.recycle()
+                    }
+                    out
+                }.getOrNull()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "extractFrames failed", e)
+            emptyList()
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    /** 长边超过 maxSide 就等比缩下来。 */
+    private fun scaleDown(src: Bitmap, maxSide: Int): Bitmap {
+        val longSide = maxOf(src.width, src.height)
+        if (longSide <= maxSide) return src
+        val scale = maxSide.toFloat() / longSide
+        return Bitmap.createScaledBitmap(
+            src,
+            (src.width * scale).toInt().coerceAtLeast(1),
+            (src.height * scale).toInt().coerceAtLeast(1),
+            true,
+        )
     }
 
     suspend fun performNarration(part: UIMessagePart.Video): String = runCatching {
