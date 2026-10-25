@@ -434,6 +434,13 @@ class LocalTools(
             execute = {
                 val page = it.jsonObject["page"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 1
                 val files = me.rerere.rikkahub.data.sticker.StickerStore.list(context)
+                // 【诊断 · 2026-10-25】把目录里"所有文件"也数一遍 —— 描述 .txt 和 0 字节的空壳
+                // 都会被 list() 过滤掉。表情包"自己变少"有三种可能：真被删了、被截成 0 字节
+                // （还在但看不见）、或者本来就没存进来。这一行让三种当场分得开。
+                val rawAll = me.rerere.rikkahub.data.sticker.StickerStore.dir(context)
+                    .listFiles()?.toList() ?: emptyList()
+                val txtCount = rawAll.count { it.name.endsWith(".txt") }
+                val zeroByte = rawAll.count { it.length() == 0L }
                 val perPage = 12
                 val pageCount = maxOf(1, (files.size + perPage - 1) / perPage)
                 val p = page.coerceIn(1, pageCount)
@@ -459,7 +466,10 @@ class LocalTools(
                     }
                     filled++
                 }
-                val sb = StringBuilder("共 ${files.size} 张 · 第 $p/$pageCount 页\n")
+                val sb = StringBuilder(
+                    "共 ${files.size} 张 · 第 $p/$pageCount 页（目录里 ${rawAll.size} 个文件：" +
+                        "描述 $txtCount 个、0 字节 $zeroByte 个）\n"
+                )
                 slice.forEachIndexed { i, f ->
                     val no = (p - 1) * perPage + i + 1
                     // 描述是三段式的（原文照抄 / 画面简述 / 图片理解），列表里只要画面简述那段，
