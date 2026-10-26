@@ -14,6 +14,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewBridge
+import me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewHost
 import kotlin.coroutines.resume
 
 /*
@@ -26,7 +27,16 @@ import kotlin.coroutines.resume
 private const val NO_PAGE =
     "浏览器这会儿起不来 —— 猫还不知道把窝安在哪儿。宝随便进一次小程序页就好了（一次就够，之后猫就能自己开）。"
 
-private fun currentBrowser(): WebView? = MiniAppWebViewBridge.current
+/**
+ * 猫这会儿该摸哪一只。
+ *
+ * ★ 2026-10-26：浮窗有了自己独立的一只（跟小程序那只分开），所以要分先后 ——
+ *   浮窗开着的时候优先摸浮窗那只（宝正在看的就是它）；
+ *   浮窗关着才去摸小程序那只（没开页面的话 bridge 会自己造一只）。
+ *   不这么排的话永远摸不到浮窗 —— bridge.current 自己会造，从来不为 null。
+ */
+private fun currentBrowser(): WebView? =
+    MiniAppWebViewHost.floatWebView ?: MiniAppWebViewBridge.current
 
 /**
  * 抓「网页里正在播的那一帧」。
