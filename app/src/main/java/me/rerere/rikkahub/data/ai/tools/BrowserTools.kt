@@ -45,6 +45,14 @@ private fun currentBrowser(): WebView? =
  * 独立的硬件图层，抓下来只有一片糊的背景（2026-10-26 在抖音上实测：底图糊、UI 清楚）。
  * 换条路 —— 让页面自己把 video 画进 canvas 再吐 base64，视频帧就拿到了（实测 1920×1080 成功）。
  *
+ * ★ 2026-10-26 晚：修「贴上去位置/内容对不上」。
+ *   原因：老版拿的是整帧（videoWidth×videoHeight），Kotlin 那边把整帧拉伸填进元素框；
+ *   但页面普遍是 object-fit:cover —— 屏幕上只露出中间裁过的一块。整帧压进框里，内容就和
+ *   看到的错位了。
+ *   现在：canvas 直接按「元素框 × dpr」出图，并按 object-fit 语义先把该裁的裁掉，
+ *   于是 Kotlin 那边是 1:1 贴上去，不用再缩放。
+ *   cover 精确裁；contain / scale-down 按比例内缩留边；fill / 其他保持整帧拉伸（同屏幕）。
+ *
  * 返回 JSON：{ x, y, w, h, dpr, frame }，坐标是 CSS 像素（相对视口），要乘 dpr 才是位图像素。
  * 页面上没视频 / 视频还没解出画面 / canvas 被跨域污染，都返回空串。
  */
@@ -55,12 +63,33 @@ private val JS_VIDEO_FRAME = """
     if(!v||!v.videoWidth||!v.videoHeight) return '';
     var r=v.getBoundingClientRect();
     if(r.width<1||r.height<1) return '';
+    var vw=v.videoWidth, vh=v.videoHeight;
+    var dpr=window.devicePixelRatio||1;
+    var cw=Math.max(1,Math.round(r.width*dpr));
+    var chh=Math.max(1,Math.round(r.height*dpr));
     var c=document.createElement('canvas');
-    c.width=v.videoWidth; c.height=v.videoHeight;
-    c.getContext('2d').drawImage(v,0,0);
+    c.width=cw; c.height=chh;
+    var ctx=c.getContext('2d');
+    var fit=(window.getComputedStyle(v).objectFit||'fill');
+    var boxRatio=r.width/r.height, vidRatio=vw/vh;
+    if(fit==='cover'){
+      // 填满框、裁掉多出来的部分（短视频站基本都是这个）
+      var sx=0, sy=0, sw=vw, sh=vh;
+      if(vidRatio>boxRatio){ sw=vh*boxRatio; sx=(vw-sw)/2; }
+      else { sh=vw/boxRatio; sy=(vh-sh)/2; }
+      ctx.drawImage(v, sx,sy,sw,sh, 0,0,cw,chh);
+    }else if(fit==='contain'||fit==='scale-down'){
+      // 完整塞进框里，四周留边
+      var dw, dh;
+      if(vidRatio>boxRatio){ dw=cw; dh=cw/vidRatio; }
+      else { dh=chh; dw=chh*vidRatio; }
+      ctx.drawImage(v, 0,0,vw,vh, (cw-dw)/2,(chh-dh)/2,dw,dh);
+    }else{
+      // fill 等：跟屏幕一样，整帧拉伸铺满
+      ctx.drawImage(v, 0,0,vw,vh, 0,0,cw,chh);
+    }
     var d=c.toDataURL('image/jpeg',0.85);
-    return JSON.stringify({x:r.left,y:r.top,w:r.width,h:r.height,
-      dpr:window.devicePixelRatio||1,frame:d});
+    return JSON.stringify({x:r.left,y:r.top,w:r.width,h:r.height,dpr:dpr,frame:d});
   }catch(e){ return ''; }
 })()
 """.trimIndent()
