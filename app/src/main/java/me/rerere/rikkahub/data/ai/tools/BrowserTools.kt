@@ -320,8 +320,11 @@ fun browserUaTool(): Tool = Tool(
                     } else {
                         android.webkit.WebSettings.getDefaultUserAgent(wv.context).replace("; wv", "")
                     }
-                    wv.settings.useWideViewPort = !next
-                    wv.settings.loadWithOverviewMode = !next
+                    // ★ 2026-10-26 晚实测：桌面版必须「按宽视口布局 + 缩放到屏宽」。
+                    //   反过来（都是 false）会让页面按手机窄屏重排，抖音桌面版布局直接崩
+                    //   —— HTML 加载了 72KB，一个字都没渲染，连 video 元素都没有。
+                    wv.settings.useWideViewPort = true
+                    wv.settings.loadWithOverviewMode = true
                     wv.reload()
                 }
                 listOf(

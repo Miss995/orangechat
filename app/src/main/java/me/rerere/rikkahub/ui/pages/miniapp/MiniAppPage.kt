@@ -325,8 +325,10 @@ fun MiniAppPage(
                                             webView?.let { wv ->
                                                 wv.settings.userAgentString =
                                                     if (next) DESKTOP_UA else WebSettings.getDefaultUserAgent(context)
-                                                wv.settings.useWideViewPort = !next
-                                                wv.settings.loadWithOverviewMode = !next
+                                                // ★ 2026-10-26 晚：桌面版必须「按宽视口布局 + 缩放到屏宽」，
+                                                //   反过来会让页面按手机窄屏重排，抖音桌面版布局直接崩。
+                                                wv.settings.useWideViewPort = true
+                                                wv.settings.loadWithOverviewMode = true
                                                 wv.reload()
                                             }
                                         },
