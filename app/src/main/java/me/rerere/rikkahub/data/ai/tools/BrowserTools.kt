@@ -13,6 +13,7 @@ import kotlinx.serialization.json.putJsonObject
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.ui.pages.miniapp.DESKTOP_UA
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewBridge
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewHost
 import kotlin.coroutines.resume
@@ -265,6 +266,69 @@ fun browserClickTool(): Tool = Tool(
             text.isBlank() && selector.isBlank() ->
                 listOf(UIMessagePart.Text("得给 text 或者 selector 其中一个。"))
             else -> listOf(UIMessagePart.Text(evalJs(wv, buildClickJs(text, selector))))
+        }
+    },
+)
+
+/** 在主线程跑一段操作（动 WebSettings 必须回主线程），跑完才返回。 */
+private suspend fun onMain(block: () -> Unit) = suspendCancellableCoroutine { cont ->
+    Handler(Looper.getMainLooper()).post {
+        try {
+            block()
+        } catch (e: Throwable) {
+            android.util.Log.w("BrowserTools", "onMain: ${e.message}")
+        }
+        if (cont.isActive) cont.resume(Unit)
+    }
+}
+
+/**
+ * 桌面版 / 手机版切换。
+ *
+ * 为什么要它：抖音这类页面看到「移动版 UA」就先给你引流那一层（"打开抖音看精彩视频"），
+ * 正经内容压根不给；桌面版才给。宝 2026-10-26 提的。
+ * 逻辑跟小程序页顶栏那个菜单项一样（同一个 DESKTOP_UA），只是让猫也能按。
+ */
+fun browserUaTool(): Tool = Tool(
+    name = "browser_ua",
+    description = "把宝打开着的页面切成桌面版（网页以为自己在电脑上）或切回手机版，切完自动重载。抖音那种“非桌面版就弹打开App”的页面，切桌面版才给正经内容。",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                putJsonObject("action") {
+                    put("type", "string")
+                    put("description", "desktop = 切桌面版；mobile = 切回手机版")
+                }
+            },
+            required = listOf("action"),
+        )
+    },
+    execute = { args ->
+        val act = args.jsonObject["action"]?.jsonPrimitive?.content?.trim()?.lowercase().orEmpty()
+        val wv = currentBrowser()
+        when {
+            wv == null -> listOf(UIMessagePart.Text(NO_PAGE))
+            act != "desktop" && act != "mobile" ->
+                listOf(UIMessagePart.Text("action 只能是 desktop 或 mobile。"))
+            else -> {
+                onMain {
+                    val next = act == "desktop"
+                    wv.settings.userAgentString = if (next) {
+                        DESKTOP_UA
+                    } else {
+                        android.webkit.WebSettings.getDefaultUserAgent(wv.context).replace("; wv", "")
+                    }
+                    wv.settings.useWideViewPort = !next
+                    wv.settings.loadWithOverviewMode = !next
+                    wv.reload()
+                }
+                listOf(
+                    UIMessagePart.Text(
+                        if (act == "desktop") "已切到桌面版，正在重载。"
+                        else "已切回手机版，正在重载。"
+                    )
+                )
+            }
         }
     },
 )

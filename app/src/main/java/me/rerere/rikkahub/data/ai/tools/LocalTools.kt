@@ -881,6 +881,7 @@ class LocalTools(
             tools.add(browserOpenTool())
             tools.add(browserClickTool())
             tools.add(browserBackTool())
+            tools.add(browserUaTool())
             tools.add(browserEvalTool())
             tools.add(browserScreenshotTool())
         }

@@ -94,8 +94,8 @@ internal fun applyMiniAppWebViewSettings(wv: WebView) {
     wv.webChromeClient = WebChromeClient()
 }
 
-/** 桌面版 UA：让网页以为自己在电脑上。 */
-private const val DESKTOP_UA =
+/** 桌面版 UA：让网页以为自己在电脑上。★ 2026-10-26 改成 internal —— 猫的工具也要用它。 */
+internal const val DESKTOP_UA =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
 
 private val json = Json { ignoreUnknownKeys = true }
