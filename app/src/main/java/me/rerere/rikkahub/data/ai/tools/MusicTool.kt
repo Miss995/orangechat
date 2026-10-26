@@ -26,6 +26,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.service.RikkaNotificationListenerService
+import me.rerere.rikkahub.plugin.webview.MusicPlayerService
 
 private fun getAppName(context: Context, packageName: String): String {
     return try {
@@ -63,6 +64,7 @@ fun createMusicTool(context: Context): Tool = Tool(
     description = "Control music playback on the device. " +
         "Can get currently playing media info, and control playback (play, pause, next, previous, seek). " +
         "Can also search and play music by sending an intent to installed music apps. " +
+        "Can also play an audio URL directly inside the app. " +
         "Requires notification listener permission to be enabled.",
     parameters = {
         InputSchema.Obj(
@@ -78,6 +80,7 @@ fun createMusicTool(context: Context): Tool = Tool(
                         add(JsonPrimitive("previous"))
                         add(JsonPrimitive("seek"))
                         add(JsonPrimitive("play_search"))
+                        add(JsonPrimitive("play_url"))
                     })
                 }
                 putJsonObject("position_ms") {
@@ -95,6 +98,10 @@ fun createMusicTool(context: Context): Tool = Tool(
                 putJsonObject("title") {
                     put("type", JsonPrimitive("string"))
                     put("description", JsonPrimitive("Song title for 'play_search' action (optional)"))
+                }
+                putJsonObject("url") {
+                    put("type", JsonPrimitive("string"))
+                    put("description", JsonPrimitive("Audio URL for 'play_url' action. Must start with http:// or https://."))
                 }
             },
             required = listOf("action")
@@ -211,6 +218,35 @@ fun createMusicTool(context: Context): Tool = Tool(
                             put("action", JsonPrimitive(action))
                             put("app_name", JsonPrimitive(getAppName(context, controller.packageName)))
                             put("message", JsonPrimitive("Successfully sent $action command to ${getAppName(context, controller.packageName)}"))
+                        }.toString()
+                    ))
+                }
+
+                "play_url" -> {
+                    val url = params["url"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val title = params["title"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val artist = params["artist"]?.jsonPrimitive?.contentOrNull ?: ""
+
+                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                        return@Tool listOf(UIMessagePart.Text(
+                            buildJsonObject {
+                                put("success", false)
+                                put("error", JsonPrimitive("'url' must start with http:// or https://. For local files use the plugin bridge instead."))
+                            }.toString()
+                        ))
+                    }
+
+                    // 交给 App 自己的前台播放服务（ExoPlayer），不依赖任何第三方音乐 App。
+                    MusicPlayerService.play(context, url, title.ifBlank { "音频" }, artist)
+
+                    listOf(UIMessagePart.Text(
+                        buildJsonObject {
+                            put("success", true)
+                            put("action", JsonPrimitive("play_url"))
+                            put("url", JsonPrimitive(url))
+                            put("title", JsonPrimitive(title))
+                            put("artist", JsonPrimitive(artist))
+                            put("message", JsonPrimitive("Started playing in the app's own player."))
                         }.toString()
                     ))
                 }

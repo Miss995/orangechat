@@ -228,7 +228,14 @@ class MusicPlayerService : Service() {
                     }
                 })
 
-                player.setMediaItem(MediaItem.fromUri(Uri.fromFile(File(filePath))))
+                // filePath 既可能是本地文件，也可能是 http(s) 网址（在线音频）。
+                // ExoPlayer 本身支持这两种源，区别只在怎么把字符串变成 Uri。
+                val mediaUri = if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+                    Uri.parse(filePath)
+                } else {
+                    Uri.fromFile(File(filePath))
+                }
+                player.setMediaItem(MediaItem.fromUri(mediaUri))
                 player.prepare()
                 player.play()
 
