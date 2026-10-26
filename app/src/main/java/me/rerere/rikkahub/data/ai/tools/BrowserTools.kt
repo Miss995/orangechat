@@ -28,6 +28,33 @@ private const val NO_PAGE =
 
 private fun currentBrowser(): WebView? = MiniAppWebViewBridge.current
 
+/**
+ * 抓「网页里正在播的那一帧」。
+ *
+ * 为什么要它：PixelCopy 是从 Window 的合成层抓，但 WebView 里的 <video> 走的是
+ * 独立的硬件图层，抓下来只有一片糊的背景（2026-10-26 在抖音上实测：底图糊、UI 清楚）。
+ * 换条路 —— 让页面自己把 video 画进 canvas 再吐 base64，视频帧就拿到了（实测 1920×1080 成功）。
+ *
+ * 返回 JSON：{ x, y, w, h, dpr, frame }，坐标是 CSS 像素（相对视口），要乘 dpr 才是位图像素。
+ * 页面上没视频 / 视频还没解出画面 / canvas 被跨域污染，都返回空串。
+ */
+private val JS_VIDEO_FRAME = """
+(function(){
+  try{
+    var v=document.querySelector('video');
+    if(!v||!v.videoWidth||!v.videoHeight) return '';
+    var r=v.getBoundingClientRect();
+    if(r.width<1||r.height<1) return '';
+    var c=document.createElement('canvas');
+    c.width=v.videoWidth; c.height=v.videoHeight;
+    c.getContext('2d').drawImage(v,0,0);
+    var d=c.toDataURL('image/jpeg',0.85);
+    return JSON.stringify({x:r.left,y:r.top,w:r.width,h:r.height,
+      dpr:window.devicePixelRatio||1,frame:d});
+  }catch(e){ return ''; }
+})()
+""".trimIndent()
+
 /** 在主线程跑一段 JS，取回它的返回值（已剥掉一层 JSON 引号）。 */
 private suspend fun evalJs(webView: WebView, js: String): String =
     suspendCancellableCoroutine { cont ->
@@ -291,7 +318,7 @@ private fun findHostWindow(view: android.view.View): android.view.Window? {
  * （硬件叠加层，不在 View 画布上）也能带上。PixelCopy 拿不到时再退回 draw ——
  * draw 只画 View 树，视频层会是空的。
  */
-private suspend fun captureWebView(webView: WebView): java.io.File? =
+private suspend fun captureWebView(webView: WebView, videoJson: String = ""): java.io.File? =
     suspendCancellableCoroutine { cont ->
         Handler(Looper.getMainLooper()).post {
             try {
@@ -306,6 +333,39 @@ private suspend fun captureWebView(webView: WebView): java.io.File? =
                 )
                 val dir = java.io.File(webView.context.cacheDir, "browser_shots").apply { mkdirs() }
                 val file = java.io.File(dir, "shot_" + System.currentTimeMillis() + ".png")
+
+                // ★ 2026-10-26：把网页自己抓的那一帧贴回去。
+                //   PixelCopy 抓不到 WebView 里的视频层（硬件叠加层），底图那块只有糊的背景；
+                //   所以先让页面把 video 画进 canvas 吐出 base64，再按它的位置盖上来。
+                //   贴不上就算了 —— 有 UI 的那张总比什么都没有强。
+                fun overlayVideo() {
+                    if (videoJson.isBlank()) return
+                    try {
+                        val o = Json.parseToJsonElement(videoJson).jsonObject
+                        val dataUrl = o["frame"]?.jsonPrimitive?.content ?: return
+                        val idx = dataUrl.indexOf(",")
+                        if (idx <= 0) return
+                        val bytes = android.util.Base64.decode(
+                            dataUrl.substring(idx + 1), android.util.Base64.DEFAULT
+                        )
+                        val frame = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            ?: return
+                        val dpr = o["dpr"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 1f
+                        val fx = (o["x"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 0f) * dpr
+                        val fy = (o["y"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 0f) * dpr
+                        val fw = (o["w"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 0f) * dpr
+                        val fh = (o["h"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 0f) * dpr
+                        if (fw < 1f || fh < 1f) return
+                        val target = android.graphics.Rect(
+                            fx.toInt(), fy.toInt(), (fx + fw).toInt(), (fy + fh).toInt()
+                        )
+                        android.graphics.Canvas(bmp).drawBitmap(
+                            frame, null, target, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+                        )
+                        frame.recycle()
+                    } catch (_: Throwable) {
+                    }
+                }
 
                 fun saveFile() {
                     try {
@@ -322,6 +382,7 @@ private suspend fun captureWebView(webView: WebView): java.io.File? =
                 fun fallbackDraw() {
                     try {
                         webView.draw(android.graphics.Canvas(bmp))
+                        overlayVideo()
                         saveFile()
                     } catch (e: Throwable) {
                         if (cont.isActive) cont.resume(null)
@@ -339,7 +400,7 @@ private suspend fun captureWebView(webView: WebView): java.io.File? =
                         android.view.PixelCopy.request(
                             win, rect, bmp,
                             { result ->
-                                if (result == android.view.PixelCopy.SUCCESS) saveFile() else fallbackDraw()
+                                if (result == android.view.PixelCopy.SUCCESS) { overlayVideo(); saveFile() } else fallbackDraw()
                             },
                             Handler(Looper.getMainLooper())
                         )
@@ -369,7 +430,9 @@ fun browserScreenshotTool(): Tool = Tool(
         if (wv == null) {
             listOf(UIMessagePart.Text(NO_PAGE))
         } else {
-            val file = captureWebView(wv)
+            // ★ 2026-10-26：先问页面「视频在哪、这一帧长什么样」，再截图。
+            val videoJson = runCatching { evalJs(wv, JS_VIDEO_FRAME) }.getOrDefault("")
+            val file = captureWebView(wv, videoJson)
             if (file == null) {
                 listOf(
                     UIMessagePart.Text("截图没成 —— 页面可能还没画出东西，或者这会儿尺寸是 0。等它加载完再试一次。")
