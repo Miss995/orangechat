@@ -13,6 +13,7 @@ import kotlinx.serialization.json.putJsonObject
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.ui.pages.miniapp.DESKTOP_UA
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewBridge
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewHost
@@ -90,7 +91,8 @@ private val JS_VIDEO_FRAME = """
       ctx.drawImage(v, 0,0,vw,vh, 0,0,cw,chh);
     }
     var d=c.toDataURL('image/jpeg',0.85);
-    return JSON.stringify({x:r.left,y:r.top,w:r.width,h:r.height,dpr:dpr,frame:d});
+    return JSON.stringify({x:r.left,y:r.top,w:r.width,h:r.height,dpr:dpr,
+      vpW:window.innerWidth,vpH:window.innerHeight,frame:d});
   }catch(e){ return ''; }
 })()
 """.trimIndent()
@@ -453,11 +455,19 @@ private suspend fun captureWebView(webView: WebView, videoJson: String = ""): ja
                         )
                         val frame = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                             ?: return
-                        val dpr = o["dpr"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 1f
+                        // ★ 2026-10-26 晚：浮窗能缩放，devicePixelRatio 不能信（宝指出的）。
+                        //   改成「WebView 实际宽 ÷ 页面视口宽」自己算缩放比，两边用同一把尺。
+                        val vpW = o["vpW"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 0f
+                        val dpr = if (vpW > 1f) w.toFloat() / vpW
+                            else (o["dpr"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 1f)
                         val fx = (o["x"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 0f) * dpr
                         val fy = (o["y"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 0f) * dpr
                         val fw = (o["w"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 0f) * dpr
                         val fh = (o["h"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 0f) * dpr
+                        AppLogBuffer.log(
+                            "BrowserTools",
+                            "overlay: wv=${w}x$h vpW=$vpW scale=$dpr rect=($fx,$fy,$fw,$fh) frame=${frame.width}x${frame.height}"
+                        )
                         if (fw < 1f || fh < 1f) return
                         val target = android.graphics.Rect(
                             fx.toInt(), fy.toInt(), (fx + fw).toInt(), (fy + fh).toInt()
