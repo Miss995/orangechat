@@ -65,6 +65,7 @@ fun createMusicTool(context: Context): Tool = Tool(
         "Can get currently playing media info, and control playback (play, pause, next, previous, seek). " +
         "Can also search and play music by sending an intent to installed music apps. " +
         "Can also play an audio URL directly inside the app. " +
+        "Use action 'stop_url' to stop the app's own player. " +
         "Requires notification listener permission to be enabled.",
     parameters = {
         InputSchema.Obj(
@@ -81,6 +82,7 @@ fun createMusicTool(context: Context): Tool = Tool(
                         add(JsonPrimitive("seek"))
                         add(JsonPrimitive("play_search"))
                         add(JsonPrimitive("play_url"))
+                        add(JsonPrimitive("stop_url"))
                     })
                 }
                 putJsonObject("position_ms") {
@@ -218,6 +220,18 @@ fun createMusicTool(context: Context): Tool = Tool(
                             put("action", JsonPrimitive(action))
                             put("app_name", JsonPrimitive(getAppName(context, controller.packageName)))
                             put("message", JsonPrimitive("Successfully sent $action command to ${getAppName(context, controller.packageName)}"))
+                        }.toString()
+                    ))
+                }
+
+                "stop_url" -> {
+                    // 停掉 App 自己的播放器。这个走 MusicPlayerService，不碰第三方音乐 App。
+                    MusicPlayerService.stop(context)
+                    listOf(UIMessagePart.Text(
+                        buildJsonObject {
+                            put("success", true)
+                            put("action", JsonPrimitive("stop_url"))
+                            put("message", JsonPrimitive("Stopped the app's own player."))
                         }.toString()
                     ))
                 }
