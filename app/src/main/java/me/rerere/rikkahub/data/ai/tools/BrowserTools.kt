@@ -472,11 +472,21 @@ private suspend fun captureWebView(webView: WebView, videoJson: String = ""): ja
                             "overlay: wv=${w}x$h vpW=$vpW scale=$dpr rect=($fx,$fy,$fw,$fh) frame=${frame.width}x${frame.height}"
                         )
                         if (fw < 1f || fh < 1f) return
+                        // ★ 2026-10-26 晚：元素可能横向溢出视口（抖音桌面版 812 CSS 宽、视口只有 460），
+                        //   直接贴会画到画布外面。先裁到 WebView 范围内，source 也跟着按比例裁。
+                        val visW = minOf(fw, w.toFloat() - fx).coerceAtLeast(0f)
+                        val visH = minOf(fh, h.toFloat() - fy).coerceAtLeast(0f)
+                        if (visW < 1f || visH < 1f) return
+                        val srcW = (frame.width * (visW / fw)).toInt().coerceIn(1, frame.width)
+                        val srcH = (frame.height * (visH / fh)).toInt().coerceIn(1, frame.height)
                         val target = android.graphics.Rect(
-                            fx.toInt(), fy.toInt(), (fx + fw).toInt(), (fy + fh).toInt()
+                            fx.toInt(), fy.toInt(), (fx + visW).toInt(), (fy + visH).toInt()
                         )
                         android.graphics.Canvas(bmp).drawBitmap(
-                            frame, null, target, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+                            frame,
+                            android.graphics.Rect(0, 0, srcW, srcH),
+                            target,
+                            android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
                         )
                         frame.recycle()
                     } catch (_: Throwable) {
