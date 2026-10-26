@@ -44,6 +44,53 @@ internal object MiniAppWebViewHost {
         if (u.isNotEmpty()) savedUrl = u
     }
 
+    /**
+     * 浮窗自己那一只（2026-10-26）。
+     *
+     * 为什么不共用主那只：浮窗和小程序页会同时开着，主那只只有一个爹 ——
+     * 谁后挂谁就把对方顶掉，小程序页会直接变空白（宝 2026-10-26 报的）。
+     * 所以浮窗单独一只，互不干扰。
+     *
+     * 跟主那只的区别：**关浮窗就销毁**，不留在窝里跑。
+     * 浮窗是"临时看一眼"，留着它白白占内存、还烧电（视频一直在解码）。
+     */
+    @Volatile
+    var floatWebView: WebView? = null
+        private set
+
+    /** 造浮窗那只。要 IO 线程调（内部 post 到主线程造 + 等结果）。 */
+    fun obtainFloat(configure: (WebView) -> Unit): WebView? {
+        floatWebView?.let { return it }
+        val ctx = appContext ?: return null
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var created: WebView? = null
+        Handler(Looper.getMainLooper()).post {
+            try {
+                created = WebView(ctx).also { wv ->
+                    configure(wv)
+                    floatWebView = wv
+                }
+            } catch (_: Throwable) {
+            } finally {
+                latch.countDown()
+            }
+        }
+        latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        return created
+    }
+
+    /** 关浮窗：把浮窗那只真销毁掉（不留在窝里）。 */
+    fun destroyFloat() {
+        floatWebView?.let { target ->
+            (target.parent as? ViewGroup)?.removeView(target)
+            try {
+                target.destroy()
+            } catch (_: Throwable) {
+            }
+        }
+        floatWebView = null
+    }
+
     private var park: FrameLayout? = null
 
     /** 主 Activity 的根 View。页面第一次打开时记一下 —— 之后猫自己造 WebView 也有地方安放。 */

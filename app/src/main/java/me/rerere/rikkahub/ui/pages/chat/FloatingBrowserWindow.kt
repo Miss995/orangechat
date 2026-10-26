@@ -71,7 +71,9 @@ fun FloatingBrowserWindow(
     //   clearPage = false：藏起来不是「关掉页面」，下次点开还要接着看原来那页。
     DisposableEffect(Unit) {
         onDispose {
-            MiniAppWebViewHost.webView?.let { MiniAppWebViewHost.back(it, clearPage = false) }
+            // ★ 2026-10-26：浮窗那只用完就销毁，不留在窝里跑。
+            //   留着它会一直占内存、烧电（视频还在解码，手机直接热起来）。
+            MiniAppWebViewHost.destroyFloat()
         }
     }
     if (!visible) return
@@ -151,9 +153,7 @@ fun FloatingBrowserWindow(
                             .size(30.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .clickable {
-                            MiniAppWebViewHost.webView?.let {
-                                MiniAppWebViewHost.back(it, clearPage = false)
-                            }
+                            MiniAppWebViewHost.destroyFloat()
                             onClose()
                         },
                         contentAlignment = Alignment.Center,
@@ -167,22 +167,22 @@ fun FloatingBrowserWindow(
                 }
 
                 // ── 身体：借用小程序那只 WebView（2026-10-26 接上） ──
-                //   全局只有一只（MiniAppWebViewHost 单例），所以是「借」不是「造」：
-                //   从它现在待的地方（小程序页 或 那个看不见的窝）摘下来，挂到这儿。
-                //   摘的时候先 removeView —— 一个 View 只能有一个爹。
-                //   没有的话就自己造一只（MiniAppWebViewHost.obtainHeadless）——
+                //   ★ 2026-10-26 改：以前是「借」小程序那只，结果浮窗一开、小程序页就空了
+                //   （一个 View 只能有一个爹，谁后挂谁把对方顶掉）。
+                //   现在浮窗自己造一只，跟小程序完全分开，互不相干。
+                //   没有的话就自己造一只（MiniAppWebViewHost.obtainFloat）——
                 //   配置直接调小程序页那套 applyMiniAppWebViewSettings，两边一模一样。
                 val ctx = LocalContext.current
-                var wv by remember { mutableStateOf<WebView?>(MiniAppWebViewHost.webView) }
+                var wv by remember { mutableStateOf<WebView?>(MiniAppWebViewHost.floatWebView) }
                 LaunchedEffect(Unit) {
                     if (wv == null) {
                         MiniAppWebViewHost.rememberHost(ctx)
-                        // ★ 必须在 IO 线程调：obtainHeadless 内部是
+                        // ★ 必须在 IO 线程调：obtainFloat 内部是
                         //   「post 到主线程造 WebView + latch.await(5s) 等结果」。
                         //   要是在主线程调，主线程一 await，那个 post 就排不上队，
                         //   必然死等满 5 秒再返回 null —— 界面还会僵在那儿。
                         val created = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            MiniAppWebViewHost.obtainHeadless {
+                            MiniAppWebViewHost.obtainFloat {
                                 applyMiniAppWebViewSettings(it)
                             }
                         }
@@ -190,7 +190,7 @@ fun FloatingBrowserWindow(
                             // 有意先开一个真页面再交给 Compose：
                             // about:blank 是"没有 contentSize"的，等挂上来再 loadUrl
                             // 会让它先按 0 高度量一次（小程序那轮 vh=0 的同类坑）。
-                            created.loadUrl(MiniAppWebViewHost.savedUrl ?: "https://rickycat.asia")
+                            created.loadUrl("https://rickycat.asia")
                         }
                         wv = created
                     }
