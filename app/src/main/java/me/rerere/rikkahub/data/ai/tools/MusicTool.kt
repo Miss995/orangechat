@@ -27,6 +27,13 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.service.RikkaNotificationListenerService
 import me.rerere.rikkahub.plugin.webview.MusicPlayerService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 
 private fun getAppName(context: Context, packageName: String): String {
     return try {
@@ -59,6 +66,35 @@ private fun getActiveMediaControllers(context: Context): List<android.media.sess
     }
 }
 
+// ==================== eryu（咱家自建的网易云播放器）====================
+// 为什么不直接播网易云的地址：那些地址要么要 cookie、要么带签名会过期。
+// eryu 跑在咱家服务器上，负责"按 id 把音频缓存下来"，再从 /music/file/ 发出来，
+// 那条路免 token、也不怕网易云那边改规则。
+private const val ERYU_BASE = "http://47.101.190.165:9090"
+private const val ERYU_TOKEN = "123456"
+private const val ERYU_TIMEOUT_MS = 12000
+
+/** 简单 GET，失败返回 null，绝不把异常抛出去 */
+private fun eryuGet(path: String): String? {
+    var conn: HttpURLConnection? = null
+    return try {
+        conn = (URL(ERYU_BASE + path).openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = true
+            connectTimeout = ERYU_TIMEOUT_MS
+            readTimeout = ERYU_TIMEOUT_MS
+            requestMethod = "GET"
+            setRequestProperty("User-Agent", "okhttp/4.12.0")
+            setRequestProperty("X-Auth-Token", ERYU_TOKEN)
+        }
+        if (conn.responseCode !in 200..299) null
+        else conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+    } catch (e: Exception) {
+        null
+    } finally {
+        try { conn?.disconnect() } catch (_: Exception) {}
+    }
+}
+
 fun createMusicTool(context: Context): Tool = Tool(
     name = "control_music",
     description = "Control music playback on the device. " +
@@ -83,6 +119,7 @@ fun createMusicTool(context: Context): Tool = Tool(
                         add(JsonPrimitive("play_search"))
                         add(JsonPrimitive("play_url"))
                         add(JsonPrimitive("stop_url"))
+                        add(JsonPrimitive("play_song"))
                     })
                 }
                 putJsonObject("position_ms") {
@@ -91,7 +128,7 @@ fun createMusicTool(context: Context): Tool = Tool(
                 }
                 putJsonObject("query") {
                     put("type", JsonPrimitive("string"))
-                    put("description", JsonPrimitive("Search query for 'play_search' action. e.g. song name or artist"))
+                    put("description", JsonPrimitive("Search query for 'play_search' / 'play_song' action. e.g. song name or artist"))
                 }
                 putJsonObject("artist") {
                     put("type", JsonPrimitive("string"))
@@ -220,6 +257,79 @@ fun createMusicTool(context: Context): Tool = Tool(
                             put("action", JsonPrimitive(action))
                             put("app_name", JsonPrimitive(getAppName(context, controller.packageName)))
                             put("message", JsonPrimitive("Successfully sent $action command to ${getAppName(context, controller.packageName)}"))
+                        }.toString()
+                    ))
+                }
+
+                "play_song" -> {
+                    val query = params["query"]?.jsonPrimitive?.contentOrNull ?: ""
+                    if (query.isBlank()) {
+                        return@Tool listOf(UIMessagePart.Text(
+                            buildJsonObject {
+                                put("success", false)
+                                put("error", JsonPrimitive("Missing required parameter 'query' for play_song"))
+                            }.toString()
+                        ))
+                    }
+
+                    // 网络活整段挪到 IO 线程（execute 是 suspend，可以直接切）
+                    val outcome: Pair<List<String>?, String> = withContext(Dispatchers.IO) {
+                        try {
+                            val searchBody = eryuGet("/music/search?q=" + URLEncoder.encode(query, "UTF-8"))
+                            if (searchBody == null) {
+                                Pair(null, "搜索请求失败（eryu 没响应）")
+                            } else {
+                                val songs = Json.parseToJsonElement(searchBody).jsonObject["songs"]?.jsonArray
+                                val first = songs?.firstOrNull()?.jsonObject
+                                if (first == null) {
+                                    Pair(null, "没搜到「" + query + "」")
+                                } else {
+                                    val id = first["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                                    val name = first["name"]?.jsonPrimitive?.contentOrNull ?: query
+                                    val artist = first["artist"]?.jsonPrimitive?.contentOrNull ?: ""
+                                    val urlBody = eryuGet("/music/url?id=" + URLEncoder.encode(id, "UTF-8"))
+                                    val path = urlBody?.let {
+                                        Json.parseToJsonElement(it).jsonObject["url"]?.jsonPrimitive?.contentOrNull
+                                    }
+                                    if (path == null) {
+                                        Pair(null, "eryu 没给出地址（id=" + id + "）")
+                                    } else {
+                                        val full = if (path.startsWith("http")) path else ERYU_BASE + path
+                                        Pair(listOf(full, name, artist), "")
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Pair(null, e.javaClass.simpleName + ": " + (e.message ?: ""))
+                        }
+                    }
+
+                    val info = outcome.first
+                    if (info == null) {
+                        return@Tool listOf(UIMessagePart.Text(
+                            buildJsonObject {
+                                put("success", false)
+                                put("action", JsonPrimitive("play_song"))
+                                put("query", JsonPrimitive(query))
+                                put("error", JsonPrimitive(outcome.second))
+                            }.toString()
+                        ))
+                    }
+
+                    val fullUrl = info[0]
+                    val songName = info[1]
+                    val songArtist = info[2]
+                    MusicPlayerService.play(context, fullUrl, songName, songArtist)
+
+                    listOf(UIMessagePart.Text(
+                        buildJsonObject {
+                            put("success", true)
+                            put("action", JsonPrimitive("play_song"))
+                            put("query", JsonPrimitive(query))
+                            put("name", JsonPrimitive(songName))
+                            put("artist", JsonPrimitive(songArtist))
+                            put("url", JsonPrimitive(fullUrl))
+                            put("message", JsonPrimitive("Playing " + songName + " - " + songArtist + " in the app's own player."))
                         }.toString()
                     ))
                 }
