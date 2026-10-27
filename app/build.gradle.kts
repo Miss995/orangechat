@@ -350,6 +350,8 @@ dependencies {
 
     // media3 (ExoPlayer)
     implementation(libs.androidx.media3.exoplayer)
+    // 【视频就地播放 2026-10-27】PlayerView（带控制条的那套现成视图）
+    implementation(libs.androidx.media3.ui)
 
     // modules
     implementation(project(":ai"))

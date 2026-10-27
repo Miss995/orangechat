@@ -31,6 +31,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -876,26 +881,7 @@ private fun MessagePartsBlock(
                     }
  
                     is UIMessagePart.Video -> {
-                        Surface(
-                            tonalElevation = 2.dp,
-                            onClick = {
-                                val intent = Intent(Intent.ACTION_VIEW)
-                                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                intent.data = FileProvider.getUriForFile(
-                                    context,
-                                    "${context.packageName}.fileprovider",
-                                    part.url.toUri().toFile()
-                                )
-                                val chooserIndent = Intent.createChooser(intent, null)
-                                context.startActivity(chooserIndent)
-                            },
-                            modifier = Modifier,
-                            shape = RoundedCornerShape(8.dp),
-                        ) {
-                            Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
-                                Icon(HugeIcons.Video01, null)
-                            }
-                        }
+                        VideoBubble(url = part.url)
                     }
  
                     is UIMessagePart.Audio -> {
@@ -1214,6 +1200,52 @@ private fun BubbleSurface(
     }
 }
  
+/**
+ * 【视频就地播放 · 2026-10-27 宝：能让那个我发给你的视频能直接在用户消息里点击直看吗】
+ * 收起时是一个方块，点一下原地展开成播放器。
+ * 原来的做法是 ACTION_VIEW + chooser —— 跳出去、还得让你选一个应用，等于离开橘瓣。
+ */
+@Composable
+internal fun VideoBubble(url: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var expanded = remember { mutableStateOf(false) }
+
+    if (!expanded.value) {
+        Surface(
+            tonalElevation = 2.dp,
+            onClick = { expanded.value = true },
+            modifier = modifier,
+            shape = RoundedCornerShape(8.dp),
+        ) {
+            Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+                Icon(HugeIcons.Video01, null)
+            }
+        }
+    } else {
+        val player = remember(url) {
+            ExoPlayer.Builder(context).build().apply {
+                setMediaItem(MediaItem.fromUri(url))
+                prepare()
+                playWhenReady = true
+            }
+        }
+        DisposableEffect(player) {
+            onDispose { player.release() }
+        }
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    setPlayer(player)
+                    useController = true
+                }
+            },
+            modifier = modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f),
+        )
+    }
+}
+
 @Composable
 @Suppress("UnusedCrossTarget")
 internal fun AudioPlayerBubble(url: String) {
