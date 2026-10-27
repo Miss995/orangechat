@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.aspectRatio
@@ -71,6 +73,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -1202,6 +1205,32 @@ private fun BubbleSurface(
     }
 }
  
+/** 【视频别竖成一块板子 · 2026-10-27】读视频自己的宽高比 + 抽第一帧当封面。 */
+private data class VideoMeta(val ratio: Float, val cover: android.graphics.Bitmap?)
+
+private fun readVideoMeta(context: android.content.Context, url: String): VideoMeta {
+    return runCatching {
+        val retriever = android.media.MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(context, Uri.parse(url))
+            val w = retriever.extractMetadata(
+                android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+            )?.toIntOrNull() ?: 0
+            val h = retriever.extractMetadata(
+                android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+            )?.toIntOrNull() ?: 0
+            val ratio = if (w > 0 && h > 0) w.toFloat() / h else 16f / 9f
+            val frame = retriever.getFrameAtTime(
+                1_000_000L,
+                android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+            )
+            VideoMeta(ratio, frame)
+        } finally {
+            retriever.release()
+        }
+    }.getOrDefault(VideoMeta(16f / 9f, null))
+}
+
 /**
  * 【视频就地播放 · 2026-10-27 宝：能让那个我发给你的视频能直接在用户消息里点击直看吗】
  * 收起时是一个方块，点一下原地展开成播放器。
@@ -1219,6 +1248,9 @@ internal fun VideoBubble(
     // 【单视频消息编辑不了 · 2026-10-27 宝发现的】跟图片同一套逻辑：
     // 点击被「播放」吃掉，外层气泡的点击永远收不到 → 长按当出口。
     var videoMenuOpen = remember { mutableStateOf(false) }
+    // 【视频别竖成一块板子 · 2026-10-27 宝报】原来写死 16:9，竖屏视频被塞成中间窄条。
+    // 改成读视频自己的宽高比，同时抽第一帧当封面（一次 MediaMetadataRetriever 拿两样）。
+    val meta = remember(url) { readVideoMeta(context, url) }
 
     if (!expanded.value) {
         Surface(
@@ -1227,10 +1259,38 @@ internal fun VideoBubble(
                 onClick = { expanded.value = true },
                 onLongClick = { videoMenuOpen.value = true },
             ),
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(10.dp),
         ) {
-            Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
-                Icon(HugeIcons.Video01, null)
+            // 【2026-10-27 隐患修正】不靠 aspectRatio 猜（wrapContent 时它会按最小宽算，
+            // 结果盒子塌成播放键那么大）—— 直接把宽高算出来。
+            val boxW = if (meta.ratio >= 1f) 240.dp else (220.dp * meta.ratio)
+            val boxH = if (meta.ratio >= 1f) (240.dp / meta.ratio) else 220.dp
+            Box(
+                modifier = Modifier.size(boxW, boxH),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (meta.cover != null) {
+                    Image(
+                        bitmap = meta.cover.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    // 封面上面盖一层暗，再加个播放键，告诉人「这是能点的」
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.28f)),
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(HugeIcons.Play, null, tint = Color.White)
+                }
             }
         }
         if (videoMenuOpen.value) {
@@ -1259,8 +1319,11 @@ internal fun VideoBubble(
                 }
             },
             modifier = modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f),
+                .then(
+                    // 【2026-10-27】按视频自己的比例；竖屏限高，免得一条视频占满整屏
+                    if (meta.ratio >= 1f) Modifier.fillMaxWidth().aspectRatio(meta.ratio)
+                    else Modifier.height(400.dp).aspectRatio(meta.ratio)
+                ),
         )
     }
 }
