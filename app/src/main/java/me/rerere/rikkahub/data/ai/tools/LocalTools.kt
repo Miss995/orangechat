@@ -884,6 +884,9 @@ class LocalTools(
             tools.add(browserUaTool())
             tools.add(browserEvalTool())
             tools.add(browserScreenshotTool())
+            // 【2026-10-27】小红书视频直投：搜/解析一条视频，拿签名直链，把浮窗指过去。
+            // 跟浮窗的 ▶ 是一对 —— 那个负责「直链→原生播放器」，这个负责「视频→直链」。
+            tools.add(xhsVideoTool())
         }
         return tools
     }
