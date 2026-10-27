@@ -93,6 +93,12 @@ class MusicPlayerService : Service() {
 
         fun isPlaying(): Boolean = synchronized(stateLock) { currentState == STATE_PLAYING }
 
+        /**
+         * 【原生播放器 · 2026-10-27】把实例借给界面出画面。
+         * ⚠️ 一个 ExoPlayer 同时只能绑一个 SurfaceView —— 调用方负责「用的时候绑、走的时候解」。
+         */
+        fun currentPlayer(): ExoPlayer? = synchronized(stateLock) { exoPlayer }
+
         fun getState(): String = synchronized(stateLock) {
             when (currentState) {
                 STATE_PLAYING -> "playing"
@@ -228,14 +234,14 @@ class MusicPlayerService : Service() {
                     }
                 })
 
-                // filePath 既可能是本地文件，也可能是 http(s) 网址（在线音频）。
-                // ExoPlayer 本身支持这两种源，区别只在怎么把字符串变成 Uri。
-                val mediaUri = if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+                // 【直链也能播 · 2026-10-27】原来是 Uri.fromFile(File(path))，只吃本地文件。
+                // 现在 http/https 开头的当网络直链（ExoPlayer 原生支持），其余照旧当本地文件。
+                val sourceUri = if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
                     Uri.parse(filePath)
                 } else {
                     Uri.fromFile(File(filePath))
                 }
-                player.setMediaItem(MediaItem.fromUri(mediaUri))
+                player.setMediaItem(MediaItem.fromUri(sourceUri))
                 player.prepare()
                 player.play()
 

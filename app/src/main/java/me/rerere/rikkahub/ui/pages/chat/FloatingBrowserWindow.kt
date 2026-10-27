@@ -2,6 +2,10 @@ package me.rerere.rikkahub.ui.pages.chat
 
 import android.view.ViewGroup
 import android.webkit.WebView
+import android.widget.Toast
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -99,6 +103,12 @@ fun FloatingBrowserWindow(
     val minW = 140f
     val minH = 180f
 
+    // 【浮窗播视频 · 2026-10-27】网页里播不动的视频（抖音/小红书那种），
+    // 把网页里 <video> 的地址抠出来，交给原生播放器播 —— 网页播不动，但直链能播。
+    val ctx = LocalContext.current
+    var wv by remember { mutableStateOf<WebView?>(MiniAppWebViewHost.floatWebView) }
+    var playUrl by remember { mutableStateOf<String?>(null) }
+
     Box(
         modifier = modifier
             .width(widthDp.dp)
@@ -143,26 +153,75 @@ fun FloatingBrowserWindow(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        text = "网页",
+                        text = if (playUrl == null) "网页" else "播放器",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Box(
-                        modifier = Modifier
-                            .size(30.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                            MiniAppWebViewHost.destroyFloat()
-                            onClose()
-                        },
-                        contentAlignment = Alignment.Center,
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = "✕",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        // 【浮窗播视频 · 2026-10-27】网页里播不动的视频 → 抠地址交给原生播放器。
+                        Box(
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    if (playUrl != null) {
+                                        // 只清状态，释放交给身体那段的 DisposableEffect —— 两边都 release 会崩
+                                        playUrl = null
+                                        return@clickable
+                                    }
+                                    val page = wv
+                                    if (page == null) {
+                                        Toast.makeText(ctx, "网页还没开起来", Toast.LENGTH_SHORT).show()
+                                        return@clickable
+                                    }
+                                    page.evaluateJavascript(
+                                        "(function(){var v=document.querySelector('video');" +
+                                            "if(v&&v.currentSrc)return v.currentSrc;" +
+                                            "if(v&&v.src)return v.src;" +
+                                            "var s=document.querySelectorAll('source');" +
+                                            "for(var i=0;i<s.length;i++){if(s[i].src)return s[i].src;}" +
+                                            "return '';})()"
+                                    ) { raw ->
+                                        val u = raw?.trim('"', ' ')
+                                        if (u.isNullOrBlank() || u == "null") {
+                                            Toast.makeText(
+                                                ctx,
+                                                "这页里没找到能直接播的视频",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        } else {
+                                            playUrl = u
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = if (playUrl == null) "▶" else "⏹",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                MiniAppWebViewHost.destroyFloat()
+                                onClose()
+                            },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "✕",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
 
@@ -172,8 +231,6 @@ fun FloatingBrowserWindow(
                 //   现在浮窗自己造一只，跟小程序完全分开，互不相干。
                 //   没有的话就自己造一只（MiniAppWebViewHost.obtainFloat）——
                 //   配置直接调小程序页那套 applyMiniAppWebViewSettings，两边一模一样。
-                val ctx = LocalContext.current
-                var wv by remember { mutableStateOf<WebView?>(MiniAppWebViewHost.floatWebView) }
                 LaunchedEffect(Unit) {
                     if (wv == null) {
                         MiniAppWebViewHost.rememberHost(ctx)
@@ -196,7 +253,30 @@ fun FloatingBrowserWindow(
                     }
                 }
                 val cur = wv
-                if (cur == null) {
+                val playing = playUrl
+                if (playing != null) {
+                    // 【浮窗播视频 · 2026-10-27】原生播放器接管整个身体。
+                    // 网页那边不销毁 —— 退回网页模式还接着看原来那页。
+                    val player = remember(playing) {
+                        ExoPlayer.Builder(ctx).build().apply {
+                            setMediaItem(MediaItem.fromUri(playing))
+                            prepare()
+                            playWhenReady = true
+                        }
+                    }
+                    DisposableEffect(player) {
+                        onDispose { player.release() }
+                    }
+                    AndroidView(
+                        factory = { c ->
+                            PlayerView(c).apply {
+                                setPlayer(player)
+                                useController = true
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (cur == null) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
