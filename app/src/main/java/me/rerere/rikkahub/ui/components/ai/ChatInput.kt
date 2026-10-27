@@ -747,6 +747,7 @@ fun ChatInput(
                                     continue
                                 }
                                 var startY = down.position.y
+                                val startX = down.position.x
                                 var fired = false
                                 var alive = true
                                 while (alive) {
@@ -760,6 +761,16 @@ fun ChatInput(
                                     val event = awaitPointerEvent(PointerEventPass.Initial)
                                     val ch = event.changes.firstOrNull { it.id == down.id }
                                     if (ch == null || !ch.pressed) {
+                                        alive = false
+                                    } else if (
+                                        // 【横滑不归外层 · 2026-10-27 宝提的：横着滑能滑出整个附件面板】
+                                        // 只认"以纵向为主"的手势。横向已经明显动了、而且压过纵向，
+                                        // 就整段不处理 —— 让输入框 / 页面自己接。
+                                        // 老版本只算 dy，斜着划一下带点纵向分量，攒够 48f 照样弹面板。
+                                        kotlin.math.abs(ch.position.x - startX) > 24f &&
+                                        kotlin.math.abs(ch.position.x - startX) >
+                                        kotlin.math.abs(ch.position.y - down.position.y)
+                                    ) {
                                         alive = false
                                     } else {
                                         val dy = startY - ch.position.y   // 正 = 手指往上滑
