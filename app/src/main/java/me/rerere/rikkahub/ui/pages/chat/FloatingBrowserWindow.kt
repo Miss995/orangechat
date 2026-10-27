@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -108,6 +109,10 @@ fun FloatingBrowserWindow(
     val ctx = LocalContext.current
     var wv by remember { mutableStateOf<WebView?>(MiniAppWebViewHost.floatWebView) }
     var playUrl by remember { mutableStateOf<String?>(null) }
+    // 【浮窗地址栏 · 2026-10-27】宝说「浮窗我开不了网址，只能看画面」—— 补上。
+    // 平时藏起来不占地方（浮窗只有 340dp 高），点标题才展开一行。
+    var showUrlBar by remember { mutableStateOf(false) }
+    var urlText by remember { mutableStateOf("") }
 
     Box(
         modifier = modifier
@@ -153,10 +158,16 @@ fun FloatingBrowserWindow(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        text = if (playUrl == null) "网页" else "播放器",
+                        text = if (playUrl == null) "网页 ⌄" else "播放器",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        // 【浮窗地址栏 · 2026-10-27】点标题展开/收起地址栏。
+                        // 用「网页 ⌄」而不是「🔗」—— 375 那次的教训：界面上能点的东西要自己说明自己能干什么。
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showUrlBar = !showUrlBar }
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
                     )
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -222,6 +233,58 @@ fun FloatingBrowserWindow(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                    }
+                }
+
+                // ── 地址栏（点标题展开，平时不占地方 · 2026-10-27） ──
+                if (showUrlBar && playUrl == null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(start = 8.dp, end = 8.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 5.dp),
+                        ) {
+                            if (urlText.isEmpty()) {
+                                Text(
+                                    text = "输个网址",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                )
+                            }
+                            BasicTextField(
+                                value = urlText,
+                                onValueChange = { urlText = it },
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.labelSmall.copy(
+                                    color = MaterialTheme.colorScheme.onSurface
+                                ),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        Text(
+                            text = "去",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable {
+                                    var u = urlText.trim()
+                                    if (u.isNotEmpty()) {
+                                        if (!u.startsWith("http")) u = "https://$u"
+                                        wv?.loadUrl(u)
+                                        showUrlBar = false
+                                    }
+                                }
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                        )
                     }
                 }
 
