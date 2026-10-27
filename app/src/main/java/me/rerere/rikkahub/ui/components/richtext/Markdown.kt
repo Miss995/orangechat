@@ -40,6 +40,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -233,7 +234,16 @@ fun MarkdownBlock(
     style: TextStyle = LocalTextStyle.current,
     onClickCitation: (String) -> Unit = {}
 ) {
-    var (data, setData) = remember { mutableStateOf(parseMarkdown(content)) }
+    var data by remember { mutableStateOf(parseMarkdown(content)) }
+    // ★ 2026-10-27 修：remember 没有 key，LazyColumn 复用同一个坑位时会留着上一条的解析结果，
+    // 而下面的 LaunchedEffect(Unit) 不会重启 —— 中间那一下就画出上一条消息的字（看着像乱码/串内容）。
+    // 记一份"这份 data 对应哪段 content"：对不上、又不是同一条在变长（流式），就立刻重算。
+    // 宁可多解析一次，也不能把别人的字画在这条上。
+    var parsedFor by remember { mutableStateOf(content) }
+    if (parsedFor != content && !content.startsWith(parsedFor)) {
+        parsedFor = content
+        data = parseMarkdown(content)
+    }
 
     // 监听内容变化，重新解析AST树
     // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
@@ -244,7 +254,10 @@ fun MarkdownBlock(
             .mapLatest { parseMarkdown(it) }
             .catch { exception -> exception.printStackTrace() }
             .flowOn(Dispatchers.Default)
-            .collect { setData(it) }
+            .collect { parsed ->
+                parsedFor = updatedContent
+                data = parsed
+            }
     }
 
     if (data.hasHtml) {
