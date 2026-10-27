@@ -329,6 +329,7 @@ class ConversationRepository(
                 } else {
                     existingNodeIndexById.values.maxOrNull() ?: -1
                 }
+                val nodeById = conversation.messageNodes.associateBy { it.id.toString() }
                 val newEntities = conversation.messageNodes.mapIndexed { index, node ->
                     val nid = node.id.toString()
                     val preservedIndex = existingNodeIndexById[nid]
@@ -345,11 +346,12 @@ class ConversationRepository(
                         } else {
                             index
                         },
-                        messages = JsonInstant.encodeToString(node.messages),
+                        // 【保存提速 · 2026-10-28】这里先不编码 —— 304 条全编一遍是白干（实际只写 1~2 条）。
+                        // 真正的编码挪到第一道闸之后，只编真可能写的那几条，见 maybeChanged。
+                        messages = "",
                         selectIndex = node.selectIndex
                     )
                 }
-                val __tD = System.currentTimeMillis()
                 val newById = newEntities.associateBy { it.id }
 
                 // 【保存提速 · 2026-10-14】审核分两道：
@@ -369,7 +371,13 @@ class ConversationRepository(
                 }
 
                 // 第一道放行的（没动过）直接排除，剩下的才可能写
-                val maybeChanged = newEntities.filterNot { metaUnchanged(it) }
+                // 【保存提速 · 2026-10-28】被排除的那 300 多条一律不编码（messages 还是空占位），
+                // 只有留下来这几条才真的序列化一次。平时就是 1~2 条。
+                val maybeChanged = newEntities.filterNot { metaUnchanged(it) }.map { e ->
+                    val src = nodeById[e.id]
+                    if (src == null) e else e.copy(messages = JsonInstant.encodeToString(src.messages))
+                }
+                val __tD = System.currentTimeMillis()
                 // 第二道：只对"可能变过"的那几条读全文，逐条细比
                 val idsNeedCompare = maybeChanged.map { it.id }
                 val existingById = if (idsNeedCompare.isEmpty()) {
