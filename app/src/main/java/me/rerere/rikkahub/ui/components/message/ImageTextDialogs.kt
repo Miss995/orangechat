@@ -36,31 +36,34 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun ImageTextMenuDialog(
     onDismiss: () -> Unit,
-    onRecognize: () -> Unit,
+    /** 【视频也走这个框 · 2026-10-27】null = 不显示「引用里面的内容」这一项（视频用不上） */
+    onRecognize: (() -> Unit)? = null,
     onViewAiNote: (() -> Unit)? = null,
-    /** 【整条消息只有一张图时编辑不了 · 2026-10-19 宝发现的】
-     *  图片自己吃得掉点击（点了开大图），所以外层气泡的点击永远收不到 ——
-     *  「单图消息」就永远进不了编辑。这里补一个出口：长按图片 → 这个菜单 → 编辑。
-     *  null = 不是用户消息（AI 消息本来就不能编辑）。*/
+    /** 【整条消息只有一张图时编辑不了 · 2026-10-19 宝发现的】 */
     onEdit: (() -> Unit)? = null,
+    /** 【2026-10-27】标题和第一项的文案按类型给：图 = "这张图" / 视频 = "这个视频" */
+    title: String = "这张图",
+    recognizeLabel: String = "引用图里的内容（划选要引用的部分）",
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {},
-        title = { Text("这张图") },
+        title = { Text(title) },
         text = {
             Column {
-                Surface(
-                    onClick = onRecognize,
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = "引用图里的内容（划选要引用的部分）",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-                    )
+                if (onRecognize != null) {
+                    Surface(
+                        onClick = onRecognize,
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = recognizeLabel,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                        )
+                    }
                 }
                 // 【图片转述三段 · 2026-10-13】第三段「图片理解」不发到模型眼前
                 //（只发前两段当口径锚），所以只在这儿给宝一个人看。

@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
@@ -881,7 +883,7 @@ private fun MessagePartsBlock(
                     }
  
                     is UIMessagePart.Video -> {
-                        VideoBubble(url = part.url)
+                        VideoBubble(url = part.url, onEdit = onEdit)
                     }
  
                     is UIMessagePart.Audio -> {
@@ -1205,21 +1207,38 @@ private fun BubbleSurface(
  * 收起时是一个方块，点一下原地展开成播放器。
  * 原来的做法是 ACTION_VIEW + chooser —— 跳出去、还得让你选一个应用，等于离开橘瓣。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun VideoBubble(url: String, modifier: Modifier = Modifier) {
+internal fun VideoBubble(
+    url: String,
+    onEdit: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     var expanded = remember { mutableStateOf(false) }
+    // 【单视频消息编辑不了 · 2026-10-27 宝发现的】跟图片同一套逻辑：
+    // 点击被「播放」吃掉，外层气泡的点击永远收不到 → 长按当出口。
+    var videoMenuOpen = remember { mutableStateOf(false) }
 
     if (!expanded.value) {
         Surface(
             tonalElevation = 2.dp,
-            onClick = { expanded.value = true },
-            modifier = modifier,
+            modifier = modifier.combinedClickable(
+                onClick = { expanded.value = true },
+                onLongClick = { videoMenuOpen.value = true },
+            ),
             shape = RoundedCornerShape(8.dp),
         ) {
             Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
                 Icon(HugeIcons.Video01, null)
             }
+        }
+        if (videoMenuOpen.value) {
+            ImageTextMenuDialog(
+                onDismiss = { videoMenuOpen.value = false },
+                onEdit = onEdit,
+                title = "这个视频",
+            )
         }
     } else {
         val player = remember(url) {
