@@ -887,6 +887,9 @@ class LocalTools(
             // 【2026-10-27】小红书视频直投：搜/解析一条视频，拿签名直链，把浮窗指过去。
             // 跟浮窗的 ▶ 是一对 —— 那个负责「直链→原生播放器」，这个负责「视频→直链」。
             tools.add(xhsVideoTool())
+            // 【2026-10-27】抖音视频直投：移动端 Feed 接口拿无水印 mp4，不用签名。
+            // 跟 xhs_video 一对，也跟浮窗的 ▶ 一对。
+            tools.add(dyVideoTool())
         }
         return tools
     }
