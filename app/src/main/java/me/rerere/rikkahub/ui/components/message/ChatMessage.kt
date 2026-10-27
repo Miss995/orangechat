@@ -110,6 +110,7 @@ import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
+import me.rerere.hugeicons.stroke.Play
 import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.ChatUser
 import me.rerere.hugeicons.stroke.Clipboard
@@ -1212,7 +1213,7 @@ private fun readVideoMeta(context: android.content.Context, url: String): VideoM
     return runCatching {
         val retriever = android.media.MediaMetadataRetriever()
         try {
-            retriever.setDataSource(context, Uri.parse(url))
+            retriever.setDataSource(context, url.toUri())
             val w = retriever.extractMetadata(
                 android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
             )?.toIntOrNull() ?: 0
