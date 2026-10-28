@@ -106,8 +106,15 @@ internal suspend fun fetchAweme(id: String): JsonObject? = withContext(Dispatche
             if (body.length < 200) return@withContext null
             val root = Json.parseToJsonElement(body).jsonObject
             val list = root["aweme_list"]?.jsonArray ?: return@withContext null
-            list.firstOrNull { it.jsonObject["aweme_id"]?.jsonPrimitive?.content == id }?.jsonObject
-                ?: list.firstOrNull()?.jsonObject
+            // 【2026-10-28 修】原来是"找不到匹配的就用第一条"（插件同款兜底）。
+            // 实测接口经常无视 aweme_id、直接吐推荐流第一条 → 兜底等于"随便给一条"，
+            // 封面/视频就跟用户分享的完全无关。改成：对不上就不返回，宁可不出卡片也不出错。
+            val matched = list.firstOrNull { it.jsonObject["aweme_id"]?.jsonPrimitive?.content == id }?.jsonObject
+            if (matched == null) {
+                val got = list.firstOrNull()?.jsonObject?.get("aweme_id")?.jsonPrimitive?.content
+                AppLogBuffer.log(DY_TAG, "feed 不认 aweme_id：要 $id，回 $got（共 ${list.size} 条），放弃")
+            }
+            matched
         }
     } catch (e: Exception) {
         AppLogBuffer.log(DY_TAG, "feed 挂了: ${e.message}")
