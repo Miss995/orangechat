@@ -422,14 +422,15 @@ fun buildHeartDeleteTool(
             val convIdStr = params["conversationId"]?.jsonPrimitive?.contentOrNull
                 ?: currentConversationId
 
-            val refKey: String = when {
-                !refKeyParam.isNullOrBlank() -> refKeyParam
-                !nodeIdStr.isNullOrBlank() && !convIdStr.isNullOrBlank() ->
-                    NodeFavoriteAdapter.buildRefKey(convIdStr, nodeIdStr)
-                !nodeIdStr.isNullOrBlank() -> return@runCatching
-                    """{"success":false,"error":"给了 nodeId 但没 conversationId——把会话 id 一起带上，或者直接给 refKey"}"""
-                else -> return@runCatching
-                    """{"success":false,"error":"要么给 refKey，要么给 nodeId+conversationId。不提供「删最近一条」的默认行为"}"""
+            val refKey: String
+            if (!refKeyParam.isNullOrBlank()) {
+                refKey = refKeyParam
+            } else if (!nodeIdStr.isNullOrBlank() && !convIdStr.isNullOrBlank()) {
+                refKey = NodeFavoriteAdapter.buildRefKey(convIdStr, nodeIdStr)
+            } else if (!nodeIdStr.isNullOrBlank()) {
+                return@runCatching """{"success":false,"error":"给了 nodeId 但没 conversationId——把会话 id 一起带上，或者直接给 refKey"}"""
+            } else {
+                return@runCatching """{"success":false,"error":"要么给 refKey，要么给 nodeId+conversationId。不提供「删最近一条」的默认行为"}"""
             }
 
             val existing = favoriteRepo.getByRefKey(refKey)
