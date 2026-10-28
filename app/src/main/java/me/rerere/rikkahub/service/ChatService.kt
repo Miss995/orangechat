@@ -1531,13 +1531,20 @@ class ChatService(
                         // 生成结束后 saveConversation 会拿内存那份覆盖库 → 刚贴的图被冲掉，界面上永远看不到。
                         // 正路是 updateConversationState：只改内存态，紧随其后的保存会一并落库。
                         // （写法照抄上面 onRecallDebug；教训同 memory 235：同一个概念可能有两套东西）
+                        // ⚠️【2026-10-28 修2】messageId 是"消息 id"，node.id 是"格子 id"，两个不是一个东西。
+                        // 上一版直接拿 messageId 比 node.id → 一个都匹配不上 → 静默不改，日志还照样打"贴上了"（骗人）。
+                        // 改成：先找"哪一格里装着这条消息"，再改它被选中的那一版。
+                        var attached = false
                         updateConversationState(conversationId) { conv ->
-                            val idx = conv.messageNodes.indexOfFirst { it.id.toString() == messageId }
+                            val idx = conv.messageNodes.indexOfFirst { n ->
+                                n.messages.any { m -> m.id.toString() == messageId }
+                            }
                             if (idx < 0) return@updateConversationState conv
                             val node = conv.messageNodes[idx]
                             val current = node.currentMessage
                             // 幂等：已经有了就别重复贴（transformer 可能多次跑）
                             if (current.parts.any { it == part }) return@updateConversationState conv
+                            attached = true
                             conv.copy(
                                 messageNodes = conv.messageNodes.toMutableList().also {
                                     it[idx] = node.copy(
@@ -1548,7 +1555,7 @@ class ChatService(
                                 }
                             )
                         }
-                        AppLogBuffer.log(TAG, "onMediaAttached: 贴上了 msg=$messageId")
+                        AppLogBuffer.log(TAG, "onMediaAttached: ${if (attached) "贴上了" else "没找到家（或已存在）"} msg=$messageId")
                     }.onFailure {
                         AppLogBuffer.log(TAG, "onMediaAttached FAILED: ${it.javaClass.simpleName}: ${it.message}")
                     }
