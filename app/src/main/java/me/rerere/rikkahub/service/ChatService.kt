@@ -1527,26 +1527,30 @@ class ChatService(
                 // 贴完界面会自己重画（conversation 是 Flow）。
                 onMediaAttached = { messageId, part ->
                     runCatching {
-                        val latest = conversationRepo.getConversationById(conversationId)
-                            ?: return@runCatching
-                        val idx = latest.messageNodes.indexOfFirst { it.id.toString() == messageId }
-                        if (idx < 0) return@runCatching
-                        val node = latest.messageNodes[idx]
-                        val current = node.currentMessage
-                        // 幂等：已经有了就别重复贴（transformer 可能多次跑）
-                        if (current.parts.none { it == part }) {
-                            val newMsg = current.copy(parts = current.parts + part)
-                            val newMessages = node.messages.toMutableList().also {
-                                it[node.selectIndex] = newMsg
-                            }
-                            val newNodes = latest.messageNodes.toMutableList().also {
-                                it[idx] = node.copy(messages = newMessages)
-                            }
-                            conversationRepo.updateConversation(latest.copy(messageNodes = newNodes))
-                            Log.i(TAG, "onMediaAttached: 贴上了 msg=$messageId")
+                        // ⚠️【2026-10-28 修】原来走 conversationRepo.updateConversation（只写库、不动内存态），
+                        // 生成结束后 saveConversation 会拿内存那份覆盖库 → 刚贴的图被冲掉，界面上永远看不到。
+                        // 正路是 updateConversationState：只改内存态，紧随其后的保存会一并落库。
+                        // （写法照抄上面 onRecallDebug；教训同 memory 235：同一个概念可能有两套东西）
+                        updateConversationState(conversationId) { conv ->
+                            val idx = conv.messageNodes.indexOfFirst { it.id.toString() == messageId }
+                            if (idx < 0) return@updateConversationState conv
+                            val node = conv.messageNodes[idx]
+                            val current = node.currentMessage
+                            // 幂等：已经有了就别重复贴（transformer 可能多次跑）
+                            if (current.parts.any { it == part }) return@updateConversationState conv
+                            conv.copy(
+                                messageNodes = conv.messageNodes.toMutableList().also {
+                                    it[idx] = node.copy(
+                                        messages = node.messages.toMutableList().also { msgs ->
+                                            msgs[node.selectIndex] = current.copy(parts = current.parts + part)
+                                        }
+                                    )
+                                }
+                            )
                         }
+                        AppLogBuffer.log(TAG, "onMediaAttached: 贴上了 msg=$messageId")
                     }.onFailure {
-                        Log.w(TAG, "onMediaAttached failed: ${it.javaClass.simpleName}: ${it.message}")
+                        AppLogBuffer.log(TAG, "onMediaAttached FAILED: ${it.javaClass.simpleName}: ${it.message}")
                     }
                 },
                 memories = if (assistant.useGlobalMemory) {
