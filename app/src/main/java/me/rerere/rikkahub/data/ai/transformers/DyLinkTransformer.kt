@@ -100,9 +100,16 @@ object DyLinkTransformer : InputMessageTransformer {
         }
         if (cover == null) return messages
 
-        // ③ 塞进那条消息末尾
+        // ③ 塞进那条消息末尾（这一份只喂模型，不落库）
         val newParts = target.parts + cover
-        return messages.toMutableList().also { it[targetIndex] = target.copy(parts = newParts) }
+        val result = messages.toMutableList().also { it[targetIndex] = target.copy(parts = newParts) }
+
+        // ④ 【2026-10-28 宝：界面上也得看得见】把封面贴回会话那条消息，让卡片在聊天里真的出现。
+        //    失败只记一笔，不影响这一轮对话。
+        runCatching { ctx.onMediaAttached?.invoke(target.id.toString(), cover) }
+            .onFailure { AppLogBuffer.log(TAG, "attach to conversation FAILED: ${it.javaClass.simpleName}: ${it.message}") }
+
+        return result
     }
 
     /**

@@ -185,6 +185,9 @@ class GenerationHandler(
         // 病根：QuotedMessageTransformer 只在请求里的几十条消息中找被引的那条，而会话里有几百条。
         // 聊天链路传一个从 conversation 查的 lambda；不传则回退到只在请求里找（主动消息等，行为同旧）。
         quotedLookup: (suspend (String) -> UIMessage?)? = null,
+        // 【媒体贴回会话 · 2026-10-28 宝要的】transformer 抓到的封面/图交给外部写回会话，
+        // 好让聊天界面上真的长出那张卡片（见 TransformerContext.onMediaAttached）。
+        onMediaAttached: (suspend (String, UIMessagePart) -> Unit)? = null,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -402,6 +405,7 @@ class GenerationHandler(
                     onRecallDebug = onRecallDebug,
                     // 【消息引用修复 · 2026-10-10】把"全库查引用"的口子透给 QuotedMessageTransformer
                     quotedLookup = quotedLookup,
+                    onMediaAttached = onMediaAttached,
                     windowFirstIndex = windowFirstIndex,
                     surfacingScroll = surfacingScroll,
                     surfacingLastK = surfacingLastK,
@@ -698,6 +702,9 @@ class GenerationHandler(
         onRecallDebug: ((String) -> Unit)? = null,
         // 【消息引用修复 · 2026-10-10】按 id 从整个会话里找消息（见 generateText 同名参数）
         quotedLookup: (suspend (String) -> UIMessage?)? = null,
+        // 【媒体贴回会话 · 2026-10-28 宝要的】transformer 抓到的封面/图交给外部写回会话，
+        // 好让聊天界面上真的长出那张卡片（见 TransformerContext.onMediaAttached）。
+        onMediaAttached: (suspend (String, UIMessagePart) -> Unit)? = null,
         // 【窗口起点节拍 · 2026-09-11】懒加载窗口起点在会话中的排名（ChatService.lazyWindowFirstIndex 传入）。
         // 原节拍判据用"窗口消息条数"，但窗口长度被 CONVERSATION_LOAD_WINDOW_SIZE 封顶后差值恒为 0~6
         // → 节拍器永远够不到 threshold、只剩 6h 兜底（详见下方判断处注释）。null = 调用方没传，回退旧判据。
@@ -1132,6 +1139,7 @@ class GenerationHandler(
             workspaceCwd = workspaceCwd,
             // 【消息引用修复 · 2026-10-10】透给 QuotedMessageTransformer：被引原文去整个会话里找
             quotedLookup = quotedLookup,
+            onMediaAttached = onMediaAttached,
         )
 
         // === 请求编辑模式：发送前拦截，交给用户手动控制上下文 ===

@@ -10,6 +10,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
 
@@ -34,6 +35,17 @@ class TransformerContext(
      * 参数用 id 的字符串形式：省掉跨模块 import Uuid，两个模块都能直接用。
      */
     val quotedLookup: (suspend (String) -> UIMessage?)? = null,
+
+    /**
+     * 【媒体贴回会话 · 2026-10-28 宝要的】transformer 抓到图片/封面后，把它交出去。
+     *
+     * 为什么需要：transformer 的产出只活在"这一次请求"里（跟时间注入、召回块一样），
+     * 界面上看不见。要让那张封面卡在聊天里也显示，得把它写回会话的那条消息。
+     *
+     * 参数 = (消息 id, 要贴上去的 part)。聊天链路会传一个"贴到那条 node 上并存库"的
+     * lambda；不传（主动消息等）就什么都不做，行为跟以前一致。
+     */
+    val onMediaAttached: (suspend (String, UIMessagePart) -> Unit)? = null,
 )
 
 interface MessageTransformer {
@@ -88,6 +100,8 @@ suspend fun List<UIMessage>.transforms(
     workspaceCwd: String? = null,
     // 【消息引用修复 · 2026-10-10】按 id 从整个会话里找消息的口子（见 TransformerContext.quotedLookup）
     quotedLookup: (suspend (String) -> UIMessage?)? = null,
+    // 【媒体贴回会话 · 2026-10-28】抓到封面/图后交给外部写回会话（见 TransformerContext.onMediaAttached）
+    onMediaAttached: (suspend (String, UIMessagePart) -> Unit)? = null,
 ): List<UIMessage> {
     val ctx = TransformerContext(
         context = context,
@@ -97,6 +111,7 @@ suspend fun List<UIMessage>.transforms(
         processingStatus = processingStatus,
         workspaceCwd = workspaceCwd,
         quotedLookup = quotedLookup,
+        onMediaAttached = onMediaAttached,
     )
     return transformers.fold(this) { acc, transformer ->
         transformer.transform(ctx, acc)

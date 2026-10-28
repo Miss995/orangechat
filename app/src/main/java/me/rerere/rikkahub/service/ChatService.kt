@@ -1521,6 +1521,34 @@ class ChatService(
                         .map { it.currentMessage }
                         .firstOrNull { it.id.toString() == id }
                 },
+                // 【媒体贴回会话 · 2026-10-28 宝要的】transformer 抓到的封面只活在"这一次请求"里
+                // （跟时间注入、召回块一样），界面上看不见。要让那张卡片在聊天里真的出现，
+                // 得在这里把它贴回那条消息并存库。
+                // 贴完界面会自己重画（conversation 是 Flow）。
+                onMediaAttached = { messageId, part ->
+                    runCatching {
+                        val latest = conversationRepo.getConversationById(conversationId)
+                            ?: return@runCatching
+                        val idx = latest.messageNodes.indexOfFirst { it.id.toString() == messageId }
+                        if (idx < 0) return@runCatching
+                        val node = latest.messageNodes[idx]
+                        val current = node.currentMessage
+                        // 幂等：已经有了就别重复贴（transformer 可能多次跑）
+                        if (current.parts.none { it == part }) {
+                            val newMsg = current.copy(parts = current.parts + part)
+                            val newMessages = node.messages.toMutableList().also {
+                                it[node.selectIndex] = newMsg
+                            }
+                            val newNodes = latest.messageNodes.toMutableList().also {
+                                it[idx] = node.copy(messages = newMessages)
+                            }
+                            conversationRepo.updateConversation(latest.copy(messageNodes = newNodes))
+                            Log.i(TAG, "onMediaAttached: 贴上了 msg=$messageId")
+                        }
+                    }.onFailure {
+                        Log.w(TAG, "onMediaAttached failed: ${it.javaClass.simpleName}: ${it.message}")
+                    }
+                },
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {
