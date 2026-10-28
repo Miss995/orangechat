@@ -902,6 +902,9 @@ private fun MessagePartsBlock(
                         VoiceMessageBubble(
                             voiceMessage = part,
                             isUser = role == MessageRole.USER,
+                            // 【语音条长按 · 2026-10-28】长按 = 跟正文块同样的"弹点按菜单"，
+                            // 位置给 Zero（弹在这条消息左上角附近），够用。
+                            onLongPress = onBodyTap?.let { tap -> { tap(Offset.Zero) } },
                         )
                     }
  
@@ -1508,6 +1511,10 @@ internal fun AudioPlayerBubble(url: String) {
 internal fun VoiceMessageBubble(
     voiceMessage: UIMessagePart.VoiceMessage,
     isUser: Boolean,
+    // 【语音条长按 · 2026-10-28】语音条原来被 Surface(onClick=播放) 整个包住，
+    // 内部 clickable 在按下那一刻就消费了手势，外层正文块的 onBodyTap 收不到长按
+    // → 点按菜单弹不出来 → 整条删不掉。这里自己接一个长按，回调去开同一个菜单。
+    onLongPress: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
@@ -1537,7 +1544,11 @@ internal fun VoiceMessageBubble(
         shape = RoundedCornerShape(16.dp),
         color = if (isUser) MaterialTheme.colorScheme.secondaryContainer
         else MaterialTheme.colorScheme.tertiaryContainer,
-        onClick = {
+        // 【语音条长按 · 2026-10-28】改自 Surface(onClick=…)：那个内部就是 clickable，
+        // 只认点击。换成 combinedClickable 才能同时拿到长按。
+        modifier = Modifier.combinedClickable(
+            onLongClick = { onLongPress?.invoke() },
+            onClick = {
             if (isPlaying) {
                 mediaPlayer?.let {
                     it.stop()
@@ -1560,7 +1571,8 @@ internal fun VoiceMessageBubble(
                     // File might not exist
                 }
             }
-        },
+            },
+        ),
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(
