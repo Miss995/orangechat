@@ -369,3 +369,105 @@ fun buildHeartQueryTool(
         listOf(UIMessagePart.Text(result.getOrElse { e -> """{"error":"${e.message ?: e.toString()}"}""" }))
     }
 )
+
+/**
+ * heart_delete：删掉一条收错的收藏（2026-10-28 宝提）。
+ *
+ * 由来：heart_save 只能收、不能改不能删。收错了（理由写歪、收错条、重复收）
+ * 没法原地修，只能去数据库里动手。补一个删除入口。
+ *
+ * 三条约束：
+ * 1. 只删橘仔自己收的（owner=ai）——宝自己收的那些不动，要动得她自己点；
+ * 2. 不提供「删最近一条」的默认行为（太危险），refKey / nodeId 至少给一个；
+ * 3. 删之前先把那条读出来，返回删掉的是什么（内容摘要 + 理由 + 五感），删错了当场看得见。
+ */
+fun buildHeartDeleteTool(
+    favoriteRepo: FavoriteRepository,
+    conversationRepo: ConversationRepository,
+    currentConversationId: String? = null,
+): Tool = Tool(
+    name = "heart_delete",
+    description = """
+        删除一条心动收藏（只管橘仔自己收的那些，owner=ai）。
+        收错了的时候用：理由写歪了、收错条了、重复收了。
+        - 优先给 refKey（heart_save 的返回里有，形如 node:会话id:节点id）
+        - 或者给 nodeId + conversationId（heart_query 的 items 里能拿到 nodeId）
+        不会默认删「最近一条」——refKey 和 nodeId 至少给一个。
+        删之前会先把那条读出来，返回删掉的是什么，删错了当场看得出。
+    """.trimIndent(),
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("refKey", buildJsonObject {
+                    put("type", "string")
+                    put("description", "收藏的唯一键（heart_save 返回里有，形如 node:会话id:节点id）")
+                })
+                put("nodeId", buildJsonObject {
+                    put("type", "string")
+                    put("description", "消息节点 id（heart_query 的 items 里能拿到）——需配合 conversationId")
+                })
+                put("conversationId", buildJsonObject {
+                    put("type", "string")
+                    put("description", "会话 id（可选，默认当前对话）")
+                })
+            },
+            required = emptyList()
+        )
+    },
+    execute = { input ->
+        val result = runCatching {
+            val params = input.jsonObject
+            val refKeyParam = params["refKey"]?.jsonPrimitive?.contentOrNull?.trim()
+            val nodeIdStr = params["nodeId"]?.jsonPrimitive?.contentOrNull?.trim()
+            val convIdStr = params["conversationId"]?.jsonPrimitive?.contentOrNull
+                ?: currentConversationId
+
+            val refKey: String = when {
+                !refKeyParam.isNullOrBlank() -> refKeyParam
+                !nodeIdStr.isNullOrBlank() && !convIdStr.isNullOrBlank() ->
+                    NodeFavoriteAdapter.buildRefKey(convIdStr, nodeIdStr)
+                !nodeIdStr.isNullOrBlank() -> return@runCatching
+                    """{"success":false,"error":"给了 nodeId 但没 conversationId——把会话 id 一起带上，或者直接给 refKey"}"""
+                else -> return@runCatching
+                    """{"success":false,"error":"要么给 refKey，要么给 nodeId+conversationId。不提供「删最近一条」的默认行为"}"""
+            }
+
+            val existing = favoriteRepo.getByRefKey(refKey)
+                ?: return@runCatching buildJsonObject {
+                    put("success", false)
+                    put("error", "收藏夹里没有这一条")
+                    put("refKey", refKey)
+                    put("tip", "先用 heart_query 看看现在有哪些（items 里带 nodeId）")
+                }.toString()
+
+            if (existing.owner != FavoriteOwner.AI) {
+                return@runCatching buildJsonObject {
+                    put("success", false)
+                    put("error", "这条是宝自己收的（owner=${existing.owner}），不归橘仔删——要动得她自己点")
+                    put("refKey", refKey)
+                }.toString()
+            }
+
+            // 删之前先记下它是什么，好让调用方核对删对没有
+            val meta = NodeFavoriteAdapter.decodeMeta(existing)
+            val ref = NodeFavoriteAdapter.decodeRef(existing)
+
+            val deleted = favoriteRepo.deleteByRefKey(refKey)
+            buildJsonObject {
+                put("success", deleted > 0)
+                put("deleted", deleted)
+                put("refKey", refKey)
+                put("nodeId", ref?.nodeId?.toString() ?: "")
+                put("was_reason", meta?.reason ?: "(没写理由)")
+                put("was_senses", (meta?.senses ?: emptyList()).joinToString("/").ifBlank { "—" })
+                put("was_preview", (meta?.previewText ?: "").take(120))
+                put(
+                    "tip",
+                    if (deleted > 0) "删掉了。要是发现删错了，用 heart_save 重新收（理由照上面那条补）"
+                    else "没删到，可能刚才已经被删了"
+                )
+            }.toString()
+        }
+        listOf(UIMessagePart.Text(result.getOrElse { e -> """{"success":false,"error":"${e.message ?: e.toString()}"}""" }))
+    }
+)
