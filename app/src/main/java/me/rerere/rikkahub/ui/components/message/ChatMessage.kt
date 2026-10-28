@@ -126,6 +126,10 @@ import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.data.ai.tools.resolveAwemeId
+import me.rerere.rikkahub.data.ai.tools.fetchAweme
+import me.rerere.rikkahub.data.ai.tools.bestMp4
+import me.rerere.rikkahub.data.ai.transformers.DyLinkTransformer
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
 import me.rerere.rikkahub.ui.components.ui.ChainOfThought
@@ -902,122 +906,132 @@ private fun MessagePartsBlock(
                     }
  
                     is UIMessagePart.Image -> {
-                        val isImageLoading =
-                            part.url.isBlank() || part.url.matches(Regex("^data:image/[^;]*;base64,\\s*$"))
-                        if (isImageLoading) {
-                            Box(
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(MaterialTheme.shapes.medium)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .shimmer(isLoading = true)
-                            )
+                        // 【抖音视频链接 → 封面卡 · 2026-10-28】带 videoLink 标记的图不是普通图，
+                        // 是「视频封面」：画成卡片，点开时现解析直链再原地播（不下载视频、不管直链过期）。
+                        val vLink = part.metadata?.get(DyLinkTransformer.META_VIDEO_LINK)
+                            ?.jsonPrimitive?.contentOrNull
+                        val vSource = part.metadata?.get(DyLinkTransformer.META_VIDEO_SOURCE)
+                            ?.jsonPrimitive?.contentOrNull
+                        if (!vLink.isNullOrBlank() && vSource == "douyin") {
+                            VideoLinkCard(link = vLink, coverUrl = part.url)
                         } else {
-                            // 【图片展示 · 2026-10-10 宝："直接像屏幕截下来一块，丑丑的"】
-                            // 原先高度死定 72dp（那是缩略图尺寸）：竖着的小红书截图按 72dp 高缩下去，
-                            // 宽度只剩三四十 dp —— 一条细缝。
-                            // 现在按原图比例分两条路：
-                            //   普通图 → 按比例完整显示（最大 240x320dp，小图不拉伸）
-                            //   竖长图 → 卡片：宽度撑满 240dp、只露上半截，点开看全
-                            val imgRatioState = remember(part.url) { mutableStateOf(0f) }
-                            val imgRatio = imgRatioState.value
-                            val isTallImage = imgRatio > 0f && imgRatio < 240f / 320f
-                            // 【图片文字引用 · 2026-10-12】长按图片 → 认字 → 挑一句引用
-                            val imgTextScope = rememberCoroutineScope()
-                            var imgTextMenuOpen by remember(part.url) { mutableStateOf(false) }
-                            var imgTextBusy by remember(part.url) { mutableStateOf(false) }
-                            var imgTextLines by remember(part.url) { mutableStateOf<List<String>?>(null) }
-                            // 【图片转述三段 · 2026-10-13】第三段「图片理解」：存着，但只给宝一个人看
-                            var imgAiNoteOpen by remember(part.url) { mutableStateOf(false) }
-                            val imgAiNote = part.metadata?.get("imageNote")?.jsonPrimitive?.contentOrNull
-                                ?.let { ImageDescriber.splitNote(it).second }
-                            ZoomableAsyncImage(
-                                model = part.url,
-                                contentDescription = null,
-                                modifier = if (isTallImage) {
-                                    Modifier
+                            val isImageLoading =
+                                part.url.isBlank() || part.url.matches(Regex("^data:image/[^;]*;base64,\\s*$"))
+                            if (isImageLoading) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(72.dp)
                                         .clip(MaterialTheme.shapes.medium)
-                                        .width(240.dp)
-                                        .height(320.dp)
-                                } else {
-                                    Modifier
-                                        .clip(MaterialTheme.shapes.medium)
-                                        .widthIn(max = 240.dp)
-                                        .heightIn(max = 320.dp)
-                                },
-                                contentScale = if (isTallImage) ContentScale.FillWidth else ContentScale.Fit,
-                                alignment = if (isTallImage) Alignment.TopCenter else Alignment.Center,
-                                onImageSize = { w, h ->
-                                    if (h > 0) imgRatioState.value = w.toFloat() / h.toFloat()
-                                },
-                                onLongClick = { imgTextMenuOpen = true },
-                            )
-                            if (imgTextMenuOpen) {
-                                ImageTextMenuDialog(
-                                    onDismiss = { imgTextMenuOpen = false },
-                                    // 【单图消息编辑不了 · 2026-10-19】长按图片的菜单里补一个编辑出口。
-                                    // 图片吃掉了点击，只有长按走得到这儿。
-                                    // 不用自己判角色：外层已经在 232 行做过「USER 才给 onEdit」，
-                                    // AI 消息传进来的本来就是 null，这一项自然不出现。
-                                    onEdit = onEdit,
-                                    onViewAiNote = if (imgAiNote.isNullOrBlank()) null else {
-                                        { imgAiNoteOpen = true }
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .shimmer(isLoading = true)
+                                )
+                            } else {
+                                // 【图片展示 · 2026-10-10 宝："直接像屏幕截下来一块，丑丑的"】
+                                // 原先高度死定 72dp（那是缩略图尺寸）：竖着的小红书截图按 72dp 高缩下去，
+                                // 宽度只剩三四十 dp —— 一条细缝。
+                                // 现在按原图比例分两条路：
+                                //   普通图 → 按比例完整显示（最大 240x320dp，小图不拉伸）
+                                //   竖长图 → 卡片：宽度撑满 240dp、只露上半截，点开看全
+                                val imgRatioState = remember(part.url) { mutableStateOf(0f) }
+                                val imgRatio = imgRatioState.value
+                                val isTallImage = imgRatio > 0f && imgRatio < 240f / 320f
+                                // 【图片文字引用 · 2026-10-12】长按图片 → 认字 → 挑一句引用
+                                val imgTextScope = rememberCoroutineScope()
+                                var imgTextMenuOpen by remember(part.url) { mutableStateOf(false) }
+                                var imgTextBusy by remember(part.url) { mutableStateOf(false) }
+                                var imgTextLines by remember(part.url) { mutableStateOf<List<String>?>(null) }
+                                // 【图片转述三段 · 2026-10-13】第三段「图片理解」：存着，但只给宝一个人看
+                                var imgAiNoteOpen by remember(part.url) { mutableStateOf(false) }
+                                val imgAiNote = part.metadata?.get("imageNote")?.jsonPrimitive?.contentOrNull
+                                    ?.let { ImageDescriber.splitNote(it).second }
+                                ZoomableAsyncImage(
+                                    model = part.url,
+                                    contentDescription = null,
+                                    modifier = if (isTallImage) {
+                                        Modifier
+                                            .clip(MaterialTheme.shapes.medium)
+                                            .width(240.dp)
+                                            .height(320.dp)
+                                    } else {
+                                        Modifier
+                                            .clip(MaterialTheme.shapes.medium)
+                                            .widthIn(max = 240.dp)
+                                            .heightIn(max = 320.dp)
                                     },
-                                    onRecognize = {
-                                        imgTextMenuOpen = false
-                                        if (!imgTextBusy) {
-                                            imgTextBusy = true
-                                            imgTextScope.launch {
-                                                // 【优先用格子 · 2026-10-12】转述已经跟着消息存下来了，直接用它
-                                                // （口径和分析时那份一致）；没有才退回本地认字（截图那类还得靠它）。
-                                                val cachedNote = part.metadata
-                                                    ?.get("imageNote")
-                                                    ?.jsonPrimitive
-                                                    ?.contentOrNull
-                                                    ?.trim()
-                                                // 【三段 · 2026-10-13】划选给的是前两段（原文照抄 + 画面简述）；
-                                                // 第三段「图片理解」走菜单里的「查看 AI 理解」，不跟素材混在一起。
-                                                val cachedBody = if (!cachedNote.isNullOrBlank()) {
-                                                    ImageDescriber.splitNote(cachedNote).first
-                                                } else null
-                                                val lines = if (!cachedBody.isNullOrBlank()) {
-                                                    listOf(cachedBody)
-                                                } else {
-                                                    runCatching {
-                                                        ImageTextRecognizer.recognize(context, part.url)
-                                                    }.getOrDefault(emptyList())
-                                                }
-                                                imgTextBusy = false
-                                                if (lines.isEmpty()) {
-                                                    Toast.makeText(
-                                                        context,
-                                                        "这张图里没认出文字",
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                } else {
-                                                    imgTextLines = lines
+                                    contentScale = if (isTallImage) ContentScale.FillWidth else ContentScale.Fit,
+                                    alignment = if (isTallImage) Alignment.TopCenter else Alignment.Center,
+                                    onImageSize = { w, h ->
+                                        if (h > 0) imgRatioState.value = w.toFloat() / h.toFloat()
+                                    },
+                                    onLongClick = { imgTextMenuOpen = true },
+                                )
+                                if (imgTextMenuOpen) {
+                                    ImageTextMenuDialog(
+                                        onDismiss = { imgTextMenuOpen = false },
+                                        // 【单图消息编辑不了 · 2026-10-19】长按图片的菜单里补一个编辑出口。
+                                        // 图片吃掉了点击，只有长按走得到这儿。
+                                        // 不用自己判角色：外层已经在 232 行做过「USER 才给 onEdit」，
+                                        // AI 消息传进来的本来就是 null，这一项自然不出现。
+                                        onEdit = onEdit,
+                                        onViewAiNote = if (imgAiNote.isNullOrBlank()) null else {
+                                            { imgAiNoteOpen = true }
+                                        },
+                                        onRecognize = {
+                                            imgTextMenuOpen = false
+                                            if (!imgTextBusy) {
+                                                imgTextBusy = true
+                                                imgTextScope.launch {
+                                                    // 【优先用格子 · 2026-10-12】转述已经跟着消息存下来了，直接用它
+                                                    // （口径和分析时那份一致）；没有才退回本地认字（截图那类还得靠它）。
+                                                    val cachedNote = part.metadata
+                                                        ?.get("imageNote")
+                                                        ?.jsonPrimitive
+                                                        ?.contentOrNull
+                                                        ?.trim()
+                                                    // 【三段 · 2026-10-13】划选给的是前两段（原文照抄 + 画面简述）；
+                                                    // 第三段「图片理解」走菜单里的「查看 AI 理解」，不跟素材混在一起。
+                                                    val cachedBody = if (!cachedNote.isNullOrBlank()) {
+                                                        ImageDescriber.splitNote(cachedNote).first
+                                                    } else null
+                                                    val lines = if (!cachedBody.isNullOrBlank()) {
+                                                        listOf(cachedBody)
+                                                    } else {
+                                                        runCatching {
+                                                            ImageTextRecognizer.recognize(context, part.url)
+                                                        }.getOrDefault(emptyList())
+                                                    }
+                                                    imgTextBusy = false
+                                                    if (lines.isEmpty()) {
+                                                        Toast.makeText(
+                                                            context,
+                                                            "这张图里没认出文字",
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    } else {
+                                                        imgTextLines = lines
+                                                    }
                                                 }
                                             }
-                                        }
-                                    },
-                                )
-                            }
-                            imgTextLines?.let { lines ->
-                                ImageTextPickDialog(
-                                    lines = lines,
-                                    onPick = { picked ->
-                                        imgTextLines = null
-                                        onQuoteText?.invoke(picked)
-                                    },
-                                    onDismiss = { imgTextLines = null },
-                                )
-                            }
-                            // 【图片转述三段 · 2026-10-13】「查看 AI 理解」—— 只给宝看的那一段
-                            if (imgAiNoteOpen && !imgAiNote.isNullOrBlank()) {
-                                ImageAiNoteDialog(
-                                    text = imgAiNote,
-                                    onDismiss = { imgAiNoteOpen = false },
-                                )
+                                        },
+                                    )
+                                }
+                                imgTextLines?.let { lines ->
+                                    ImageTextPickDialog(
+                                        lines = lines,
+                                        onPick = { picked ->
+                                            imgTextLines = null
+                                            onQuoteText?.invoke(picked)
+                                        },
+                                        onDismiss = { imgTextLines = null },
+                                    )
+                                }
+                                // 【图片转述三段 · 2026-10-13】「查看 AI 理解」—— 只给宝看的那一段
+                                if (imgAiNoteOpen && !imgAiNote.isNullOrBlank()) {
+                                    ImageAiNoteDialog(
+                                        text = imgAiNote,
+                                        onDismiss = { imgAiNoteOpen = false },
+                                    )
+                                }
                             }
                         }
                     }
@@ -1842,3 +1856,103 @@ internal fun ChatMessageInterjectedMessage(
 /** 【插话合并 · 2026-10-01】这个 part 是不是宝插进来的那句。
  *  2026-10-04 起判据本体挪到 ChatMessageCot.kt（分组那边也要用），这里是薄转发。 */
 private fun isInterjectPart(part: UIMessagePart): Boolean = part.isInterjectPart()
+
+/**
+ * 【视频链接封面卡 · 2026-10-28 宝要的「放个封面，然后点击播放」】
+ *
+ * 抖音链接进来时，DyLinkTransformer 只塞一张带 videoLink 标记的封面图（不下载视频）。
+ * 点一下才去解析真直链 —— 解析到了就在原地换成播放器。
+ * 好处：发完秒出卡片、不吃流量、也不必管直链过期（每次点都现解析）。
+ */
+@Composable
+internal fun VideoLinkCard(
+    link: String,
+    coverUrl: String?,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var playUrl by remember(link) { mutableStateOf<String?>(null) }
+    var busy by remember(link) { mutableStateOf(false) }
+    var failed by remember(link) { mutableStateOf(false) }
+
+    val playing = playUrl
+    if (playing != null) {
+        val player = remember(playing) {
+            ExoPlayer.Builder(context).build().apply {
+                setMediaItem(MediaItem.fromUri(playing))
+                prepare()
+                playWhenReady = true
+            }
+        }
+        DisposableEffect(player) { onDispose { player.release() } }
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    setPlayer(player)
+                    useController = true
+                }
+            },
+            modifier = modifier.fillMaxWidth().height(400.dp),
+        )
+    } else {
+        Surface(
+            tonalElevation = 2.dp,
+            shape = RoundedCornerShape(10.dp),
+            modifier = modifier.combinedClickable(
+                onClick = {
+                    if (busy) return@combinedClickable
+                    busy = true
+                    failed = false
+                    scope.launch {
+                        val u = runCatching {
+                            val id = resolveAwemeId(link)
+                            val aweme = id?.let { fetchAweme(it) }
+                            aweme?.let { bestMp4(it) }
+                        }.getOrNull()
+                        busy = false
+                        if (u.isNullOrBlank()) failed = true else playUrl = u
+                    }
+                },
+                onLongClick = null,
+            ),
+        ) {
+            Box(
+                modifier = Modifier.size(240.dp, 320.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (!coverUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = coverUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.28f))
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(HugeIcons.Play, null, tint = Color.White)
+                }
+                if (busy || failed) {
+                    Text(
+                        text = if (busy) "解析中…" else "没解析出来，再点一下试试",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 10.dp),
+                    )
+                }
+            }
+        }
+    }
+}

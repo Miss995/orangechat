@@ -108,6 +108,7 @@ import me.rerere.rikkahub.data.ai.transformers.TimeReminderTransformer
 import me.rerere.rikkahub.data.ai.transformers.VoiceMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.WorkspaceReminderTransformer
 import me.rerere.rikkahub.data.ai.transformers.XhsLinkTransformer
+import me.rerere.rikkahub.data.ai.transformers.DyLinkTransformer
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.workspace.WorkspaceShellStatus
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -187,6 +188,8 @@ private val inputTransformers by lazy {
         // 【小红书链接展开 · 2026-10-25】链接进来就替猫抓开：标题/正文拼进消息、图落成 Image part。
         // 抓不到一律原样放行，失败不阻塞对话。
         XhsLinkTransformer,
+        // 【抖音链接 → 封面卡 · 2026-10-28】只拿封面，不下载视频；点开时才解析直链
+        DyLinkTransformer,
     )
 }
 

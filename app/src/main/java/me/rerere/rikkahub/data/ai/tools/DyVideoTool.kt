@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -68,7 +69,7 @@ private fun dyBrowser(): WebView? =
 private val DY_ID_RE = Regex("(?:/video/|/note/|modal_id=)(\\d{15,20})")
 
 /** 抽 aweme_id：文字里直接有就用；是短链就读 Location；再不行跟随重定向看最终 URL。 */
-private suspend fun resolveAwemeId(text: String): String? = withContext(Dispatchers.IO) {
+internal suspend fun resolveAwemeId(text: String): String? = withContext(Dispatchers.IO) {
     DY_ID_RE.find(text)?.groupValues?.get(1)?.let { return@withContext it }
     val trimmed = text.trim()
     if (trimmed.length in 15..20 && trimmed.all { it.isDigit() }) return@withContext trimmed
@@ -92,7 +93,7 @@ private suspend fun resolveAwemeId(text: String): String? = withContext(Dispatch
 }
 
 /** 调移动端 Feed 接口，拿整条作品。 */
-private suspend fun fetchAweme(id: String): JsonObject? = withContext(Dispatchers.IO) {
+internal suspend fun fetchAweme(id: String): JsonObject? = withContext(Dispatchers.IO) {
     val url = "https://api5-normal-c-hl.amemv.com/aweme/v1/feed/?" +
         "aweme_id=$id&aid=1128&device_platform=android&version_code=300904&version_name=30.9.4" +
         "&os_version=13&device_type=Pixel7&device_model=Pixel7&os_api=33" +
@@ -115,8 +116,7 @@ private suspend fun fetchAweme(id: String): JsonObject? = withContext(Dispatcher
 }
 
 /** 从 bit_rate 里挑最高码率的 mp4 直链（顶层 play_addr 是跳转接口，不能用）。 */
-private fun bestMp4(aweme: JsonObject): String? {
-    val gears = aweme["video"]?.jsonObject?.get("bit_rate")?.jsonArray ?: return null
+internal fun bestMp4(aweme: JsonObject): String? {    val gears = aweme["video"]?.jsonObject?.get("bit_rate")?.jsonArray ?: return null
     var best: String? = null
     var bestRate = -1L
     gears.forEach { g ->
@@ -134,7 +134,18 @@ private fun bestMp4(aweme: JsonObject): String? {
     return best
 }
 
-private fun str(o: JsonObject?, key: String): String =
+/** 取封面图地址：origin_cover > cover > dynamic_cover，各自 url_list 取最后一个。 */
+internal fun bestCover(aweme: JsonObject): String? {
+    val video = aweme["video"]?.jsonObject ?: return null
+    for (key in listOf("origin_cover", "cover", "dynamic_cover")) {
+        val list = video[key]?.jsonObject?.get("url_list")?.jsonArray ?: continue
+        val u = list.mapNotNull { it.jsonPrimitive.contentOrNull }.lastOrNull { it.isNotBlank() }
+        if (!u.isNullOrBlank()) return u
+    }
+    return null
+}
+
+internal fun str(o: JsonObject?, key: String): String =
     o?.get(key)?.jsonPrimitive?.content.orEmpty()
 
 fun dyVideoTool(): Tool = Tool(
