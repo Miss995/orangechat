@@ -26,6 +26,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -945,6 +947,12 @@ private fun MessagePartsBlock(
                                 source = vSource ?: "douyin",
                                 body = part.metadata?.get(DyLinkTransformer.META_LINK_BODY)
                                     ?.jsonPrimitive?.contentOrNull,
+                                // 【多图缩略图 · 2026-10-29】XhsLinkTransformer 存的那串路径（## 分隔）
+                                images = part.metadata?.get("linkImages")
+                                    ?.jsonPrimitive?.contentOrNull
+                                    ?.split("##")
+                                    ?.filter { it.isNotBlank() }
+                                    .orEmpty(),
                             )
                         } else {
                             val isImageLoading =
@@ -1913,6 +1921,8 @@ internal fun VideoLinkCard(
     title: String? = null,
     source: String = "douyin",
     body: String? = null,
+    /** 【多图缩略图 · 2026-10-29】这条笔记的全部配图（第一张是封面自己）。展开时横排一行小图。 */
+    images: List<String> = emptyList(),
 ) {
     /*
      * 【链接卡 · 2026-10-29 宝要的「左图右两行」】
@@ -2052,6 +2062,29 @@ internal fun VideoLinkCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
                 )
+                // 【多图缩略图 · 2026-10-29 宝要的】展开之后横着排一行小图，
+                // 想看哪张点开原笔记（这里不做大图预览，卡片的活到这儿就够了）。
+                if (images.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(start = 10.dp, end = 10.dp, bottom = 9.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        images.forEach { img ->
+                            AsyncImage(
+                                model = img,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(76.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color.Black.copy(alpha = 0.06f)),
+                            )
+                        }
+                    }
+                }
                 // 展开之后总得留一条去原笔记的路（不然点了没地方往回走）
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(end = 4.dp),

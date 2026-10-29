@@ -70,6 +70,9 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
     private const val META_LINK_SOURCE = "videoSource"
     private const val META_LINK_TITLE = "linkTitle"
 
+    /** 【多图缩略图 · 2026-10-29】这条笔记全部配图的本地路径，用 ## 分隔（url 里不会有 ##）。 */
+    private const val META_LINK_IMAGES = "linkImages"
+
     override suspend fun transform(
         ctx: TransformerContext,
         messages: List<UIMessage>,
@@ -230,16 +233,27 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
 
         // 下载配图 → Image part（能走后面已有的转述链路）
         val saved = downloadImages(urls)
+        // 【多图缩略图 · 2026-10-29 宝要的】把全部图的本地路径塞进第一张卡的 metadata。
+        // 为什么不全塞进 parts 让界面自己排：那样卡下面会跟着冒出两三张大图，
+        // 一条笔记占掉大半屏。现在 part 只留第一张当封面，其余路径挂在卡里，
+        // 展开的时候横着排一行小图（宝原话：「缩略图」）。
+        val allImageUrls = saved.map { "file://${it.absolutePath}" }
         // 【链接卡 · 2026-10-29 宝要的「左图右两行」】第一张带上卡片标记：
         // 界面把它画成一条横卡（缩略图＋标题＋域名），不再画大图。
-        saved.forEachIndexed { i, f ->
+        // 只把封面那张放进消息流；其余只在卡的 metadata 里（展开时横排）。
+        // 全塞进 parts 的话，卡下面会跟着冒出两三张大图，一条笔记占掉大半屏。
+        saved.firstOrNull()?.let { f ->
             parts.add(
-                if (i == 0) UIMessagePart.Image(
+                UIMessagePart.Image(
                     url = "file://${f.absolutePath}",
                     metadata = buildJsonObject {
                         put(META_LINK_URL, link)
                         put(META_LINK_SOURCE, "xhs")
                         if (title.isNotBlank()) put(META_LINK_TITLE, title)
+                        // 全部配图（含封面自己）：展开时横排用；模型那边也靠它知道这条笔记有几张图
+                        if (allImageUrls.size > 1) {
+                            put(META_LINK_IMAGES, allImageUrls.joinToString("##"))
+                        }
                         // 【原地展开 · 2026-10-29】作者 + 正文也存进卡里：
                         // 渲染层会跳过那段 <xhs_note> 文本，这里补一份"给人看的"，点开原地展开。
                         if (author.isNotBlank() || desc.isNotBlank()) {
@@ -252,7 +266,7 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
                             if (body.isNotBlank()) put("linkBody", body)
                         }
                     },
-                ) else UIMessagePart.Image(url = "file://${f.absolutePath}")
+                )
             )
         }
         if (saved.isNotEmpty()) AppLogBuffer.log(TAG, "images saved: ${saved.size}/${urls.size}")
