@@ -236,6 +236,17 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
                         put(META_LINK_URL, link)
                         put(META_LINK_SOURCE, "xhs")
                         if (title.isNotBlank()) put(META_LINK_TITLE, title)
+                        // 【原地展开 · 2026-10-29】作者 + 正文也存进卡里：
+                        // 渲染层会跳过那段 <xhs_note> 文本，这里补一份"给人看的"，点开原地展开。
+                        if (author.isNotBlank() || desc.isNotBlank()) {
+                            val body = buildString {
+                                if (author.isNotBlank()) append(author).append('\n')
+                                if (desc.isNotBlank()) {
+                                    append(if (desc.length > 400) desc.take(400) + "…" else desc)
+                                }
+                            }.trim()
+                            if (body.isNotBlank()) put("linkBody", body)
+                        }
                     },
                 ) else UIMessagePart.Image(url = "file://${f.absolutePath}")
             )

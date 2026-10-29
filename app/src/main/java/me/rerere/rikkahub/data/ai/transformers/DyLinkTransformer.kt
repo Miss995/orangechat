@@ -41,6 +41,9 @@ object DyLinkTransformer : InputMessageTransformer {
     /** 【链接卡 · 2026-10-29 宝要的「左图右两行」】卡片第二行那个标题 */
     const val META_LINK_TITLE = "linkTitle"
 
+    /** 【原地展开 · 2026-10-29】卡里存一份给人看的正文（作者 + 内容），点开原地长出来 */
+    const val META_LINK_BODY = "linkBody"
+
     /** 匹配抖音短链 v.douyin.com/xxx，以及 www.douyin.com / iesdouyin.com 长链 */
     private val linkRegex = Regex(
         """https?://(?:v\.douyin\.com/[A-Za-z0-9\-_]+|(?:www\.)?douyin\.com/[A-Za-z0-9\-_/?=&%.]+|(?:www\.)?iesdouyin\.com/[A-Za-z0-9\-_/?=&%.]+)"""

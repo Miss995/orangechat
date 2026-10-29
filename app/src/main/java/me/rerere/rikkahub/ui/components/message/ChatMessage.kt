@@ -943,6 +943,8 @@ private fun MessagePartsBlock(
                                 coverUrl = part.url,
                                 title = vTitle,
                                 source = vSource ?: "douyin",
+                                body = part.metadata?.get(DyLinkTransformer.META_LINK_BODY)
+                                    ?.jsonPrimitive?.contentOrNull,
                             )
                         } else {
                             val isImageLoading =
@@ -1910,6 +1912,7 @@ internal fun VideoLinkCard(
     modifier: Modifier = Modifier,
     title: String? = null,
     source: String = "douyin",
+    body: String? = null,
 ) {
     /*
      * 【链接卡 · 2026-10-29 宝要的「左图右两行」】
@@ -1922,6 +1925,8 @@ internal fun VideoLinkCard(
     var playUrl by remember(link) { mutableStateOf<String?>(null) }
     var busy by remember(link) { mutableStateOf(false) }
     var failed by remember(link) { mutableStateOf(false) }
+    // 【原地展开 · 2026-10-29】小红书的卡点一下就在原处长高，不跳浏览器
+    var expanded by remember(link) { mutableStateOf(false) }
 
     val playing = playUrl
     if (playing != null) {
@@ -1960,12 +1965,7 @@ internal fun VideoLinkCard(
                     onClick = {
                         if (busy) return@combinedClickable
                         if (source == "xhs") {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(link))
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                )
-                            }
+                            expanded = !expanded
                             return@combinedClickable
                         }
                         busy = true
@@ -1983,6 +1983,7 @@ internal fun VideoLinkCard(
                     onLongClick = null,
                 ),
         ) {
+            Column {
             Row(
                 modifier = Modifier.padding(horizontal = 9.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -2036,6 +2037,38 @@ internal fun VideoLinkCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+            }
+            if (expanded) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+                )
+                Text(
+                    text = body?.takeIf { it.isNotBlank() } ?: "这条笔记没存下正文",
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+                )
+                // 展开之后总得留一条去原笔记的路（不然点了没地方往回走）
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(end = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse(link))
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    }) {
+                        Text("打开原笔记", fontSize = 11.sp)
+                    }
+                }
+            }
             }
         }
     }
