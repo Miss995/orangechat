@@ -129,6 +129,22 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
 
         if (extra.isEmpty()) return messages
 
+        /*
+         * 【链接卡 · 2026-10-29 宝实测"没成功"】把带标记的封面贴回会话。
+         *
+         * transformer 的产物只喂模型、不落库 —— 不贴的话界面上永远还是那串原始分享文本。
+         * 抖音那边 10-28 就走通了这条路（DyLinkTransformer 的 onMediaAttached），
+         * 小红书当时漏了这一步，所以卡一直出不来。
+         */
+        extra.filterIsInstance<UIMessagePart.Image>()
+            .firstOrNull { it.metadata?.containsKey(META_LINK_URL) == true }
+            ?.let { cover ->
+                runCatching { ctx.onMediaAttached?.invoke(target.id.toString(), cover) }
+                    .onFailure {
+                        AppLogBuffer.log(TAG, "attach to conversation FAILED: ${it.javaClass.simpleName}: ${it.message}")
+                    }
+            }
+
         // 塞进那条消息末尾
         val newParts = target.parts + extra
         val newMessage = target.copy(parts = newParts)
