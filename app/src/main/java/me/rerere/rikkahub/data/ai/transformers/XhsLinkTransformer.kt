@@ -189,7 +189,11 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
                 }
             }
         }
-        if (imageUrls.isEmpty()) {
+        // 【2026-10-29 修】原来这两块是"二选一"：preload 有图就不看 deep。
+        // 但 preload（normalNotePreloadData）只带第一张 —— 于是多图笔记永远只剩一张：
+        // 界面上一张图明明画着「●●●」三个点，我们只拿到第一页。
+        // 现在两边都取，靠后面的 distinct() 去重。
+        run {
             deep?.get("imageList")?.let { arr ->
                 runCatching {
                     arr.jsonArray.forEach { el ->
