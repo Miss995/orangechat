@@ -148,6 +148,14 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
                     }
             }
 
+        // 【防重复展开 · 2026-10-29】transformer 每轮请求都会跑一遍。
+        // 如果这条消息里已经有一张带 link 的 Image（上一轮展开过），就不再塞第二张，
+        // 否则每发一轮消息就多叠一张卡（22:06 的 "expanded 2 parts" 就是这么来的）。
+        if (target.parts.any { p -> p is UIMessagePart.Image && p.metadata?.containsKey(META_LINK_URL) == true }) {
+            AppLogBuffer.log(TAG, "already expanded, skip: $link")
+            return messages
+        }
+
         // 塞进那条消息末尾
         val newParts = target.parts + extra
         val newMessage = target.copy(parts = newParts)
