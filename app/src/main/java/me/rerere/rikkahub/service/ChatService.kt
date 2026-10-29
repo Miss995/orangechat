@@ -243,6 +243,19 @@ class ChatService(
 
     private val lazyWindowFirstIndex = ConcurrentHashMap<Uuid, Int>()
 
+    /**
+     * 【图落库 · 2026-10-29 宝查出来的病根】transformer 往哪些"格子"里贴过东西（链接封面、图）。
+     *
+     * 背景：保存层第一道闸只比 [nodeIndex] + [selectIndex] 两个号（ConversationRepository.metaUnchanged）。
+     * 而贴图只改 parts，两个号一个都没动 → 被判成"没动过" → 图永远进不了库。
+     * 宝实测到的现象：会话一重载图就没了，transformer 发现"这儿是空的"又重抓一次
+     * （日志里同一条抖音链接出现两次 cover ok，中间谁都没重发）。
+     *
+     * 所以这里记一份，保存时并进 forceCompareIds，让保存层强制读这几条的全文细比。
+     * 报完就清，只报"这一轮真贴过的那几条"，平时是空的。
+     */
+    private val mediaPatchedNodeIds: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
+
     // 错误状态
     private val _errors = MutableStateFlow<List<ChatError>>(emptyList())
     val errors: StateFlow<List<ChatError>> = _errors.asStateFlow()
@@ -1610,6 +1623,8 @@ class ChatService(
                                 }
                             } else -1
                             attached = true
+                            // 【图落库 · 2026-10-29】记下这一格：保存时得让它强制细比，不然改动会被第一道闸吞掉
+                            mediaPatchedNodeIds.add(node.id.toString())
                             val newParts = if (placeholderIdx >= 0) {
                                 current.parts.toMutableList().also { it[placeholderIdx] = part }
                             } else {
@@ -2020,11 +2035,16 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                 // 只多读一条，代价可以忽略。
                 val lastAssistantNodeId = latest.messageNodes
                     .lastOrNull { it.currentMessage.role == MessageRole.ASSISTANT }?.id
+                // 【图落库 · 2026-10-29】这一轮 transformer 贴过图的格子也要报上去：
+                // 贴图不动 nodeIndex/selectIndex，第一道闸看不见（宝实测：重载后图丢、又重抓一次）。
+                val patchedNodeIds = synchronized(mediaPatchedNodeIds) { mediaPatchedNodeIds.toSet() }
                 saveConversation(
                     conversationId = conversationId,
                     conversation = latest,
-                    forceCompareIds = setOfNotNull(lastAssistantNodeId?.toString()),
+                    forceCompareIds = setOfNotNull(lastAssistantNodeId?.toString()) + patchedNodeIds,
                 )
+                // 报完就清：只保证"这一轮贴过的"能落库，不清会越攒越多
+                if (patchedNodeIds.isNotEmpty()) mediaPatchedNodeIds.removeAll(patchedNodeIds)
                 latest
             }
             // 【插话丢条排查 2026-09-30】收尾时报一次条数和最后一条的角色：
