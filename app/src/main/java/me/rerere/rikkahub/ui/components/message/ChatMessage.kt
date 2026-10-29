@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.ui.components.message
  
 import android.content.Intent
+import android.net.Uri
 import android.media.MediaPlayer
 import android.util.Log
 import android.widget.Toast
@@ -82,6 +83,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
@@ -686,7 +688,11 @@ private fun MessagePartsBlock(
                         // Text part 不该在这里当正文画——它的位置由下面 MessagePartsBlock 末尾那段
                         // 折叠条渲染（isInterjectPart 那个检查）。不拦的话同一句会画两遍：
                         // 一次当正文（左对齐白底，看着像"独立消息"），一次当折叠条。
-                        if (!isInterjectPart(part)) {
+                        // 【链接卡 · 2026-10-29】小红书展开的那段（<xhs_note>…</xhs_note>）是给猫读的，
+                        // 界面上已经有卡片了，正文块不再重复画一遍（否则一大段"标题：… 正文：…"挂在卡下面）。
+                        if (part.text.contains("<xhs_note>")) {
+                            // 跳过：内容在卡里
+                        } else if (!isInterjectPart(part)) {
                         // 【防正文被吃 2026-08-22】key(loading)：生成完成（loading true→false）时强制重建渲染子树，
                         // 确保最后一批 parts（含正文）一定会被渲染——不依赖流式增量触发的最后一次重组
                         // （思考链渲染间隙里完成的正文不再静默消失，memory 91 的渲染竞态修复）。
@@ -915,8 +921,16 @@ private fun MessagePartsBlock(
                             ?.jsonPrimitive?.contentOrNull
                         val vSource = part.metadata?.get(DyLinkTransformer.META_VIDEO_SOURCE)
                             ?.jsonPrimitive?.contentOrNull
-                        if (!vLink.isNullOrBlank() && vSource == "douyin") {
-                            VideoLinkCard(link = vLink, coverUrl = part.url)
+                        if (!vLink.isNullOrBlank()) {
+                            // 【2026-10-29】抖音和红色书共用一张卡：source 只决定"点开干什么"
+                            val vTitle = part.metadata?.get(DyLinkTransformer.META_LINK_TITLE)
+                                ?.jsonPrimitive?.contentOrNull
+                            VideoLinkCard(
+                                link = vLink,
+                                coverUrl = part.url,
+                                title = vTitle,
+                                source = vSource ?: "douyin",
+                            )
                         } else {
                             val isImageLoading =
                                 part.url.isBlank() || part.url.matches(Regex("^data:image/[^;]*;base64,\\s*$"))
@@ -1881,7 +1895,15 @@ internal fun VideoLinkCard(
     link: String,
     coverUrl: String?,
     modifier: Modifier = Modifier,
+    title: String? = null,
+    source: String = "douyin",
 ) {
+    /*
+     * 【链接卡 · 2026-10-29 宝要的「左图右两行」】
+     * 宝的原话：分享链接想包成卡片，「类似于这种效果」——左缩略图、右边标题＋域名两行。
+     * 比原来 240x320 的竖图薄很多，一屏能放下好几条。
+     * 抖音点开 = 现解析直链、原地换播放器；小红书点开 = 直接开网页。
+     */
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var playUrl by remember(link) { mutableStateOf<String?>(null) }
@@ -1908,60 +1930,97 @@ internal fun VideoLinkCard(
             modifier = modifier.fillMaxWidth().height(400.dp),
         )
     } else {
+        val host = remember(link) {
+            runCatching { java.net.URI(link).host?.removePrefix("www.") }
+                .getOrNull().orEmpty().ifBlank { if (source == "xhs") "xhslink.cn" else "douyin.com" }
+        }
+        val fallbackTitle = if (source == "xhs") "小红书笔记" else "抖音视频"
+        val shownTitle = title?.takeIf { it.isNotBlank() } ?: fallbackTitle
+
         Surface(
-            tonalElevation = 2.dp,
+            tonalElevation = 0.dp,
+            color = MaterialTheme.colorScheme.surfaceVariant,
             shape = RoundedCornerShape(10.dp),
-            modifier = modifier.combinedClickable(
-                onClick = {
-                    if (busy) return@combinedClickable
-                    busy = true
-                    failed = false
-                    scope.launch {
-                        val u = runCatching {
-                            val id = resolveAwemeId(link)
-                            val aweme = id?.let { fetchAweme(it) }
-                            aweme?.let { bestMp4(it) }
-                        }.getOrNull()
-                        busy = false
-                        if (u.isNullOrBlank()) failed = true else playUrl = u
-                    }
-                },
-                onLongClick = null,
-            ),
+            modifier = modifier
+                .widthIn(max = 252.dp)
+                .combinedClickable(
+                    onClick = {
+                        if (busy) return@combinedClickable
+                        if (source == "xhs") {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(link))
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                            return@combinedClickable
+                        }
+                        busy = true
+                        failed = false
+                        scope.launch {
+                            val u = runCatching {
+                                val id = resolveAwemeId(link)
+                                val aweme = id?.let { fetchAweme(it) }
+                                aweme?.let { bestMp4(it) }
+                            }.getOrNull()
+                            busy = false
+                            if (u.isNullOrBlank()) failed = true else playUrl = u
+                        }
+                    },
+                    onLongClick = null,
+                ),
         ) {
-            Box(
-                modifier = Modifier.size(240.dp, 320.dp),
-                contentAlignment = Alignment.Center,
+            Row(
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (!coverUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = coverUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.28f))
-                    )
-                }
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
-                        .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+                        .size(54.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Black.copy(alpha = 0.85f)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(HugeIcons.Play, null, tint = Color.White)
+                    if (!coverUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = coverUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    if (source == "douyin") {
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(HugeIcons.Play, null, tint = Color.White, modifier = Modifier.size(13.dp))
+                        }
+                    }
                 }
-                if (busy || failed) {
+                Spacer(Modifier.width(9.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (busy) "解析中…" else "没解析出来，再点一下试试",
-                        color = Color.White,
+                        text = shownTitle,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = when {
+                            busy -> "解析中…"
+                            failed -> "没解析出来，再点一下"
+                            else -> host
+                        },
                         fontSize = 11.sp,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 10.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

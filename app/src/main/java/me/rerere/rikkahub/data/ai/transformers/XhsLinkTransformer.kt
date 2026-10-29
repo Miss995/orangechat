@@ -8,6 +8,8 @@ package me.rerere.rikkahub.data.ai.transformers
 
 import android.content.Context
 import me.rerere.rikkahub.data.ai.AppLogBuffer
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -62,6 +64,11 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
     private const val READ_TIMEOUT_MS = 12000
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    // 【链接卡 · 2026-10-29】跟 DyLinkTransformer 用同一套键，渲染层才认得出
+    private const val META_LINK_URL = "videoLink"
+    private const val META_LINK_SOURCE = "videoSource"
+    private const val META_LINK_TITLE = "linkTitle"
 
     override suspend fun transform(
         ctx: TransformerContext,
@@ -203,7 +210,20 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
 
         // 下载配图 → Image part（能走后面已有的转述链路）
         val saved = downloadImages(urls)
-        saved.forEach { parts.add(UIMessagePart.Image(url = "file://${it.absolutePath}")) }
+        // 【链接卡 · 2026-10-29 宝要的「左图右两行」】第一张带上卡片标记：
+        // 界面把它画成一条横卡（缩略图＋标题＋域名），不再画大图。
+        saved.forEachIndexed { i, f ->
+            parts.add(
+                if (i == 0) UIMessagePart.Image(
+                    url = "file://${f.absolutePath}",
+                    metadata = buildJsonObject {
+                        put(META_LINK_URL, link)
+                        put(META_LINK_SOURCE, "xhs")
+                        if (title.isNotBlank()) put(META_LINK_TITLE, title)
+                    },
+                ) else UIMessagePart.Image(url = "file://${f.absolutePath}")
+            )
+        }
         if (saved.isNotEmpty()) AppLogBuffer.log(TAG, "images saved: ${saved.size}/${urls.size}")
 
         return parts

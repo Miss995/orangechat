@@ -38,6 +38,9 @@ object DyLinkTransformer : InputMessageTransformer {
     const val META_VIDEO_LINK = "videoLink"
     const val META_VIDEO_SOURCE = "videoSource"
 
+    /** 【链接卡 · 2026-10-29 宝要的「左图右两行」】卡片第二行那个标题 */
+    const val META_LINK_TITLE = "linkTitle"
+
     /** 匹配抖音短链 v.douyin.com/xxx，以及 www.douyin.com / iesdouyin.com 长链 */
     private val linkRegex = Regex(
         """https?://(?:v\.douyin\.com/[A-Za-z0-9\-_]+|(?:www\.)?douyin\.com/[A-Za-z0-9\-_/?=&%.]+|(?:www\.)?iesdouyin\.com/[A-Za-z0-9\-_/?=&%.]+)"""
@@ -85,7 +88,7 @@ object DyLinkTransformer : InputMessageTransformer {
             cache[link]
         } else {
             val fetched = try {
-                fetchCover(link)
+                fetchCover(link, extractTitle(target, link))
             } catch (e: Exception) {
                 AppLogBuffer.log(TAG, "fetch FAILED: ${e.javaClass.simpleName}: ${e.message}")
                 null
@@ -113,10 +116,29 @@ object DyLinkTransformer : InputMessageTransformer {
     }
 
     /**
+     * 【链接卡 · 2026-10-29】从分享文本里切出标题。
+     *
+     * 抖音分享文本的形状：`6.15 复制打开抖音，看看【某某的作品】正文… https://v.douyin.com/xxx/ 乱码口令`
+     *   → 链接前面那段 = 标题（还要洗掉开头那句固定前缀、结尾的省略号）
+     *   → 链接后面那段 = 口令，一律不要
+     */
+    private fun extractTitle(msg: UIMessage, link: String): String {
+        val text = msg.parts.filterIsInstance<UIMessagePart.Text>()
+            .joinToString(" ") { it.text }
+        val idx = text.indexOf(link)
+        if (idx <= 0) return ""
+        var head = text.substring(0, idx).trim()
+        head = head.replace(Regex("""^\d+(\.\d+)?\s*复制打开抖音[，,]\s*看看"""), "")
+        head = head.replace(Regex("""^复制打开抖音[，,]\s*看看"""), "")
+        head = head.trim().trimEnd('…', '.', ' ', '\u2026')
+        return head.take(80)
+    }
+
+    /**
      * 拿封面：抽 aweme_id → 调 Feed 接口 → 取封面地址。
      * 全程只走接口，不开浏览器（分享页是 _$jsvmprt 反爬虚拟机，body 是空的）。
      */
-    private suspend fun fetchCover(link: String): UIMessagePart.Image? {
+    private suspend fun fetchCover(link: String, title: String): UIMessagePart.Image? {
         val id = resolveAwemeId(link) ?: run {
             AppLogBuffer.log(TAG, "aweme_id 抽不出来: $link")
             return null
@@ -134,6 +156,7 @@ object DyLinkTransformer : InputMessageTransformer {
             metadata = buildJsonObject {
                 put(META_VIDEO_LINK, link)
                 put(META_VIDEO_SOURCE, "douyin")
+                if (title.isNotBlank()) put(META_LINK_TITLE, title)
             },
         )
     }
