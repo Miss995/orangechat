@@ -2072,8 +2072,10 @@ internal fun VideoLinkCard(
                             .padding(start = 10.dp, end = 10.dp, bottom = 9.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        images.forEach { img ->
-                            AsyncImage(
+                        // 第 0 张就是卡左边那张封面，这儿从第 1 张开始（不然封面出现两次）
+                        images.drop(1).forEach { img ->
+                            // 点一下就开大图：跟普通图片用的是同一个查看器
+                            ZoomableAsyncImage(
                                 model = img,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
