@@ -123,8 +123,20 @@ object DyLinkTransformer : InputMessageTransformer {
      *   → 链接后面那段 = 口令，一律不要
      */
     private fun extractTitle(msg: UIMessage, link: String): String {
+        // 【2026-10-29 实测修正】只能从「含这条链接的那一个文字块」里截。
+        // 之前是把所有 Text 拼起来再找 —— 结果她那条消息后面还挂着系统时间注入，
+        // 一拼就把「以下是系统消息注入：…」当成标题了。
         val text = msg.parts.filterIsInstance<UIMessagePart.Text>()
-            .joinToString(" ") { it.text }
+            .firstOrNull { it.text.contains(link) }?.text
+            ?: return ""
+        return extractCardTitle(text, link)
+    }
+
+    /**
+     * 【链接卡 · 2026-10-29】从一段纯文字里切标题。
+     * 提成 public 是因为 ChatService 发送那一刻也要用（放占位卡），不能等到抓封面时才知道标题。
+     */
+    fun extractCardTitle(text: String, link: String): String {
         val idx = text.indexOf(link)
         if (idx <= 0) return ""
         var head = text.substring(0, idx).trim()

@@ -551,6 +551,15 @@ private fun MessagePartsBlock(
 ) {
     val context = LocalContext.current
     val contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+
+    // 【链接卡 · 2026-10-29】这条消息里有没有卡片 —— 有的话，那段原始分享文本就不再画
+    // （否则界面上是"一串链接 + 一张卡"，宝说多余）。
+    val hasLinkCard = remember(parts) {
+        parts.any { p ->
+            p is UIMessagePart.Image &&
+                p.metadata?.containsKey(DyLinkTransformer.META_VIDEO_LINK) == true
+        }
+    }
  
     // 消息输出HapticFeedback
     val hapticFeedback = LocalHapticFeedback.current
@@ -690,7 +699,11 @@ private fun MessagePartsBlock(
                         // 一次当正文（左对齐白底，看着像"独立消息"），一次当折叠条。
                         // 【链接卡 · 2026-10-29】小红书展开的那段（<xhs_note>…</xhs_note>）是给猫读的，
                         // 界面上已经有卡片了，正文块不再重复画一遍（否则一大段"标题：… 正文：…"挂在卡下面）。
-                        if (part.text.contains("<xhs_note>")) {
+                        if (part.text.contains("<xhs_note>") ||
+                            (hasLinkCard && (part.text.contains("douyin.com") ||
+                                part.text.contains("xhslink") ||
+                                part.text.contains("xiaohongshu")))
+                        ) {
                             // 跳过：内容在卡里
                         } else if (!isInterjectPart(part)) {
                         // 【防正文被吃 2026-08-22】key(loading)：生成完成（loading true→false）时强制重建渲染子树，

@@ -232,6 +232,15 @@ class ChatService(
      * 打开对话时只加载最近 CONVERSATION_LOAD_WINDOW_SIZE 条，nodeIndex < 该值的窗口外历史
      * 在保存时会被合并回完整对话，避免部分加载的会话覆盖/删除老消息。
      */
+    /** 【链接卡 · 2026-10-29】哪些链接要包成卡片（抖音 + 小红书） */
+    private val LINK_CARD_REGEX = Regex(
+        "https?://(?:v\\.douyin\\.com/[A-Za-z0-9\\-_]+" +
+            "|(?:www\\.)?douyin\\.com/[A-Za-z0-9\\-_/?=&%.]+" +
+            "|(?:www\\.)?iesdouyin\\.com/[A-Za-z0-9\\-_/?=&%.]+" +
+            "|(?:www\\.)?xhslink\\.(?:cn|com)/[A-Za-z0-9\\-_/?=&%.]+" +
+            "|(?:www\\.)?xiaohongshu\\.com/[A-Za-z0-9\\-_/?=&%.]+)"
+    )
+
     private val lazyWindowFirstIndex = ConcurrentHashMap<Uuid, Int>()
 
     // 错误状态
@@ -575,7 +584,10 @@ class ChatService(
                         val latestConversation = session.state.value
                         val assistant = settings.getAssistantById(latestConversation.assistantId)
                             ?: settings.getCurrentAssistant()
-                        val processedContent = preprocessUserInputParts(content, assistant)
+                        // 【链接卡 · 2026-10-29】先挂上占位卡，卡立刻出现；封面由 transformer 补
+                        val processedContent = attachLinkCardPlaceholder(
+                            preprocessUserInputParts(content, assistant)
+                        )
 
                         val insertedMessage = UIMessage(
                             role = MessageRole.USER,
@@ -1279,6 +1291,47 @@ class ChatService(
         }
     }
 
+    /**
+     * 【链接卡占位 · 2026-10-29 宝的方案】
+     *
+     * 宝的原话：「为啥不直接先把卡片弄出来再后面显示图片啊，抓到图片了再把图片贴回去？
+     * 不然永远都有一个时间差，说你图片还没抓到的时候，原文在聊天内容里就是链接形态。」
+     *
+     * 对。识别链接是纯本地的（正则），抓封面才需要联网。捆在一起就会有个空窗。
+     * 所以拆开：
+     *   发送这一刻 → 扫出链接，挂一张**空图**的卡片（标题和链接都齐了，界面立刻出卡）
+     *   transformer  → 抓到封面后把那张空图的 url 补上（见 onMediaAttached 的"更新"分支）
+     *
+     * 原文不动（transformer 还要读它），界面由渲染层判断"这条有卡"就不画那段链接文字。
+     */
+    private fun attachLinkCardPlaceholder(parts: List<UIMessagePart>): List<UIMessagePart> {
+        // 已经有卡了（重发/编辑）就不重复加
+        if (parts.any { p ->
+                p is UIMessagePart.Image &&
+                    p.metadata?.containsKey(DyLinkTransformer.META_VIDEO_LINK) == true
+            }
+        ) return parts
+
+        val text = parts.filterIsInstance<UIMessagePart.Text>()
+            .firstOrNull { LINK_CARD_REGEX.containsMatchIn(it.text) }?.text
+            ?: return parts
+        val link = LINK_CARD_REGEX.find(text)?.value ?: return parts
+
+        val isXhs = link.contains("xhslink") || link.contains("xiaohongshu")
+        val title = DyLinkTransformer.extractCardTitle(text, link)
+
+        val card = UIMessagePart.Image(
+            url = "",
+            metadata = buildJsonObject {
+                put(DyLinkTransformer.META_VIDEO_LINK, link)
+                put(DyLinkTransformer.META_VIDEO_SOURCE, if (isXhs) "xhs" else "douyin")
+                if (title.isNotBlank()) put(DyLinkTransformer.META_LINK_TITLE, title)
+            },
+        )
+        AppLogBuffer.log(TAG, "link card placeholder: ${if (isXhs) "xhs" else "douyin"} title=${title.take(20)}")
+        return parts + card
+    }
+
     private fun preprocessUserInputParts(parts: List<UIMessagePart>, assistant: Assistant): List<UIMessagePart> {
         return parts.map { part ->
             when (part) {
@@ -1544,12 +1597,29 @@ class ChatService(
                             val current = node.currentMessage
                             // 幂等：已经有了就别重复贴（transformer 可能多次跑）
                             if (current.parts.any { it == part }) return@updateConversationState conv
+                            // 【链接卡 · 2026-10-29】发送那一刻已经放了一张"空图占位卡"（url 为空）。
+                            // 同一个链接的占位卡还在的话，把它的图补上就行 —— 再追加会变成两张卡。
+                            val incomingLink = part.metadata
+                                ?.get(DyLinkTransformer.META_VIDEO_LINK)
+                                ?.jsonPrimitive?.contentOrNull
+                            val placeholderIdx = if (incomingLink != null && part is UIMessagePart.Image) {
+                                current.parts.indexOfFirst { p ->
+                                    p is UIMessagePart.Image && p.url.isBlank() &&
+                                        p.metadata?.get(DyLinkTransformer.META_VIDEO_LINK)
+                                            ?.jsonPrimitive?.contentOrNull == incomingLink
+                                }
+                            } else -1
                             attached = true
+                            val newParts = if (placeholderIdx >= 0) {
+                                current.parts.toMutableList().also { it[placeholderIdx] = part }
+                            } else {
+                                current.parts + part
+                            }
                             conv.copy(
                                 messageNodes = conv.messageNodes.toMutableList().also {
                                     it[idx] = node.copy(
                                         messages = node.messages.toMutableList().also { msgs ->
-                                            msgs[node.selectIndex] = current.copy(parts = current.parts + part)
+                                            msgs[node.selectIndex] = current.copy(parts = newParts)
                                         }
                                     )
                                 }
