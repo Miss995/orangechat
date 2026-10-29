@@ -71,8 +71,13 @@ object DyLinkTransformer : InputMessageTransformer {
         val target = messages[targetIndex]
 
         // 已经有封面卡了就别重复加（同一条消息可能被 transform 多次）
+        // 【2026-10-29 修】占位卡（url 为空）不算"已经有卡"—— 那正是等这里去填的。
+        // 原来只看有没有 videoLink 标记：ChatService 发送时放的占位卡把这里骗过去了，
+        // 每次进来都以为活已经干完 → 封面永远抓不到，卡片永远空着。
         val alreadyHasCard = target.parts.any { p ->
-            p is UIMessagePart.Image && p.metadata?.containsKey(META_VIDEO_LINK) == true
+            p is UIMessagePart.Image &&
+                p.url.isNotBlank() &&
+                p.metadata?.containsKey(META_VIDEO_LINK) == true
         }
         if (alreadyHasCard) return messages
 
