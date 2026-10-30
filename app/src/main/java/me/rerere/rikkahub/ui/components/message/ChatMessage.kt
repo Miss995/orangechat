@@ -2112,8 +2112,10 @@ internal fun VideoLinkCard(
                             .padding(start = 10.dp, end = 10.dp, bottom = 9.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        // 第 0 张就是卡左边那张封面，这儿从第 1 张开始（不然封面出现两次）
-                        images.drop(1).forEach { img ->
+                        // 【封面也进来 · 2026-10-30 宝要的】原来从第 1 张开始（封面在卡左边已经有个小图，
+                        // 怕重复）。但封面那张只剩卡片上那个小缩略图，看不到大的 —— 她说"封面那张图没法看"。
+                        // 现在全列出来，封面也能点开放大；重复一下没关系，看得全更重要。
+                        images.forEach { img ->
                             // 点一下就开大图：跟普通图片用的是同一个查看器
                             ZoomableAsyncImage(
                                 model = img,
