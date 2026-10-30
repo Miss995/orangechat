@@ -48,6 +48,9 @@ object DyLinkTransformer : InputMessageTransformer {
     /** 【多图 · 2026-10-30 宝要的图文兼容】图文作品的全部图片地址（## 分隔，跟小红书同一个键） */
     const val META_LINK_IMAGES = "linkImages"
 
+    /** 【图文标记 · 2026-10-30】"true" = 这条是图文作品，点开要原地展开看多图，不是播视频 */
+    const val META_IS_NOTE = "isNote"
+
     /** 匹配抖音短链 v.douyin.com/xxx，以及 www.douyin.com / iesdouyin.com 长链 */
     private val linkRegex = Regex(
         """https?://(?:v\.douyin\.com/[A-Za-z0-9\-_]+|(?:www\.)?douyin\.com/[A-Za-z0-9\-_/?=&%.]+|(?:www\.)?iesdouyin\.com/[A-Za-z0-9\-_/?=&%.]+)"""
@@ -175,15 +178,19 @@ object DyLinkTransformer : InputMessageTransformer {
             AppLogBuffer.log(TAG, "这条没有封面字段: id=$id")
             return null
         }
-        // 【图文 · 2026-10-30】图文作品把全部图带上，界面就能像小红书那样横排缩略图
+        // 【图文 · 2026-10-30】图文作品把全部图带上，界面就能像小红书那样横排缩略图。
+        // 注意：第一张就是封面自己（展开时会 drop(1)），所以这里存全部，不是只存第二张起。
         val images = allImages(aweme)
+        val isNote = images.isNotEmpty()
+        if (isNote) AppLogBuffer.log(TAG, "图文作品：${images.size} 张图 id=$id")
         return UIMessagePart.Image(
             url = coverUrl,
             metadata = buildJsonObject {
                 put(META_VIDEO_LINK, link)
                 put(META_VIDEO_SOURCE, "douyin")
                 if (title.isNotBlank()) put(META_LINK_TITLE, title)
-                if (images.size > 1) put(META_LINK_IMAGES, images.joinToString("##"))
+                if (images.isNotEmpty()) put(META_LINK_IMAGES, images.joinToString("##"))
+                if (isNote) put(META_IS_NOTE, "true")
             },
         )
     }

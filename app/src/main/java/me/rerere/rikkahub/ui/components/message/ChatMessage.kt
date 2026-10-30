@@ -973,6 +973,8 @@ private fun MessagePartsBlock(
                                     ?.split("##")
                                     ?.filter { it.isNotBlank() }
                                     .orEmpty(),
+                                isNote = part.metadata?.get(DyLinkTransformer.META_IS_NOTE)
+                                    ?.jsonPrimitive?.contentOrNull == "true",
                             )
                         } else {
                             val isImageLoading =
@@ -1180,6 +1182,7 @@ private fun MessagePartsBlock(
             source = card.source,
             body = card.body,
             images = card.images,
+            isNote = card.isNote,
         )
     }
 
@@ -1956,6 +1959,8 @@ internal fun VideoLinkCard(
     body: String? = null,
     /** 【多图缩略图 · 2026-10-29】这条笔记的全部配图（第一张是封面自己）。展开时横排一行小图。 */
     images: List<String> = emptyList(),
+    /** 【图文标记 · 2026-10-30】true = 图文作品（多张图），点开原地展开看多图，不走"解析视频直链" */
+    isNote: Boolean = false,
 ) {
     /*
      * 【链接卡 · 2026-10-29 宝要的「左图右两行」】
@@ -2007,7 +2012,9 @@ internal fun VideoLinkCard(
                 .combinedClickable(
                     onClick = {
                         if (busy) return@combinedClickable
-                        if (source == "xhs") {
+                        // 【图文 · 2026-10-30 宝要的】图文作品跟小红书一样：点开原地展开看多图。
+                        // 之前不分图文/视频，统统一路去解析 mp4 → 图文必然"解析失败"。
+                        if (isNote || source == "xhs") {
                             expanded = !expanded
                             return@combinedClickable
                         }
@@ -2046,7 +2053,7 @@ internal fun VideoLinkCard(
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
-                    if (source == "douyin") {
+                    if (source == "douyin" && !isNote) {
                         Box(
                             modifier = Modifier
                                 .size(22.dp)

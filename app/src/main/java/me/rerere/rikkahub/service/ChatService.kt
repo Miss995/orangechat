@@ -1336,6 +1336,9 @@ class ChatService(
 
         val isXhs = link.contains("xhslink") || link.contains("xiaohongshu")
         val title = DyLinkTransformer.extractCardTitle(text, link)
+        // 【图文标记 · 2026-10-30 宝指出的】抖音分享文本里本来就写着「【xx的图文作品】」，
+        // 发送这一刻就能判断，不用等 transformer 抓接口。接口抓到的 images 再兜一道底。
+        val isNoteText = text.contains("图文作品")
 
         // 【链接卡 · 2026-10-30 宝的方案】不再往 parts 里塞 Image 占位卡，改成消息上的一个字段。
         // 卡片立刻能画（标题有了，封面空着由界面画占位），封面由 transformer 抓到后补进这个字段。
@@ -1344,6 +1347,7 @@ class ChatService(
             link = link,
             source = if (isXhs) "xhs" else "douyin",
             title = title.ifBlank { null },
+            isNote = isNoteText,
         )
         AppLogBuffer.log(TAG, "link card placeholder: ${if (isXhs) "xhs" else "douyin"} title=${title.take(20)}")
         return parts to card
@@ -1638,6 +1642,10 @@ class ChatService(
                                     ?.jsonPrimitive?.contentOrNull
                                     ?.split("##")?.filter { it.isNotBlank() }
                                     ?.takeIf { it.isNotEmpty() } ?: (old?.images ?: emptyList()),
+                                // 【图文标记 · 2026-10-30】transformer 抓到 images 才会打这个键，
+                                // 有就是图文作品（点开展开看多图），没有就是视频。
+                                isNote = md?.get(DyLinkTransformer.META_IS_NOTE)
+                                    ?.jsonPrimitive?.contentOrNull == "true" || (old?.isNote ?: false),
                             )
                             // 内容没变就别白改（transformer 一轮里可能跑多次）
                             if (merged == old) return@updateConversationState conv

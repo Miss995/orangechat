@@ -40,7 +40,10 @@ data class LinkCard(
     val title: String? = null,
     val body: String? = null,               // 小红书正文（抖音一般没有）
     val cover: String? = null,              // 封面图 url；null 或空 = 还没抓到，界面画占位
-    val images: List<String> = emptyList(), // 小红书附图
+    val images: List<String> = emptyList(), // 小红书附图 / 抖音图文配图
+    // 【图文标记 · 2026-10-30 宝要的】true = 这是图文作品（多张图），点开应该原地展开看多图，
+    // 而不是走"解析视频直链"。抖音的图文作品（aweme_type=68）就靠这个跟视频区分开。
+    val isNote: Boolean = false,
 )
 
 // 公共消息抽象, 具体的Provider实现会转换为API接口需要的DTO
