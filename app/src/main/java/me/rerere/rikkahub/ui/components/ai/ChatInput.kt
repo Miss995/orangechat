@@ -1094,6 +1094,8 @@ fun ChatInput(
                                         }
                                     }
                                 } else {
+                                    // 【链接预览位 V2】屏里是叠着放的（Box），预览条会被输入框盖住 —— 包一层竖排，一上一下
+                                    Column {
                                     // 【链接预览位 · 2026-10-30 宝要的】输入框里一粘链接，发之前就先亮一条，
                                     // 让人知道"这条会带卡"。纯界面：卡片本身是发送时由
                                     // ChatService.attachLinkCardPlaceholder 自动挂上去的，这里只是提前给个看法。
@@ -1109,6 +1111,7 @@ fun ChatInput(
                                         inputScrollState = inputScrollState,
                                         fieldRectState = fieldRectState
                                     )
+                                    }
                                 }
                                 // 【打印机外观】扫描线：细横纹，像真屏
                                 Canvas(
