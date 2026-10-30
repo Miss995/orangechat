@@ -58,6 +58,32 @@ internal suspend fun resolveNeteaseSongId(text: String): String? = withContext(D
     null
 }
 
-/** 外链接口地址：302 到 CDN 真文件，交给播放器自己跟随。 */
-internal fun neteaseOuterUrl(id: String): String =
-    "https://music.163.com/song/media/outer/url?id=$id.mp3"
+/**
+ * 拿真正的播放地址。
+ *
+ * 为什么要自己跟这一次 302：
+ * 外链接口 302 到的 CDN 地址是 **http://**，而安卓默认不让发明文 HTTP（cleartext），
+ * ExoPlayer 跟到那一步就直接断了——宝看到的是「00:00 / 00:00」的黑播放器。
+ * 实测把 scheme 换成 https 照样下得下来（206 + audio/mpeg），所以这里换掉再交出去。
+ */
+internal suspend fun resolveNeteaseMp3(text: String): String? = withContext(Dispatchers.IO) {
+    val id = resolveNeteaseSongId(text) ?: run {
+        AppLogBuffer.log(NETEASE_TAG, "歌曲 id 没拿到: $text")
+        return@withContext null
+    }
+    try {
+        val req = Request.Builder()
+            .url("https://music.163.com/song/media/outer/url?id=$id.mp3")
+            .header("User-Agent", NETEASE_UA)
+            .get().build()
+        neteaseHttp.newCall(req).execute().use { resp ->
+            val loc = resp.header("Location").orEmpty()
+            AppLogBuffer.log(NETEASE_TAG, "outer id=$id code=${resp.code} loc=${loc.take(50)}")
+            if (loc.isBlank()) return@withContext null
+            loc.replaceFirst("http://", "https://")
+        }
+    } catch (e: Exception) {
+        AppLogBuffer.log(NETEASE_TAG, "拿播放地址挂了: ${e.message}")
+        null
+    }
+}

@@ -135,8 +135,7 @@ import me.rerere.rikkahub.data.ai.tools.resolveAwemeId
 import me.rerere.rikkahub.data.ai.tools.fetchAweme
 import me.rerere.rikkahub.data.ai.tools.bestMp4
 import me.rerere.rikkahub.data.ai.tools.resolveXhsMp4
-import me.rerere.rikkahub.data.ai.tools.resolveNeteaseSongId
-import me.rerere.rikkahub.data.ai.tools.neteaseOuterUrl
+import me.rerere.rikkahub.data.ai.tools.resolveNeteaseMp3
 import me.rerere.rikkahub.data.ai.transformers.DyLinkTransformer
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
@@ -2057,8 +2056,9 @@ internal fun VideoLinkCard(
                                 if (source == "xhs") {
                                     resolveXhsMp4(link)
                                 } else if (source == "netease") {
-                                    // 【音乐卡 · 2026-10-30】短链读 Location 拿 id，接口 302 到 CDN，播放器自己跟
-                                    resolveNeteaseSongId(link)?.let { neteaseOuterUrl(it) }
+                                    // 【音乐卡 · 2026-10-30】网易云：自己跟一次 302 并把 http 换成 https
+                                    // （不换的话安卓禁明文，播放器拿不到时长，显示 00:00/00:00）
+                                    resolveNeteaseMp3(link)
                                 } else {
                                     val id = resolveAwemeId(link)
                                     val aweme = id?.let { fetchAweme(it) }
