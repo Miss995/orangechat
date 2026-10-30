@@ -144,6 +144,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import me.rerere.rikkahub.data.ai.transformers.DyLinkTransformer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
@@ -1067,6 +1068,10 @@ fun ChatInput(
                                         }
                                     }
                                 } else {
+                                    // 【链接预览位 · 2026-10-30 宝要的】输入框里一粘链接，发之前就先亮一条，
+                                    // 让人知道"这条会带卡"。纯界面：卡片本身是发送时由
+                                    // ChatService.attachLinkCardPlaceholder 自动挂上去的，这里只是提前给个看法。
+                                    LinkPreviewStrip(text = state.textContent.text.toString())
                                     TextInputRow(
                                         state = state,
                                         loading = loading,
@@ -1906,6 +1911,54 @@ private fun ActionIconButton(
         content()
     }
 }
+
+/**
+ * 【链接预览位 · 2026-10-30 宝要的】
+ * 输入框里扫到抖音/小红书链接，就在输入行上方亮一条小提示：哪个平台 + 标题 + "会带卡"。
+ * V1 只显示，不做关闭按钮（关闭要管"从文本里删链接"，属于第二步）。
+ * 不看、不读、不存这段文字的去处 —— 它就是画输入框的那部分程序在照自己的镜子。
+ */
+@Composable
+private fun LinkPreviewStrip(text: String) {
+    val link = remember(text) { PREVIEW_LINK_REGEX.find(text)?.value } ?: return
+    val isXhs = link.contains("xhslink") || link.contains("xiaohongshu")
+    val title = remember(text, link) { DyLinkTransformer.extractCardTitle(text, link) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = if (isXhs) "小红书" else "抖音",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+        )
+        Text(
+            text = title.ifBlank { link },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = "会带卡",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+        )
+    }
+}
+
+/** 预览位用的正则，跟 ChatService.LINK_CARD_REGEX 同源（V1 先不动那个文件，那边是 private） */
+private val PREVIEW_LINK_REGEX = Regex(
+    "https?://(?:v\\.douyin\\.com/[A-Za-z0-9\\-_]+" +
+        "|(?:www\\.)?douyin\\.com/[A-Za-z0-9\\-_/?=&%.]+" +
+        "|(?:www\\.)?iesdouyin\\.com/[A-Za-z0-9\\-_/?=&%.]+" +
+        "|(?:www\\.)?xhslink\\.(?:cn|com)/[A-Za-z0-9\\-_/?=&%.]+" +
+        "|(?:www\\.)?xiaohongshu\\.com/[A-Za-z0-9\\-_/?=&%.]+)"
+)
 
 @Composable
 private fun TextInputRow(
