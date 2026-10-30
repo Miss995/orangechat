@@ -712,8 +712,26 @@ private fun MessagePartsBlock(
                 when (val part = block.part) {
                     is UIMessagePart.Text -> {
                         // 从显示文本中移除[zip:...]标记
-                        val displayText = remember(part.text) {
-                            part.text.replace(Regex("\\[zip:[^\\]]+\\]", RegexOption.IGNORE_CASE), "")
+                        // 【分享文本分家 · 2026-10-30 宝要的】之前是"这段 part 里只要出现链接
+                        // 域名就整段不画"——那时消息里只有分享文本、没有宝自己的话，所以够用。
+                        // 但现在宝会"一句话 + 一串分享文本"一起发，整段跳过会把她的字也吃掉。
+                        // 改成逐行剥：<xhs_note>整段剥掉、含链接域名的行剥掉，剩下的照画。
+                        // （不依赖 splitUserBubbleByLine：分行开关是另一回事，这里只解决"该藏哪几行"。）
+                        val displayText = remember(part.text, hasLinkCard) {
+                            val base = part.text.replace(
+                                Regex("\\[zip:[^\\]]+\\]", RegexOption.IGNORE_CASE), ""
+                            )
+                            if (hasLinkCard) {
+                                base.replace(Regex("(?s)<xhs_note>.*?</xhs_note>"), "")
+                                    .lines()
+                                    .filterNot { line ->
+                                        line.contains("douyin.com") ||
+                                            line.contains("xhslink") ||
+                                            line.contains("xiaohongshu")
+                                    }
+                                    .joinToString("\n")
+                                    .trim()
+                            } else base
                         }
                         
                         // 【插话不重复画 · 2026-10-04 宝实测】带插话标（metadata{"interject": true}）的
@@ -722,12 +740,8 @@ private fun MessagePartsBlock(
                         // 一次当正文（左对齐白底，看着像"独立消息"），一次当折叠条。
                         // 【链接卡 · 2026-10-29】小红书展开的那段（<xhs_note>…</xhs_note>）是给猫读的，
                         // 界面上已经有卡片了，正文块不再重复画一遍（否则一大段"标题：… 正文：…"挂在卡下面）。
-                        if (part.text.contains("<xhs_note>") ||
-                            (hasLinkCard && (part.text.contains("douyin.com") ||
-                                part.text.contains("xhslink") ||
-                                part.text.contains("xiaohongshu")))
-                        ) {
-                            // 跳过：内容在卡里
+                        if (displayText.isBlank()) {
+                            // 跳过：这一行剩下的全是分享文本/展开块，内容已经在卡里了
                         } else if (!isInterjectPart(part)) {
                         // 【防正文被吃 2026-08-22】key(loading)：生成完成（loading true→false）时强制重建渲染子树，
                         // 确保最后一批 parts（含正文）一定会被渲染——不依赖流式增量触发的最后一次重组
