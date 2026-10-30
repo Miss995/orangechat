@@ -98,8 +98,10 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -266,6 +268,12 @@ fun ChatInput(
     fun sendMessage() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
+        // 【链接预览位 V2】把收起来的整段链接文案拼回去再发（卡片靠它生成）
+        state.pendingLinkText?.let { pending ->
+            val cur = state.textContent.text.toString()
+            state.textContent.setTextAndPlaceCursorAtEnd(if (cur.isBlank()) pending else pending + "\n" + cur)
+            state.pendingLinkText = null
+        }
         // 【插话 2026-09-25 宝的需求】输入框里有内容时，即使猫在忙也按「发送」走：
         // 宝能在猫干活的时候把话塞进来。空着才是「停止」。
         // （2026-10-13：这里的「有内容」含附件 —— 一张图没配字也算。）
@@ -279,7 +287,25 @@ fun ChatInput(
     fun sendMessageWithoutAnswer() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
+        state.pendingLinkText?.let { pending ->
+            val cur = state.textContent.text.toString()
+            state.textContent.setTextAndPlaceCursorAtEnd(if (cur.isBlank()) pending else pending + "\n" + cur)
+            state.pendingLinkText = null
+        }
         if (loading && state.isEmpty()) onCancelClick() else onLongSendClick()
+    }
+
+    // 【链接预览位 V2 · 2026-10-30 宝要的「替换」】输入框里一出现链接，就把整段扣走、输入框清空，
+    // 上面只留一张卡。卡片是发送时从消息文本里抓链接生成的 —— 所以文本不能真删，收起来、发送前拼回去。
+    LaunchedEffect(state) {
+        snapshotFlow { state.textContent.text.toString() }.collect { t ->
+            if (state.pendingLinkText == null && t.isNotBlank() &&
+                PREVIEW_LINK_REGEX.containsMatchIn(t)
+            ) {
+                state.pendingLinkText = t
+                state.textContent.setTextAndPlaceCursorAtEnd("")
+            }
+        }
     }
 
     var expand by remember { mutableStateOf(ExpandState.Collapsed) }
@@ -1071,7 +1097,10 @@ fun ChatInput(
                                     // 【链接预览位 · 2026-10-30 宝要的】输入框里一粘链接，发之前就先亮一条，
                                     // 让人知道"这条会带卡"。纯界面：卡片本身是发送时由
                                     // ChatService.attachLinkCardPlaceholder 自动挂上去的，这里只是提前给个看法。
-                                    LinkPreviewStrip(text = state.textContent.text.toString())
+                                    LinkPreviewStrip(
+                                        text = state.pendingLinkText ?: "",
+                                        onClear = { state.pendingLinkText = null },
+                                    )
                                     TextInputRow(
                                         state = state,
                                         loading = loading,
@@ -1919,7 +1948,7 @@ private fun ActionIconButton(
  * 不看、不读、不存这段文字的去处 —— 它就是画输入框的那部分程序在照自己的镜子。
  */
 @Composable
-private fun LinkPreviewStrip(text: String) {
+private fun LinkPreviewStrip(text: String, onClear: () -> Unit = {}) {
     val link = remember(text) { PREVIEW_LINK_REGEX.find(text)?.value } ?: return
     val isXhs = link.contains("xhslink") || link.contains("xiaohongshu")
     val title = remember(text, link) { DyLinkTransformer.extractCardTitle(text, link) }
@@ -1948,6 +1977,21 @@ private fun LinkPreviewStrip(text: String) {
             style = MaterialTheme.typography.labelSmall,
             color = Color(0xFF7FFFA8).copy(alpha = 0.45f),
         )
+        // 取消：把收起来的这段丢掉，卡片消失（输入框本来就是空的）
+        Box(
+            modifier = Modifier
+                .size(14.dp)
+                .clip(CircleShape)
+                .clickable { onClear() },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = HugeIcons.Cancel01,
+                contentDescription = "取消链接",
+                tint = Color(0xFF7FFFA8).copy(alpha = 0.5f),
+                modifier = Modifier.size(11.dp),
+            )
+        }
     }
 }
 

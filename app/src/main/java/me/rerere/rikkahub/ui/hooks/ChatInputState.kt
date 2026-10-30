@@ -37,6 +37,10 @@ class ChatInputState {
     // 【插话补充 · 2026-10-13 宝定的】这条要发的话，是不是"补上文里她自己那条"（不是新话题）。
     // 默认 false（= 新话题）；宝按一下输入框上方那条开关才置 true。发送时写进消息的 interjectKind。
     var interjectSupplement by mutableStateOf(false)
+    // 【链接预览位 V2 · 2026-10-30 宝要的「替换」】粘进来的整段链接文案被扣在这里：
+    // 输入框清空、上面只留一张卡；发送前再拼回去。
+    // （卡片是发送时从消息文本里抓链接生成的，所以这段不能真删，只能"收起来"。）
+    var pendingLinkText by mutableStateOf<String?>(null)
     private var editingParts: List<UIMessagePart>? = null
     private var editingAttachmentUrls: Set<String> = emptySet()
 
@@ -52,6 +56,7 @@ class ChatInputState {
         pickedText = null
         pickedMessageId = null
         interjectSupplement = false
+        pendingLinkText = null
     }
 
     fun isEditing() = editingMessage != null
@@ -119,7 +124,8 @@ class ChatInputState {
      * 发送键点不动、回车也不发。现在把附件也算进来：有图（或视频/语音/文件）就算有内容。
      */
     fun isEmpty(): Boolean {
-        return textContent.text.isEmpty() && messageContent.isEmpty()
+        // 【链接预览位 V2】收着一条链接时不算空 —— 否则按发送会变成「停止」
+        return textContent.text.isEmpty() && messageContent.isEmpty() && pendingLinkText == null
     }
 
     fun addImages(uris: List<Uri>) {
