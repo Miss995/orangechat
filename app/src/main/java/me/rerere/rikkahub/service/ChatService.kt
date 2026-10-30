@@ -239,7 +239,10 @@ class ChatService(
             "|(?:www\\.)?douyin\\.com/[A-Za-z0-9\\-_/?=&%.]+" +
             "|(?:www\\.)?iesdouyin\\.com/[A-Za-z0-9\\-_/?=&%.]+" +
             "|(?:www\\.)?xhslink\\.(?:cn|com)/[A-Za-z0-9\\-_/?=&%.]+" +
-            "|(?:www\\.)?xiaohongshu\\.com/[A-Za-z0-9\\-_/?=&%.]+)"
+            "|(?:www\\.)?xiaohongshu\\.com/[A-Za-z0-9\\-_/?=&%.]+" +
+            // 【音乐卡 · 2026-10-30 宝要的】网易云分享出来的短链是 163cn.tv，长链是 music.163.com
+            "|(?:[A-Za-z0-9-]+\\.)?163cn\\.tv/[A-Za-z0-9\\-_/?=&%.]+" +
+            "|(?:y\\.|www\\.)?music\\.163\\.com/[A-Za-z0-9\\-_/?=&%.#]+)"
     )
 
     private val lazyWindowFirstIndex = ConcurrentHashMap<Uuid, Int>()
@@ -1321,6 +1324,14 @@ class ChatService(
      *
      * 原文不动（transformer 还要读它），界面由渲染层判断"这条有卡"就不画那段链接文字。
      */
+    /** 网易云分享文案：「分享牛佳钰的单曲《泡泡》: https://163cn.tv/xxx (来自@网易云音乐)」 */
+    private fun extractMusicTitle(text: String): String? {
+        val m = Regex("""分享(.{1,20}?)的(?:单曲|专辑|歌单|声音)《(.{1,40}?)》""").find(text) ?: return null
+        val artist = m.groupValues[1].trim()
+        val song = m.groupValues[2].trim()
+        return if (artist.isBlank() || song.isBlank()) null else "$song - $artist"
+    }
+
     private fun attachLinkCardPlaceholder(parts: List<UIMessagePart>): Pair<List<UIMessagePart>, LinkCard?> {
         // 已经有卡了（重发/编辑）就不重复加
         if (parts.any { p ->
@@ -1335,7 +1346,10 @@ class ChatService(
         val link = LINK_CARD_REGEX.find(text)?.value ?: return parts to null
 
         val isXhs = link.contains("xhslink") || link.contains("xiaohongshu")
-        val title = DyLinkTransformer.extractCardTitle(text, link)
+        val isMusic = link.contains("163cn.tv") || link.contains("music.163.com")
+        // 【音乐卡 · 2026-10-30】歌手歌名直接写在分享文案里（分享XX的单曲《YY》），不用请求网页
+        val musicTitle = if (isMusic) extractMusicTitle(text) else null
+        val title = musicTitle ?: DyLinkTransformer.extractCardTitle(text, link)
         // 【图文标记 · 2026-10-30 宝指出的】抖音分享文本里本来就写着「【xx的图文作品】」，
         // 发送这一刻就能判断，不用等 transformer 抓接口。接口抓到的 images 再兜一道底。
         val isNoteText = text.contains("图文作品")
@@ -1343,13 +1357,18 @@ class ChatService(
         // 【链接卡 · 2026-10-30 宝的方案】不再往 parts 里塞 Image 占位卡，改成消息上的一个字段。
         // 卡片立刻能画（标题有了，封面空着由界面画占位），封面由 transformer 抓到后补进这个字段。
         // 好处：一个字段只可能有一份，结构上叠不起来（老写法是"找空卡替换，找不到就追加"，会叠）。
+        val source = when {
+            isXhs -> "xhs"
+            isMusic -> "netease"
+            else -> "douyin"
+        }
         val card = LinkCard(
             link = link,
-            source = if (isXhs) "xhs" else "douyin",
+            source = source,
             title = title.ifBlank { null },
             isNote = isNoteText,
         )
-        AppLogBuffer.log(TAG, "link card placeholder: ${if (isXhs) "xhs" else "douyin"} title=${title.take(20)}")
+        AppLogBuffer.log(TAG, "link card placeholder: $source title=${title.take(20)}")
         return parts to card
     }
 

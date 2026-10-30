@@ -2013,9 +2013,19 @@ internal fun VideoLinkCard(
     } else {
         val host = remember(link) {
             runCatching { java.net.URI(link).host?.removePrefix("www.") }
-                .getOrNull().orEmpty().ifBlank { if (source == "xhs") "xhslink.cn" else "douyin.com" }
+                .getOrNull().orEmpty().ifBlank {
+                    when (source) {
+                        "xhs" -> "xhslink.cn"
+                        "netease" -> "163cn.tv"
+                        else -> "douyin.com"
+                    }
+                }
         }
-        val fallbackTitle = if (source == "xhs") "小红书笔记" else "抖音视频"
+        val fallbackTitle = when (source) {
+            "xhs" -> "小红书笔记"
+            "netease" -> "网易云音乐"
+            else -> "抖音视频"
+        }
         val shownTitle = title?.takeIf { it.isNotBlank() } ?: fallbackTitle
 
         Surface(
