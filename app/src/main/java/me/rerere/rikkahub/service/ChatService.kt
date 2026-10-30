@@ -1629,7 +1629,11 @@ class ChatService(
                                     ?.jsonPrimitive?.contentOrNull ?: old?.title,
                                 body = md?.get(DyLinkTransformer.META_LINK_BODY)
                                     ?.jsonPrimitive?.contentOrNull ?: old?.body,
-                                cover = part.url.ifBlank { null } ?: old?.cover,
+                                // ⚠️【2026-10-30 修】onMediaAttached 的第二参数是 UIMessagePart（基类），
+                                // 不是 Image —— 老代码里专门写过 `part is UIMessagePart.Image`，就是这个道理。
+                                // 直接 part.url 编不过，得先转。
+                                cover = (part as? UIMessagePart.Image)
+                                    ?.url?.takeIf { it.isNotBlank() } ?: old?.cover,
                                 images = md?.get("linkImages")
                                     ?.jsonPrimitive?.contentOrNull
                                     ?.split("##")?.filter { it.isNotBlank() }
