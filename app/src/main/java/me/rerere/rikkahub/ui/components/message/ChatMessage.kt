@@ -134,6 +134,7 @@ import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.data.ai.tools.resolveAwemeId
 import me.rerere.rikkahub.data.ai.tools.fetchAweme
 import me.rerere.rikkahub.data.ai.tools.bestMp4
+import me.rerere.rikkahub.data.ai.tools.resolveXhsMp4
 import me.rerere.rikkahub.data.ai.transformers.DyLinkTransformer
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
@@ -2014,7 +2015,9 @@ internal fun VideoLinkCard(
                         if (busy) return@combinedClickable
                         // 【图文 · 2026-10-30 宝要的】图文作品跟小红书一样：点开原地展开看多图。
                         // 之前不分图文/视频，统统一路去解析 mp4 → 图文必然"解析失败"。
-                        if (isNote || source == "xhs") {
+                        // 【小红书视频 · 2026-10-30】小红书有两种笔记，点之前分不清（页面才有答案）。
+                        // 所以点了先试着解视频直链：解出来就播（视频笔记），解不出就展开（图文笔记）。
+                        if (isNote) {
                             expanded = !expanded
                             return@combinedClickable
                         }
@@ -2022,12 +2025,21 @@ internal fun VideoLinkCard(
                         failed = false
                         scope.launch {
                             val u = runCatching {
-                                val id = resolveAwemeId(link)
-                                val aweme = id?.let { fetchAweme(it) }
-                                aweme?.let { bestMp4(it) }
+                                if (source == "xhs") {
+                                    resolveXhsMp4(link)
+                                } else {
+                                    val id = resolveAwemeId(link)
+                                    val aweme = id?.let { fetchAweme(it) }
+                                    aweme?.let { bestMp4(it) }
+                                }
                             }.getOrNull()
                             busy = false
-                            if (u.isNullOrBlank()) failed = true else playUrl = u
+                            when {
+                                !u.isNullOrBlank() -> playUrl = u
+                                // 小红书解不出视频地址 = 大概率是图文笔记 → 展开看正文和配图
+                                source == "xhs" -> expanded = !expanded
+                                else -> failed = true
+                            }
                         }
                     },
                     onLongClick = null,

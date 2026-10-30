@@ -57,7 +57,18 @@ private fun xhsBrowser(): WebView? =
     MiniAppWebViewHost.floatWebView ?: MiniAppWebViewBridge.current
 
 /** 抓笔记页，拿 HTML。 */
-private suspend fun fetchNotePage(url: String): String? = withContext(Dispatchers.IO) {
+/**
+ * 【抽出来给界面用 · 2026-10-30 宝要的】链接卡的"点开"要能播小红书视频。
+ * 抖音那边是卡片内部自己解 mp4（resolveAwemeId → fetchAweme → bestMp4），
+ * 小红书这套原来只活在工具里（只有 AI 能调），界面够不着。抽出来之后两边共用一份。
+ *
+ * 返回 null 的两种可能：抓不到页面（限流/要登录），或者这条是图文没有 masterUrl。
+ * 调用方分不清也不用分清 —— 拿不到就当作图文去展开，正合逻辑。
+ */
+internal suspend fun resolveXhsMp4(url: String): String? =
+    fetchNotePage(url)?.let { extractMp4(it) }
+
+internal suspend fun fetchNotePage(url: String): String? = withContext(Dispatchers.IO) {
     try {
         val req = Request.Builder().url(url).header("User-Agent", XHS_UA).get().build()
         xhsHttp.newCall(req).execute().use { resp ->
