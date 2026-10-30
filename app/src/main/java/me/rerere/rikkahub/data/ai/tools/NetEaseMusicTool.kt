@@ -62,7 +62,7 @@ internal suspend fun resolveNeteaseSongId(text: String): String? = withContext(D
  * 拿真正的播放地址。
  *
  * 为什么要自己跟这一次 302：
- * 外链接口 302 到的 CDN 地址是 **http://**，而安卓默认不让发明文 HTTP（cleartext），
+ * 外链接口 302 到的 CDN 地址是明文 http，而安卓默认不让发明文 HTTP（cleartext），
  * ExoPlayer 跟到那一步就直接断了——宝看到的是「00:00 / 00:00」的黑播放器。
  * 实测把 scheme 换成 https 照样下得下来（206 + audio/mpeg），所以这里换掉再交出去。
  */
