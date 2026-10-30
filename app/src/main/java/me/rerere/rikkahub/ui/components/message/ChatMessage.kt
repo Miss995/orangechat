@@ -135,6 +135,8 @@ import me.rerere.rikkahub.data.ai.tools.resolveAwemeId
 import me.rerere.rikkahub.data.ai.tools.fetchAweme
 import me.rerere.rikkahub.data.ai.tools.bestMp4
 import me.rerere.rikkahub.data.ai.tools.resolveXhsMp4
+import me.rerere.rikkahub.data.ai.tools.resolveNeteaseSongId
+import me.rerere.rikkahub.data.ai.tools.neteaseOuterUrl
 import me.rerere.rikkahub.data.ai.transformers.DyLinkTransformer
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
@@ -727,7 +729,10 @@ private fun MessagePartsBlock(
                                     .filterNot { line ->
                                         line.contains("douyin.com") ||
                                             line.contains("xhslink") ||
-                                            line.contains("xiaohongshu")
+                                            line.contains("xiaohongshu") ||
+                                            // 【音乐卡 · 2026-10-30】少了这两个，摘要会显示成「原文链接 + 卡片」两样
+                                            line.contains("163cn.tv") ||
+                                            line.contains("music.163.com")
                                     }
                                     .joinToString("\n")
                                     .trim()
@@ -2051,6 +2056,9 @@ internal fun VideoLinkCard(
                             val u = runCatching {
                                 if (source == "xhs") {
                                     resolveXhsMp4(link)
+                                } else if (source == "netease") {
+                                    // 【音乐卡 · 2026-10-30】短链读 Location 拿 id，接口 302 到 CDN，播放器自己跟
+                                    resolveNeteaseSongId(link)?.let { neteaseOuterUrl(it) }
                                 } else {
                                     val id = resolveAwemeId(link)
                                     val aweme = id?.let { fetchAweme(it) }
