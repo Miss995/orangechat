@@ -143,13 +143,34 @@ internal fun bestMp4(aweme: JsonObject): String? {    val gears = aweme["video"]
 
 /** 取封面图地址：origin_cover > cover > dynamic_cover，各自 url_list 取最后一个。 */
 internal fun bestCover(aweme: JsonObject): String? {
-    val video = aweme["video"]?.jsonObject ?: return null
-    for (key in listOf("origin_cover", "cover", "dynamic_cover")) {
-        val list = video[key]?.jsonObject?.get("url_list")?.jsonArray ?: continue
-        val u = list.mapNotNull { it.jsonPrimitive.contentOrNull }.lastOrNull { it.isNotBlank() }
-        if (!u.isNullOrBlank()) return u
+    val video = aweme["video"]?.jsonObject
+    if (video != null) {
+        for (key in listOf("origin_cover", "cover", "dynamic_cover")) {
+            val list = video[key]?.jsonObject?.get("url_list")?.jsonArray ?: continue
+            val u = list.mapNotNull { it.jsonPrimitive.contentOrNull }.lastOrNull { it.isNotBlank() }
+            if (!u.isNullOrBlank()) return u
+        }
     }
-    return null
+    // 【图文 · 2026-10-30 宝要的】图文作品（aweme_type=68）没有 video 对象，图在 images 数组里。
+    // 原来这里直接 `aweme["video"] ?: return null`，图文一进来就放弃了 —— 所以图文一直解析不出来。
+    // 现在退到 images 取第一张当封面。
+    return allImages(aweme).firstOrNull()
+}
+
+/**
+ * 【图文 · 2026-10-30】取图文作品的全部图片地址（视频作品返回空列表）。
+ * 抖音图文的 images 是个数组，每项里有 url_list；跟视频封面一样取 url_list 里最后一个非空地址
+ * （最后一个通常是最高清的）。
+ */
+internal fun allImages(aweme: JsonObject): List<String> {
+    val images = aweme["images"]?.jsonArray ?: return emptyList()
+    return images.mapNotNull { el ->
+        runCatching {
+            el.jsonObject["url_list"]?.jsonArray
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                ?.lastOrNull { it.isNotBlank() }
+        }.getOrNull()
+    }
 }
 
 internal fun str(o: JsonObject?, key: String): String =

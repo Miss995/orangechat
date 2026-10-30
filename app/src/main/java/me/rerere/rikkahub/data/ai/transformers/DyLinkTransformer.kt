@@ -6,6 +6,7 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.AppLogBuffer
+import me.rerere.rikkahub.data.ai.tools.allImages
 import me.rerere.rikkahub.data.ai.tools.bestCover
 import me.rerere.rikkahub.data.ai.tools.fetchAweme
 import me.rerere.rikkahub.data.ai.tools.resolveAwemeId
@@ -43,6 +44,9 @@ object DyLinkTransformer : InputMessageTransformer {
 
     /** 【原地展开 · 2026-10-29】卡里存一份给人看的正文（作者 + 内容），点开原地长出来 */
     const val META_LINK_BODY = "linkBody"
+
+    /** 【多图 · 2026-10-30 宝要的图文兼容】图文作品的全部图片地址（## 分隔，跟小红书同一个键） */
+    const val META_LINK_IMAGES = "linkImages"
 
     /** 匹配抖音短链 v.douyin.com/xxx，以及 www.douyin.com / iesdouyin.com 长链 */
     private val linkRegex = Regex(
@@ -171,12 +175,15 @@ object DyLinkTransformer : InputMessageTransformer {
             AppLogBuffer.log(TAG, "这条没有封面字段: id=$id")
             return null
         }
+        // 【图文 · 2026-10-30】图文作品把全部图带上，界面就能像小红书那样横排缩略图
+        val images = allImages(aweme)
         return UIMessagePart.Image(
             url = coverUrl,
             metadata = buildJsonObject {
                 put(META_VIDEO_LINK, link)
                 put(META_VIDEO_SOURCE, "douyin")
                 if (title.isNotBlank()) put(META_LINK_TITLE, title)
+                if (images.size > 1) put(META_LINK_IMAGES, images.joinToString("##"))
             },
         )
     }
