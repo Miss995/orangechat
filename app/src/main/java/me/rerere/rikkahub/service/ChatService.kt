@@ -67,6 +67,7 @@ import me.rerere.rikkahub.data.service.PendingQuoteStore
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.ToolApprovalState
+import me.rerere.ai.ui.LinkCard
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.canResumeToolExecution
@@ -598,7 +599,8 @@ class ChatService(
                         val assistant = settings.getAssistantById(latestConversation.assistantId)
                             ?: settings.getCurrentAssistant()
                         // 【链接卡 · 2026-10-29】先挂上占位卡，卡立刻出现；封面由 transformer 补
-                        val processedContent = attachLinkCardPlaceholder(
+                        // 【2026-10-30 改】占位不再是一张 Image part，改成消息上的 linkCard 字段
+                        val (processedContent, linkCard) = attachLinkCardPlaceholder(
                             preprocessUserInputParts(content, assistant)
                         )
 
@@ -611,6 +613,8 @@ class ChatService(
                             quotedText = quotedText,
                             // 【插话补充 · 2026-10-13】按了开关才带（"supplement"），平时 null
                             interjectKind = interjectKind,
+                            // 【链接卡 · 2026-10-30】发送这一刻就挂上，封面由 transformer 抓到后补
+                            linkCard = linkCard,
                         )
                         // 【抓鬼 · 2026-10-06】一次点击被处理了几次，看这里。
                         // 两行同样的文本 = 客户端/入口把同一条送了两遍。
@@ -1317,32 +1321,32 @@ class ChatService(
      *
      * 原文不动（transformer 还要读它），界面由渲染层判断"这条有卡"就不画那段链接文字。
      */
-    private fun attachLinkCardPlaceholder(parts: List<UIMessagePart>): List<UIMessagePart> {
+    private fun attachLinkCardPlaceholder(parts: List<UIMessagePart>): Pair<List<UIMessagePart>, LinkCard?> {
         // 已经有卡了（重发/编辑）就不重复加
         if (parts.any { p ->
                 p is UIMessagePart.Image &&
                     p.metadata?.containsKey(DyLinkTransformer.META_VIDEO_LINK) == true
             }
-        ) return parts
+        ) return parts to null
 
         val text = parts.filterIsInstance<UIMessagePart.Text>()
             .firstOrNull { LINK_CARD_REGEX.containsMatchIn(it.text) }?.text
-            ?: return parts
-        val link = LINK_CARD_REGEX.find(text)?.value ?: return parts
+            ?: return parts to null
+        val link = LINK_CARD_REGEX.find(text)?.value ?: return parts to null
 
         val isXhs = link.contains("xhslink") || link.contains("xiaohongshu")
         val title = DyLinkTransformer.extractCardTitle(text, link)
 
-        val card = UIMessagePart.Image(
-            url = "",
-            metadata = buildJsonObject {
-                put(DyLinkTransformer.META_VIDEO_LINK, link)
-                put(DyLinkTransformer.META_VIDEO_SOURCE, if (isXhs) "xhs" else "douyin")
-                if (title.isNotBlank()) put(DyLinkTransformer.META_LINK_TITLE, title)
-            },
+        // 【链接卡 · 2026-10-30 宝的方案】不再往 parts 里塞 Image 占位卡，改成消息上的一个字段。
+        // 卡片立刻能画（标题有了，封面空着由界面画占位），封面由 transformer 抓到后补进这个字段。
+        // 好处：一个字段只可能有一份，结构上叠不起来（老写法是"找空卡替换，找不到就追加"，会叠）。
+        val card = LinkCard(
+            link = link,
+            source = if (isXhs) "xhs" else "douyin",
+            title = title.ifBlank { null },
         )
         AppLogBuffer.log(TAG, "link card placeholder: ${if (isXhs) "xhs" else "douyin"} title=${title.take(20)}")
-        return parts + card
+        return parts to card
     }
 
     private fun preprocessUserInputParts(parts: List<UIMessagePart>, assistant: Assistant): List<UIMessagePart> {
@@ -1600,41 +1604,47 @@ class ChatService(
                         // ⚠️【2026-10-28 修2】messageId 是"消息 id"，node.id 是"格子 id"，两个不是一个东西。
                         // 上一版直接拿 messageId 比 node.id → 一个都匹配不上 → 静默不改，日志还照样打"贴上了"（骗人）。
                         // 改成：先找"哪一格里装着这条消息"，再改它被选中的那一版。
+                        // 【链接卡 · 2026-10-30 宝的方案】transformer 交上来的还是一个 Image 零件
+                        // （它那边不用改），这里接住之后不塞进 parts，改成把零件里的数据拆进
+                        // 消息的 linkCard 字段。字段唯一，所以不管 transformer 跑几轮，都只是一次更新，
+                        // 结构上不会再叠出第二张卡。
+                        val md = part.metadata
+                        val incomingLink = md?.get(DyLinkTransformer.META_VIDEO_LINK)
+                            ?.jsonPrimitive?.contentOrNull
                         var attached = false
                         updateConversationState(conversationId) { conv ->
                             val idx = conv.messageNodes.indexOfFirst { n ->
                                 n.messages.any { m -> m.id.toString() == messageId }
                             }
                             if (idx < 0) return@updateConversationState conv
+                            if (incomingLink.isNullOrBlank()) return@updateConversationState conv
                             val node = conv.messageNodes[idx]
                             val current = node.currentMessage
-                            // 幂等：已经有了就别重复贴（transformer 可能多次跑）
-                            if (current.parts.any { it == part }) return@updateConversationState conv
-                            // 【链接卡 · 2026-10-29】发送那一刻已经放了一张"空图占位卡"（url 为空）。
-                            // 同一个链接的占位卡还在的话，把它的图补上就行 —— 再追加会变成两张卡。
-                            val incomingLink = part.metadata
-                                ?.get(DyLinkTransformer.META_VIDEO_LINK)
-                                ?.jsonPrimitive?.contentOrNull
-                            val placeholderIdx = if (incomingLink != null && part is UIMessagePart.Image) {
-                                current.parts.indexOfFirst { p ->
-                                    p is UIMessagePart.Image && p.url.isBlank() &&
-                                        p.metadata?.get(DyLinkTransformer.META_VIDEO_LINK)
-                                            ?.jsonPrimitive?.contentOrNull == incomingLink
-                                }
-                            } else -1
+                            val old = current.linkCard
+                            val merged = LinkCard(
+                                link = incomingLink,
+                                source = md?.get(DyLinkTransformer.META_VIDEO_SOURCE)
+                                    ?.jsonPrimitive?.contentOrNull ?: old?.source ?: "douyin",
+                                title = md?.get(DyLinkTransformer.META_LINK_TITLE)
+                                    ?.jsonPrimitive?.contentOrNull ?: old?.title,
+                                body = md?.get(DyLinkTransformer.META_LINK_BODY)
+                                    ?.jsonPrimitive?.contentOrNull ?: old?.body,
+                                cover = part.url.ifBlank { null } ?: old?.cover,
+                                images = md?.get("linkImages")
+                                    ?.jsonPrimitive?.contentOrNull
+                                    ?.split("##")?.filter { it.isNotBlank() }
+                                    ?.takeIf { it.isNotEmpty() } ?: (old?.images ?: emptyList()),
+                            )
+                            // 内容没变就别白改（transformer 一轮里可能跑多次）
+                            if (merged == old) return@updateConversationState conv
                             attached = true
-                            // 【图落库 · 2026-10-29】记下这一格：保存时得让它强制细比，不然改动会被第一道闸吞掉
+                            // 【卡落库 · 2026-10-30】记下这一格：保存时得让它强制细比，不然改动会被第一道闸吞掉
                             mediaPatchedNodeIds.add(node.id.toString())
-                            val newParts = if (placeholderIdx >= 0) {
-                                current.parts.toMutableList().also { it[placeholderIdx] = part }
-                            } else {
-                                current.parts + part
-                            }
                             conv.copy(
                                 messageNodes = conv.messageNodes.toMutableList().also {
                                     it[idx] = node.copy(
                                         messages = node.messages.toMutableList().also { msgs ->
-                                            msgs[node.selectIndex] = current.copy(parts = newParts)
+                                            msgs[node.selectIndex] = current.copy(linkCard = merged)
                                         }
                                     )
                                 }

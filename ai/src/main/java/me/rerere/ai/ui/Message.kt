@@ -21,6 +21,28 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
+/**
+ * 【链接卡 · 2026-10-30 宝的方案】一条消息只带一张卡，卡的数据存在消息自己身上，
+ * 不再往 parts 里塞 Image 零件。
+ *
+ * 为什么改：以前卡是 parts 里的一张 Image（metadata 里挂着链接/标题/正文/附图），
+ * 每轮 transformer 抓到封面就"找同链接的空卡替换，找不到就追加"。
+ * 第一轮替换成功之后那张卡就不空了，第二轮按"必须还是空的"找不着，走了追加，
+ * 于是同一张卡叠成两三张（宝 10-30 实测：最高叠到三张，滑到那儿才看见）。
+ *
+ * 改成字段之后：一个字段只可能有一份，结构上就叠不起来。
+ * 老消息里已经存在的 Image 卡不迁移，渲染层两种都认（见 ChatMessage）。
+ */
+@Serializable
+data class LinkCard(
+    val link: String,
+    val source: String = "douyin",          // douyin / xhs
+    val title: String? = null,
+    val body: String? = null,               // 小红书正文（抖音一般没有）
+    val cover: String? = null,              // 封面图 url；null 或空 = 还没抓到，界面画占位
+    val images: List<String> = emptyList(), // 小红书附图
+)
+
 // 公共消息抽象, 具体的Provider实现会转换为API接口需要的DTO
 @Serializable
 data class UIMessage(
@@ -48,7 +70,10 @@ data class UIMessage(
     // 值："supplement"；普通消息（含没标的新话题插话）为 null。
     // 发请求时由 transformer 在它前面插一条短消息，让模型知道这句接的是她自己上一条，
     // 而不是接猫刚说的那句（猫回得快、她回得慢，插话物理上落在猫回复后面、逻辑上接她自己那句）。
-    val interjectKind: String? = null
+    val interjectKind: String? = null,
+    // 【链接卡 · 2026-10-30】这条消息带的那张链接卡。null = 没有。
+    // 跟 parts 里老式的 Image 卡并存：渲染层先看这个，没有再翻 parts。
+    val linkCard: LinkCard? = null
 ) {
     private fun appendChunk(chunk: MessageChunk): UIMessage {
         val choice = chunk.choices.getOrNull(0)

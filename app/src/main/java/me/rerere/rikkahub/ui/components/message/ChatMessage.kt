@@ -107,6 +107,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
+import me.rerere.ai.ui.LinkCard
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
@@ -304,6 +305,8 @@ fun ChatMessage(
                 annotations = message.annotations,
                 loading = loading,
                 model = model,
+                // 【链接卡 · 2026-10-30】卡改成消息字段了，这里把它送进去
+                linkCard = message.linkCard,
                 onToolApproval = onToolApproval,
                 onToolAnswer = onToolAnswer,
                 // 【点按菜单 · 2026-10-10】原来点用户消息 = 编辑，现在点按统一是"弹操作菜单"，
@@ -550,14 +553,18 @@ private fun MessagePartsBlock(
     // 【插话定位 · 2026-09-30】插话锚点表（id → 那条消息）。渲染到带锚点的 part 之后
     // 就把宝的话画在正文中间，由上层 ChatList 收集好传进来。
     interjections: Map<String, UIMessage> = emptyMap(),
+    // 【链接卡 · 2026-10-30】字段形式的卡。老消息的卡还住在 parts 里（Image + videoLink），
+    // 两种都认：字段有就画字段，没有再画 parts 里那张。
+    linkCard: LinkCard? = null,
 ) {
     val context = LocalContext.current
     val contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
 
     // 【链接卡 · 2026-10-29】这条消息里有没有卡片 —— 有的话，那段原始分享文本就不再画
     // （否则界面上是"一串链接 + 一张卡"，宝说多余）。
-    val hasLinkCard = remember(parts) {
-        parts.any { p ->
+    // 【2026-10-30】卡改成消息字段之后，这里也要认字段。
+    val hasLinkCard = remember(parts, linkCard) {
+        linkCard != null || parts.any { p ->
             p is UIMessagePart.Image &&
                 p.metadata?.containsKey(DyLinkTransformer.META_VIDEO_LINK) == true
         }
@@ -624,8 +631,21 @@ private fun MessagePartsBlock(
     // Render parts in original order (group thinking/tool as chain-of-thought)
     // 【空气泡 · 2026-10-02】长度为 0 的文本 part 会占一个块、画出一个空泡
     // （宝报"猫上下半句之间有个空气泡"）。渲染前滤掉；数据层不动——它进请求也只是 0 字节，不影响缓存。
-    val groupedParts = remember(parts) {
-        parts.filterNot { it is UIMessagePart.Text && it.text.isEmpty() }.groupMessageParts()
+    // 【链接卡去重 · 2026-10-30】老消息里同一条链接可能叠了两三张卡（旧写法"找不到占位就追加"
+    // 造成的），渲染时只留第一张，免得界面上一串一模一样的卡。新写法有了字段，不会再产生重复。
+    val dedupedParts = remember(parts) {
+        val seen = mutableSetOf<String>()
+        parts.filter { p ->
+            if (p is UIMessagePart.Image) {
+                val lk = p.metadata?.get(DyLinkTransformer.META_VIDEO_LINK)
+                    ?.jsonPrimitive?.contentOrNull
+                if (!lk.isNullOrBlank()) return@filter seen.add(lk)
+            }
+            true
+        }
+    }
+    val groupedParts = remember(dedupedParts) {
+        dedupedParts.filterNot { it is UIMessagePart.Text && it.text.isEmpty() }.groupMessageParts()
     }
     // 【宽度统一 · 2026-10-04 宝定的】思考链折叠态原来会"按内容自适应"（收成一条窄标签），
     // 宝要它跟工具块一样贴合其他块——不要自适应，一律铺满。
@@ -1149,7 +1169,20 @@ private fun MessagePartsBlock(
         // 留这段注释是为了记住：这里曾经有一条"认锚点单独画折叠条"的路，
         // 两套并存会各画一遍（同一句冒出三条的教训）。排队态仍由列表那边负责。
     }
- 
+
+    // 【链接卡 · 2026-10-30】字段形式的卡画在最后。
+    // 老消息的卡住在 parts 里，由上面的 Image 分支自己画（重复的已经被 dedupedParts 滤掉）。
+    linkCard?.let { card ->
+        VideoLinkCard(
+            link = card.link,
+            coverUrl = card.cover ?: "",
+            title = card.title,
+            source = card.source,
+            body = card.body,
+            images = card.images,
+        )
+    }
+
     // Annotations (always rendered at the end)
     if (annotations.isNotEmpty()) {
         Column(
