@@ -1933,12 +1933,12 @@ private fun LinkPreviewStrip(text: String) {
         Text(
             text = if (isXhs) "小红书" else "抖音",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+            color = Color(0xFF7FFFA8).copy(alpha = 0.85f),
         )
         Text(
             text = title.ifBlank { link },
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            color = Color(0xFF7FFFA8).copy(alpha = 0.6f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
@@ -1946,7 +1946,7 @@ private fun LinkPreviewStrip(text: String) {
         Text(
             text = "会带卡",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+            color = Color(0xFF7FFFA8).copy(alpha = 0.45f),
         )
     }
 }
