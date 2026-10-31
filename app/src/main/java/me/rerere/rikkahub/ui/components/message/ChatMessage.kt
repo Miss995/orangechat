@@ -1542,7 +1542,16 @@ internal object AudioPlaybackHub {
             p.prepare()
             p.playWhenReady = true
         } else {
-            p.playWhenReady = !p.playWhenReady
+            // 【2026-10-31 修】播完之后再点没反应：位置停在结尾，
+            // 切 playWhenReady 只是让它"立刻再结束一次"。到末尾就先回开头。
+            val atEnd = p.playbackState == Player.STATE_ENDED ||
+                (p.duration > 0 && p.currentPosition >= p.duration - 500)
+            if (atEnd) {
+                p.seekTo(0)
+                p.playWhenReady = true
+            } else {
+                p.playWhenReady = !p.playWhenReady
+            }
         }
     }
 }
