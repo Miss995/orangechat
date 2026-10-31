@@ -871,6 +871,8 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.Music)) {
             tools.add(eryuMusicTool)
+            // 【汽水音乐直投 · 2026-10-31】宝发汽水分享链接 → 解析音频直链 → App 自己的播放器
+            tools.add(createQiShuiMusicTool(context))
         }
         if (options.contains(LocalToolOption.Sticker)) {
             tools.add(stickerListTool)
