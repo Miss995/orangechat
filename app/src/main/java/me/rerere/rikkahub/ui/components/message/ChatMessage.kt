@@ -136,6 +136,7 @@ import me.rerere.rikkahub.data.ai.tools.fetchAweme
 import me.rerere.rikkahub.data.ai.tools.bestMp4
 import me.rerere.rikkahub.data.ai.tools.resolveXhsMp4
 import me.rerere.rikkahub.data.ai.tools.resolveNeteaseMp3
+import me.rerere.rikkahub.data.ai.tools.resolveNeteaseCover
 import me.rerere.rikkahub.data.ai.transformers.DyLinkTransformer
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
@@ -1446,15 +1447,67 @@ internal fun VideoBubble(
     }
 }
 
+/**
+ * 【音频中枢 · 2026-10-31】音乐卡片和波形条得控制同一首歌。
+ *
+ * 以前每条音频各开一个 MediaPlayer，而网易云那首是卡片自己另建的 ExoPlayer，
+ * 两边完全不通 —— 点卡片播的是一首，点波形条播的是另一首，还各响各的。
+ * 这里只留一个播放器、一份状态，谁点都调它。
+ */
+internal object AudioPlaybackHub {
+    /** 现在这首歌的地址（null = 还没放过任何东西） */
+    var currentUrl by mutableStateOf<String?>(null)
+        private set
+    var isPlaying by mutableStateOf(false)
+        private set
+    var durationMs by mutableIntStateOf(0)
+        private set
+
+    private var player: ExoPlayer? = null
+
+    fun positionMs(): Int = player?.currentPosition?.toInt()?.coerceAtLeast(0) ?: 0
+
+    /** 点一下：同一首就切播放/暂停；换了一首就从头放 */
+    fun toggle(context: android.content.Context, url: String) {
+        val ctx = context.applicationContext
+        val p = player ?: run {
+            val np = ExoPlayer.Builder(ctx).build()
+            np.addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
+                }
+
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_READY) {
+                        val d = np.duration
+                        durationMs = if (d > 0) d.toInt() else 0
+                    }
+                }
+            })
+            player = np
+            np
+        }
+        if (currentUrl != url) {
+            currentUrl = url
+            durationMs = 0
+            p.setMediaItem(MediaItem.fromUri(url))
+            p.prepare()
+            p.playWhenReady = true
+        } else {
+            p.playWhenReady = !p.playWhenReady
+        }
+    }
+}
+
 @Composable
 @Suppress("UnusedCrossTarget")
 internal fun AudioPlayerBubble(url: String) {
     val context = LocalContext.current
-    var isPlaying by remember { mutableStateOf(false) }
-    var durationMs by remember { mutableIntStateOf(0) }
+    // 【音频中枢 · 2026-10-31】播没播、多久、播到哪，全从中枢读，不再各存一份
+    val isThisOne = AudioPlaybackHub.currentUrl == url
+    val isPlaying = isThisOne && AudioPlaybackHub.isPlaying
+    val durationMs = if (isThisOne) AudioPlaybackHub.durationMs else 0
     var currentMs by remember { mutableIntStateOf(0) }
-    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-    var isPrepared by remember { mutableStateOf(false) }
  
     // Generate pseudo-random waveform bar heights (deterministic per url)
     val waveformBars = remember(url) {
@@ -1464,23 +1517,13 @@ internal fun AudioPlayerBubble(url: String) {
  
     val progress = if (durationMs > 0) currentMs.toFloat() / durationMs else 0f
  
-    DisposableEffect(Unit) {
-        onDispose {
-            mediaPlayer?.release()
-            mediaPlayer = null
-        }
-    }
- 
-    // Progress ticker
-    LaunchedEffect(isPlaying) {
+    // Progress ticker（进度从中枢问）
+    LaunchedEffect(isPlaying, url) {
         while (isPlaying) {
-            mediaPlayer?.let {
-                if (it.isPlaying) {
-                    currentMs = it.currentPosition
-                }
-            }
+            currentMs = AudioPlaybackHub.positionMs()
             kotlinx.coroutines.delay(50)
         }
+        if (!isPlaying) currentMs = if (isThisOne) AudioPlaybackHub.positionMs() else 0
     }
  
     // Animate waveform bars when playing
@@ -1520,35 +1563,7 @@ internal fun AudioPlayerBubble(url: String) {
                 .size(36.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primary)
-                .clickable {
-                    if (isPlaying) {
-                        mediaPlayer?.pause()
-                        isPlaying = false
-                    } else {
-                        if (mediaPlayer == null || !isPrepared) {
-                            val mp = MediaPlayer()
-                            try {
-                                val uri = android.net.Uri.parse(url)
-                                mp.setDataSource(context, uri)
-                                mp.prepare()
-                                durationMs = mp.duration
-                                mp.setOnCompletionListener {
-                                    isPlaying = false
-                                    currentMs = 0
-                                }
-                                mp.start()
-                                isPlaying = true
-                                isPrepared = true
-                                mediaPlayer = mp
-                            } catch (e: Exception) {
-                                mp.release()
-                            }
-                        } else {
-                            mediaPlayer?.start()
-                            isPlaying = true
-                        }
-                    }
-                },
+                .clickable { AudioPlaybackHub.toggle(context, url) },
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -1997,6 +2012,15 @@ internal fun VideoLinkCard(
      */
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // 【音乐卡封面 · 2026-10-31】网易云那条传进来的是空封面。
+    // 没封面就去歌曲页读一次 og:image（picUrl 混着推荐歌，不能认），抓到就留着。
+    var fetchedCover by remember(link) { mutableStateOf<String?>(null) }
+    LaunchedEffect(link, source, coverUrl) {
+        if (source == "netease" && coverUrl.isNullOrBlank() && fetchedCover == null) {
+            fetchedCover = resolveNeteaseCover(link)
+        }
+    }
+    val shownCover = coverUrl?.takeIf { it.isNotBlank() } ?: fetchedCover
     var playUrl by remember(link) { mutableStateOf<String?>(null) }
     var busy by remember(link) { mutableStateOf(false) }
     var failed by remember(link) { mutableStateOf(false) }
@@ -2057,6 +2081,29 @@ internal fun VideoLinkCard(
                             expanded = !expanded
                             return@combinedClickable
                         }
+                        // 【音乐卡变开关 · 2026-10-31】网易云不再"原地长出 400dp 播放器"，
+                        // 点一下就是调音频中枢：同一首切播放/暂停，换了歌从头上。
+                        // 第一次点要先解析出 mp3 直链（一两秒），解到的地址记在 playUrl 里，之后不用再解。
+                        if (source == "netease") {
+                            val known = playUrl
+                            if (!known.isNullOrBlank()) {
+                                AudioPlaybackHub.toggle(context, known)
+                            } else {
+                                busy = true
+                                failed = false
+                                scope.launch {
+                                    val u = runCatching { resolveNeteaseMp3(link) }.getOrNull()
+                                    busy = false
+                                    if (!u.isNullOrBlank()) {
+                                        playUrl = u
+                                        AudioPlaybackHub.toggle(context, u)
+                                    } else {
+                                        failed = true
+                                    }
+                                }
+                            }
+                            return@combinedClickable
+                        }
                         busy = true
                         failed = false
                         scope.launch {
@@ -2097,9 +2144,9 @@ internal fun VideoLinkCard(
                         .background(Color.Black.copy(alpha = 0.85f)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (!coverUrl.isNullOrBlank()) {
+                    if (!shownCover.isNullOrBlank()) {
                         AsyncImage(
-                            model = coverUrl,
+                            model = shownCover,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),

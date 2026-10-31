@@ -34,6 +34,46 @@ private val neteaseHttp: OkHttpClient by lazy {
         .build()
 }
 
+/** 【封面 · 2026-10-31】抓歌曲页要用跟随重定向的 client，短链那一套不能借。 */
+private val neteasePageHttp: OkHttpClient by lazy {
+    OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
+}
+
+private val NETEASE_OG_IMAGE_RE = Regex("""<meta[^>]+property="og:image"[^>]+content="([^"]+)"""")
+private val NETEASE_OG_IMAGE_RE2 = Regex("""<meta[^>]+content="([^"]+)"[^>]+property="og:image"""")
+
+/**
+ * 拿歌曲封面图。
+ *
+ * 网易云那个页面里 og:image 就是封面；里面的 picUrl 有好几张、混着推荐歌，
+ * 认它必然认错，所以只认 og:image 这一条。
+ * 拿到的地址是 http，安卓默认不让发，换成 https 再交给界面。
+ */
+internal suspend fun resolveNeteaseCover(text: String): String? = withContext(Dispatchers.IO) {
+    val id = resolveNeteaseSongId(text) ?: return@withContext null
+    try {
+        val req = Request.Builder()
+            .url("https://y.music.163.com/m/song?id=$id")
+            .header("User-Agent", NETEASE_UA)
+            .get().build()
+        neteasePageHttp.newCall(req).execute().use { resp ->
+            val html = resp.body?.string().orEmpty()
+            val hit = NETEASE_OG_IMAGE_RE.find(html)?.groupValues?.get(1)
+                ?: NETEASE_OG_IMAGE_RE2.find(html)?.groupValues?.get(1)
+            AppLogBuffer.log(NETEASE_TAG, "cover id=$id code=${resp.code} hit=${hit?.take(60)}")
+            hit?.replaceFirst("http://", "https://")
+        }
+    } catch (e: Exception) {
+        AppLogBuffer.log(NETEASE_TAG, "拿封面挂了: ${e.message}")
+        null
+    }
+}
+
 private val NETEASE_ID_RE = Regex("""[?&]id=(\d+)""")
 private val NETEASE_URL_RE = Regex("""https?://[^\s，,。\"']+""")
 
