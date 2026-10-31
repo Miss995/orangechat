@@ -237,10 +237,21 @@ internal object NowPlaying {
 /**
  * 播放条本体。没在播就整个不出现（不占位）。
  */
+/** 【体检用】只记第一次，避免每帧刷日志 */
+private val nowPlayingBarComposeTick = java.util.concurrent.atomic.AtomicInteger(0)
+
 @Composable
 fun NowPlayingBar(modifier: Modifier = Modifier) {
+    // 【体检 · 2026-10-31】只打第一次，不刷屏。用来分清三种情况：
+    //   有 COMPOSE 有 LOOP  = 都正常，问题在 refresh 内部
+    //   有 COMPOSE 没 LOOP  = LaunchedEffect 没启动
+    //   两个都没有           = 这个 Composable 压根没进组合
+    if (nowPlayingBarComposeTick.incrementAndGet() == 1) {
+        AppLogBuffer.log("NowPlaying", "COMPOSE entered")
+    }
     // 每 1.5 秒问一次页面；页面没开时这里会自己清空。
     LaunchedEffect(Unit) {
+        AppLogBuffer.log("NowPlaying", "LOOP start")
         while (true) {
             NowPlaying.refresh()
             delay(1500)
