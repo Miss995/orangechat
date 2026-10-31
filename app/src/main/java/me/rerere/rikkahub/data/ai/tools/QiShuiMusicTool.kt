@@ -7,6 +7,8 @@
 package me.rerere.rikkahub.data.ai.tools
 
 import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -56,61 +58,61 @@ internal fun looksLikeQiShui(text: String): Boolean =
  *
  * 返回 Triple(直链, 曲名, 歌手)。拿不到就返回 null，由调用方退回「开网页」。
  */
-internal suspend fun resolveQiShuiAudio(text: String): Triple<String, String, String>? {
-    val shareUrl = QISHUI_URL_RE.find(text)?.value ?: return null
-    return try {
-        val conn = URL(shareUrl).openConnection() as java.net.HttpURLConnection
-        conn.connectTimeout = 15000
-        conn.readTimeout = 25000
-        conn.instanceFollowRedirects = true
-        conn.requestMethod = "GET"
-        conn.setRequestProperty("User-Agent", QISHUI_UA)
+internal suspend fun resolveQiShuiAudio(text: String): Triple<String, String, String>? =
+    withContext(Dispatchers.IO) {
+        val shareUrl = QISHUI_URL_RE.find(text)?.value ?: return@withContext null
+        try {
+            val conn = URL(shareUrl).openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 15000
+            conn.readTimeout = 25000
+            conn.instanceFollowRedirects = true
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("User-Agent", QISHUI_UA)
 
-        val code = conn.responseCode
-        val html = if (code == 200) {
-            conn.inputStream.bufferedReader().use { it.readText() }
-        } else {
-            AppLogBuffer.log(QISHUI_TAG, "分享页 HTTP $code")
-            return null
+            val code = conn.responseCode
+            if (code != 200) {
+                AppLogBuffer.log(QISHUI_TAG, "分享页 HTTP $code")
+                return@withContext null
+            }
+            val html = conn.inputStream.bufferedReader().use { it.readText() }
+
+            // 只认 audioWithLyricsOption 之后那一个 url —— 页面上还有别的 url 字段（推荐歌、背景乐）
+            val anchor = html.indexOf("audioWithLyricsOption")
+            if (anchor < 0) {
+                AppLogBuffer.log(QISHUI_TAG, "页面里没有 audioWithLyricsOption，长度=${html.length}")
+                return@withContext null
+            }
+            val urlKey = html.indexOf("\"url\":\"", anchor)
+            if (urlKey < 0) {
+                AppLogBuffer.log(QISHUI_TAG, "audioWithLyricsOption 后面没有 url")
+                return@withContext null
+            }
+            val start = urlKey + "\"url\":\"".length
+            val end = html.indexOf('"', start)
+            if (end <= start) return@withContext null
+            val audioUrl = html.substring(start, end)
+                .replace("\\u002F", "/")
+                .replace("\\/", "/")
+
+            if (!audioUrl.startsWith("http")) {
+                AppLogBuffer.log(QISHUI_TAG, "解析出来的不是 http 地址: ${audioUrl.take(40)}")
+                return@withContext null
+            }
+
+            // 曲名：og:title 是 "《歌名》@汽水音乐" 这种，去掉尾巴留干净的名字
+            val ogTitle = QISHUI_OG_TITLE_RE.find(html)?.groupValues?.get(1).orEmpty()
+            val title = ogTitle
+                .substringAfter("《").substringBefore("》")
+                .ifBlank { ogTitle.substringBefore("@").trim() }
+                .ifBlank { "汽水音乐" }
+
+            AppLogBuffer.log(QISHUI_TAG, "解析成功 title=$title code=$code len=${audioUrl.length}")
+            Triple(audioUrl, title, "")
+        } catch (e: Exception) {
+            AppLogBuffer.log(QISHUI_TAG, "解析挂了: ${e.javaClass.simpleName} ${e.message}")
+            null
         }
-
-        // 只认 audioWithLyricsOption 之后那一个 url —— 页面上还有别的 url 字段（推荐歌、背景乐）
-        val anchor = html.indexOf("audioWithLyricsOption")
-        if (anchor < 0) {
-            AppLogBuffer.log(QISHUI_TAG, "页面里没有 audioWithLyricsOption，长度=${html.length}")
-            return null
-        }
-        val urlKey = html.indexOf("\"url\":\"", anchor)
-        if (urlKey < 0) {
-            AppLogBuffer.log(QISHUI_TAG, "audioWithLyricsOption 后面没有 url")
-            return null
-        }
-        val start = urlKey + "\"url\":\"".length
-        val end = html.indexOf('"', start)
-        if (end <= start) return null
-        val audioUrl = html.substring(start, end)
-            .replace("\\u002F", "/")
-            .replace("\\/", "/")
-
-        if (!audioUrl.startsWith("http")) {
-            AppLogBuffer.log(QISHUI_TAG, "解析出来的不是 http 地址: ${audioUrl.take(40)}")
-            return null
-        }
-
-        // 曲名：og:title 是 "《歌名》@汽水音乐" 这种，去掉尾巴留干净的名字
-        val ogTitle = QISHUI_OG_TITLE_RE.find(html)?.groupValues?.get(1).orEmpty()
-        val title = ogTitle
-            .substringAfter("《").substringBefore("》")
-            .ifBlank { ogTitle.substringBefore("@").trim() }
-            .ifBlank { "汽水音乐" }
-
-        AppLogBuffer.log(QISHUI_TAG, "解析成功 title=$title code=$code len=${audioUrl.length}")
-        Triple(audioUrl, title, "")
-    } catch (e: Exception) {
-        AppLogBuffer.log(QISHUI_TAG, "解析挂了: ${e.javaClass.simpleName} ${e.message}")
-        null
     }
-}
 
 /**
  * 汽水音乐工具：宝发来汽水分享链接 → 解析出直链 → 交给 App 自己的播放器。
