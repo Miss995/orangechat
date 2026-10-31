@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 import kotlinx.datetime.TimeZone
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.datetime.toInstant
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tick01
@@ -103,10 +104,13 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.ui.components.message.TaskReceiptLine
+import me.rerere.rikkahub.ui.components.message.taskReceiptText
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.message.ChatMessage
+import me.rerere.rikkahub.ui.components.message.ChatMessageInterjectedMessage
 import me.rerere.rikkahub.ui.components.ui.ErrorCardsDisplay
 import me.rerere.rikkahub.ui.components.ui.ListSelectableItem
 import me.rerere.rikkahub.ui.components.ui.RabbitLoadingIndicator
@@ -154,6 +158,12 @@ fun ChatList(
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
     // 【消息引用 2026-09-22】长按消息 → 引用
     onQuote: (UIMessage) -> Unit = {},
+    // 【引用一句 2026-10-10】长按选中一段文字 → 只引用这一句（第二参 = 选中那段原文）
+    onQuoteText: ((UIMessage, String) -> Unit)? = null,
+    // 【引用跳回 2026-10-10】点被引的小条 → 跳回那条（参数 = 目标节点 id）
+    onQuotedClick: ((Uuid) -> Unit)? = null,
+    // 【插话不落库 · 2026-10-02】排队中的插话（还没并进猫那条的，界面画"排队中"用）
+    pendingInterjections: List<UIMessage> = emptyList(),
 ) {
     AnimatedContent(
         targetState = previewMode,
@@ -197,9 +207,12 @@ fun ChatList(
                 onToggleFavorite = onToggleFavorite,
                 onConversationSystemPromptChange = onConversationSystemPromptChange,
                 onQuote = onQuote,
+                onQuoteText = onQuoteText,
+                onQuotedClick = onQuotedClick,
                 jumpNodes = jumpNodes,
                 jumpTargetIndex = jumpTargetIndex,
                 onExitJump = onExitJump,
+                pendingInterjections = pendingInterjections,
             )
         }
     }
@@ -232,10 +245,38 @@ private fun ChatListNormal(
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
     // 【消息引用 2026-09-22】长按消息 → 引用
     onQuote: (UIMessage) -> Unit = {},
+    // 【引用一句 2026-10-10】长按选中一段文字 → 只引用这一句
+    onQuoteText: ((UIMessage, String) -> Unit)? = null,
+    // 【引用跳回 2026-10-10】点被引的小条 → 跳回那条
+    onQuotedClick: ((Uuid) -> Unit)? = null,
     jumpNodes: List<MessageNode>? = null,
     jumpTargetIndex: Int? = null,
     onExitJump: () -> Unit = {},
+    // 【插话不落库 · 2026-10-02】排队中的插话（画在最后一条消息下面）
+    pendingInterjections: List<UIMessage> = emptyList(),
 ) {
+    // 【卡顿定位 · 2026-10-02】逐帧耗时探针：withFrameNanos 每帧回调一次，
+    // 相邻两帧的间隔就是"上一帧主线程被占了多久"。只在生成中记，间隔 >200ms 才打一条。
+    // 有了它，就不用再猜"是不是某块渲染贵"，直接看那几十秒里时间碎在哪儿。
+    LaunchedEffect(loading) {
+        if (!loading) return@LaunchedEffect
+        var last = 0L
+        var frames = 0
+        var worst = 0L
+        while (true) {
+            withFrameNanos { now ->
+                if (last != 0L) {
+                    val gap = (now - last) / 1_000_000
+                    frames++
+                    if (gap > worst) worst = gap
+                    if (gap > 200) {
+                        AppLogBuffer.log(TAG, "SLOWFRAME gap=${gap}ms frame=$frames worst=$worst")
+                    }
+                }
+                last = now
+            }
+        }
+    }
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
     var isRecentScroll by remember { mutableStateOf(false) }
@@ -366,7 +407,7 @@ private fun ChatListNormal(
             // 【转轴窗口】只显示最近 N 条，旧消息从窗口消失（数据仍完整保留，全量在 Supabase）
             val result = if (jumpNodes == null && filtered.size > WINDOW_DISPLAY_SIZE) filtered.takeLast(WINDOW_DISPLAY_SIZE) else filtered
             // 【日志降频 · 2026-10-31】流式期间重组极频繁，这条每秒十几次，
-            // 把 500 条内存环 + 6000 行落盘文件全冲光（导致别人查不到任何日志）。
+            // 把 500 条内存环 + 6000 行落盘文件全冲光（导致别的日志查不到）。
             // 每 20 次报一条 —— 诊断够用，不再刷屏。
             if (displayLogTick.incrementAndGet() % 20 == 1) {
                 AppLogBuffer.log(TAG, "displayNodes: total=${source.size} shown=${result.size} took=${System.currentTimeMillis() - t0}ms jump=${jumpNodes != null}")
@@ -375,21 +416,25 @@ private fun ChatListNormal(
         }
 
         // 【插话定位 · 2026-09-30】预扫描：把"插话消息"按 id 收起来，交给猫那条消息渲染。
-        // 判据跟以前一致（她这条在她前一条猫消息完成之前发的 = 插话），区别是从此不再单独给它开气泡，
-        // 而是让猫的消息按 parts 里 metadata["interject"] 的锚点，把它画在正文中间。
+        // 【判据换源 · 2026-10-01 宝实测后修】原来用 msg.createdAt < prev.finishedAt，
+        // 但 UIMessage.finishedAt 从来没被写过（代码只给 Reasoning part 写结束时间，
+        // 消息自己那个字段一直是 null），判据永远不成立。
+        // 换成锚点：搭车那一刻 GenerationHandler 在猫那条的 last part 上写了
+        // metadata{"interject": "<宝那条消息的 id>"}，拿它跟 msg.id 对，对上就是插话。
         val interjectionsById = remember(displayNodes) {
-            val tz = TimeZone.currentSystemDefault()
             buildMap<String, UIMessage> {
                 displayNodes.forEachIndexed { index, node ->
                     val prev = displayNodes.getOrNull(index - 1) ?: return@forEachIndexed
-                    val finishedAt = prev.currentMessage.finishedAt ?: return@forEachIndexed
                     val msg = node.currentMessage
-                    if (msg.role == MessageRole.USER &&
-                        prev.currentMessage.role == MessageRole.ASSISTANT &&
-                        msg.createdAt.toInstant(tz) < finishedAt.toInstant(tz)
-                    ) {
-                        put(msg.id.toString(), msg)
+                    if (msg.role != MessageRole.USER) return@forEachIndexed
+                    if (prev.currentMessage.role != MessageRole.ASSISTANT) return@forEachIndexed
+                    val anchored = prev.currentMessage.parts.any { part ->
+                        // 【拆 key · 2026-10-05】位置锚点改用 interjectAnchor；兼容旧数据。
+                        val m = part.metadata
+                        val v = m?.get("interjectAnchor") ?: m?.get("interject")
+                        v is JsonPrimitive && v.content != "true" && v.content.split(",").any { it.trim() == msg.id.toString() }
                     }
+                    if (anchored) put(msg.id.toString(), msg)
                 }
             }
         }
@@ -401,27 +446,35 @@ private fun ChatListNormal(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier
                 .fillMaxSize()
-                .hazeSource(state = hazeState)
+                .then(
+                    // 【卡顿修复 · 2026-10-02】只有真开了模糊效果才登记"可被模糊的背景"。
+                    // 原来是无条件挂 hazeSource：列表每次内容变化都要多画一遍到离屏缓冲，
+                    // 流式期间每 100ms 一次；而背景是纯白时糊跟不糊一个样，等于纯付钱。
+                    if (settings.displaySetting.enableBlurEffect) {
+                        Modifier.hazeSource(state = hazeState)
+                    } else {
+                        Modifier
+                    }
+                )
                 .padding(top = innerPadding.calculateTopPadding()),
         ) {
             itemsIndexed(
                 items = displayNodes,
                 key = { index, item -> item.id },
             ) { index, node ->
-                // 【插话贴猫 · 2026-09-30】判据：她这条在她前一条猫消息"完成之前"发的 = 插话
-                // （搭车和接力都是这个特征）。纯显示层算，不碰数据层。
-                val prevNode = displayNodes.getOrNull(index - 1)
-                val prevFinishedAt = prevNode?.currentMessage?.finishedAt
-                val tz = TimeZone.currentSystemDefault()
-                val isInterjection =
-                    node.currentMessage.role == MessageRole.USER &&
-                        prevNode?.currentMessage?.role == MessageRole.ASSISTANT &&
-                        prevFinishedAt != null &&
-                        node.currentMessage.createdAt.toInstant(tz) <
-                        prevFinishedAt.toInstant(tz)
+                // 【插话贴猫 · 2026-09-30】她这条是不是插话，直接查上面预扫描那张表。
+                // 【判据换源 · 2026-10-01】不再用 msg.createdAt < prev.finishedAt 那个走不通的判据
+                // （UIMessage.finishedAt 从没被写过），改查锚点表。
+                val isInterjection = interjectionsById.containsKey(node.currentMessage.id.toString())
                 // 【插话定位 · 2026-09-30】插话不再自己画一条：它的内容由前一条猫消息
                 // 按锚点渲染（见 ChatMessage 的 interjections 参数）。这里留一个空 item。
                 if (isInterjection) return@itemsIndexed
+                // 【任务回执 · 2026-10-06】〔任务完成〕/〔任务到点〕→ 一行居中灰字，不画气泡
+                val receiptText = taskReceiptText(node.currentMessage)
+                if (receiptText != null) {
+                    TaskReceiptLine(receiptText)
+                    return@itemsIndexed
+                }
                 Column {
                     ListSelectableItem(
                         key = node.id,
@@ -477,6 +530,20 @@ private fun ChatListNormal(
                             onQuote = {
                                 onQuote(node.currentMessage)
                             },
+                            // 【引用一句 2026-10-10】选中一段文字后点"引用这句"
+                            onQuoteText = { text ->
+                                onQuoteText?.invoke(node.currentMessage, text)
+                            },
+                            // 【引用一句 2026-10-10】只引用了某一句时，那句原文（画小条用）
+                            quotedText = node.currentMessage.quotedText,
+                            // 【引用跳回 2026-10-10】点小条 → 先把"消息 id"翻成"它住的节点 id"，再报上去
+                            onQuotedClick = onQuotedClick?.let { cb ->
+                                { msgId: Uuid ->
+                                    conversation.messageNodes
+                                        .firstOrNull { n -> n.messages.any { m -> m.id == msgId } }
+                                        ?.let { n -> cb(n.id) }
+                                }
+                            },
                             // 【消息引用 2026-09-22】反查被引的那条（id 打不到就为 null，不显示小条）
                             quotedMessage = node.currentMessage.quotedMessageId?.let { qid ->
                                 conversation.messageNodes
@@ -500,6 +567,12 @@ private fun ChatListNormal(
                         onSystemPromptChange = onConversationSystemPromptChange,
                     )
                 }
+            }
+
+            // 【插话不落库 · 2026-10-02】排队中的插话：它没进会话，界面上由这里补画。
+            // 标题走"排队中"；等收尾合并进猫那条之后，自然换成猫那边的"你的插话"折叠条。
+            items(pendingInterjections, key = { it.id }) { pending ->
+                ChatMessageInterjectedMessage(message = pending, pending = true)
             }
 
             if (loading) {
