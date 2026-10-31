@@ -1464,13 +1464,45 @@ internal object AudioPlaybackHub {
     var durationMs by mutableIntStateOf(0)
         private set
 
+    /**
+     * 【波形条认它 · 2026-10-31】当前这首叫什么。
+     * NowPlayingBar 原来只认 eryu 网页里的 audio，卡片走这里它就不知道 ——
+     * 加了这个，网页没在播时它就回头看 hub，名字也有了。
+     */
+    var currentTitle by mutableStateOf<String?>(null)
+        private set
+
     private var player: ExoPlayer? = null
+    /** 第一次播放时记下的 applicationContext —— 波形条那边不一定拿得到 Context */
+    private var appCtx: android.content.Context? = null
 
     fun positionMs(): Int = player?.currentPosition?.toInt()?.coerceAtLeast(0) ?: 0
 
-    /** 点一下：同一首就切播放/暂停；换了一首就从头放 */
-    fun toggle(context: android.content.Context, url: String) {
+    /** 【波形条 · 2026-10-31】给 NowPlayingBar 用的：不用传 context 就能切播放/暂停 */
+    fun toggleCurrent() {
+        val ctx = appCtx ?: return
+        val url = currentUrl ?: return
+        toggle(ctx, url, currentTitle)
+    }
+
+    /** 【波形条控进度 · 2026-10-31】拖那条进度就调这里 */
+    fun seekTo(ms: Int) {
+        player?.seekTo(ms.coerceAtLeast(0).toLong())
+    }
+
+    /** 停掉并清空（波形条上按"×"时用；现在还没接） */
+    fun stop() {
+        player?.stop()
+        isPlaying = false
+        currentUrl = null
+        currentTitle = null
+        durationMs = 0
+    }
+
+    /** 点一下：同一首就切播放/暂停；换了一首就从头放。title 只用来给波形条显示。 */
+    fun toggle(context: android.content.Context, url: String, title: String? = null) {
         val ctx = context.applicationContext
+        appCtx = ctx
         val p = player ?: run {
             val np = ExoPlayer.Builder(ctx).build()
             np.addListener(object : Player.Listener {
@@ -1490,6 +1522,7 @@ internal object AudioPlaybackHub {
         }
         if (currentUrl != url) {
             currentUrl = url
+            currentTitle = title
             durationMs = 0
             p.setMediaItem(MediaItem.fromUri(url))
             p.prepare()
@@ -2091,7 +2124,7 @@ internal fun VideoLinkCard(
                         if (source == "netease") {
                             val known = neteaseMp3
                             if (!known.isNullOrBlank()) {
-                                AudioPlaybackHub.toggle(context, known)
+                                AudioPlaybackHub.toggle(context, known, title)
                             } else {
                                 busy = true
                                 failed = false
@@ -2100,7 +2133,7 @@ internal fun VideoLinkCard(
                                     busy = false
                                     if (!u.isNullOrBlank()) {
                                         neteaseMp3 = u
-                                        AudioPlaybackHub.toggle(context, u)
+                                        AudioPlaybackHub.toggle(context, u, title)
                                     } else {
                                         failed = true
                                     }

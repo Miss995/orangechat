@@ -7,7 +7,10 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import me.rerere.rikkahub.ui.components.message.AudioPlaybackHub
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewHost
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -65,27 +69,78 @@ internal object NowPlaying {
 
     private val main = Handler(Looper.getMainLooper())
 
-    /** 读一次页面状态。页面没开着就清空。 */
+    /**
+     * 【波形条认 hub · 2026-10-31】这一条现在是从哪儿来的。
+     * true = App 内的音频中枢（音乐卡走的那条），false = eryu 网页里的 audio。
+     * 开关要做的事不一样，所以得记住。
+     */
+    var fromHub by mutableStateOf(false)
+        private set
+
+    /** 读一次状态：先问网页，网页没有就回头看 hub。 */
     fun refresh() {
-        val wv = MiniAppWebViewHost.webView ?: run { snap = null; return }
+        val wv = MiniAppWebViewHost.webView ?: run { snap = fromHubNow(); return }
         main.post {
             try {
                 wv.evaluateJavascript(READ_JS) { raw ->
-                    snap = parse(raw)
+                    val fromPage = parse(raw)
+                    if (fromPage != null) {
+                        fromHub = false
+                        snap = fromPage
+                    } else {
+                        snap = fromHubNow()
+                    }
                 }
             } catch (_: Throwable) {
-                snap = null
+                snap = fromHubNow()
             }
         }
     }
 
-    /** 播放 / 暂停。 */
+    /**
+     * 网页没在播时看这边：音乐卡片点播走的是 App 内的播放器，
+     * 以前它压根不出现在这条上（宝：卡片能放了，上面那条不冒头）。
+     */
+    private fun fromHubNow(): NowPlayingSnap? {
+        val url = AudioPlaybackHub.currentUrl
+        if (url.isNullOrBlank()) {
+            fromHub = false
+            return null
+        }
+        val dur = AudioPlaybackHub.durationMs
+        val pos = AudioPlaybackHub.positionMs()
+        // 播到结尾就收起来 —— 跟网页那边同一条规矩
+        if (dur > 0 && pos >= dur - 400) {
+            fromHub = false
+            return null
+        }
+        fromHub = true
+        return NowPlayingSnap(
+            name = AudioPlaybackHub.currentTitle?.takeIf { it.isNotBlank() } ?: "音乐",
+            artist = "",
+            paused = !AudioPlaybackHub.isPlaying,
+            position = pos / 1000.0,
+            duration = dur / 1000.0,
+        )
+    }
+
+    /** 播放 / 暂停。谁在播就管谁。 */
     fun toggle() {
+        if (fromHub) {
+            AudioPlaybackHub.toggleCurrent()
+            return
+        }
         call("toggle") { refresh() }
     }
 
-    /** 下一首。 */
+    /** 【点进度条跳过去 · 2026-10-31】只有 hub 能跳（网页那边没做这功能）。 */
+    fun seek(sec: Double) {
+        if (fromHub) AudioPlaybackHub.seekTo((sec * 1000).toInt())
+    }
+
+    /** 下一首。hub 只有一首，没有下一首。 */
     fun next() {
+        if (fromHub) return
         call("next") { refresh() }
     }
 
@@ -232,12 +287,29 @@ fun NowPlayingBar(modifier: Modifier = Modifier) {
                 val frac = if (s.duration > 0) {
                     (s.position / s.duration).toFloat().coerceIn(0f, 1f)
                 } else 0f
-                LinearProgressIndicator(
-                    progress = { frac },
+                // 【点进度条跳 · 2026-10-31】线本身 2dp 太细点不着，
+                // 外面套 14dp 的可点区域，按点到的比例换算成秒交给中枢。
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(2.dp),
-                )
+                        .height(14.dp)
+                        .pointerInput(s.duration, NowPlaying.fromHub) {
+                            detectTapGestures { off ->
+                                if (s.duration > 0 && NowPlaying.fromHub) {
+                                    val ratio = (off.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                    NowPlaying.seek(ratio * s.duration)
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    LinearProgressIndicator(
+                        progress = { frac },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp),
+                    )
+                }
             }
         }
     }
