@@ -2023,6 +2023,9 @@ internal fun VideoLinkCard(
     }
     val shownCover = coverUrl?.takeIf { it.isNotBlank() } ?: fetchedCover
     var playUrl by remember(link) { mutableStateOf<String?>(null) }
+    // 【音乐卡 · 2026-10-31 修】网易云解出来的地址单独存，绝不能写进 playUrl ——
+    // playUrl 一有值就会唤醒下面那段"原地长播放器"的旧代码（黑播放器 + 自己播一遍 = 双声道）。
+    var neteaseMp3 by remember(link) { mutableStateOf<String?>(null) }
     var busy by remember(link) { mutableStateOf(false) }
     var failed by remember(link) { mutableStateOf(false) }
     // 【原地展开 · 2026-10-29】小红书的卡点一下就在原处长高，不跳浏览器
@@ -2086,7 +2089,7 @@ internal fun VideoLinkCard(
                         // 点一下就是调音频中枢：同一首切播放/暂停，换了歌从头上。
                         // 第一次点要先解析出 mp3 直链（一两秒），解到的地址记在 playUrl 里，之后不用再解。
                         if (source == "netease") {
-                            val known = playUrl
+                            val known = neteaseMp3
                             if (!known.isNullOrBlank()) {
                                 AudioPlaybackHub.toggle(context, known)
                             } else {
@@ -2096,7 +2099,7 @@ internal fun VideoLinkCard(
                                     val u = runCatching { resolveNeteaseMp3(link) }.getOrNull()
                                     busy = false
                                     if (!u.isNullOrBlank()) {
-                                        playUrl = u
+                                        neteaseMp3 = u
                                         AudioPlaybackHub.toggle(context, u)
                                     } else {
                                         failed = true
