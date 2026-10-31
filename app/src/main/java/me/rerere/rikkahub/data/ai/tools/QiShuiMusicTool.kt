@@ -125,8 +125,10 @@ fun createQiShuiMusicTool(context: Context): Tool = Tool(
     parameters = {
         InputSchema.Obj(
             properties = kotlinx.serialization.json.buildJsonObject {
-                put("url", JsonPrimitive("string"))
-                put("description", JsonPrimitive("宝发来的汽水分享文本/链接，整段贴进来即可"))
+                put("url", kotlinx.serialization.json.buildJsonObject {
+                    put("type", JsonPrimitive("string"))
+                    put("description", JsonPrimitive("宝发来的汽水分享文本/链接，整段贴进来即可"))
+                })
             },
             required = listOf("url")
         )
