@@ -1316,7 +1316,7 @@ private fun BubbleSurface(
 }
  
 /** 【视频别竖成一块板子 · 2026-10-27】读视频自己的宽高比 + 抽第一帧当封面。 */
-private data class VideoMeta(val ratio: Float, val cover: android.graphics.Bitmap?)
+private data class VideoMeta(val ratio: Float, val cover: android.graphics.Bitmap?, val hasVideo: Boolean = true)
 
 private fun readVideoMeta(context: android.content.Context, url: String): VideoMeta {
     return runCatching {
@@ -1334,7 +1334,7 @@ private fun readVideoMeta(context: android.content.Context, url: String): VideoM
                 1_000_000L,
                 android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC
             )
-            VideoMeta(ratio, frame)
+            VideoMeta(ratio, frame, w > 0 && h > 0)
         } finally {
             retriever.release()
         }
@@ -1361,6 +1361,14 @@ internal fun VideoBubble(
     // 【视频别竖成一块板子 · 2026-10-27 宝报】原来写死 16:9，竖屏视频被塞成中间窄条。
     // 改成读视频自己的宽高比，同时抽第一帧当封面（一次 MediaMetadataRetriever 拿两样）。
     val meta = remember(url) { readVideoMeta(context, url) }
+
+    // 【音频链接别塞进视频播放器 · 2026-10-31】音乐链接解析出来的是纯音频，
+    // PlayerView 没有画面可画，展开后整块全黑，只剩底下那排按钮。
+    // 抽帧那一步本来就在读宽高，纯音频宽高都是 0 —— 拿它当判据，换成音频条。
+    if (!meta.hasVideo) {
+        AudioPlayerBubble(url = url)
+        return
+    }
 
     if (!expanded.value) {
         Surface(
