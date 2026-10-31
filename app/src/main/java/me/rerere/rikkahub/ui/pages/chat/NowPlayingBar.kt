@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.ui.components.message.AudioPlaybackHub
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppWebViewHost
 import org.json.JSONObject
@@ -77,6 +78,9 @@ internal object NowPlaying {
     var fromHub by mutableStateOf(false)
         private set
 
+    /** 上次打日志时的样子 —— 只在变化时打，不然 1.5 秒一条会刷爆日志环 */
+    private var lastSig = ""
+
     /**
      * 读一次状态。
      *
@@ -87,6 +91,7 @@ internal object NowPlaying {
      */
     fun refresh() {
         val hubSnap = fromHubNow()
+        logState()
         if (hubSnap != null) {
             snap = hubSnap
             return
@@ -102,6 +107,25 @@ internal object NowPlaying {
             } catch (_: Throwable) {
                 snap = null
             }
+        }
+    }
+
+    /** 【排查日志 · 2026-10-31】只在状态变化时打一行，别刷屏。 */
+    private fun logState() {
+        val u = AudioPlaybackHub.currentUrl
+        val sig = buildString {
+            append("hub=").append(if (u.isNullOrBlank()) "null" else "url(${u.length})")
+            append(" playing=").append(AudioPlaybackHub.isPlaying)
+            append(" dur=").append(AudioPlaybackHub.durationMs)
+            append(" pos=").append(AudioPlaybackHub.positionMs())
+            append(" title=").append(AudioPlaybackHub.currentTitle)
+            append(" fromHub=").append(fromHub)
+            append(" snap=").append(snap?.name)
+            append(" wv=").append(MiniAppWebViewHost.webView != null)
+        }
+        if (sig != lastSig) {
+            lastSig = sig
+            AppLogBuffer.log("NowPlaying", sig)
         }
     }
 
