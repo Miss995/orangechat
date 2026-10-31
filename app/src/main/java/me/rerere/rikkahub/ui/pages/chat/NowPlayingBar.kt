@@ -77,22 +77,30 @@ internal object NowPlaying {
     var fromHub by mutableStateOf(false)
         private set
 
-    /** 读一次状态：先问网页，网页没有就回头看 hub。 */
+    /**
+     * 读一次状态。
+     *
+     * 【顺序 · 2026-10-31 第二次修】先看 hub，再问网页。
+     * 原来反着写：先问网页，问不到才回头。实测小程序关掉之后 WebView 对象还在，
+     * 而那句 JS 一直不回调 —— 于是永远卡在第一步，卡片在聊天页播着，这条却一直不出现。
+     * 两个源本来就是互斥的（网页播的时候 hub 不会播），先问 hub 最省事也最不容易卡。
+     */
     fun refresh() {
-        val wv = MiniAppWebViewHost.webView ?: run { snap = fromHubNow(); return }
+        val hubSnap = fromHubNow()
+        if (hubSnap != null) {
+            snap = hubSnap
+            return
+        }
+        val wv = MiniAppWebViewHost.webView ?: run { snap = null; return }
         main.post {
             try {
                 wv.evaluateJavascript(READ_JS) { raw ->
                     val fromPage = parse(raw)
-                    if (fromPage != null) {
-                        fromHub = false
-                        snap = fromPage
-                    } else {
-                        snap = fromHubNow()
-                    }
+                    fromHub = false
+                    snap = fromPage
                 }
             } catch (_: Throwable) {
-                snap = fromHubNow()
+                snap = null
             }
         }
     }
