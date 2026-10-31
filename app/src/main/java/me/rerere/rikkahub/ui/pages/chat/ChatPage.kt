@@ -582,6 +582,14 @@ private fun ChatPageContent(
                     vm.saveConversationAsync()
                 },
             )
+                // 【顶部波形条 · 2026-10-31】正在播放的那条。一直在组合里，自己轮询、自己收。
+                NowPlayingBar(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(horizontal = 12.dp)
+                        .padding(top = 8.dp)
+                )
                 // 【小任务卡 · 2026-10-06】任务写完后从右边滑进来的卡片，挂顶部
                 TaskCardOverlay(
                     conversation = conversation,
