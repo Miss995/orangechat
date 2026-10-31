@@ -242,7 +242,10 @@ class ChatService(
             "|(?:www\\.)?xiaohongshu\\.com/[A-Za-z0-9\\-_/?=&%.]+" +
             // 【音乐卡 · 2026-10-30 宝要的】网易云分享出来的短链是 163cn.tv，长链是 music.163.com
             "|(?:[A-Za-z0-9-]+\\.)?163cn\\.tv/[A-Za-z0-9\\-_/?=&%.]+" +
-            "|(?:y\\.|www\\.)?music\\.163\\.com/[A-Za-z0-9\\-_/?=&%.#]+)"
+            "|(?:y\\.|www\\.)?music\\.163\\.com/[A-Za-z0-9\\-_/?=&%.#]+" +
+            // 【汽水音乐 · 2026-10-31 宝要的】分享出来是 qishui.douyin.com/s/xxx，展开后落 music.douyin.com/qishui/share/track
+            "|qishui\\.douyin\\.com/[A-Za-z0-9\\-_/?=&%.]+" +
+            "|(?:www\\.)?music\\.douyin\\.com/qishui/[A-Za-z0-9\\-_/?=&%.]+)"
     )
 
     private val lazyWindowFirstIndex = ConcurrentHashMap<Uuid, Int>()
@@ -1346,7 +1349,9 @@ class ChatService(
         val link = LINK_CARD_REGEX.find(text)?.value ?: return parts to null
 
         val isXhs = link.contains("xhslink") || link.contains("xiaohongshu")
-        val isMusic = link.contains("163cn.tv") || link.contains("music.163.com")
+        // 【汽水音乐 · 2026-10-31】汽水的分享文案同样是「《歌名》@汽水音乐」，标题能直接读出来
+        val isQiShui = link.contains("qishui.douyin.com") || link.contains("music.douyin.com/qishui")
+        val isMusic = link.contains("163cn.tv") || link.contains("music.163.com") || isQiShui
         // 【音乐卡 · 2026-10-30】歌手歌名直接写在分享文案里（分享XX的单曲《YY》），不用请求网页
         val musicTitle = if (isMusic) extractMusicTitle(text) else null
         val title = musicTitle ?: DyLinkTransformer.extractCardTitle(text, link)
@@ -1359,6 +1364,7 @@ class ChatService(
         // 好处：一个字段只可能有一份，结构上叠不起来（老写法是"找空卡替换，找不到就追加"，会叠）。
         val source = when {
             isXhs -> "xhs"
+            isQiShui -> "qishui"
             isMusic -> "netease"
             else -> "douyin"
         }

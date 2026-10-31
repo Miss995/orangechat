@@ -137,6 +137,7 @@ import me.rerere.rikkahub.data.ai.tools.fetchAweme
 import me.rerere.rikkahub.data.ai.tools.bestMp4
 import me.rerere.rikkahub.data.ai.tools.resolveXhsMp4
 import me.rerere.rikkahub.data.ai.tools.resolveNeteaseMp3
+import me.rerere.rikkahub.data.ai.tools.resolveQiShuiAudio
 import me.rerere.rikkahub.data.ai.tools.resolveNeteaseCover
 import me.rerere.rikkahub.data.ai.transformers.DyLinkTransformer
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
@@ -2116,6 +2117,7 @@ internal fun VideoLinkCard(
                     when (source) {
                         "xhs" -> "xhslink.cn"
                         "netease" -> "163cn.tv"
+                        "qishui" -> "qishui.douyin.com"
                         else -> "douyin.com"
                     }
                 }
@@ -2123,6 +2125,7 @@ internal fun VideoLinkCard(
         val fallbackTitle = when (source) {
             "xhs" -> "小红书笔记"
             "netease" -> "网易云音乐"
+            "qishui" -> "汽水音乐"
             else -> "抖音视频"
         }
         val shownTitle = title?.takeIf { it.isNotBlank() } ?: fallbackTitle
@@ -2147,6 +2150,21 @@ internal fun VideoLinkCard(
                         // 【音乐卡变开关 · 2026-10-31】网易云不再"原地长出 400dp 播放器"，
                         // 点一下就是调音频中枢：同一首切播放/暂停，换了歌从头上。
                         // 第一次点要先解析出 mp3 直链（一两秒），解到的地址记在 playUrl 里，之后不用再解。
+                        // 【汽水音乐 · 2026-10-31】分享页里的直链带签名，每次现解，不缓存。
+                        if (source == "qishui") {
+                            busy = true
+                            failed = false
+                            scope.launch {
+                                val resolved = runCatching { resolveQiShuiAudio(link) }.getOrNull()
+                                busy = false
+                                if (resolved != null) {
+                                    AudioPlaybackHub.toggle(context, resolved.first, resolved.second)
+                                } else {
+                                    failed = true
+                                }
+                            }
+                            return@combinedClickable
+                        }
                         if (source == "netease") {
                             val known = NeteaseMp3Cache.get(link)
                             if (!known.isNullOrBlank()) {
