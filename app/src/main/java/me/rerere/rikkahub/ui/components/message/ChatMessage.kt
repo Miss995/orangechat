@@ -1455,6 +1455,20 @@ internal fun VideoBubble(
  * 两边完全不通 —— 点卡片播的是一首，点波形条播的是另一首，还各响各的。
  * 这里只留一个播放器、一份状态，谁点都调它。
  */
+/**
+ * 【音乐卡 · 2026-10-31】网易云 mp3 直链的小本子。
+ *
+ * 为什么不放卡片里：卡片一重建（列表回收、字段变化），remember(link) 就归零 ——
+ * 再点又得重新解析一次；而且解出来的地址带新签名，中枢会当成另一首歌，从头上。
+ * 宝实测就是这个：短时间点没事，放一会儿再点就重播。
+ * 放外面按链接记，卡片怎么重建本子都还在。
+ */
+internal object NeteaseMp3Cache {
+    private val map = mutableMapOf<String, String>()
+    fun get(link: String): String? = map[link]
+    fun put(link: String, url: String) { map[link] = url }
+}
+
 internal object AudioPlaybackHub {
     /** 现在这首歌的地址（null = 还没放过任何东西） */
     var currentUrl by mutableStateOf<String?>(null)
@@ -2058,7 +2072,10 @@ internal fun VideoLinkCard(
     var playUrl by remember(link) { mutableStateOf<String?>(null) }
     // 【音乐卡 · 2026-10-31 修】网易云解出来的地址单独存，绝不能写进 playUrl ——
     // playUrl 一有值就会唤醒下面那段"原地长播放器"的旧代码（黑播放器 + 自己播一遍 = 双声道）。
-    var neteaseMp3 by remember(link) { mutableStateOf<String?>(null) }
+    // 【直链本子 · 2026-10-31】直链存在卡片外面（见 NeteaseMp3Cache），
+    // 点的时候现读 —— 不能在这里取一个 val：组合那一刻取到 null 的话，
+    // 之后不重组它一直是 null，第二次点还会重新解析。
+    // （原来这里是 remember(link)：卡片一重建就归零 → 重新解析 → 新签名 → 当成另一首从头播。）
     var busy by remember(link) { mutableStateOf(false) }
     var failed by remember(link) { mutableStateOf(false) }
     // 【原地展开 · 2026-10-29】小红书的卡点一下就在原处长高，不跳浏览器
@@ -2122,7 +2139,7 @@ internal fun VideoLinkCard(
                         // 点一下就是调音频中枢：同一首切播放/暂停，换了歌从头上。
                         // 第一次点要先解析出 mp3 直链（一两秒），解到的地址记在 playUrl 里，之后不用再解。
                         if (source == "netease") {
-                            val known = neteaseMp3
+                            val known = NeteaseMp3Cache.get(link)
                             if (!known.isNullOrBlank()) {
                                 AudioPlaybackHub.toggle(context, known, title)
                             } else {
@@ -2132,7 +2149,7 @@ internal fun VideoLinkCard(
                                     val u = runCatching { resolveNeteaseMp3(link) }.getOrNull()
                                     busy = false
                                     if (!u.isNullOrBlank()) {
-                                        neteaseMp3 = u
+                                        NeteaseMp3Cache.put(link, u)
                                         AudioPlaybackHub.toggle(context, u, title)
                                     } else {
                                         failed = true
