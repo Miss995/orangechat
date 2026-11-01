@@ -1771,6 +1771,10 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                             },
                         )
                     )
+                    // 爪印（2026-11-01）：猫自己待着、随手留痕的地方，宝能看，只有猫能写
+                    add(
+                        me.rerere.rikkahub.data.ai.tools.buildPawprintTool()
+                    )
                     // Plugin tools
                     addAll(pluginToolProvider.getTools())
                     // 插件开关 (2026-09-28 宝拍板): 让 AI 自己启停插件。

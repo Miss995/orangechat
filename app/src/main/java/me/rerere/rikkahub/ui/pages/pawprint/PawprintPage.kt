@@ -4,10 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,7 +14,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -24,8 +21,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -66,25 +63,26 @@ private fun loadPawprints(context: android.content.Context): List<Pawprint> {
         .sortedByDescending { it.time }
 }
 
-private fun appendPawprint(context: android.content.Context, text: String) {
-    val f = pawprintFile(context)
-    f.appendText("${System.currentTimeMillis()}|$text\n")
-}
-
 private val fmt = SimpleDateFormat("M月d日 HH:mm", Locale.CHINA)
 
 private fun formatTime(t: Long): String = fmt.format(Date(t))
 
+/**
+ * 爪印 · 2026-11-01
+ *
+ * 猫自己待着的地方。这里只有"看"——写是猫用 pawprint 工具写的，
+ * 不给宝留输入框：那地方是猫的角落，不是让宝替猫记事的地方。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PawprintPage() {
     val navController = LocalNavController.current
     val context = LocalContext.current
 
-    var draft by remember { mutableStateOf("") }
     val items = remember { mutableStateListOf<Pawprint>() }
+    var refreshTick by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(refreshTick) {
         items.clear()
         items.addAll(loadPawprints(context))
     }
@@ -98,6 +96,11 @@ fun PawprintPage() {
                         Icon(HugeIcons.Cancel01, contentDescription = "关闭")
                     }
                 },
+                actions = {
+                    TextButton(onClick = { refreshTick++ }) {
+                        Text("刷新")
+                    }
+                },
             )
         },
     ) { padding ->
@@ -107,41 +110,13 @@ fun PawprintPage() {
                 .padding(padding)
                 .padding(horizontal = 16.dp),
         ) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
-                placeholder = { Text("随便写点什么。") },
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(
-                    enabled = draft.isNotBlank(),
-                    onClick = {
-                        val text = draft.trim()
-                        if (text.isEmpty()) return@TextButton
-                        appendPawprint(context, text)
-                        items.add(0, Pawprint(System.currentTimeMillis(), text))
-                        draft = ""
-                    },
-                ) {
-                    Text("留下")
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
             if (items.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "这里还什么都没有。",
+                        text = "还没有爪印。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -149,8 +124,8 @@ fun PawprintPage() {
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     items(items) { p ->
                         Column {
@@ -159,7 +134,7 @@ fun PawprintPage() {
                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            Spacer(Modifier.height(2.dp))
+                            Spacer(Modifier.height(3.dp))
                             Text(
                                 text = p.text,
                                 style = MaterialTheme.typography.bodyMedium,
