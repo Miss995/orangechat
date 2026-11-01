@@ -251,6 +251,7 @@ fun ChatInput(
     onOpenSearch: () -> Unit = {},
     onOpenFavorites: () -> Unit = {},
     onOpenChatHistory: () -> Unit = {},
+    onOpenPawprint: () -> Unit = {},
     // 【重排·第十二刀 2026-10-09】「小工具」三个入口（翻译 / 图像生成 / 小应用）
     onOpenTranslator: () -> Unit = {},
     onOpenImageGen: () -> Unit = {},
@@ -1545,6 +1546,10 @@ fun ChatInput(
                                 }
                                 PanelCell(label = "切换聊天", modifier = Modifier.width(72.dp)) {
                                     onOpenSessionPanel()
+                                    expand = ExpandState.Collapsed
+                                }
+                                PanelCell(label = "爪印", modifier = Modifier.width(72.dp)) {
+                                    onOpenPawprint()
                                     expand = ExpandState.Collapsed
                                 }
                                 PanelCell(

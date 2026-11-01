@@ -68,7 +68,6 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.LeftToRightListBullet
 import me.rerere.hugeicons.stroke.Menu03
 import me.rerere.hugeicons.stroke.MessageAdd01
-import me.rerere.hugeicons.stroke.Book01
 import me.rerere.hugeicons.stroke.Voice
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
@@ -335,6 +334,9 @@ private fun ChatPageContent(
                     },
                     onOpenChatHistory = {
                         navController.navigate(Screen.History)
+                    },
+                    onOpenPawprint = {
+                        navController.navigate(Screen.Pawprint)
                     },
                     // 【重排·第十二刀 2026-10-09】小工具：翻译 / 图像生成 / 小应用
                     onOpenTranslator = {
@@ -667,7 +669,6 @@ private fun TopBar(
 ) {
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
-    val navController = LocalNavController.current
     val titleState = useEditState<String> {
         onUpdateTitle(it)
     }
@@ -712,13 +713,6 @@ private fun TopBar(
         },
         actions = {
             // 【重排·第八刀 2026-10-08】请求编辑 / 语音通话 / 预览模式 三个撤出顶栏（进了 ＋ 面板）
-            IconButton(
-                onClick = {
-                    navController.navigate(Screen.Pawprint)
-                }
-            ) {
-                Icon(HugeIcons.Book01, "爪印")
-            }
             IconButton(
                 onClick = {
                     onNewChat()
