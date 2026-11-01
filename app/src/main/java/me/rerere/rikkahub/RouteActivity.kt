@@ -112,6 +112,7 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantPromptPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantRequestPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
+import me.rerere.rikkahub.ui.pages.pawprint.PawprintPage
 import me.rerere.rikkahub.ui.pages.debug.DebugPage
 import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
 import me.rerere.rikkahub.ui.pages.disclaimer.LegalPage
@@ -474,6 +475,10 @@ class RouteActivity : ComponentActivity() {
 
                             entry<Screen.History> {
                                 HistoryPage()
+                            }
+
+                            entry<Screen.Pawprint> {
+                                PawprintPage()
                             }
 
                             entry<Screen.Favorite> {
@@ -914,6 +919,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data class ShareHandler(val text: String, val streamUri: String? = null) : Screen
+
+    @Serializable
+    data object Pawprint : Screen
 
     @Serializable
     data object History : Screen
