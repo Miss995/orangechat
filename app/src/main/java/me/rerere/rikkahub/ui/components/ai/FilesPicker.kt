@@ -99,6 +99,7 @@ internal fun FilesPicker(
 ) {
     // settings 仍保留给 InjectionQuickConfigSheet -> ExtensionSelector 使用（它需要完整 Settings）
     val settings = LocalSettings.current
+    val navController = LocalNavController.current
     val currentChatModel = LocalCurrentChatModel.current
     val providers = LocalProviders.current
     val mcpServers = LocalMcpServers.current
