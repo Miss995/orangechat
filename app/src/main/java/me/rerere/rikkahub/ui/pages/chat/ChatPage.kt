@@ -348,6 +348,16 @@ private fun ChatPageContent(
                     onOpenQqBot = {
                         navController.navigate(Screen.SettingQqBot)
                     },
+                    // 【2026-11-02 宝】小工具子面板：插件 / Web 服务器 / 健康数据
+                    onOpenPlugins = {
+                        navController.navigate(Screen.SettingPlugins)
+                    },
+                    onOpenWebServer = {
+                        navController.navigate(Screen.SettingWeb)
+                    },
+                    onOpenHealth = {
+                        navController.navigate(Screen.Health)
+                    },
                     // 【重排·第十二刀 2026-10-09】小工具：翻译 / 图像生成 / 小应用
                     onOpenTranslator = {
                         navController.navigate(Screen.Translator)

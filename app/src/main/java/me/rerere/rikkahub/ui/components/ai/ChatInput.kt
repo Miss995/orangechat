@@ -256,6 +256,10 @@ fun ChatInput(
     onOpenProactive: () -> Unit = {},
     onOpenWeixinBot: () -> Unit = {},
     onOpenQqBot: () -> Unit = {},
+    // 【2026-11-02 宝】小工具子面板：插件 / Web 服务器 / 健康数据
+    onOpenPlugins: () -> Unit = {},
+    onOpenWebServer: () -> Unit = {},
+    onOpenHealth: () -> Unit = {},
     // 【重排·第十二刀 2026-10-09】「小工具」三个入口（翻译 / 图像生成 / 小应用）
     onOpenTranslator: () -> Unit = {},
     onOpenImageGen: () -> Unit = {},
@@ -1514,12 +1518,14 @@ fun ChatInput(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                        // 【2026-11-02 宝】跟主面板一样横着滑，格子定宽
+                                        .horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     PanelCell(
                                         label = "翻译",
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.width(72.dp),
                                         compact = true,
                                     ) {
                                         onOpenTranslator()
@@ -1527,7 +1533,7 @@ fun ChatInput(
                                     }
                                     PanelCell(
                                         label = "图像生成",
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.width(72.dp),
                                         compact = true,
                                     ) {
                                         onOpenImageGen()
@@ -1535,11 +1541,35 @@ fun ChatInput(
                                     }
                                     PanelCell(
                                         label = "小应用",
-                                        showDivider = false,
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.width(72.dp),
                                         compact = true,
                                     ) {
                                         onOpenMiniApps()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                    PanelCell(
+                                        label = "插件",
+                                        modifier = Modifier.width(72.dp),
+                                        compact = true,
+                                    ) {
+                                        onOpenPlugins()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                    PanelCell(
+                                        label = "Web服务器",
+                                        modifier = Modifier.width(72.dp),
+                                        compact = true,
+                                    ) {
+                                        onOpenWebServer()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                    PanelCell(
+                                        label = "健康数据",
+                                        modifier = Modifier.width(72.dp),
+                                        compact = true,
+                                        showDivider = false,
+                                    ) {
+                                        onOpenHealth()
                                         expand = ExpandState.Collapsed
                                     }
                                 }
