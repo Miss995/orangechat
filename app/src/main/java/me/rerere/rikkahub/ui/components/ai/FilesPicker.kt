@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.IconButton
+import me.rerere.hugeicons.stroke.Edit03
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -160,12 +162,20 @@ internal fun FilesPicker(
                 Text(stringResource(R.string.assistant_page_tab_extensions))
             },
             trailingContent = {
-                if (activeCount > 0) {
-                    Text(
-                        text = activeCount.toString(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (activeCount > 0) {
+                        Text(
+                            text = activeCount.toString(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    IconButton(onClick = { navController.navigate(Screen.Extensions) }) {
+                        Icon(
+                            imageVector = HugeIcons.Edit03,
+                            contentDescription = null,
+                        )
+                    }
                 }
             },
             // 【方框 · 2026-10-21 宝画的：下面那三个用方框包住】
