@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Add01
+import me.rerere.hugeicons.stroke.Edit03
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -121,7 +121,7 @@ fun AssistantExtensionsPage(id: String) {
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     Icon(
-                                        imageVector = HugeIcons.Add01,
+                                        imageVector = HugeIcons.Edit03,
                                         contentDescription = null,
                                         modifier = Modifier.size(18.dp)
                                     )
@@ -151,6 +151,18 @@ fun AssistantExtensionsPage(id: String) {
                             )
                         } else {
                             Column {
+                                TextButton(
+                                    onClick = { navController.navigate(Screen.Prompts) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Icon(
+                                        imageVector = HugeIcons.Edit03,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.size(6.dp))
+                                    Text(stringResource(R.string.assistant_extensions_page_goto_prompts))
+                                }
                                 ModeInjectionsContent(
                                     modifier = Modifier.weight(1f),
                                     modeInjections = settings.modeInjections,
@@ -161,12 +173,6 @@ fun AssistantExtensionsPage(id: String) {
                                         vm.update(assistant.copy(modeInjectionIds = newIds))
                                     },
                                 )
-                                TextButton(
-                                    onClick = { navController.navigate(Screen.Prompts) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Text(stringResource(R.string.assistant_extensions_page_goto_prompts))
-                                }
                             }
                         }
                     }
@@ -180,6 +186,18 @@ fun AssistantExtensionsPage(id: String) {
                             )
                         } else {
                             Column {
+                                TextButton(
+                                    onClick = { navController.navigate(Screen.Prompts) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Icon(
+                                        imageVector = HugeIcons.Edit03,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.size(6.dp))
+                                    Text(stringResource(R.string.assistant_extensions_page_goto_prompts))
+                                }
                                 LorebooksContent(
                                     modifier = Modifier.weight(1f),
                                     lorebooks = settings.lorebooks,
@@ -190,12 +208,6 @@ fun AssistantExtensionsPage(id: String) {
                                         vm.update(assistant.copy(lorebookIds = newIds))
                                     },
                                 )
-                                TextButton(
-                                    onClick = { navController.navigate(Screen.Prompts) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Text(stringResource(R.string.assistant_extensions_page_goto_prompts))
-                                }
                             }
                         }
                     }
@@ -209,6 +221,18 @@ fun AssistantExtensionsPage(id: String) {
                             )
                         } else {
                             Column {
+                                TextButton(
+                                    onClick = { navController.navigate(Screen.Skills) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Icon(
+                                        imageVector = HugeIcons.Edit03,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.size(6.dp))
+                                    Text(stringResource(R.string.assistant_extensions_page_goto_extensions))
+                                }
                                 SkillsContent(
                                     modifier = Modifier.weight(1f),
                                     skills = skills,
@@ -219,12 +243,6 @@ fun AssistantExtensionsPage(id: String) {
                                         vm.update(assistant.copy(enabledSkills = newSkills))
                                     },
                                 )
-                                TextButton(
-                                    onClick = { navController.navigate(Screen.Skills) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Text(stringResource(R.string.assistant_extensions_page_goto_extensions))
-                                }
                             }
                         }
                     }
