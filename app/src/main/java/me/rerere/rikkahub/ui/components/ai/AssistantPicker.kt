@@ -9,6 +9,7 @@ package me.rerere.rikkahub.ui.components.ai
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -24,9 +25,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import me.rerere.hugeicons.stroke.Delete01
+import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANTS_IDS
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -322,25 +326,49 @@ private fun AssistantItem(
             )
         },
         trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onCopy) {
+            // 【2026-11-02 宝】三个图标改成「⋮」，点开弹抽屉（跟原来助手设置那个一样）
+            var menuOpen by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { menuOpen = true }) {
                     Icon(
-                        imageVector = HugeIcons.Copy01,
-                        contentDescription = null
+                        imageVector = HugeIcons.MoreVertical,
+                        contentDescription = "更多"
                     )
                 }
-                IconButton(onClick = onEdit) {
-                    Icon(
-                        imageVector = HugeIcons.Edit03,
-                        contentDescription = null
+                DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.assistant_page_clone)) },
+                        leadingIcon = { Icon(HugeIcons.Copy01, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onCopy()
+                        },
                     )
-                }
-                if (canDelete) {
-                    IconButton(onClick = onDelete) {
-                        Icon(
-                            imageVector = HugeIcons.Delete01,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error
+                    DropdownMenuItem(
+                        text = { Text("编辑") },
+                        leadingIcon = { Icon(HugeIcons.Edit03, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onEdit()
+                        },
+                    )
+                    if (canDelete) {
+                        DropdownMenuItem(
+                            text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = {
+                                Icon(
+                                    HugeIcons.Delete01,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            onClick = {
+                                menuOpen = false
+                                onDelete()
+                            },
                         )
                     }
                 }
