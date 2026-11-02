@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -30,6 +30,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -46,8 +47,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Add01
+import me.rerere.hugeicons.stroke.Cancel01
+import me.rerere.hugeicons.stroke.Copy01
 import me.rerere.hugeicons.stroke.Edit03
 import me.rerere.hugeicons.stroke.LookTop
+import me.rerere.hugeicons.stroke.Search01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
@@ -55,6 +60,10 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.rememberAssistantState
+import me.rerere.rikkahub.ui.hooks.useEditState
+import me.rerere.rikkahub.ui.pages.assistant.AssistantCreationSheet
+import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
+import org.koin.androidx.compose.koinViewModel
 import kotlin.uuid.Uuid
 
 @Composable
@@ -124,17 +133,24 @@ fun AssistantPickerSheet(
     val scope = rememberCoroutineScope()
     val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
 
+    val vm: AssistantVM = koinViewModel()
+    val createState = useEditState<Assistant> {
+        vm.addAssistant(it)
+    }
+
+    // 搜索关键词状态
+    var searchQuery by remember { mutableStateOf("") }
     // 标签过滤状态
     var selectedTagIds by remember { mutableStateOf(emptySet<Uuid>()) }
 
-    // 根据选中的标签过滤助手
-    val filteredAssistants = remember(settings.assistants, selectedTagIds) {
-        if (selectedTagIds.isEmpty()) {
-            settings.assistants
-        } else {
-            settings.assistants.filter { assistant ->
+    // 根据搜索词 + 选中的标签过滤助手
+    val filteredAssistants = remember(settings.assistants, selectedTagIds, searchQuery) {
+        settings.assistants.filter { assistant ->
+            val matchTag = selectedTagIds.isEmpty() ||
                 assistant.tags.any { tagId -> tagId in selectedTagIds }
-            }
+            val matchQuery = searchQuery.isBlank() ||
+                assistant.name.contains(searchQuery, ignoreCase = true)
+            matchTag && matchQuery
         }
     }
 
@@ -149,10 +165,39 @@ fun AssistantPickerSheet(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = stringResource(R.string.assistant_page_title),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(bottom = 8.dp)
+            // 标题 + 新增
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.assistant_page_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = { createState.open(Assistant()) }) {
+                    Icon(HugeIcons.Add01, stringResource(R.string.assistant_page_add))
+                }
+            }
+
+            // 搜索框
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text(stringResource(R.string.assistant_page_search_placeholder)) },
+                leadingIcon = {
+                    Icon(HugeIcons.Search01, contentDescription = null)
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotBlank()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(HugeIcons.Cancel01, contentDescription = null)
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = MaterialTheme.shapes.large,
             )
 
             // 标签过滤器
@@ -205,6 +250,9 @@ fun AssistantPickerSheet(
                                     onDismiss()
                                     navController.navigate(Screen.AssistantDetail(assistant.id.toString()))
                                 }
+                            },
+                            onCopy = {
+                                vm.copyAssistant(assistant)
                             }
                         )
                     }
@@ -212,13 +260,16 @@ fun AssistantPickerSheet(
             }
         }
     }
+
+    AssistantCreationSheet(createState)
 }
 
 @Composable
 private fun AssistantItem(
     assistant: Assistant,
     defaultAssistantName: String,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    onCopy: () -> Unit
 ) {
     ListItem(
         headlineContent = {
@@ -236,15 +287,19 @@ private fun AssistantItem(
             )
         },
         trailingContent = {
-            IconButton(
-                onClick = {
-                    onEdit()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onCopy) {
+                    Icon(
+                        imageVector = HugeIcons.Copy01,
+                        contentDescription = null
+                    )
                 }
-            ) {
-                Icon(
-                    imageVector = HugeIcons.Edit03,
-                    contentDescription = null
-                )
+                IconButton(onClick = onEdit) {
+                    Icon(
+                        imageVector = HugeIcons.Edit03,
+                        contentDescription = null
+                    )
+                }
             }
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),

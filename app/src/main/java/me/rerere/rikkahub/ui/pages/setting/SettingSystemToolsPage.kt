@@ -40,6 +40,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Alert01
 import me.rerere.hugeicons.stroke.Camera01
 import me.rerere.hugeicons.stroke.Location01
 import me.rerere.hugeicons.stroke.Notification02
@@ -154,6 +155,72 @@ fun SettingSystemToolsPage(vm: SettingVM = koinViewModel()) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
+
+            // 工具调用审批（原「安全设置」页并入）
+            item {
+                CardGroup(
+                    title = { Text("工具调用审批") },
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                ) {
+                    item(
+                        leadingContent = { Icon(HugeIcons.Alert01, null) },
+                        headlineContent = { Text("强制确认工具调用") },
+                        supportingContent = {
+                            Text(
+                                "开启后，每次 AI 调用任何工具前都需要你手动确认",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = settings.forceConfirmToolCalls && !settings.autoApproveAllTools,
+                                onCheckedChange = { enabled ->
+                                    vm.updateSettings(settings.copy(forceConfirmToolCalls = enabled, autoApproveAllTools = false))
+                                }
+                            )
+                        }
+                    )
+                    item(
+                        leadingContent = { Icon(HugeIcons.Alert01, null) },
+                        headlineContent = { Text("自动批准所有工具调用") },
+                        supportingContent = {
+                            Text(
+                                "懒人模式：AI 调用任何工具时自动允许，不再弹窗确认（⚠️ 降低安全性）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = settings.autoApproveAllTools,
+                                onCheckedChange = { enabled ->
+                                    vm.updateSettings(settings.copy(autoApproveAllTools = enabled, forceConfirmToolCalls = !enabled))
+                                }
+                            )
+                        }
+                    )
+                    item(
+                        leadingContent = { Icon(HugeIcons.Alert01, null) },
+                        headlineContent = { Text("后台工作流拦截敏感工具") },
+                        supportingContent = {
+                            Text(
+                                "开启后，由定时器/地理围栏等后台触发的工作流将禁止执行需要用户确认的工具（如短信、定位、截图等）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = settings.workflowHeadlessBlockSensitive && !settings.autoApproveAllTools,
+                                onCheckedChange = { enabled ->
+                                    vm.updateSettings(settings.copy(workflowHeadlessBlockSensitive = enabled, autoApproveAllTools = false))
+                                }
+                            )
+                        }
+                    )
+                }
+            }
 
             // 安全提示
             item {

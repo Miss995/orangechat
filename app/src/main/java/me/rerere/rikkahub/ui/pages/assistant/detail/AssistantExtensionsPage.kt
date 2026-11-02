@@ -7,6 +7,11 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Add01
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -111,6 +116,18 @@ fun AssistantExtensionsPage(id: String) {
                             )
                         } else {
                             Column {
+                                TextButton(
+                                    onClick = { navController.navigate(Screen.QuickMessages) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Icon(
+                                        imageVector = HugeIcons.Add01,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.size(6.dp))
+                                    Text(stringResource(R.string.assistant_extensions_page_goto_extensions))
+                                }
                                 QuickMessagesContent(
                                     modifier = Modifier.weight(1f),
                                     quickMessages = settings.quickMessages,
@@ -121,12 +138,6 @@ fun AssistantExtensionsPage(id: String) {
                                         vm.update(assistant.copy(quickMessageIds = newIds))
                                     },
                                 )
-                                TextButton(
-                                    onClick = { navController.navigate(Screen.QuickMessages) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Text(stringResource(R.string.assistant_extensions_page_goto_extensions))
-                                }
                             }
                         }
                     }

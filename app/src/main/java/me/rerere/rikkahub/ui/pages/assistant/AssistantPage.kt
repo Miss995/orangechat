@@ -325,7 +325,7 @@ private fun AssistantTagsFilterRow(
 }
 
 @Composable
-private fun AssistantCreationSheet(
+internal fun AssistantCreationSheet(
     state: EditState<Assistant>,
 ) {
     state.EditStateContent { assistant, update ->
