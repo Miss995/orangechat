@@ -39,6 +39,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.ui.util.fastForEach
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -67,6 +69,10 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.ui.components.ui.Tag
+import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.hooks.rememberAssistantState
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.pages.assistant.AssistantCreationSheet
@@ -82,6 +88,8 @@ fun AssistantPicker(
     onClickSetting: () -> Unit,
 ) {
     val state = rememberAssistantState(settings, onUpdateSettings)
+    // 【2026-11-02 宝】抽屉里也要显示记忆条数，跟助手设置页同一个拿法
+    val vm: AssistantVM = koinViewModel()
     val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
     var showPicker by remember { mutableStateOf(false) }
 
@@ -255,6 +263,8 @@ fun AssistantPickerSheet(
                         AssistantItem(
                             assistant = assistant,
                             defaultAssistantName = defaultAssistantName,
+                            settings = settings,
+                            memories = vm.getMemories(assistant).collectAsStateWithLifecycle(initialValue = emptyList()).value,
                             onEdit = {
                                 scope.launch {
                                     sheetState.hide()
@@ -305,6 +315,8 @@ fun AssistantPickerSheet(
 private fun AssistantItem(
     assistant: Assistant,
     defaultAssistantName: String,
+    settings: Settings,
+    memories: List<AssistantMemory>,
     onEdit: () -> Unit,
     onCopy: () -> Unit,
     canDelete: Boolean,
@@ -312,11 +324,40 @@ private fun AssistantItem(
 ) {
     ListItem(
         headlineContent = {
-            Text(
-                text = assistant.name.ifEmpty { defaultAssistantName },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            // 【2026-11-02 宝】抽屉里也显示记忆条数 + 标签（跟助手设置页一致）
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = assistant.name.ifEmpty { defaultAssistantName },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (assistant.enableMemory) {
+                        Tag(type = TagType.SUCCESS) {
+                            Text(stringResource(R.string.assistant_page_memory_count, memories.size))
+                        }
+                    }
+                    if (assistant.tags.isNotEmpty()) {
+                        assistant.tags.take(2).fastForEach { tagId ->
+                            val tag = settings.assistantTags.find { it.id == tagId }
+                                ?: return@fastForEach
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                            ) {
+                                Text(
+                                    text = tag.name,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         },
         leadingContent = {
             UIAvatar(
