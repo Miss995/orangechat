@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.IconButton
+import me.rerere.hugeicons.stroke.Add01
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -173,7 +175,8 @@ fun McpPickerListItem(
     servers: List<McpServerConfig>,
     mcpManager: McpManager,
     modifier: Modifier = Modifier,
-    onUpdateAssistant: (Assistant) -> Unit
+    onUpdateAssistant: (Assistant) -> Unit,
+    onManage: (() -> Unit)? = null,
 ) {
     var showMcpPicker by remember { mutableStateOf(false) }
     val status by mcpManager.syncingStatus.collectAsStateWithLifecycle()
@@ -203,12 +206,23 @@ fun McpPickerListItem(
             Text(stringResource(R.string.mcp_picker_title))
         },
         trailingContent = {
-            if (enabledServers.isNotEmpty()) {
-                Text(
-                    text = enabledServers.size.toString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (enabledServers.isNotEmpty()) {
+                    Text(
+                        text = enabledServers.size.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                if (onManage != null) {
+                    IconButton(onClick = onManage) {
+                        Icon(
+                            imageVector = HugeIcons.Add01,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
             }
         },
         // 【跟另外两条一样 · 2026-10-21 宝："MCP 这个为啥还是自己一个样子"】

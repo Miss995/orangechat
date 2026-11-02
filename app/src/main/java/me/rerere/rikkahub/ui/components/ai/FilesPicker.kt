@@ -14,8 +14,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.IconButton
-import me.rerere.hugeicons.stroke.Edit03
+import me.rerere.hugeicons.stroke.Add01
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -146,6 +147,7 @@ internal fun FilesPicker(
                 servers = mcpServers,
                 mcpManager = mcpManager,
                 onUpdateAssistant = onUpdateAssistant,
+                onManage = { navController.navigate(Screen.SettingMcp) },
             )
         }
 
@@ -173,8 +175,9 @@ internal fun FilesPicker(
                     }
                     IconButton(onClick = { navController.navigate(Screen.Extensions) }) {
                         Icon(
-                            imageVector = HugeIcons.Edit03,
+                            imageVector = HugeIcons.Add01,
                             contentDescription = null,
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 }

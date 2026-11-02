@@ -21,6 +21,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import me.rerere.hugeicons.stroke.Delete01
+import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANTS_IDS
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -143,6 +147,9 @@ fun AssistantPickerSheet(
     // 标签过滤状态
     var selectedTagIds by remember { mutableStateOf(emptySet<Uuid>()) }
 
+    // 待确认删除的助手
+    var pendingDelete by remember { mutableStateOf<Assistant?>(null) }
+
     // 根据搜索词 + 选中的标签过滤助手
     val filteredAssistants = remember(settings.assistants, selectedTagIds, searchQuery) {
         settings.assistants.filter { assistant ->
@@ -253,12 +260,38 @@ fun AssistantPickerSheet(
                             },
                             onCopy = {
                                 vm.copyAssistant(assistant)
+                            },
+                            canDelete = assistant.id !in DEFAULT_ASSISTANTS_IDS,
+                            onDelete = {
+                                pendingDelete = assistant
                             }
                         )
                     }
                 }
             }
         }
+    }
+
+    // 删除确认
+    pendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除助手") },
+            text = { Text("确定删除「${target.name.ifEmpty { defaultAssistantName }}」吗？删了就找不回来了。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.removeAssistant(target)
+                    pendingDelete = null
+                }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text("取消")
+                }
+            }
+        )
     }
 
     AssistantCreationSheet(createState)
@@ -269,7 +302,9 @@ private fun AssistantItem(
     assistant: Assistant,
     defaultAssistantName: String,
     onEdit: () -> Unit,
-    onCopy: () -> Unit
+    onCopy: () -> Unit,
+    canDelete: Boolean,
+    onDelete: () -> Unit
 ) {
     ListItem(
         headlineContent = {
@@ -299,6 +334,15 @@ private fun AssistantItem(
                         imageVector = HugeIcons.Edit03,
                         contentDescription = null
                     )
+                }
+                if (canDelete) {
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            imageVector = HugeIcons.Delete01,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         },
