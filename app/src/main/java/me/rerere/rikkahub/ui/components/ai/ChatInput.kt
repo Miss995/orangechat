@@ -252,6 +252,10 @@ fun ChatInput(
     onOpenFavorites: () -> Unit = {},
     onOpenChatHistory: () -> Unit = {},
     onOpenPawprint: () -> Unit = {},
+    // 【2026-11-02 宝】当前会话子面板：主动消息 / 微信 Bot / QQ Bot
+    onOpenProactive: () -> Unit = {},
+    onOpenWeixinBot: () -> Unit = {},
+    onOpenQqBot: () -> Unit = {},
     // 【重排·第十二刀 2026-10-09】「小工具」三个入口（翻译 / 图像生成 / 小应用）
     onOpenTranslator: () -> Unit = {},
     onOpenImageGen: () -> Unit = {},
@@ -1391,31 +1395,57 @@ fun ChatInput(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                        // 【2026-11-02 宝】跟主面板一样横着滑，格子定宽（不再 weight 平分）
+                                        .horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     PanelCell(
                                         label = if (requestEditMode) "编辑·开" else "编辑",
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.width(72.dp),
                                         compact = true,
                                     ) { onToggleRequestEdit() }
                                     PanelCell(
                                         label = "通话",
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.width(72.dp),
                                         compact = true,
                                     ) { onVoiceCall() }
                                     PanelCell(
                                         label = if (previewMode) "预览·开" else "预览",
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.width(72.dp),
                                         compact = true,
                                     ) { onTogglePreview() }
                                     PanelCell(
                                         label = "定时",
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.width(72.dp),
+                                        compact = true,
+                                    ) {
+                                        onScheduleClick()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                    PanelCell(
+                                        label = "主动消息",
+                                        modifier = Modifier.width(72.dp),
+                                        compact = true,
+                                    ) {
+                                        onOpenProactive()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                    PanelCell(
+                                        label = "微信Bot",
+                                        modifier = Modifier.width(72.dp),
+                                        compact = true,
+                                    ) {
+                                        onOpenWeixinBot()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                    PanelCell(
+                                        label = "QQ Bot",
+                                        modifier = Modifier.width(72.dp),
                                         compact = true,
                                         showDivider = false,
                                     ) {
-                                        onScheduleClick()
+                                        onOpenQqBot()
                                         expand = ExpandState.Collapsed
                                     }
                                 }

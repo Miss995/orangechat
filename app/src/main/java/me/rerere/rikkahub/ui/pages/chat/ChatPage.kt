@@ -338,6 +338,16 @@ private fun ChatPageContent(
                     onOpenPawprint = {
                         navController.navigate(Screen.Pawprint)
                     },
+                    // 【2026-11-02 宝】当前会话子面板：主动消息 / 微信 Bot / QQ Bot
+                    onOpenProactive = {
+                        navController.navigate(Screen.SettingProactiveMessage)
+                    },
+                    onOpenWeixinBot = {
+                        navController.navigate(Screen.SettingWeixinBot)
+                    },
+                    onOpenQqBot = {
+                        navController.navigate(Screen.SettingQqBot)
+                    },
                     // 【重排·第十二刀 2026-10-09】小工具：翻译 / 图像生成 / 小应用
                     onOpenTranslator = {
                         navController.navigate(Screen.Translator)
