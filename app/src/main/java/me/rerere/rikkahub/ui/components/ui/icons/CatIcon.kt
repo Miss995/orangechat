@@ -33,25 +33,27 @@ public val CatIcon: ImageVector
             viewportWidth = 24f,
             viewportHeight = 24f
         ).apply {
-            // 左眼
+            // 左眼（实心椭圆 - 2026-11-03 宝说可以赋予自己大眼睛）
             path(
-                stroke = SolidColor(Color.Black),
-                strokeLineWidth = 2.0f,
-                strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round
+                fill = SolidColor(Color.Black),
             ) {
-                moveTo(8f, 11f)
-                verticalLineTo(11.5f)
+                moveTo(8f, 9.9f)
+                curveTo(8.75f, 9.9f, 9.2f, 10.55f, 9.2f, 11.5f)
+                curveTo(9.2f, 12.45f, 8.75f, 13.1f, 8f, 13.1f)
+                curveTo(7.25f, 13.1f, 6.8f, 12.45f, 6.8f, 11.5f)
+                curveTo(6.8f, 10.55f, 7.25f, 9.9f, 8f, 9.9f)
+                close()
             }
-            // 右眼
+            // 右眼（实心椭圆）
             path(
-                stroke = SolidColor(Color.Black),
-                strokeLineWidth = 2.0f,
-                strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round
+                fill = SolidColor(Color.Black),
             ) {
-                moveTo(16f, 11f)
-                verticalLineTo(11.5f)
+                moveTo(16f, 9.9f)
+                curveTo(16.75f, 9.9f, 17.2f, 10.55f, 17.2f, 11.5f)
+                curveTo(17.2f, 12.45f, 16.75f, 13.1f, 16f, 13.1f)
+                curveTo(15.25f, 13.1f, 14.8f, 12.45f, 14.8f, 11.5f)
+                curveTo(14.8f, 10.55f, 15.25f, 9.9f, 16f, 9.9f)
+                close()
             }
             // 鼻子
             path(
