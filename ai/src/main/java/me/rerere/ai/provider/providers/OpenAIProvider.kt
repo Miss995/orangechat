@@ -6,6 +6,7 @@
 
 package me.rerere.ai.provider.providers
 
+import okio.ByteString.Companion.toByteString
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -241,16 +242,32 @@ class OpenAIProvider(
 
         val bodyStr = response.body?.string() ?: ""
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-        val data = bodyJson["data"]?.jsonArray ?: error("No data in response")
+        val data = bodyJson["data"]?.jsonArray
+            ?: bodyJson["images"]?.jsonArray
+            ?: error("No data in response")
 
-        val items = data.map { imageJson ->
+        // 【2026-11-03 宝】不是所有服务都回 base64（硅基流动只回图片链接），
+        // 拿不到 b64_json 就把 url 下回来再转 base64，别直接报错。
+        val items = mutableListOf<ImageGenerationItem>()
+        for (imageJson in data) {
             val imageObj = imageJson.jsonObject
             val b64Json = imageObj["b64_json"]?.jsonPrimitive?.contentOrNull
-                ?: error("No b64_json in response")
-
-            ImageGenerationItem(
-                data = b64Json,
-                mimeType = "image/png"
+            if (b64Json != null) {
+                items.add(ImageGenerationItem(data = b64Json, mimeType = "image/png"))
+                continue
+            }
+            val imageUrl = imageObj["url"]?.jsonPrimitive?.contentOrNull
+                ?: error("No b64_json or url in response")
+            val imgResponse = client.newCall(Request.Builder().url(imageUrl).build()).await()
+            if (!imgResponse.isSuccessful) {
+                error("Failed to download generated image: ${imgResponse.code}")
+            }
+            val bytes = imgResponse.body?.bytes() ?: error("Empty image body")
+            items.add(
+                ImageGenerationItem(
+                    data = bytes.toByteString().base64(),
+                    mimeType = imgResponse.header("Content-Type")?.substringBefore(";") ?: "image/png"
+                )
             )
         }
 
