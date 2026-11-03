@@ -51,7 +51,7 @@ import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.ChainOfThoughtScope
-import me.rerere.rikkahub.ui.components.ui.icons.OrangePetalIcon
+import me.rerere.rikkahub.ui.components.ui.icons.CatIcon
 import me.rerere.rikkahub.ui.context.LocalDisplaySettings
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.utils.extractThinkingTitle
@@ -124,9 +124,6 @@ private fun rememberReasoningState(reasoning: UIMessagePart.Reasoning): Pair<Rea
     return state to loading
 }
  
-/** 【流式降级 · 2026-10-02】生成中思考链只渲染尾部这么多字符（保住观感，把每次重排的开销压成常数）。 */
-private const val STREAMING_TAIL_CHARS = 800
-
 @Composable
 private fun ReasoningContent(
     reasoning: UIMessagePart.Reasoning,
@@ -134,9 +131,6 @@ private fun ReasoningContent(
     expandState: ReasoningCardState,
     scrollState: ScrollState,
     fadeHeight: Float,
-    // 【流式降级 · 2026-10-02】生成中也传下来：正文那边生成中只铺纯文本，
-    // 思考链一直走完整 Markdown 解析，长思考（几万字）下每 100ms 重解析一次 = 主线程堵死。
-    loading: Boolean = false,
 ) {
     val isPreview = expandState == ReasoningCardState.Preview
     val displaySettings = LocalDisplaySettings.current
@@ -180,34 +174,15 @@ private fun ReasoningContent(
             }
     ) {
         SelectionContainer {
-            // 【流式降级 · 2026-10-02】生成中只渲染尾巴（照样走 Markdown，只是截短）：
-            // 几万字的思考每 100ms 全量重解析是主线程卡死的来源；只画最后一段，
-            // 观感保住了（还是带格式的思考往下滚），每次开销也从 O(全文) 压到 O(尾巴)。
-            // 写完（loading=false）自动整篇恢复，显示效果不变。
-            if (loading) {
-                val tail = if (reasoning.reasoning.length > STREAMING_TAIL_CHARS) {
-                    "…" + reasoning.reasoning.takeLast(STREAMING_TAIL_CHARS)
-                } else {
-                    reasoning.reasoning
-                }
-                // 【反查 · 2026-10-02】改回纯文本：17:54 那版为了保住格式换回了 Markdown，
-                // 现在怀疑那一换就是卡死的来源（流式期间每 100ms 重跑一次 Markdown 渲染管线）。
-                Text(
-                    text = tail,
-                    style = thinkingStyle,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                MarkdownBlock(
-                    content = reasoning.reasoning.replaceRegexes(
-                        assistant = assistant,
-                        scope = AssistantAffectScope.ASSISTANT,
-                        visual = true,
-                    ),
-                    style = thinkingStyle,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
+            MarkdownBlock(
+                content = reasoning.reasoning.replaceRegexes(
+                    assistant = assistant,
+                    scope = AssistantAffectScope.ASSISTANT,
+                    visual = true,
+                ),
+                style = thinkingStyle,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
     }
 }
@@ -229,7 +204,7 @@ fun ChainOfThoughtScope.ChatMessageReasoningStep(
         onExpandedChange = { state.onExpandedChange(it, loading) },
         icon = {
             Icon(
-                imageVector = OrangePetalIcon,
+                imageVector = CatIcon,
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.secondary,
@@ -269,7 +244,6 @@ fun ChainOfThoughtScope.ChatMessageReasoningStep(
                 expandState = state.expandState,
                 scrollState = state.scrollState,
                 fadeHeight = fadeHeight,
-                loading = loading,
             )
         },
     )
