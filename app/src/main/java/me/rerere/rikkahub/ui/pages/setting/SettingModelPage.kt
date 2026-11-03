@@ -116,6 +116,11 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
                 DefaultTranslationModelSetting(settings = settings, vm = vm)
             }
 
+            // 【2026-11-03 宝】图片生成：原来只在它自己页面里配，收进这里统一管
+            item {
+                DefaultImageGenModelSetting(settings = settings, vm = vm)
+            }
+
             item {
                 DefaultOcrModelSetting(settings = settings, vm = vm)
             }
@@ -455,6 +460,41 @@ private fun DefaultChatModelSetting(
                         vm.updateSettings(
                             settings.copy(
                                 chatModelId = it.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun DefaultImageGenModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        icon = {
+            Icon(HugeIcons.Tools, null)
+        },
+        title = {
+            Text("图片生成", maxLines = 1)
+        },
+        description = {
+            Text("画图时用哪个模型")
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.imageGenerationModelId,
+                    type = ModelType.CHAT,
+                    onSelect = {
+                        vm.updateSettings(
+                            settings.copy(
+                                imageGenerationModelId = it.id
                             )
                         )
                     },
