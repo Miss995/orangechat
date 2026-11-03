@@ -370,13 +370,14 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             item("aboutSettings") {
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("关于") },
                 ) {
                     // 【2026-11-03 宝】原来这一组 8 行（关于/文档/请求日志/统计/工具账本/安全审计/赞助/分享）
                     // 全并进「关于」页里的「信息与工具」分组，首页只留这一行入口
                     item(
                         onClick = { navController.navigate(Screen.SettingAbout) },
                         leadingContent = { Icon(HugeIcons.Clapping01, null) },
-                        supportingContent = { Text("版本、开源、日志、统计、账本、赞助与分享") },
+                        supportingContent = { Text("版本、日志、统计、账本、赞助") },
                         headlineContent = { Text(stringResource(R.string.setting_page_about)) },
                     )
                 }
