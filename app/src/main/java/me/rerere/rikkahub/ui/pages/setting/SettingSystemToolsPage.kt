@@ -222,37 +222,6 @@ fun SettingSystemToolsPage(vm: SettingVM = koinViewModel()) {
                 }
             }
 
-            // 安全提示
-            item {
-                CardGroup(
-                    title = { Text(stringResource(R.string.system_tools_security_warning_title)) },
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                ) {
-                    item(
-                        headlineContent = {
-                            Text(
-                                text = stringResource(R.string.system_tools_security_warning_message),
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        },
-                        supportingContent = {
-                            Text(
-                                text = stringResource(R.string.system_tools_security_warning_action),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        },
-                        onClick = {
-                            navController.navigate(
-                                Screen.Legal(
-                                    titleRes = R.string.system_tools_security_warning_title,
-                                    contentRes = R.string.system_tools_security_warning_message
-                                )
-                            )
-                        }
-                    )
-                }
-            }
-
             // 后台保活
             item {
             CardGroup(

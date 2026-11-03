@@ -285,30 +285,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_page_display_setting_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_display_setting)) },
                     )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingPlugins) },
-                        leadingContent = { Icon(HugeIcons.Package, null) },
-                        supportingContent = { Text("管理本地插件，导入ZIP插件包") },
-                        headlineContent = { Text("插件管理") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingSecurity) },
-                        leadingContent = { Icon(HugeIcons.Shield02, null) },
-                        supportingContent = { Text("工具调用确认、自动批准、工作流拦截等安全选项") },
-                        headlineContent = { Text("安全设置") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.Assistant) },
-                        leadingContent = { Icon(HugeIcons.LookTop, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_assistant_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_assistant)) },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.Extensions) },
-                        leadingContent = { Icon(HugeIcons.Package, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_extensions_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_extensions)) },
-                    )
                 }
             }
 
@@ -342,12 +318,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_tts_service)) },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.SettingMcp) },
-                        leadingContent = { Icon(HugeIcons.McpServer, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_mcp_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_mcp)) },
-                    )
-                    item(
                         onClick = { navController.navigate(Screen.SettingWeb) },
                         leadingContent = { Icon(HugeIcons.ServerStack01, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
@@ -358,103 +328,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { Icon(HugeIcons.SmartPhone01, null) },
                         supportingContent = { Text("位置、通知、日历、闹钟等系统工具") },
                         headlineContent = { Text("系统工具") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingProactiveMessage) },
-                        leadingContent = { Icon(HugeIcons.WavingHand01, null) },
-                        supportingContent = { Text("AI 在设定间隔内主动发消息，有记忆有上下文") },
-                        headlineContent = { Text("主动消息") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.MemoryWatch) },
-                        leadingContent = { Icon(HugeIcons.Pulse01, null) },
-                        supportingContent = { Text("外置库/OB/Mem0 状态灯、召回体检、记忆浏览与条数调节") },
-                        headlineContent = { Text("记忆监工台") },
-                    )
-                    // 🐱 悬浮桌宠开关 + 大小调节
-                    val petContext = LocalContext.current
-                    val petPrefs = remember { petContext.getSharedPreferences("floating_pet", Context.MODE_PRIVATE) }
-                    var petOn by remember { mutableStateOf(petPrefs.getBoolean("enabled", false)) }
-                    val overlayPermissionLauncher = rememberLauncherForActivityResult(
-                        contract = ActivityResultContracts.StartActivityForResult()
-                    ) { }
-                    item(
-                        leadingContent = { Icon(HugeIcons.InLove, null) },
-                        supportingContent = { Text("透明 GIF 悬浮宠物：pet.gif 待机、sleep.gif 睡觉、walk.gif 走路，放 OrangePet 文件夹（自动创建）") },
-                        headlineContent = { Text("🐱 悬浮桌宠") },
-                        trailingContent = {
-                            Switch(
-                                checked = petOn,
-                                onCheckedChange = { enabled ->
-                                    if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-                                        !Settings.canDrawOverlays(petContext)
-                                    ) {
-                                        val intent = Intent(
-                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                            Uri.parse("package:${petContext.packageName}")
-                                        )
-                                        overlayPermissionLauncher.launch(intent)
-                                        return@Switch
-                                    }
-                                    petPrefs.edit().putBoolean("enabled", enabled).apply()
-                                    petOn = enabled
-                                    if (enabled) {
-                                        FloatingPetService.start(petContext)
-                                    } else {
-                                        FloatingPetService.stop(petContext)
-                                    }
-                                }
-                            )
-                        }
-                    )
-                    if (petOn) {
-                        val savedSize = petPrefs.getInt("size", 160)
-                        val sizeOption = when {
-                            savedSize <= 120 -> 130
-                            savedSize <= 150 -> 160
-                            else -> 200
-                        }
-                        item(
-                            headlineContent = { Text("桌宠大小") },
-                            supportingContent = { Text("小 / 标准 / 大，改完自动重启桌宠生效") },
-                            trailingContent = {
-                                Select(
-                                    options = listOf(130, 160, 200),
-                                    selectedOption = sizeOption,
-                                    onOptionSelected = { size ->
-                                        petPrefs.edit().putInt("size", size).apply()
-                                        if (petOn) {
-                                            FloatingPetService.stop(petContext)
-                                            FloatingPetService.start(petContext)
-                                        }
-                                    },
-                                    optionToString = { when (it) {
-                                        130 -> "小"
-                                        160 -> "标准"
-                                        200 -> "大"
-                                        else -> "${it}dp"
-                                    } }
-                                )
-                            }
-                        )
-                    }
-                    item(
-                        onClick = { navController.navigate(Screen.SettingWeixinBot) },
-                        leadingContent = { Icon(HugeIcons.MessageMultiple01, null) },
-                        supportingContent = { Text("把微信号变成 AI 入口，扫码登录后用微信收发消息") },
-                        headlineContent = { Text("微信 Bot") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingQqBot) },
-                        leadingContent = { Icon(HugeIcons.Message01, null) },
-                        supportingContent = { Text("填 AppID/Secret，用 QQ 私聊跟 AI 对话") },
-                        headlineContent = { Text("QQ Bot") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.Health) },
-                        leadingContent = { Icon(HugeIcons.Pulse01, null) },
-                        supportingContent = { Text("Gadgetbridge 健康数据查看") },
-                        headlineContent = { Text("健康数据") },
                     )
                 }
             }
