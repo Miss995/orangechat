@@ -260,6 +260,8 @@ fun ChatInput(
     onOpenPlugins: () -> Unit = {},
     onOpenWebServer: () -> Unit = {},
     onOpenHealth: () -> Unit = {},
+    // 【2026-11-03 宝】工作流：挪进「当前会话」子面板
+    onOpenWorkflows: () -> Unit = {},
     // 【重排·第十二刀 2026-10-09】「小工具」三个入口（翻译 / 图像生成 / 小应用）
     onOpenTranslator: () -> Unit = {},
     onOpenImageGen: () -> Unit = {},
@@ -1447,9 +1449,18 @@ fun ChatInput(
                                         label = "QQ Bot",
                                         modifier = Modifier.width(72.dp),
                                         compact = true,
-                                        showDivider = false,
                                     ) {
                                         onOpenQqBot()
+                                        expand = ExpandState.Collapsed
+                                    }
+                                    // 【2026-11-03 宝】工作流也挪到这一层（触发后落到最近使用的会话）
+                                    PanelCell(
+                                        label = "工作流",
+                                        modifier = Modifier.width(72.dp),
+                                        compact = true,
+                                        showDivider = false,
+                                    ) {
+                                        onOpenWorkflows()
                                         expand = ExpandState.Collapsed
                                     }
                                 }

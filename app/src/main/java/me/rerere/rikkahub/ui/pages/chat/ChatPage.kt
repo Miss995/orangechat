@@ -348,6 +348,10 @@ private fun ChatPageContent(
                     onOpenQqBot = {
                         navController.navigate(Screen.SettingQqBot)
                     },
+                    // 【2026-11-03 宝】工作流：也挪进「当前会话」子面板
+                    onOpenWorkflows = {
+                        navController.navigate(Screen.Workflows)
+                    },
                     // 【2026-11-02 宝】小工具子面板：插件 / Web 服务器 / 健康数据
                     onOpenPlugins = {
                         navController.navigate(Screen.SettingPlugins)

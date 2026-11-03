@@ -13,6 +13,14 @@ import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.Github
 import me.rerere.hugeicons.stroke.SecurityCheck
 import me.rerere.hugeicons.stroke.SmartPhone01
+import me.rerere.hugeicons.stroke.Bookshelf01
+import me.rerere.hugeicons.stroke.ChartColumn
+import me.rerere.hugeicons.stroke.Alert01
+import me.rerere.hugeicons.stroke.InLove
+import me.rerere.hugeicons.stroke.Share04
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -336,6 +344,60 @@ fun SettingAboutPage() {
                             leadingContent = { Icon(HugeIcons.SecurityCheck, null) },
                             supportingContent = { Text(stringResource(R.string.legal_plugin_security_desc)) },
                             headlineContent = { Text(stringResource(R.string.legal_plugin_security_title)) },
+                        )
+                    }
+                }
+
+                // 【2026-11-03 宝】从设置首页搬过来的：日志 / 统计 / 账本 / 赞助 / 分享
+                item {
+                    CardGroup(
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                        title = { Text("信息与工具") },
+                    ) {
+                        item(
+                            onClick = { navController.navigate(Screen.Log) },
+                            leadingContent = { Icon(HugeIcons.Bookshelf01, null) },
+                            supportingContent = { Text(stringResource(R.string.setting_page_request_logs_desc)) },
+                            headlineContent = { Text(stringResource(R.string.setting_page_request_logs)) },
+                        )
+                        item(
+                            onClick = { navController.navigate(Screen.Stats) },
+                            leadingContent = { Icon(HugeIcons.ChartColumn, null) },
+                            supportingContent = { Text("Token 用量、缓存节省、聊天热力图") },
+                            headlineContent = { Text("统计数据") },
+                        )
+                        item(
+                            onClick = { navController.navigate(Screen.ToolActions) },
+                            leadingContent = { Icon(HugeIcons.Alert01, null) },
+                            supportingContent = { Text("查看工具调用记录（参数/结果/状态）") },
+                            headlineContent = { Text("工具账本") },
+                        )
+                        item(
+                            onClick = { navController.navigate(Screen.SecurityAudit) },
+                            leadingContent = { Icon(HugeIcons.Alert01, null) },
+                            supportingContent = { Text("查看插件安装、工作流拦截、敏感操作等安全事件记录") },
+                            headlineContent = { Text("安全审计日志") },
+                        )
+                        item(
+                            onClick = { navController.navigate(Screen.SettingDonate) },
+                            leadingContent = { Icon(HugeIcons.InLove, null) },
+                            supportingContent = { Text(stringResource(R.string.setting_page_donate_desc)) },
+                            headlineContent = { Text(stringResource(R.string.setting_page_donate)) },
+                        )
+                        item(
+                            onClick = {
+                                val intent = Intent(Intent.ACTION_SEND)
+                                intent.type = "text/plain"
+                                intent.putExtra(Intent.EXTRA_TEXT, context.getString(R.string.setting_page_share_text))
+                                try {
+                                    context.startActivity(Intent.createChooser(intent, context.getString(R.string.setting_page_share)))
+                                } catch (e: ActivityNotFoundException) {
+                                    Toast.makeText(context, context.getString(R.string.setting_page_no_share_app), Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            leadingContent = { Icon(HugeIcons.Share04, null) },
+                            supportingContent = { Text(stringResource(R.string.setting_page_share_desc)) },
+                            headlineContent = { Text(stringResource(R.string.setting_page_share)) },
                         )
                     }
                 }
