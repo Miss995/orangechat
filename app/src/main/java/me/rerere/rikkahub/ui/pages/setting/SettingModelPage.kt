@@ -490,7 +490,7 @@ private fun DefaultImageGenModelSetting(
             Box(modifier = Modifier.weight(1f)) {
                 ModelSelector(
                     modelId = settings.imageGenerationModelId,
-                    type = ModelType.CHAT,
+                    type = ModelType.IMAGE,
                     onSelect = {
                         vm.updateSettings(
                             settings.copy(
