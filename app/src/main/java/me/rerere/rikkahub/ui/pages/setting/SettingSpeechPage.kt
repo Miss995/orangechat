@@ -69,6 +69,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.ui.components.ui.CardGroup
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.asr.ASRProviderSetting
@@ -317,6 +318,45 @@ private fun TTSProviderList(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         state = lazyListState
     ) {
+        item {
+            CardGroup(
+                modifier = Modifier.fillMaxWidth(),
+                title = { Text("朗读设置") },
+            ) {
+                item(
+                    headlineContent = { Text(stringResource(R.string.setting_display_page_tts_only_read_quoted_title)) },
+                    supportingContent = { Text(stringResource(R.string.setting_display_page_tts_only_read_quoted_desc)) },
+                    trailingContent = {
+                        Switch(
+                            checked = settings.displaySetting.ttsOnlyReadQuoted,
+                            onCheckedChange = {
+                                onUpdateSettings(
+                                    settings.copy(
+                                        displaySetting = settings.displaySetting.copy(ttsOnlyReadQuoted = it)
+                                    )
+                                )
+                            }
+                        )
+                    },
+                )
+                item(
+                    headlineContent = { Text(stringResource(R.string.setting_display_page_auto_play_tts_title)) },
+                    supportingContent = { Text(stringResource(R.string.setting_display_page_auto_play_tts_desc)) },
+                    trailingContent = {
+                        Switch(
+                            checked = settings.displaySetting.autoPlayTTSAfterGeneration,
+                            onCheckedChange = {
+                                onUpdateSettings(
+                                    settings.copy(
+                                        displaySetting = settings.displaySetting.copy(autoPlayTTSAfterGeneration = it)
+                                    )
+                                )
+                            }
+                        )
+                    },
+                )
+            }
+        }
         items(settings.ttsProviders, key = { it.id }) { provider ->
             ReorderableItem(
                 state = reorderableState,
