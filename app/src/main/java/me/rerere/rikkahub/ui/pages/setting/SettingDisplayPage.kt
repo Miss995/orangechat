@@ -105,8 +105,8 @@ fun SettingDisplayPage() {
                 ) {
                     item(
                         onClick = { navController.navigate(Screen.SettingDisplayCodeInteraction) },
-                        headlineContent = { Text("代码与交互") },
-                        supportingContent = { Text("代码块、回车发送、滚动、音量键等") },
+                        headlineContent = { Text("交互") },
+                        supportingContent = { Text("回车发送、滚动、音量键等") },
                     )
                 }
             }
