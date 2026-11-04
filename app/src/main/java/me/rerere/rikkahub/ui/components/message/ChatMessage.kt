@@ -46,6 +46,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -713,6 +714,24 @@ private fun MessagePartsBlock(
             }
  
             is MessagePartBlock.ContentBlock -> key(block.index) {
+                /*
+                 * 【实况·六张都进消息 · 2026-11-04 宝提的】
+                 *
+                 * 之前小红书笔记只把封面放进 parts，其余五个只在卡的 metadata 里 ——
+                 * 结果界面上看得见六张，猫这边只收到一张，笔记里写了什么猫得自己去扒页面。
+                 *
+                 * 现在 transformer 把六张全放进 parts，第 2 张往后打 hiddenFromUi 标记：
+                 *   模型 → 六张全看得见（这才是重点）
+                 *   界面 → 在这儿直接跳过（卡里已经横排了一行缩略图，再画就是重复）
+                 *
+                 * ⚠️ 别把这个判断挪到 when 里面去：when 是穷举表达式，加条件分支会变难读，
+                 * 而且 Image 那个分支有七十多行，包一层 if 要整体缩进。
+                 */
+                if (block.part is UIMessagePart.Image &&
+                    block.part.metadata?.get("hiddenFromUi")?.jsonPrimitive?.contentOrNull == "true"
+                ) {
+                    return@key
+                }
                 when (val part = block.part) {
                     is UIMessagePart.Text -> {
                         // 从显示文本中移除[zip:...]标记
@@ -2315,18 +2334,43 @@ internal fun VideoLinkCard(
                         // 怕重复）。但封面那张只剩卡片上那个小缩略图，看不到大的 —— 她说"封面那张图没法看"。
                         // 现在全列出来，封面也能点开放大；重复一下没关系，看得全更重要。
                         images.forEachIndexed { imgIdx, img ->
-                            // 点一下就开大图：跟普通图片用的是同一个查看器
-                            ZoomableAsyncImage(
-                                model = img,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                // 【实况 · 2026-11-04】这张会动，就把那段 mp4 一起带进去
-                                liveVideo = liveVideos.getOrNull(imgIdx),
-                                modifier = Modifier
-                                    .size(76.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color.Black.copy(alpha = 0.06f)),
-                            )
+                            /*
+                             * 【实况角标 · 2026-11-04 宝提的】缩略图右上角加个小圈标，
+                             * 一眼看得出这张会动 —— 不然得点开、按住才知道。
+                             * 形状抄相册那个：一圈白环 + 中间一个小实心圆。
+                             */
+                            val liveOfThis = liveVideos.getOrNull(imgIdx)
+                            Box(modifier = Modifier.size(76.dp)) {
+                                // 点一下就开大图：跟普通图片用的是同一个查看器
+                                ZoomableAsyncImage(
+                                    model = img,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    // 【实况 · 2026-11-04】这张会动，就把那段 mp4 一起带进去
+                                    liveVideo = liveOfThis,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color.Black.copy(alpha = 0.06f)),
+                                )
+                                if (!liveOfThis.isNullOrBlank()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(4.dp)
+                                            .size(11.dp)
+                                            .border(1.dp, Color.White.copy(alpha = 0.85f), CircleShape)
+                                            .background(Color.Black.copy(alpha = 0.22f), CircleShape),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(4.dp)
+                                                .background(Color.White.copy(alpha = 0.95f), CircleShape)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

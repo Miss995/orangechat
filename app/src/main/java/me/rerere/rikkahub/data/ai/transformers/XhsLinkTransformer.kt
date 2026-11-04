@@ -349,6 +349,26 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
             )
         }
 
+        /*
+         * 【喂模型 · 2026-11-04 宝指出的】原来只有封面进 parts，其余几张只存在卡片的
+         * linkImages 里 —— 界面横排看得见，但模型（也就是猫）一张都看不到。
+         * 于是笔记里写了什么，猫全靠自己跑 python 去扒页面，扒出来还只有文字。
+         *
+         * 现在其余几张也放进 parts，带一个 hiddenFromUi 标记：
+         *   模型 → 六张全看得见（这才是重点）
+         *   界面 → 认这个标记直接跳过（卡那边已经在横排缩略图了，画两遍就是重复）
+         *
+         * ⚠️ 别把这个标记改成"全都不画"：第一张（封面）不带它，界面靠它画卡。
+         */
+        saved.drop(1).forEach { pair ->
+            parts.add(
+                UIMessagePart.Image(
+                    url = "file://${pair.first.absolutePath}",
+                    metadata = buildJsonObject { put("hiddenFromUi", "true") },
+                )
+            )
+        }
+
         return parts
     }
 
