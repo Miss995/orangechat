@@ -727,12 +727,16 @@ private fun MessagePartsBlock(
                  * ⚠️ 别把这个判断挪到 when 里面去：when 是穷举表达式，加条件分支会变难读，
                  * 而且 Image 那个分支有七十多行，包一层 if 要整体缩进。
                  */
+                // ⚠️ 别写成 `if (...) { return@key }`：key 是 inline 的，lambda 里 return 会变成
+                // 非局部返回，编译器造出 $$$$$NON_LOCAL_RETURN$$$$$ 那个合成类，dex 装不下
+                // （2026-11-04 实测：dexBuilderDebug FAILED，报 "Method name '<anonymous>'
+                //  in class '$$$$$NON_LOCAL_RETURN$$$$$' cannot be represented in dex format"）。
+                // 用 else 挂上去，不返回。
                 if (block.part is UIMessagePart.Image &&
                     block.part.metadata?.get("hiddenFromUi")?.jsonPrimitive?.contentOrNull == "true"
                 ) {
-                    return@key
-                }
-                when (val part = block.part) {
+                    Unit // 什么都不画
+                } else when (val part = block.part) {
                     is UIMessagePart.Text -> {
                         // 从显示文本中移除[zip:...]标记
                         // 【分享文本分家 · 2026-10-30 宝要的】之前是"这段 part 里只要出现链接
