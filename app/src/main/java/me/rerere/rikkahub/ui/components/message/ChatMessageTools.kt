@@ -89,7 +89,8 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.highlight.HighlightText
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.rikkahub.ui.components.ui.icons.PawIcon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pets
 import me.rerere.hugeicons.stroke.BubbleChatQuestion
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Clipboard
@@ -187,7 +188,7 @@ private fun getToolIcon(toolName: String, action: String?) = when (toolName) {
     ToolNames.WORKSPACE_READ_FILE -> HugeIcons.FileView
     ToolNames.WORKSPACE_WRITE_FILE -> HugeIcons.FileAdd
     ToolNames.WORKSPACE_EDIT_FILE -> HugeIcons.FileEdit
-    ToolNames.WORKSPACE_SHELL -> PawIcon
+    ToolNames.WORKSPACE_SHELL -> Icons.Filled.Pets
     else -> HugeIcons.Tools
 }
 
