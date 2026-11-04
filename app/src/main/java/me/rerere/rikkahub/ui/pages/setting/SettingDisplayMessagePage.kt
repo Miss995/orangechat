@@ -374,6 +374,50 @@ fun SettingDisplayMessagePage(vm: SettingVM = koinViewModel()) {
                     }
                 }
             }
+            // 代码显示
+            item {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text(stringResource(R.string.setting_page_code_display_settings)) },
+                ) {
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_code_block_auto_wrap_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_code_block_auto_wrap_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.codeBlockAutoWrap,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(codeBlockAutoWrap = it))
+                                }
+                            )
+                        },
+                    )
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_code_block_auto_collapse_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_code_block_auto_collapse_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.codeBlockAutoCollapse,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(codeBlockAutoCollapse = it))
+                                }
+                            )
+                        },
+                    )
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_show_line_numbers_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_show_line_numbers_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.showLineNumbers,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(showLineNumbers = it))
+                                }
+                            )
+                        },
+                    )
+                }
+            }
             // 通知
             item {
                 CardGroup(
