@@ -315,6 +315,18 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
                         if (allLive.any { it.isNotBlank() }) {
                             put(META_LINK_LIVE, allLive.joinToString("##"))
                         }
+                        /*
+                         * 【图文标记 · 2026-11-04 宝实测发现的】
+                         *
+                         * 原来这里从来不写 isNote，于是小红书的卡点下去永远走"解视频直链"。
+                         * 纯视频笔记没问题，但图文/实况笔记本身也带着 masterUrl（第一张图那段
+                         * 3.9 秒的实况视频），一解就"解出视频了"，卡片直接原地播第一张图的动，
+                         * 剩下的图和正文全被跳过 —— 宝看到的"还是按视频格式走的"就是这个。
+                         *
+                         * 判据：只要这条笔记有图，就算图文（点开原地展开）；
+                         * 真正没有 imageList 的才是视频笔记，那条继续走解析直链。
+                         */
+                        if (items.isNotEmpty()) put("isNote", "true")
                         // 【原地展开 · 2026-10-29】作者 + 正文也存进卡里：
                         // 渲染层会跳过那段 <xhs_note> 文本，这里补一份"给人看的"，点开原地展开。
                         if (author.isNotBlank() || desc.isNotBlank()) {

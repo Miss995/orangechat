@@ -2155,7 +2155,14 @@ internal fun VideoLinkCard(
                         // 之前不分图文/视频，统统一路去解析 mp4 → 图文必然"解析失败"。
                         // 【小红书视频 · 2026-10-30】小红书有两种笔记，点之前分不清（页面才有答案）。
                         // 所以点了先试着解视频直链：解出来就播（视频笔记），解不出就展开（图文笔记）。
-                        if (isNote) {
+                        /*
+                         * 【图文/实况 · 2026-11-04】有图就算图文。
+                         *
+                         * 双保险：新消息的卡带着 isNote 标记；但老消息（以及 11-04 之前存的卡）
+                         * 没有这个标记，靠 linkImages 还在也能认出来 —— 一样要展开，
+                         * 不该去解视频直链（实况笔记带着 masterUrl，一解就把第一张图的动播了）。
+                         */
+                        if (isNote || (source == "xhs" && images.isNotEmpty())) {
                             expanded = !expanded
                             return@combinedClickable
                         }
