@@ -140,10 +140,8 @@ import me.rerere.rikkahub.ui.pages.search.SearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayCodeInteractionPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayColorPage
-import me.rerere.rikkahub.ui.pages.setting.SettingDisplayGeneralPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayIllustrationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayMessagePage
-import me.rerere.rikkahub.ui.pages.setting.SettingDisplayNotificationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayThemePage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayTransparencyPage
@@ -562,12 +560,6 @@ class RouteActivity : ComponentActivity() {
                             }
                             entry<Screen.SettingDisplayCodeInteraction> {
                                 SettingDisplayCodeInteractionPage()
-                            }
-                            entry<Screen.SettingDisplayGeneral> {
-                                SettingDisplayGeneralPage()
-                            }
-                            entry<Screen.SettingDisplayNotification> {
-                                SettingDisplayNotificationPage()
                             }
 
                             entry<Screen.SettingProvider> {
@@ -990,12 +982,6 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingDisplayCodeInteraction : Screen
-
-    @Serializable
-    data object SettingDisplayGeneral : Screen
-
-    @Serializable
-    data object SettingDisplayNotification : Screen
 
     @Serializable
     data object SettingProvider : Screen
