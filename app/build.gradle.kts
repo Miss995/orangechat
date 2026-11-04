@@ -294,6 +294,9 @@ dependencies {
     // quickie (qrcode scanner)
     implementation(libs.quickie.bundled)
     implementation(libs.barcode.scanning)
+    // 【图片文字引用 · 2026-10-12】ML Kit 中文文字识别（离线、免费、不联网）—— 长按图片读字用。
+    // 说明：libs.versions.toml 里早就定义了 text-recognition，但一直没人引进来，也没人调用过。
+    implementation(libs.text.recognition)
     implementation(libs.text.recognition)
     implementation(libs.androidx.camera.core)
 
@@ -348,6 +351,8 @@ dependencies {
 
     // media3 (ExoPlayer)
     implementation(libs.androidx.media3.exoplayer)
+    // 【视频就地播放 2026-10-27】PlayerView（带控制条的那套现成视图）
+    implementation(libs.androidx.media3.ui)
 
     // modules
     implementation(project(":ai"))
