@@ -18,7 +18,7 @@ class PromptVM(
     private val settingsStore: SettingsStore
 ) : ViewModel() {
     val settings = settingsStore.settingsFlow
-        .stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, settingsStore.settingsFlow.value)
 
     fun updateSettings(settings: Settings) {
         viewModelScope.launch {
