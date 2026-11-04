@@ -357,6 +357,14 @@ private fun TTSProviderList(
                 )
             }
         }
+        item {
+            Text(
+                text = "TTS 引擎",
+                modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 8.dp),
+                style = MaterialTheme.typography.titleSmallEmphasized,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
         items(settings.ttsProviders, key = { it.id }) { provider ->
             ReorderableItem(
                 state = reorderableState,
