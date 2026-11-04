@@ -52,6 +52,7 @@ import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.ChainOfThoughtScope
 import me.rerere.rikkahub.ui.components.ui.icons.CatIcon
+import me.rerere.rikkahub.ui.components.ui.icons.DogIcon
 import me.rerere.rikkahub.ui.context.LocalDisplaySettings
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.utils.extractThinkingTitle
@@ -218,6 +219,7 @@ fun ChainOfThoughtScope.ChatMessageReasoningStep(
     model: Model?,
     assistant: Assistant?,
     fadeHeight: Float = 64f,
+    isUserReasoning: Boolean = false,
     collapsedAdaptiveWidth: Boolean = false,
 ) {
     val (state, loading) = rememberReasoningState(reasoning)
@@ -229,7 +231,7 @@ fun ChainOfThoughtScope.ChatMessageReasoningStep(
         onExpandedChange = { state.onExpandedChange(it, loading) },
         icon = {
             Icon(
-                imageVector = CatIcon,
+                imageVector = if (isUserReasoning) DogIcon else CatIcon,
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.secondary,

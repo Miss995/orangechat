@@ -847,6 +847,7 @@ private fun MessagePartsBlock(
                                                             reasoning = step.reasoning,
                                                             model = null,
                                                             assistant = assistant,
+                                                            isUserReasoning = true,
                                                         )
                                                     }
                                                 }
