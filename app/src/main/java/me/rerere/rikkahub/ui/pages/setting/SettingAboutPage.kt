@@ -69,6 +69,10 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.easteregg.EmojiBurstHost
+import androidx.compose.material3.Switch
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.rikkahub.data.datastore.DisplaySetting
+import org.koin.androidx.compose.koinViewModel
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.CustomColors
@@ -79,7 +83,15 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 @Composable
-fun SettingAboutPage() {
+fun SettingAboutPage(vm: SettingVM = koinViewModel()) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
+
+    fun updateDisplaySetting(setting: DisplaySetting) {
+        displaySetting = setting
+        vm.updateSettings(settings.copy(displaySetting = setting))
+    }
+
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
     val navController = LocalNavController.current
@@ -239,6 +251,18 @@ fun SettingAboutPage() {
                             leadingContent = { Icon(HugeIcons.Earth, null) },
                             supportingContent = { Text(updateStatus) },
                             headlineContent = { Text("检查更新") },
+                        )
+                        item(
+                            headlineContent = { Text(stringResource(R.string.setting_display_page_show_updates_title)) },
+                            supportingContent = { Text(stringResource(R.string.setting_display_page_show_updates_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = displaySetting.showUpdates,
+                                    onCheckedChange = {
+                                        updateDisplaySetting(displaySetting.copy(showUpdates = it))
+                                    }
+                                )
+                            },
                         )
                     }
                 }
