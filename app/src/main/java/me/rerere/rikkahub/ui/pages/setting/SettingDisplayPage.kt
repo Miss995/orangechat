@@ -94,11 +94,6 @@ fun SettingDisplayPage() {
                         headlineContent = { Text("消息样式") },
                         supportingContent = { Text("头像、气泡、字体大小、自定义字体") },
                     )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingDisplayNotification) },
-                        headlineContent = { Text("通知与 TTS") },
-                        supportingContent = { Text("消息生成通知、TTS 自动朗读") },
-                    )
                 }
             }
 
@@ -112,11 +107,6 @@ fun SettingDisplayPage() {
                         onClick = { navController.navigate(Screen.SettingDisplayCodeInteraction) },
                         headlineContent = { Text("代码与交互") },
                         supportingContent = { Text("代码块、回车发送、滚动、音量键等") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingDisplayGeneral) },
-                        headlineContent = { Text("其他") },
-                        supportingContent = { Text("更新提醒") },
                     )
                 }
             }
