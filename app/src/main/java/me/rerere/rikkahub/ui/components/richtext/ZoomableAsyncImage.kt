@@ -84,11 +84,12 @@ fun ZoomableAsyncImage(
         },
     )
     if (showImageViewer) {
+        // ⚠️ 三个参数都显式传：onDismissRequest 夹在中间，不是最后一个，
+        // 用尾随 lambda 的写法会串成"少一个参数 + 多一个参数"两条错。
         ImagePreviewDialog(
             images = listOf(model ?: ""),
+            onDismissRequest = { showImageViewer = false },
             liveVideos = listOf(liveVideo),
-        ) {
-            showImageViewer = false
-        }
+        )
     }
 }
