@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.LargeFlexibleTopAppBar
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
@@ -55,10 +54,11 @@ fun SettingDisplayPage() {
             contentPadding = contentPadding + PaddingValues(8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // ── 外观显示 ──────────────────────────────────────────
             item {
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text(stringResource(R.string.setting_display_page_title)) },
+                    title = { Text("外观显示") },
                 ) {
                     item(
                         onClick = { navController.navigate(Screen.SettingDisplayTheme) },
@@ -80,11 +80,34 @@ fun SettingDisplayPage() {
                         headlineContent = { Text("插图素材") },
                         supportingContent = { Text("输入框背景、侧边栏背景、头像挂件") },
                     )
+                }
+            }
+
+            // ── 消息显示 ──────────────────────────────────────────
+            item {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("消息显示") },
+                ) {
                     item(
                         onClick = { navController.navigate(Screen.SettingDisplayMessage) },
-                        headlineContent = { Text("消息显示") },
+                        headlineContent = { Text("消息样式") },
                         supportingContent = { Text("头像、气泡、字体大小、自定义字体") },
                     )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingDisplayNotification) },
+                        headlineContent = { Text("通知与 TTS") },
+                        supportingContent = { Text("消息生成通知、TTS 自动朗读") },
+                    )
+                }
+            }
+
+            // ── 交互 ──────────────────────────────────────────────
+            item {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("交互") },
+                ) {
                     item(
                         onClick = { navController.navigate(Screen.SettingDisplayCodeInteraction) },
                         headlineContent = { Text("代码与交互") },
@@ -92,13 +115,8 @@ fun SettingDisplayPage() {
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingDisplayGeneral) },
-                        headlineContent = { Text("通用设置") },
-                        supportingContent = { Text("启动时新建对话、更新提醒") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingDisplayNotification) },
-                        headlineContent = { Text("通知与TTS") },
-                        supportingContent = { Text("消息生成通知、TTS 自动朗读") },
+                        headlineContent = { Text("其他") },
+                        supportingContent = { Text("更新提醒") },
                     )
                 }
             }

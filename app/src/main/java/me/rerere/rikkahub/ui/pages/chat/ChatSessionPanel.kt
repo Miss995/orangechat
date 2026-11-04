@@ -158,14 +158,10 @@ fun ChatSessionPanel(
                         vm.updateSettings(newSettings)
                         scope.launch {
                             val newId =
-                                if (context.readBooleanPreference("create_new_conversation_on_start", true)) {
-                                    Uuid.random()
-                                } else {
-                                    repo.getConversationsOfAssistant(newSettings.assistantId)
-                                        .first()
-                                        .firstOrNull()
-                                        ?.id ?: Uuid.random()
-                                }
+                                repo.getConversationsOfAssistant(newSettings.assistantId)
+                                    .first()
+                                    .firstOrNull()
+                                    ?.id ?: Uuid.random()
                             navigateToChatPage(navigator = navController, chatId = newId)
                             onDismiss()
                         }

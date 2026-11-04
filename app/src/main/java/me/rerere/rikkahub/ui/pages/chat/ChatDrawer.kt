@@ -326,14 +326,10 @@ fun ChatDrawerContent(
                 onUpdateSettings = {
                     vm.updateSettings(it)
                     scope.launch {
-                        val id = if (context.readBooleanPreference("create_new_conversation_on_start", true)) {
-                            Uuid.random()
-                        } else {
-                            repo.getConversationsOfAssistant(it.assistantId)
-                                .first()
-                                .firstOrNull()
-                                ?.id ?: Uuid.random()
-                        }
+                        val id = repo.getConversationsOfAssistant(it.assistantId)
+                            .first()
+                            .firstOrNull()
+                            ?.id ?: Uuid.random()
                         navigateToChatPage(navigator = navController, chatId = id)
                     }
                 },
