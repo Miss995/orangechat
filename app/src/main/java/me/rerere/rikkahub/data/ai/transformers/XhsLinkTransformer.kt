@@ -65,6 +65,14 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
+    /** 【实况 · 2026-11-04】一张配图：地址 + 实况那段 mp4（不是实况就是 null）。 */
+    private data class NoteImage(
+        val url: String,
+        val liveVideo: String? = null,
+    ) {
+        val isLive: Boolean get() = !liveVideo.isNullOrBlank()
+    }
+
     // 【链接卡 · 2026-10-29】跟 DyLinkTransformer 用同一套键，渲染层才认得出
     private const val META_LINK_URL = "videoLink"
     private const val META_LINK_SOURCE = "videoSource"
@@ -72,6 +80,19 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
 
     /** 【多图缩略图 · 2026-10-29】这条笔记全部配图的本地路径，用 ## 分隔（url 里不会有 ##）。 */
     private const val META_LINK_IMAGES = "linkImages"
+
+    /**
+     * 【实况 · 2026-11-04】跟 linkImages 严格同位序的实况视频地址，不是实况的位置放空串（## 分隔）。
+     *
+     * 小红书一条笔记里可以混着普通图和多张实况（那条 6 张里 5 张是）。实况 = 一张图 + 一段
+     * 约 3.9 秒、1080x1080、没有声音的 mp4，就藏在 imageList[i].stream.h264[0].masterUrl 里。
+     *
+     * 存的是远程签名地址，不是本地文件 —— 会过期（跟视频卡一样，过了重新发一次链接）。
+     * 这么选是为了不拖慢出卡：5 段视频下载下来是 1.8MB，等它下完卡才出来，不划算。
+     *
+     * 空串占位不能省：去掉位序就塌了，第 3 张的地址会被当成第 1 张的。
+     */
+    private const val META_LINK_LIVE = "linkLiveVideos"
 
     override suspend fun transform(
         ctx: TransformerContext,
@@ -189,34 +210,54 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
         val author = deep?.get("user")?.jsonObject?.str("nickName")?.trim().orEmpty()
         val noteId = deep?.str("noteId").orEmpty()
 
-        // 图片 url
-        val imageUrls = mutableListOf<String>()
-        preload?.get("imagesList")?.let { arr ->
+        /*
+         * 【配图 + 实况 · 2026-11-04 重构】
+         *
+         * 老版只收集 url 字符串，实况那半（livePhoto / stream）一个字没碰 —— 所以一条
+         * "6 张里 5 张会动"的笔记进来，界面上一张都不会动。
+         *
+         * 现在优先解析 deep.imageList（只有它带 livePhoto 和 stream），
+         * 每张一并取出实况那段 mp4；老结构 preload.imagesList 只当兜底（它没有实况）。
+         */
+        val parsed = mutableListOf<NoteImage>()
+        deep?.get("imageList")?.let { arr ->
             runCatching {
                 arr.jsonArray.forEach { el ->
                     val o = el.jsonObject
-                    val u = o.str("url") ?: o.str("urlDefault") ?: o.str("urlPre")
-                    if (!u.isNullOrBlank()) imageUrls.add(normalizeUrl(u))
+                    val u = o.str("urlDefault") ?: o.str("url") ?: o.str("urlPre")
+                    if (!u.isNullOrBlank()) {
+                        // 实况视频：stream.h264[0].masterUrl（h265 / av1 实测都是空数组）
+                        val live = runCatching {
+                            o.get("stream")?.jsonObject
+                                ?.get("h264")?.jsonArray
+                                ?.firstOrNull()?.jsonObject
+                                ?.str("masterUrl")
+                        }.getOrNull()
+                        parsed.add(
+                            NoteImage(
+                                url = normalizeUrl(u),
+                                liveVideo = live?.takeIf { it.isNotBlank() }?.let { normalizeUrl(it) },
+                            )
+                        )
+                    }
                 }
-            }
+            }.onFailure { AppLogBuffer.log(TAG, "imageList parse: ${it.javaClass.simpleName}") }
         }
-        // 【2026-10-29 修】原来这两块是"二选一"：preload 有图就不看 deep。
-        // 但 preload（normalNotePreloadData）只带第一张 —— 于是多图笔记永远只剩一张：
-        // 界面上一张图明明画着「●●●」三个点，我们只拿到第一页。
-        // 现在两边都取，靠后面的 distinct() 去重。
-        run {
-            deep?.get("imageList")?.let { arr ->
+        // 兜底：老结构（normalNotePreloadData.imagesList），只有第一张、没有实况
+        if (parsed.isEmpty()) {
+            preload?.get("imagesList")?.let { arr ->
                 runCatching {
                     arr.jsonArray.forEach { el ->
                         val o = el.jsonObject
-                        val u = o.str("urlDefault") ?: o.str("url") ?: o.str("urlPre")
-                        if (!u.isNullOrBlank()) imageUrls.add(normalizeUrl(u))
+                        val u = o.str("url") ?: o.str("urlDefault") ?: o.str("urlPre")
+                        if (!u.isNullOrBlank()) parsed.add(NoteImage(normalizeUrl(u)))
                     }
                 }
             }
         }
-        // 去重 + 限数
-        val urls = imageUrls.distinct().take(MAX_IMAGES)
+        // 去重（按 url）+ 限数
+        val items = parsed.distinctBy { it.url }.take(MAX_IMAGES)
+        val urls = items.map { it.url }
         if (title.isBlank() && desc.isBlank() && urls.isEmpty()) return null
 
         val parts = mutableListOf<UIMessagePart>()
@@ -232,6 +273,9 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
         }
         sb.append("配图：").append(urls.size).append(" 张")
         if (urls.isEmpty()) sb.append("（没取到）")
+        // 【实况 · 2026-11-04】得让模型（也就是猫自己）知道这些图里有会动的
+        val liveCount = items.count { it.isLive }
+        if (liveCount > 0) sb.append("（其中 ").append(liveCount).append(" 张是实况，会动）")
         sb.append('\n')
         if (noteId.isNotBlank()) {
             sb.append("链接：https://www.xiaohongshu.com/explore/").append(noteId).append('\n')
@@ -240,17 +284,22 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
         parts.add(UIMessagePart.Text(sb.toString()))
 
         // 下载配图 → Image part（能走后面已有的转述链路）
-        val saved = downloadImages(urls)
+        val saved = downloadImages(items)
         // 【多图缩略图 · 2026-10-29 宝要的】把全部图的本地路径塞进第一张卡的 metadata。
         // 为什么不全塞进 parts 让界面自己排：那样卡下面会跟着冒出两三张大图，
         // 一条笔记占掉大半屏。现在 part 只留第一张当封面，其余路径挂在卡里，
         // 展开的时候横着排一行小图（宝原话：「缩略图」）。
-        val allImageUrls = saved.map { "file://${it.absolutePath}" }
+        val allImageUrls = saved.map { "file://${it.first.absolutePath}" }
+        // 【实况 · 2026-11-04】跟 allImageUrls 严格同位序，不是实况的位置放空串。
+        // 为什么同位序而不是只列实况的：渲染层拿 linkImages[i] 和这里[i] 对一对就知道哪张会动，
+        // 不用再存一个"第几张"的索引表（多一张表就多一处能对不上的地方）。
+        val allLive = saved.map { it.second.liveVideo ?: "" }
         // 【链接卡 · 2026-10-29 宝要的「左图右两行」】第一张带上卡片标记：
         // 界面把它画成一条横卡（缩略图＋标题＋域名），不再画大图。
         // 只把封面那张放进消息流；其余只在卡的 metadata 里（展开时横排）。
         // 全塞进 parts 的话，卡下面会跟着冒出两三张大图，一条笔记占掉大半屏。
-        saved.firstOrNull()?.let { f ->
+        saved.firstOrNull()?.let { pair ->
+            val f = pair.first
             parts.add(
                 UIMessagePart.Image(
                     url = "file://${f.absolutePath}",
@@ -261,6 +310,10 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
                         // 全部配图（含封面自己）：展开时横排用；模型那边也靠它知道这条笔记有几张图
                         if (allImageUrls.size > 1) {
                             put(META_LINK_IMAGES, allImageUrls.joinToString("##"))
+                        }
+                        // 【实况 · 2026-11-04】一张实况都没有就不写这个键（别给老消息平白多层字段）
+                        if (allLive.any { it.isNotBlank() }) {
+                            put(META_LINK_LIVE, allLive.joinToString("##"))
                         }
                         // 【原地展开 · 2026-10-29】作者 + 正文也存进卡里：
                         // 渲染层会跳过那段 <xhs_note> 文本，这里补一份"给人看的"，点开原地展开。
@@ -277,7 +330,12 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
                 )
             )
         }
-        if (saved.isNotEmpty()) AppLogBuffer.log(TAG, "images saved: ${saved.size}/${urls.size}")
+        if (saved.isNotEmpty()) {
+            AppLogBuffer.log(
+                TAG,
+                "images saved: ${saved.size}/${urls.size} live=${saved.count { it.second.isLive }}"
+            )
+        }
 
         return parts
     }
@@ -321,19 +379,26 @@ object XhsLinkTransformer : InputMessageTransformer, KoinComponent {
         }
     }
 
-    /** 下载配图到 cacheDir/xhs_images，返回落地的文件 */
-    private fun downloadImages(urls: List<String>): List<File> {
-        if (urls.isEmpty()) return emptyList()
+    /**
+     * 下载配图到 cacheDir/xhs_images，返回「落地文件 + 它对应的那张图」。
+     *
+     * 【2026-11-04 为什么要把 NoteImage 带回来】原来是 List<File>，下载失败的会被跳过 ——
+     * 于是"第几个文件"跟"第几张图"就对不上了。平时没人在乎（反正都是一排缩略图），
+     * 但实况要看位序：第 3 张的地址一旦错位到第 1 张，界面就会拿一张图去演另一张的动。
+     * 现在整条一起带回来，位序天然对齐，失败的那张自己消失，不会顶掉别人的位置。
+     */
+    private fun downloadImages(items: List<NoteImage>): List<Pair<File, NoteImage>> {
+        if (items.isEmpty()) return emptyList()
         val dir = File(get<Context>().cacheDir, "xhs_images").apply { mkdirs() }
-        val out = mutableListOf<File>()
-        urls.forEachIndexed { idx, u ->
+        val out = mutableListOf<Pair<File, NoteImage>>()
+        items.forEachIndexed { idx, item ->
             val f = try {
-                downloadOne(u, dir, idx)
+                downloadOne(item.url, dir, idx)
             } catch (e: Exception) {
                 AppLogBuffer.log(TAG, "img[$idx] ${e.javaClass.simpleName}: ${e.message}")
                 null
             }
-            if (f != null) out.add(f)
+            if (f != null) out.add(f to item)
         }
         return out
     }
