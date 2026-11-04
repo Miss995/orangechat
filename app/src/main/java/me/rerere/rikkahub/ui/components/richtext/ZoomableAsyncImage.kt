@@ -43,6 +43,11 @@ fun ZoomableAsyncImage(
      * null = 保持老行为（长按什么都不做）；点按照旧 = 打开大图。
      */
     onLongClick: (() -> Unit)? = null,
+    /**
+     * 【实况 · 2026-11-04】这张图是不是实况 —— 是就把那段 mp4 传进来，点开大图后按住会动。
+     * null = 普通静态图（绝大多数调用方都是），行为一点不变。
+     */
+    liveVideo: String? = null,
 ) {
     var showImageViewer by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -79,7 +84,10 @@ fun ZoomableAsyncImage(
         },
     )
     if (showImageViewer) {
-        ImagePreviewDialog(images = listOf(model ?: "")) {
+        ImagePreviewDialog(
+            images = listOf(model ?: ""),
+            liveVideos = listOf(liveVideo),
+        ) {
             showImageViewer = false
         }
     }

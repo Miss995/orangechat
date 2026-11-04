@@ -1671,6 +1671,16 @@ class ChatService(
                                 // 有就是图文作品（点开展开看多图），没有就是视频。
                                 isNote = md?.get(DyLinkTransformer.META_IS_NOTE)
                                     ?.jsonPrimitive?.contentOrNull == "true" || (old?.isNote ?: false),
+                                /*
+                                 * 【实况 · 2026-11-04】跟 images 严格同位序。
+                                 * ⚠️ 这一行绝对不能像上面 images 那样 filter 掉空串 ——
+                                 * 空串代表"这张不是实况"，滤掉之后位序就塌了。
+                                 */
+                                liveVideos = md?.get("linkLiveVideos")
+                                    ?.jsonPrimitive?.contentOrNull
+                                    ?.split("##")
+                                    ?.takeIf { list -> list.any { it.isNotBlank() } }
+                                    ?: (old?.liveVideos ?: emptyList()),
                             )
                             // 内容没变就别白改（transformer 一轮里可能跑多次）
                             if (merged == old) return@updateConversationState conv

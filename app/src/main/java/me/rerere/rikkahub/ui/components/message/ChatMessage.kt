@@ -997,6 +997,15 @@ private fun MessagePartsBlock(
                                     .orEmpty(),
                                 isNote = part.metadata?.get(DyLinkTransformer.META_IS_NOTE)
                                     ?.jsonPrimitive?.contentOrNull == "true",
+                                /*
+                                 * 【实况 · 2026-11-04】XhsLinkTransformer 存的实况地址（## 分隔）。
+                                 * ⚠️ 这里绝对不能 filter 掉空串 —— 空串是"这张不是实况"的占位，
+                                 * 滤掉之后位序就塌了，第 3 张的地址会跑到第 1 张头上。
+                                 */
+                                liveVideos = part.metadata?.get("linkLiveVideos")
+                                    ?.jsonPrimitive?.contentOrNull
+                                    ?.split("##")
+                                    .orEmpty(),
                             )
                         } else {
                             val isImageLoading =
@@ -1205,6 +1214,7 @@ private fun MessagePartsBlock(
             body = card.body,
             images = card.images,
             isNote = card.isNote,
+            liveVideos = card.liveVideos,
         )
     }
 
@@ -2061,6 +2071,8 @@ internal fun VideoLinkCard(
     images: List<String> = emptyList(),
     /** 【图文标记 · 2026-10-30】true = 图文作品（多张图），点开原地展开看多图，不走"解析视频直链" */
     isNote: Boolean = false,
+    /** 【实况 · 2026-11-04】跟 images 严格同位序；非空的那几张，点开大图后按住会动 */
+    liveVideos: List<String?> = emptyList(),
 ) {
     /*
      * 【链接卡 · 2026-10-29 宝要的「左图右两行」】
@@ -2295,12 +2307,14 @@ internal fun VideoLinkCard(
                         // 【封面也进来 · 2026-10-30 宝要的】原来从第 1 张开始（封面在卡左边已经有个小图，
                         // 怕重复）。但封面那张只剩卡片上那个小缩略图，看不到大的 —— 她说"封面那张图没法看"。
                         // 现在全列出来，封面也能点开放大；重复一下没关系，看得全更重要。
-                        images.forEach { img ->
+                        images.forEachIndexed { imgIdx, img ->
                             // 点一下就开大图：跟普通图片用的是同一个查看器
                             ZoomableAsyncImage(
                                 model = img,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
+                                // 【实况 · 2026-11-04】这张会动，就把那段 mp4 一起带进去
+                                liveVideo = liveVideos.getOrNull(imgIdx),
                                 modifier = Modifier
                                     .size(76.dp)
                                     .clip(RoundedCornerShape(6.dp))

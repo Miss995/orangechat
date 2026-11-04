@@ -44,6 +44,14 @@ data class LinkCard(
     // 【图文标记 · 2026-10-30 宝要的】true = 这是图文作品（多张图），点开应该原地展开看多图，
     // 而不是走"解析视频直链"。抖音的图文作品（aweme_type=68）就靠这个跟视频区分开。
     val isNote: Boolean = false,
+    /*
+     * 【实况 · 2026-11-04】跟 images 严格同位序的实况视频地址；不是实况的位置放空串。
+     * 有了它，点开大图后按住那张图就会动（见 ImagePreviewDialog 的 liveVideos）。
+     *
+     * 带默认值 = 老消息反序列化不受影响（缺这个字段就是空列表 = 全当普通图），
+     * 这也是为什么没另起一个数据类。
+     */
+    val liveVideos: List<String?> = emptyList(),
 )
 
 // 公共消息抽象, 具体的Provider实现会转换为API接口需要的DTO
