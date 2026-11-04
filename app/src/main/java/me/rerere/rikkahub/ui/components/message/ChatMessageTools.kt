@@ -89,6 +89,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.highlight.HighlightText
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.rikkahub.ui.components.ui.icons.PawOutlineIcon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pets
 import me.rerere.hugeicons.stroke.BubbleChatQuestion
@@ -189,7 +190,7 @@ private fun getToolIcon(toolName: String, action: String?) = when (toolName) {
     ToolNames.WORKSPACE_WRITE_FILE -> HugeIcons.FileAdd
     ToolNames.WORKSPACE_EDIT_FILE -> HugeIcons.FileEdit
     ToolNames.WORKSPACE_SHELL -> Icons.Filled.Pets
-    else -> HugeIcons.Tools
+    else -> PawOutlineIcon
 }
 
 private fun JsonElement?.getStringContent(key: String): String? =
