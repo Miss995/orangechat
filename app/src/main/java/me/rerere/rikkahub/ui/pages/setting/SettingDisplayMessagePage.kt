@@ -40,6 +40,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import android.os.Build
+import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
+import me.rerere.rikkahub.ui.components.ui.permission.PermissionNotification
+import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.File
@@ -65,6 +69,13 @@ fun SettingDisplayMessagePage(vm: SettingVM = koinViewModel()) {
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    val permissionState = rememberPermissionState(
+        permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) setOf(
+            PermissionNotification
+        ) else emptySet(),
+    )
+    PermissionManager(permissionState = permissionState)
 
     val fontDir = remember { File(context.filesDir, "custom_fonts").apply { mkdirs() } }
     val fontPickerLauncher = rememberLauncherForActivityResult(
@@ -359,6 +370,43 @@ fun SettingDisplayMessagePage(vm: SettingVM = koinViewModel()) {
                                     style = MaterialTheme.typography.bodyLarge
                                 )
                             }
+                        )
+                    }
+                }
+            }
+            // 通知
+            item {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("通知") },
+                ) {
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_notification_message_generated)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_notification_message_generated_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.enableNotificationOnMessageGeneration,
+                                onCheckedChange = {
+                                    if (it && !permissionState.allPermissionsGranted) {
+                                        permissionState.requestPermissions()
+                                    }
+                                    updateDisplaySetting(displaySetting.copy(enableNotificationOnMessageGeneration = it))
+                                }
+                            )
+                        },
+                    )
+                    if (displaySetting.enableNotificationOnMessageGeneration) {
+                        item(
+                            headlineContent = { Text(stringResource(R.string.setting_display_page_live_update_notification)) },
+                            supportingContent = { Text(stringResource(R.string.setting_display_page_live_update_notification_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = displaySetting.enableLiveUpdateNotification,
+                                    onCheckedChange = {
+                                        updateDisplaySetting(displaySetting.copy(enableLiveUpdateNotification = it))
+                                    }
+                                )
+                            },
                         )
                     }
                 }
