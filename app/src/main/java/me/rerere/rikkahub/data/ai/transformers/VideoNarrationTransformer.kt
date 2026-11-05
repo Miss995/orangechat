@@ -54,6 +54,9 @@ object VideoNarrationTransformer : InputMessageTransformer, KoinComponent {
     /** 【抽帧 · 2026-10-25】每帧缩到长边多少像素（太大 base64 会撑爆请求） */
     private const val MAX_FRAME_SIDE = 720
 
+    /** 【抽帧给 OCR · 2026-11-05】让识图模型把几帧连起来当一段视频讲。 */
+    private const val FRAMES_NARRATION_PROMPT = "下面是同一条短视频里按时间先后抽出的若干帧画面。请用中文把它们当成同一段视频来描述：画面里有什么、人物在做什么、场景或动作怎么变化、有没有字幕。如果某几帧明显不是视频内容（比如 App 界面、广告页、搜索结果页），请指出并忽略它们。"
+
     private const val DEFAULT_NARRATION_PROMPT = "你是视频理解助手。请仔细观看这段视频，用中文详细描述视频内容（画面、人物、动作、字幕、场景变化、情节发展等）。如果画面没有明显内容，请如实说明。"
 
     private val cache by lazy {
@@ -95,24 +98,34 @@ object VideoNarrationTransformer : InputMessageTransformer, KoinComponent {
         }
         if (!hasVideos) return messages
 
-        // 【抽帧 · 2026-10-25】模型看得见图、只是不看视频 → 抽几帧直接给它看，
-        // 不用再绕一趟转述模型（省一次调用，也不丢细节）。
-        // 连图都看不了的模型（纯文本）才退回老路：让视觉模型转述成文字。
-        // 【2026-11-05 回滚】曾改成"配了转述模型就一律转述"，宝当场指出两条：
-        // ① 主模型自己能看图的路被掐死了 ② OCR 那个若是纯识图模型，也会被算成"能转述视频"。
-        // 退回原样：能看图就抽帧给主模型，看不了图才走转述。
+        // 【视频四条路 · 2026-11-05 宝定】
+        //   ① 主模型能看视频 → 直接发（函数开头已 return）
+        //   ② 配了「视频模型」 → 用它整段转述
+        //   ③ 主模型能看图、没配视频模型 → 抽帧给主模型自己看
+        //   ④ 主模型看不了图、配了「OCR 模型」→ 抽帧交给 OCR（纯识图）转述
+        //   ⑤ 都没有 → 只剩占位
+        // 注意：视频模型和 OCR 是两格分开配的，互不顶替 ——
+        // OCR 是纯识图，不能拿它吃整段视频（2026-11-05 宝指出）。
+        val settings = get<SettingsStore>().settingsFlow.value
+        val hasVideoModel = settings.findModelById(settings.videoModelId) != null
+        val hasOcrModel = settings.findModelById(settings.ocrModelId) != null
         val canSeeImages = ctx.model.inputModalities.contains(Modality.IMAGE)
 
         return withContext(Dispatchers.IO) {
             try {
-                ctx.processingStatus.value = if (canSeeImages) "正在抽取视频画面..." else "正在转述视频..."
+                ctx.processingStatus.value = when {
+                    hasVideoModel -> "正在转述视频..."
+                    canSeeImages -> "正在抽取视频画面..."
+                    hasOcrModel -> "正在识别视频画面..."
+                    else -> "正在处理视频..."
+                }
                 messages.map { message ->
                     message.copy(
                         parts = message.parts.flatMap { part ->
                             when {
                                 // 最外层视频
                                 part is UIMessagePart.Video && part.url.startsWith("file:") -> {
-                                    videoToParts(part, canSeeImages)
+                                    videoToParts(part, canSeeImages, hasVideoModel, hasOcrModel)
                                 }
 
                                 // Tool.output 里的视频: 递归扫描, 同一套规则
@@ -121,7 +134,7 @@ object VideoNarrationTransformer : InputMessageTransformer, KoinComponent {
                                         part.copy(
                                             output = part.output.flatMap { outputPart ->
                                                 if (outputPart is UIMessagePart.Video && outputPart.url.startsWith("file:")) {
-                                                    videoToParts(outputPart, canSeeImages)
+                                                    videoToParts(outputPart, canSeeImages, hasVideoModel, hasOcrModel)
                                                 } else listOf(outputPart)
                                             }
                                         )
@@ -140,25 +153,90 @@ object VideoNarrationTransformer : InputMessageTransformer, KoinComponent {
     }
 
     /**
-     * 【抽帧 · 2026-10-25】把一个视频 part 变成「一句说明 + N 张图」。
-     * 模型看得见图 → 抽帧直发；连图都看不了 → 退回转述。
+     * 【视频四条路 · 2026-11-05】把一个视频 part 变成「能送进请求的东西」。
+     * ②有视频模型 → 整段转述；③主模型能看图 → 抽帧给它；④有 OCR → 抽帧给 OCR；⑤都没有 → 占位。
      */
     private suspend fun videoToParts(
         part: UIMessagePart.Video,
         canSeeImages: Boolean,
+        hasVideoModel: Boolean,
+        hasOcrModel: Boolean,
     ): List<UIMessagePart> {
-        if (!canSeeImages) return listOf(UIMessagePart.Text(performNarration(part)))
+        // ② 配了视频模型 → 整段交给它看完写成文字（比 5 张帧全）
+        if (hasVideoModel) return listOf(UIMessagePart.Text(performNarration(part)))
 
         val frames = runCatching { extractFrames(part) }.getOrNull().orEmpty()
-        if (frames.isEmpty()) {
-            // 抽不出帧（文件坏 / 时长读不到）→ 退回转述，别让这条视频整个消失
-            return listOf(UIMessagePart.Text(performNarration(part)))
+
+        // ③ 主模型能看图 → 抽帧直接塞给它，不调别的模型（不额外花钱）
+        if (canSeeImages && frames.isNotEmpty()) {
+            return buildList {
+                add(UIMessagePart.Text(framesNote(frames.size)))
+                frames.forEach { add(UIMessagePart.Image(url = "file://${it.absolutePath}")) }
+            }
         }
 
-        return buildList {
-            add(UIMessagePart.Text(framesNote(frames.size)))
-            frames.forEach { add(UIMessagePart.Image(url = "file://${it.absolutePath}")) }
+        // ④ 主模型看不了图、但有 OCR（纯识图）→ 把帧交给它转述
+        if (hasOcrModel) return listOf(UIMessagePart.Text(narrateFramesViaOcr(part, frames)))
+
+        // ⑤ 什么都没有
+        return listOf(UIMessagePart.Text("[Video]"))
+    }
+
+    /**
+     * 【抽帧给 OCR · 2026-11-05】主模型看不了图时，把抽出来的帧交给 OCR 模型（纯识图）描述。
+     * 一次请求带全部帧，比一帧调一次省。
+     * 帧抽不出来时退回把整段视频发给它（有些识图模型其实吃视频）。
+     */
+    private suspend fun narrateFramesViaOcr(
+        part: UIMessagePart.Video,
+        frames: List<File>,
+    ): String = runCatching {
+        val cacheKey = part.url + "#frames"
+        cache.get(cacheKey)?.let { return@runCatching it }
+
+        val settings = get<SettingsStore>().settingsFlow.value
+        val model = settings.findModelById(settings.ocrModelId) ?: return@runCatching "[Video]"
+        val providerSetting = model.findProvider(settings.providers) ?: return@runCatching "[Video]"
+        val provider = get<ProviderManager>().getProviderByType(providerSetting)
+
+        val userParts: List<UIMessagePart> = if (frames.isNotEmpty()) {
+            frames.map { UIMessagePart.Image(url = "file://${it.absolutePath}") }
+        } else {
+            listOf(UIMessagePart.Video(part.url))
         }
+
+        val result = provider.generateText(
+            providerSetting = providerSetting,
+            messages = listOf(
+                UIMessage.system(FRAMES_NARRATION_PROMPT),
+                UIMessage(role = MessageRole.USER, parts = userParts),
+            ),
+            params = TextGenerationParams(
+                model = model.copy(
+                    inputModalities = (model.inputModalities + Modality.IMAGE + Modality.VIDEO).distinct()
+                ),
+                customHeaders = model.customHeaders,
+                customBody = model.customBodies,
+            ),
+        )
+        val content = result.choices[0].message?.toText() ?: "[ERROR, frames narration failed]"
+        Log.i(TAG, "narrateFramesViaOcr: $content")
+
+        val note = if (frames.isNotEmpty()) {
+            "这段是把视频按时间平均抽成 ${frames.size} 帧后，交给识图模型看图写出来的，不是完整视频。"
+        } else {
+            "这段是把整段视频交给识图模型看后写出来的。"
+        }
+        val narration = """
+            <video_file_narration>
+               $content
+            </video_file_narration>
+            * $note
+        """.trimIndent()
+        cache.put(cacheKey, narration)
+        narration
+    }.getOrElse {
+        "[ERROR, video narration failed: $it]"
     }
 
     /** 说明文字：让模型知道这几张图是同一段视频的帧，不是几件不同的事。 */
@@ -242,10 +320,9 @@ object VideoNarrationTransformer : InputMessageTransformer, KoinComponent {
         }
 
         val settings = get<SettingsStore>().settingsFlow.value
-        // 【视频模型独立 · 2026-10-12】优先用「视频模型」；没配过就退回 OCR 那个（跟升级前的行为一致）。
-        val model = settings.findModelById(settings.videoModelId)
-            ?: settings.findModelById(settings.ocrModelId)
-            ?: return "[Video]"
+        // 【视频模型独立 · 2026-10-12 / 2026-11-05 收口】只认「视频模型」这一格。
+        // OCR 那个是纯识图，不能拿它吃整段视频；要走 OCR 的是另一条路（先说抽帧，再交给它）。
+        val model = settings.findModelById(settings.videoModelId) ?: return@runCatching "[Video]"
         val providerSetting = model.findProvider(settings.providers) ?: return "[Video]"
         val provider = get<ProviderManager>().getProviderByType(providerSetting)
         val result = provider.generateText(
