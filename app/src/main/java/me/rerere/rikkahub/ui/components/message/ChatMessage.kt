@@ -173,6 +173,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
  
@@ -773,6 +774,11 @@ private fun MessagePartsBlock(
                         if (displayText.isBlank()) {
                             // 跳过：这一行剩下的全是分享文本/展开块，内容已经在卡里了
                         } else if (!isInterjectPart(part)) {
+                        // 【思考链卡片不弹菜单 · 2026-11-05】这一块的窗口原点 + 思考链卡片的窗口矩形。
+                        // 手势在 Initial 阶段等抬起，点卡片展开键时也会收到 down/up，
+                        // 靠"落点压没压在卡片上"来筛，而不是靠 pass。
+                        var bodyWindowOrigin by remember { mutableStateOf(Offset.Zero) }
+                        var thinkRectInWindow by remember { mutableStateOf<Rect?>(null) }
                         // 【防正文被吃 2026-08-22】key(loading)：生成完成（loading true→false）时强制重建渲染子树，
                         // 确保最后一批 parts（含正文）一定会被渲染——不依赖流式增量触发的最后一次重组
                         // （思考链渲染间隙里完成的正文不再静默消失，memory 91 的渲染竞态修复）。
@@ -783,7 +789,9 @@ private fun MessagePartsBlock(
                             onTextPicked = onQuoteText,
                             modifier = Modifier
                                 .onGloballyPositioned { coords ->
-                                    onBodyPlaced?.invoke(coords.positionInWindow())
+                                    val origin = coords.positionInWindow()
+                                    bodyWindowOrigin = origin
+                                    onBodyPlaced?.invoke(origin)
                                 }
                                 .then(
                                     if (onBodyTap != null) {
@@ -804,7 +812,15 @@ private fun MessagePartsBlock(
                                                     if (up != null &&
                                                         System.currentTimeMillis() - downAt < 500L
                                                     ) {
-                                                        onBodyTap(down.position)
+                                                        // 【思考链卡片不弹菜单 · 2026-11-05】按在思考链卡片上时不弹正文菜单
+                                                        // （点卡片的展开键会顺带弹出复制/编辑那一条）。
+                                                        // 靠 pass 判断走过两条死路：Initial 阶段子元素还没消费、
+                                                        // Main/Final 阶段文字选择的常驻消费者一律消费掉。
+                                                        // 改成看落点：卡片自己报窗口坐标，这里把按下的局部坐标换算成窗口坐标去比。
+                                                        val tapInWindow = bodyWindowOrigin + down.position
+                                                        if (thinkRectInWindow?.contains(tapInWindow) != true) {
+                                                            onBodyTap(down.position)
+                                                        }
                                                     }
                                                 }
                                             }
@@ -835,21 +851,29 @@ private fun MessagePartsBlock(
                                         thinkSegments.fastForEach { seg ->
                                             when (seg) {
                                                 is ThinkSegment.Think -> {
-                                                    ChainOfThought(
-                                                        steps = listOf(
-                                                            ThinkingStep.ReasoningStep(
-                                                                UIMessagePart.Reasoning(reasoning = seg.content)
-                                                            )
-                                                        ),
-                                                        collapsedAdaptiveWidth = true,
-                                                    ) { step ->
-                                                        ChatMessageReasoningStep(
-                                                            reasoning = step.reasoning,
-                                                            model = null,
-                                                            assistant = assistant,
+                                                    // 【思考链卡片不弹菜单 · 2026-11-05】把卡片自己的窗口矩形报出去，
+                                                    // 正文那块的手势靠它判断"这一下是不是按在卡片上"。
+                                                    Box(
+                                                        modifier = Modifier.onGloballyPositioned { c ->
+                                                            thinkRectInWindow = c.boundsInWindow()
+                                                        }
+                                                    ) {
+                                                        ChainOfThought(
+                                                            steps = listOf(
+                                                                ThinkingStep.ReasoningStep(
+                                                                    UIMessagePart.Reasoning(reasoning = seg.content)
+                                                                )
+                                                            ),
                                                             collapsedAdaptiveWidth = true,
-                                                            isUserReasoning = true,
-                                                        )
+                                                        ) { step ->
+                                                            ChatMessageReasoningStep(
+                                                                reasoning = step.reasoning,
+                                                                model = null,
+                                                                assistant = assistant,
+                                                                collapsedAdaptiveWidth = true,
+                                                                isUserReasoning = true,
+                                                            )
+                                                        }
                                                     }
                                                 }
                                                 is ThinkSegment.Text -> {
