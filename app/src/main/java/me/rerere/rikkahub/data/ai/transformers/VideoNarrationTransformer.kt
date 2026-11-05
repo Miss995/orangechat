@@ -55,9 +55,11 @@ object VideoNarrationTransformer : InputMessageTransformer, KoinComponent {
     private const val MAX_FRAME_SIDE = 720
 
     /** 【抽帧给 OCR · 2026-11-05】让识图模型把几帧连起来当一段视频讲。 */
-    private const val FRAMES_NARRATION_PROMPT = "下面是同一条短视频里按时间先后抽出的若干帧画面。请用中文把它们当成同一段视频来描述：画面里有什么、人物在做什么、场景或动作怎么变化、有没有字幕。如果某几帧明显不是视频内容（比如 App 界面、广告页、搜索结果页），请指出并忽略它们。"
+    private const val FRAMES_NARRATION_PROMPT = "下面是同一条短视频里按时间先后抽出的若干帧画面。请用中文把它们当成同一段视频来描述：画面里有什么、人物在做什么、场景或动作怎么变化、有没有字幕。如果某几帧明显不是视频内容（比如 App 界面、广告页、搜索结果页），请指出并忽略它们。" +
+        "看不清的地方不要猜：性别、年龄、身份、衣着、物品、文字，凡是画面里不能确定的就别写，或者说\"看不清\"；不要为了让描述完整而补上画面里没有的东西。"
 
-    private const val DEFAULT_NARRATION_PROMPT = "你是视频理解助手。请仔细观看这段视频，用中文详细描述视频内容（画面、人物、动作、字幕、场景变化、情节发展等）。如果画面没有明显内容，请如实说明。"
+    private const val DEFAULT_NARRATION_PROMPT = "你是视频理解助手。请仔细观看这段视频，用中文详细描述视频内容（画面、人物、动作、字幕、场景变化、情节发展等）。" +
+        "看不清的地方不要猜：性别、年龄、身份、衣着、物品、文字，凡是画面里不能确定的就别写，或者说\"看不清\"；不要为了让描述完整而补上画面里没有的东西。如果画面没有明显内容，请如实说明。"
 
     private val cache by lazy {
         val context = get<Context>()
