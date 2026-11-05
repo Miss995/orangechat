@@ -792,23 +792,16 @@ private fun MessagePartsBlock(
                                                 while (true) {
                                                     val down = awaitFirstDown(
                                                         requireUnconsumed = false,
-                                                        pass = PointerEventPass.Main
+                                                        pass = PointerEventPass.Initial
                                                     )
                                                     // 【长按不弹菜单 · 2026-10-11 宝报：长按选字抬手时跟"引用"打架】
                                                     // 长按选文字抬手那一下也走"按下→抬起"，不掐时长就会误弹菜单。
                                                     // 卡 500ms：单击在 200ms 内、长按选择在 500ms 以上，分得干净。
                                                     val downAt = System.currentTimeMillis()
-                                                    // 【点思考链不弹菜单 · 2026-11-05 宝报】原来在 Initial 阶段等抬起，
-                                                    // 那时子元素（思考链的展开键、长按选字）还没机会消费 —— 所以点展开键
-                                                    // 也照样弹菜单。改成 Main 阶段等：Main 从叶子往根传，外层最后才看到
-                                                    // 抬起，这时候子元素有没有消费已经是定局。
-                                                    // （别用 Final：waitForUpOrCancellation 在 Final 阶段会直接返回 null，
-                                                    //  连点正文都弹不出来了 —— 2026-11-05 当天就踩过这一下。）
                                                     val up = waitForUpOrCancellation(
-                                                        pass = PointerEventPass.Main
+                                                        pass = PointerEventPass.Initial
                                                     )
                                                     if (up != null &&
-                                                        !up.isConsumed &&
                                                         System.currentTimeMillis() - downAt < 500L
                                                     ) {
                                                         onBodyTap(down.position)
