@@ -798,10 +798,14 @@ private fun MessagePartsBlock(
                                                     // 长按选文字抬手那一下也走"按下→抬起"，不掐时长就会误弹菜单。
                                                     // 卡 500ms：单击在 200ms 内、长按选择在 500ms 以上，分得干净。
                                                     val downAt = System.currentTimeMillis()
+                                                    // 【点思考链不弹菜单 · 2026-11-05 宝报】原来在 Initial 阶段等抬起，
+                                                    // 那时子元素（思考链的展开键、长按选字）还没机会消费 —— 所以点展开键
+                                                    // 也照样弹菜单。改成 Final 阶段等：那是最后一道，消费状态已经是终态。
                                                     val up = waitForUpOrCancellation(
-                                                        pass = PointerEventPass.Initial
+                                                        pass = PointerEventPass.Final
                                                     )
                                                     if (up != null &&
+                                                        !up.isConsumed &&
                                                         System.currentTimeMillis() - downAt < 500L
                                                     ) {
                                                         onBodyTap(down.position)
