@@ -233,7 +233,7 @@ fun ChainOfThoughtScope.ChatMessageReasoningStep(
             Icon(
                 imageVector = if (isUserReasoning) DogIcon else CatIcon,
                 contentDescription = null,
-                modifier = Modifier.size(16.dp),
+                modifier = Modifier.size(if (isUserReasoning) 18.dp else 16.dp),
                 tint = MaterialTheme.colorScheme.secondary,
             )
         },
