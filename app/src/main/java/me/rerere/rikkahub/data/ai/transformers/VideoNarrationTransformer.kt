@@ -74,16 +74,6 @@ object VideoNarrationTransformer : InputMessageTransformer, KoinComponent {
         )
     }
 
-    /**
-     * 【一律转述 · 2026-11-05】有没有配转述用的视觉模型：
-     * 优先「视频模型」，没配就退回 OCR 那个（跟 performNarration 的取法保持一致）。
-     */
-    private fun hasNarrationModel(): Boolean {
-        val settings = get<SettingsStore>().settingsFlow.value
-        return settings.findModelById(settings.videoModelId) != null ||
-            settings.findModelById(settings.ocrModelId) != null
-    }
-
     override suspend fun transform(
         ctx: TransformerContext,
         messages: List<UIMessage>,
@@ -105,13 +95,13 @@ object VideoNarrationTransformer : InputMessageTransformer, KoinComponent {
         }
         if (!hasVideos) return messages
 
-        // 【一律转述 · 2026-11-05 宝定】只要配了转述用的视觉模型（设置里的「视频模型」，
-        // 没配就退回 OCR 那个），就**不再抽帧**，一律让那个模型把整段视频看完写成文字。
-        // 原因：抽帧平均只取 5 张，动作过程全丢，片尾还容易抽到 App 界面（宝 2026-11-05 实测）。
-        // 抽帧只留给"没配转述模型、但主模型自己能看图"这一种情况。
-        val narrationAvailable = hasNarrationModel()
-        val canSeeImages = !narrationAvailable &&
-            ctx.model.inputModalities.contains(Modality.IMAGE)
+        // 【抽帧 · 2026-10-25】模型看得见图、只是不看视频 → 抽几帧直接给它看，
+        // 不用再绕一趟转述模型（省一次调用，也不丢细节）。
+        // 连图都看不了的模型（纯文本）才退回老路：让视觉模型转述成文字。
+        // 【2026-11-05 回滚】曾改成"配了转述模型就一律转述"，宝当场指出两条：
+        // ① 主模型自己能看图的路被掐死了 ② OCR 那个若是纯识图模型，也会被算成"能转述视频"。
+        // 退回原样：能看图就抽帧给主模型，看不了图才走转述。
+        val canSeeImages = ctx.model.inputModalities.contains(Modality.IMAGE)
 
         return withContext(Dispatchers.IO) {
             try {
