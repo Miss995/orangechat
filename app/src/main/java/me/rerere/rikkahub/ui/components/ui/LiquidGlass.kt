@@ -94,9 +94,9 @@ half4 main(float2 p) {
     float reachIn  = uThick * 0.95 * uRefract;
     float reachOut = uThick * 0.55 * 1.28 * uRefract;
 
-    float3 col = sampleBg(p + o1 + o2).rgb * wFace;
-    col += sampleBg(p - g * reachIn).rgb * wIn;
-    col += sampleBg(p + g * reachOut).rgb * wOut;
+    // 【调试开关 · 2026-11-06】先只做纯采样，验证坐标对不对（折射那套先不算）
+    float3 col = sampleBg(p).rgb;
+    col += o1.x * 0.0 + o2.x * 0.0 + reachIn * 0.0 + reachOut * 0.0 + wFace * 0.0 + wIn * 0.0 + wOut * 0.0;
 
     // 边上一点点柔化，免得硬边像描线
     float aa = 1.0 - smoothstep(-1.5, 0.5, d);
