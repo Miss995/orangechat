@@ -114,7 +114,12 @@ fun workflowCreateTool(
                         "Optional: description, enabled (default true), conditions (array), " +
                         "cooldown_seconds (default 0), max_runs_per_day (default unlimited), " +
                         "max_total_runs (default unlimited — a lifetime budget; once the count " +
-                        "is reached the workflow switches itself off), id.")
+                        "is reached the workflow switches itself off), " +
+                        "fire_probability (default 1.0 — a 0.0..1.0 dice roll applied to EVERY " +
+                        "trigger BEFORE cooldown/conditions. 1.0 = always pass. 0.05 = only 5% of " +
+                        "trigger firings actually proceed; the rest are recorded as " +
+                        "SKIPPED_PROBABILITY and cost no cooldown, no daily quota. Use it to make " +
+                        "a noisy trigger (screen_on, app_launched) fire only occasionally), id.")
                 })
             },
             required = listOf("definition"),

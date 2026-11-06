@@ -149,6 +149,25 @@ class WorkflowEngine(
             return persistAndReturn(workflowId, firedAtMs, started, WorkflowRunStatus.SKIPPED_DISABLED, null, "", ledgerId)
         }
 
+        // 概率闸（2026-11-06）—— 触发拿到了，先掷一次骰子再决定要不要往下走。
+        //
+        // 为什么排在这里：它在 cooldown / 每日额度 / 运行时预检 / 条件**之前**。
+        // 没掷中 = 这一次触发当作没发生，不消耗冷却窗口、不占当天额度、不写失败记录，
+        // 只在历史里留一条 SKIPPED_PROBABILITY（skip 不计入 SUCCESS/FAILED，所以也不影响
+        // maxRunsPerDay / maxTotalRuns 的计数）。
+        //
+        // 1.0 = 不过闸，直接短路跳过，老 workflow 零额外开销、行为一点不变。
+        // 用 ThreadLocalRandom 而不是 Random()：每个触发都在 IO 线程池里跑，
+        // 每次新建 Random 会拿时间当种子，同一毫秒内的两次触发容易掷出同一个结果。
+        if (def.fireProbability < 1.0) {
+            val hit = def.fireProbability > 0.0 &&
+                java.util.concurrent.ThreadLocalRandom.current().nextDouble() < def.fireProbability
+            if (!hit) {
+                Log.d(TAG, "fire $workflowId: probability gate missed (p=${def.fireProbability})")
+                return persistAndReturn(workflowId, firedAtMs, started, WorkflowRunStatus.SKIPPED_PROBABILITY, null, "", ledgerId)
+            }
+        }
+
         // Trigger runtime pre-flight — surface "this trigger needs setup" as an explicit
         // FAILED row in history so the user sees WHY the workflow doesn't fire instead of
         // just "Never run". The audit found these were silently dying:

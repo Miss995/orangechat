@@ -41,6 +41,11 @@ enum class WorkflowRunStatus {
     SKIPPED_DAILY_CAP,
     SKIPPED_TOTAL_CAP,
     SKIPPED_DISABLED,
+    /**
+     * 2026-11-06 — 触发拿到了，但概率闸没掷中。当作"这一次没发生"，不消耗冷却、不计入每日额度。
+     * 日志会留一条，方便以后看"这道闸到底滤掉了多少"。
+     */
+    SKIPPED_PROBABILITY,
 }
 
 /**
@@ -68,6 +73,17 @@ data class WorkflowDefinition(
      * null = unlimited (default — every pre-existing workflow keeps its behaviour).
      */
     val maxTotalRuns: Int? = null,
+    /**
+     * 2026-11-06 — 触发之后、条件之前的概率闸。
+     *
+     * 1.0 = 不过闸（默认值，所有老 workflow 行为不变）。
+     * 0.05 = 触发一百次里，只有五次真的往下走。
+     *
+     * 位置很重要：它排在 cooldown / 每日额度 / 条件**之前**。没掷中就当这次触发没发生过，
+     * 不消耗冷却、不占配额、不写失败记录 —— 只有一条 SKIPPED_PROBABILITY 日志。
+     * 这样"把亮屏调成 5%"不会顺带把冷却和工作量也改了，两个旋钮各自独立。
+     */
+    val fireProbability: Double = 1.0,
     val createdAtMs: Long = System.currentTimeMillis(),
     val updatedAtMs: Long = System.currentTimeMillis(),
     /**

@@ -148,6 +148,7 @@ private fun WorkflowRow(
                 WorkflowRunStatus.SKIPPED_DAILY_CAP.name -> "已跳过（今天跑满了）· $ago"
                 WorkflowRunStatus.SKIPPED_TOTAL_CAP.name -> "已跳过（次数用完了）· $ago"
                 WorkflowRunStatus.SKIPPED_DISABLED.name -> "已跳过（当时关着）· $ago"
+                WorkflowRunStatus.SKIPPED_PROBABILITY.name -> "已跳过（概率没中）· $ago"
                 else -> "已跳过 · $ago"
             }
         }

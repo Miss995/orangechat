@@ -182,6 +182,13 @@ object WorkflowJson {
                 "max_total_runs must be ${WorkflowConstants.MAX_TOTAL_RUNS_FLOOR}..${WorkflowConstants.MAX_TOTAL_RUNS_CEIL}")
         }
 
+        // 2026-11-06 — 概率闸。0..1，缺省 1.0 表示不过闸（老 workflow 行为不变）。
+        val fireProbability = obj["fire_probability"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull() ?: 1.0
+        if (fireProbability < 0.0 || fireProbability > 1.0) {
+            return ParseResult.Err("invalid_fire_probability",
+                "fire_probability must be 0.0..1.0")
+        }
+
         sanityCheckTrigger(trigger)?.let { return it }
         for ((idx, c) in conditions.withIndex()) {
             sanityCheckCondition(c)?.let { return it.withIndex(idx, "condition") }
@@ -202,6 +209,7 @@ object WorkflowJson {
             cooldownSeconds = cooldown,
             maxRunsPerDay = maxRunsPerDay,
             maxTotalRuns = maxTotalRuns,
+            fireProbability = fireProbability,
             createdAtMs = obj["created_at_ms"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: now,
             updatedAtMs = now,
             authoringAssistantId = obj["authoring_assistant_id"]?.jsonPrimitive?.contentOrNull
@@ -235,6 +243,9 @@ object WorkflowJson {
             }
             if (definition.maxTotalRuns != null) {
                 put("max_total_runs", JsonPrimitive(definition.maxTotalRuns))
+            }
+            if (definition.fireProbability != 1.0) {
+                put("fire_probability", JsonPrimitive(definition.fireProbability))
             }
             put("created_at_ms", JsonPrimitive(definition.createdAtMs.toString()))
             put("updated_at_ms", JsonPrimitive(definition.updatedAtMs.toString()))
@@ -277,6 +288,8 @@ object WorkflowJson {
         val cooldown = obj["cooldown_seconds"]?.jsonPrimitive?.intOrNull ?: 0
         val maxRunsPerDay = obj["max_runs_per_day"]?.jsonPrimitive?.intOrNull
         val maxTotalRuns = obj["max_total_runs"]?.jsonPrimitive?.intOrNull
+        val fireProbability = obj["fire_probability"]?.jsonPrimitive?.contentOrNull
+            ?.toDoubleOrNull()?.coerceIn(0.0, 1.0) ?: 1.0
         val id = obj["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
             ?: kotlin.uuid.Uuid.random().toString()
         val now = System.currentTimeMillis()
@@ -291,6 +304,7 @@ object WorkflowJson {
             cooldownSeconds = cooldown,
             maxRunsPerDay = maxRunsPerDay,
             maxTotalRuns = maxTotalRuns,
+            fireProbability = fireProbability,
             createdAtMs = obj["created_at_ms"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: now,
             updatedAtMs = obj["updated_at_ms"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: now,
             authoringAssistantId = obj["authoring_assistant_id"]?.jsonPrimitive?.contentOrNull
