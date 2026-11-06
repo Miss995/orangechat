@@ -63,8 +63,8 @@ float sdf(float2 p) {
     return length(max(q, float2(0.0))) - r;
 }
 
-// ImageShader（Skia BitmapShader）的坐标就是像素坐标，直接采
-half4 sampleBg(float2 p) { return uBg.eval(p); }
+// p 是这个元素自己的局部坐标，图是整屏的 —— 采样要补上元素在图里的位置
+half4 sampleBg(float2 p) { return uBg.eval(p + uRect.xy); }
 
 half4 main(float2 p) {
     float d = sdf(p);
