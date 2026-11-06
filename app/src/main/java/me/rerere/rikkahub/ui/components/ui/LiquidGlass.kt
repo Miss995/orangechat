@@ -51,6 +51,7 @@ uniform float   uIOR;
 uniform float   uRefract;
 uniform float   uThick;
 uniform float   uAlpha;
+uniform float2  uBgInv;
 
 float sdf(float2 p) {
     float2 c = (uRect.xy + uRect.zw) * 0.5;
@@ -61,6 +62,9 @@ float sdf(float2 p) {
     if (m <= 0.0) return m - r;
     return length(max(q, float2(0.0))) - r;
 }
+
+// ImageShader 把整张图铺在 0..1 的坐标空间里，p 是像素坐标，这里换算过去
+half4 sampleBg(float2 p) { return uBg.eval(p * uBgInv); }
 
 half4 main(float2 p) {
     float d = sdf(p);
@@ -90,9 +94,9 @@ half4 main(float2 p) {
     float reachIn  = uThick * 0.95 * uRefract;
     float reachOut = uThick * 0.55 * 1.28 * uRefract;
 
-    float3 col = uBg.eval(p + o1 + o2).rgb * wFace;
-    col += uBg.eval(p - g * reachIn).rgb * wIn;
-    col += uBg.eval(p + g * reachOut).rgb * wOut;
+    float3 col = sampleBg(p + o1 + o2).rgb * wFace;
+    col += sampleBg(p - g * reachIn).rgb * wIn;
+    col += sampleBg(p + g * reachOut).rgb * wOut;
 
     // 边上一点点柔化，免得硬边像描线
     float aa = 1.0 - smoothstep(-1.5, 0.5, d);
@@ -183,11 +187,9 @@ fun Modifier.liquidGlass(
             setFloatUniform("uThick", style.thickness)
             setFloatUniform("uAlpha", style.alpha)
             // ⚠️ ImageShader 把整张图铺在 0..1 的坐标空间里，而 shader 里的 p 是像素坐标。
-            // 不换算的话采样只会落在图角上一小块，拉满整条（2026-11-06 第二版踩到）。
-            val m = androidx.compose.ui.graphics.Matrix().apply {
-                scale(1f / bg.width, 1f / bg.height)
-            }
-            setInputShader("uBg", ImageShader(bg, TileMode.Clamp, TileMode.Clamp, m))
+            // ImageShader 没有 matrix 参数（2026-11-06 编译报错过），所以在 shader 里用 uBgInv 换算。
+            setFloatUniform("uBgInv", 1f / bg.width, 1f / bg.height)
+            setInputShader("uBg", ImageShader(bg, TileMode.Clamp, TileMode.Clamp))
         }
     }.getOrNull() ?: return this
 
