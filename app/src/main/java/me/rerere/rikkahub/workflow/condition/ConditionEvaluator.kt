@@ -78,8 +78,14 @@ object ConditionEvaluator {
             is ConditionSpec.ScreenIsOff -> !ctx.screenOn
             // Fail open when there is no chat history (null) — a brand-new install shouldn't be
             // permanently blocked from firing workflows that happen to also check last-chat.
-            is ConditionSpec.LastChatAgo -> ctx.lastChatMs == null ||
-                (ctx.nowMs - ctx.lastChatMs) >= condition.minutes * 60_000L
+            // 2026-11-06: fail-closed。原来这里是 `ctx.lastChatMs == null || ...`，
+            // 等于"查不到聊天时间就放行"——带 last_chat_ago 的工作流会立刻开火，条件形同虚设。
+            // （2026-11-06 实测：门槛设成 100000 分钟，距离上次回复 0 分钟照样触发。）
+            // 改法：证明不了"已经过了 N 分钟"，就判不成立。
+            is ConditionSpec.LastChatAgo -> {
+                val last = ctx.lastChatMs
+                last != null && (ctx.nowMs - last) >= condition.minutes * 60_000L
+            }
         }
     }
 

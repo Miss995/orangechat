@@ -190,11 +190,13 @@ class WorkflowEngine(
         }
 
         // Conditions
+        Log.d(TAG, "fire $workflowId: conditions=${def.conditions.size} ${def.conditions}")
         if (def.conditions.isNotEmpty()) {
             val ctx = contextProvider.snapshot(
                 needsLocation = ConditionEvaluator.needsLocation(def.conditions),
                 needsLastChat = ConditionEvaluator.needsLastChat(def.conditions),
             )
+            Log.d(TAG, "fire $workflowId: conds=${def.conditions.size} lastChatMs=${ctx.lastChatMs} nowMs=${ctx.nowMs}")
             val cr = ConditionEvaluator.evaluateAll(def.conditions, ctx)
             if (cr is ConditionEvaluator.Result.FailedAt) {
                 return persistAndReturn(
