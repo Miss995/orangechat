@@ -94,6 +94,7 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.toMessageNode
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.utils.RemoteReplyConfig
 import me.rerere.rikkahub.utils.sendNotification
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -1157,6 +1158,20 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        // 【通知栏快捷回复 · 2026-11-06 宝要的】通知上直接带一个回复框，不用点开 App
+        // 注意这里是 FLAG_MUTABLE：RemoteInput 要求 mutable，系统要往这个 intent 里塞回复文字，
+        // 用 IMMUTABLE 会静默失效（点了没反应，也不报错）
+        val replyIntent = Intent(this, NotificationReplyReceiver::class.java).apply {
+            putExtra(NotificationReplyReceiver.EXTRA_CONVERSATION_ID, conversationId.toString())
+            putExtra(NotificationReplyReceiver.EXTRA_NOTIFICATION_ID, 20002)
+        }
+        val replyPendingIntent = PendingIntent.getBroadcast(
+            this,
+            conversationId.hashCode() xor 0x5EED,
+            replyIntent,
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         sendNotification(
             channelId = CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID,
             notificationId = 20002
@@ -1168,6 +1183,11 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
             category = NotificationCompat.CATEGORY_MESSAGE
             contentIntent = pendingIntent
             useBigTextStyle = true
+            remoteReply = RemoteReplyConfig(
+                actionLabel = "回复",
+                resultKey = NotificationReplyReceiver.EXTRA_RESULT_KEY,
+                actionIntent = replyPendingIntent,
+            )
         }
     }
 

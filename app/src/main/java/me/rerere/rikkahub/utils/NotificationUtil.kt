@@ -40,7 +40,24 @@ class NotificationConfig {
 
     // 默认通知效果
     var useDefaults: Boolean = false
+
+    // 【通知栏快捷回复 · 2026-11-06 宝要的】不为 null 时，通知上多一个能直接打字的回复框
+    var remoteReply: RemoteReplyConfig? = null
 }
+
+/**
+ * 通知栏快捷回复的配置（2026-11-06）
+ *
+ * [actionIntent] 必须是一个 Broadcast 的 **MUTABLE** PendingIntent，指向
+ * NotificationReplyReceiver —— RemoteInput 要求 mutable：系统要往这个 intent 里塞结果，
+ * 用 IMMUTABLE 会静默失效（Android 12+ 的硬要求，不报错，只是回复框点了没反应）。
+ */
+class RemoteReplyConfig(
+    val actionLabel: String = "回复",
+    val resultKey: String = "reply_text",
+    val actionIcon: Int = android.R.drawable.ic_menu_send,
+    val actionIntent: PendingIntent,
+)
 
 object NotificationUtil {
 
@@ -101,6 +118,23 @@ object NotificationUtil {
             config.subText?.let { setSubText(it) }
             config.category?.let { setCategory(it) }
             config.contentIntent?.let { setContentIntent(it) }
+
+            // 【通知栏快捷回复 · 2026-11-06】挂了远程输入，通知上就能直接打字回
+            config.remoteReply?.let { reply ->
+                val remoteInput = androidx.core.app.RemoteInput.Builder(reply.resultKey)
+                    .setLabel(reply.actionLabel)
+                    .build()
+                addAction(
+                    NotificationCompat.Action.Builder(
+                        reply.actionIcon,
+                        reply.actionLabel,
+                        reply.actionIntent
+                    )
+                        .addRemoteInput(remoteInput)
+                        .setAllowGeneratedReplies(true)
+                        .build()
+                )
+            }
 
             if (config.useBigTextStyle) {
                 setStyle(NotificationCompat.BigTextStyle().bigText(config.content))

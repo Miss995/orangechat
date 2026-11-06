@@ -229,6 +229,11 @@
     </receiver>
 
 
+    <!-- 通知栏快捷回复 · 2026-11-06：接收通知回复框送来的文字，直接喂给 ChatService -->
+    <receiver
+      android:name=".data.service.NotificationReplyReceiver"
+      android:exported="false" />
+
     <!-- Proactive Message Trigger Service -->
     <service
       android:name=".data.service.ProactiveMessageTriggerService"
