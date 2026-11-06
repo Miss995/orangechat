@@ -78,7 +78,7 @@ half4 main(float2 p) {
     float d1 = sdf(p + float2(1.0, 0.0));
     float d2 = sdf(p + float2(0.0, 1.0));
     float2 g = normalize(float2(d1 - d, d2 - d) + float2(0.000001));
-    float3 n = normalize(float3(-g * slope * 0.95, 1.0));
+    float3 n = normalize(float3(-g * slope * 0.55, 1.0));
     float3 v = float3(0.0, 0.0, 1.0);
 
     float3 r1 = refract(-v, n, 1.0 / uIOR);
@@ -118,8 +118,10 @@ half4 main(float2 p) {
 data class LiquidGlassStyle(
     val radius: Float = 22f,
     val ior: Float = 1.44f,
-    val refract: Float = 1.75f,
-    val thickness: Float = 48f,
+    /** 折射强度。1.75 太夸张（推开 80px），压到 0.6≈12px 才像玻璃 */
+    val refract: Float = 0.6f,
+    /** 玻璃厚度（决定弯折的范围） */
+    val thickness: Float = 22f,
     /** 整体不透明度，先给 1（先把形做对，透明度以后按需要调） */
     val alpha: Float = 1f,
 )
