@@ -6,12 +6,21 @@
 
 package me.rerere.rikkahub.ui.pages.chat
 
+import me.rerere.rikkahub.ui.components.ui.rememberLiquidGlassHost
+import me.rerere.rikkahub.ui.components.ui.liquidGlass
+import me.rerere.rikkahub.ui.components.ui.liquidGlassSource
+import me.rerere.rikkahub.ui.components.ui.LiquidGlassStyle
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInParent
+
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
@@ -262,6 +271,9 @@ private fun ChatPageContent(
     val toaster = LocalToaster.current
     var previewMode by rememberSaveable { mutableStateOf(false) }
     // 【重排·第十三刀 2026-10-09】会话面板（从侧边栏搬出来的那块）
+    // 【液态玻璃 · 2026-11-06】背景录制器 + 玻璃条在这层里的位置
+    val liquidHost = rememberLiquidGlassHost()
+    var glassBarRect by remember { mutableStateOf(Rect.Zero) }
     var showSessionPanel by remember { mutableStateOf(false) }
     // 【重排·第六刀 2026-10-08】语音通话入口：顶栏和输入区面板共用一份
     val onVoiceCallAction: () -> Unit = {
@@ -504,7 +516,7 @@ private fun ChatPageContent(
             },
             containerColor = Color.Transparent,
         ) { innerPadding ->
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.fillMaxSize().liquidGlassSource(liquidHost)) {
             ChatList(
                 innerPadding = innerPadding,
                 conversation = conversation,
@@ -651,6 +663,16 @@ private fun ChatPageContent(
                         Text("▣", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+                // 【液态玻璃 · 2026-11-06】顶上一条玻璃，压在消息上面（第一版：只为看效果）
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .padding(top = innerPadding.calculateTopPadding())
+                        .onGloballyPositioned { glassBarRect = it.boundsInParent() }
+                        .liquidGlass(liquidHost, glassBarRect, LiquidGlassStyle(radius = 0f))
+                )
             }
         }
     }
