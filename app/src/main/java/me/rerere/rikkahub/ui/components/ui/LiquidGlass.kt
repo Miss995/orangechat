@@ -63,8 +63,8 @@ float sdf(float2 p) {
     return length(max(q, float2(0.0))) - r;
 }
 
-// ImageShader 把整张图铺在 0..1 的坐标空间里，p 是像素坐标，这里换算过去
-half4 sampleBg(float2 p) { return uBg.eval(p * uBgInv); }
+// ImageShader（Skia BitmapShader）的坐标就是像素坐标，直接采
+half4 sampleBg(float2 p) { return uBg.eval(p); }
 
 half4 main(float2 p) {
     float d = sdf(p);
@@ -123,6 +123,7 @@ data class LiquidGlassStyle(
 class LiquidGlassHost {
     internal var layer: GraphicsLayer? by mutableStateOf(null)
     internal var background: ImageBitmap? by mutableStateOf(null)
+    internal var logged: Boolean = false
 }
 
 @Composable
@@ -178,6 +179,14 @@ fun Modifier.liquidGlass(
 ): Modifier {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return this
     val bg = host.background ?: return this
+    // 【调试 · 2026-11-06】打一次尺寸，确认坐标差在哪
+    if (!host.logged) {
+        host.logged = true
+        me.rerere.rikkahub.data.ai.AppLogBuffer.log(
+            "LiquidGlass",
+            "bg=${bg.width}x${bg.height} rect=(${rect.left},${rect.top},${rect.right},${rect.bottom})"
+        )
+    }
     val shader = runCatching {
         RuntimeShader(LIQUID_GLASS_AGSL).apply {
             setFloatUniform("uRect", rect.left, rect.top, rect.right, rect.bottom)
