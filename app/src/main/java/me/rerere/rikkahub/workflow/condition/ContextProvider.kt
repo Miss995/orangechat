@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.workflow.model.WorkflowContext
@@ -74,15 +75,27 @@ class ContextProvider(
     private suspend fun lastChatMessageMs(): Long? = try {
         val assistantId = settingsStore.settingsFlow.first().assistantId
         val recent = conversationRepository.getRecentConversations(assistantId, limit = 1)
-        if (recent.isEmpty()) null
+        val result = if (recent.isEmpty()) null
         else {
             val conv = recent.first()
             val fullConv = conversationRepository.getConversationById(conv.id)
-            val createdAt: LocalDateTime? =
-                fullConv?.messageNodes?.lastOrNull()?.messages?.lastOrNull()?.createdAt
-            createdAt?.toInstant(TimeZone.currentSystemDefault())?.toEpochMilliseconds()
+            val lastMsg = fullConv?.messageNodes?.lastOrNull()?.messages?.lastOrNull()
+            val createdAt: LocalDateTime? = lastMsg?.createdAt
+            val ms = createdAt?.toInstant(TimeZone.currentSystemDefault())?.toEpochMilliseconds()
+            val diffMin = if (ms != null) (System.currentTimeMillis() - ms) / 60000L else -1L
+            AppLogBuffer.log(
+                "WCtx",
+                "conv=${conv.id} nodes=${fullConv?.messageNodes?.size} role=${lastMsg?.role} " +
+                    "createdAt=$createdAt epochMs=$ms diffMin=$diffMin"
+            )
+            ms
         }
+        if (result == null) {
+            AppLogBuffer.log("WCtx", "assistant=$assistantId recent=${recent.size} -> null")
+        }
+        result
     } catch (e: Throwable) {
+        AppLogBuffer.log("WCtx", "lookup failed: ${e.javaClass.simpleName}: ${e.message}")
         Log.w(TAG, "lastChatMessageMs: lookup failed", e)
         null
     }
