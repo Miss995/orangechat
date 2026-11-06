@@ -94,9 +94,19 @@ half4 main(float2 p) {
     float reachIn  = uThick * 0.95 * uRefract;
     float reachOut = uThick * 0.55 * 1.28 * uRefract;
 
-    // 【调试开关 · 2026-11-06】先只做纯采样，验证坐标对不对（折射那套先不算）
-    float3 col = sampleBg(p).rgb;
-    col += o1.x * 0.0 + o2.x * 0.0 + reachIn * 0.0 + reachOut * 0.0 + wFace * 0.0 + wIn * 0.0 + wOut * 0.0;
+    // 折射：按表面法线把背后的内容推开（两次采样，够用又不费）
+    float acc = o1.x * 0.0 + o2.x * 0.0 + reachOut * 0.0 + wFace * 0.0; // 占位，防未用告警
+    float2 off = n.xy * reachIn;
+    float3 col = sampleBg(p + off).rgb * 0.58
+               + sampleBg(p - off * 0.55).rgb * 0.42;
+
+    // 边缘高光：只有朝光的那一侧边亮（光从左上来，跟阴影方向对上）
+    float3 lightDir = normalize(float3(-0.55, -0.75, 0.62));
+    float spec = pow(max(0.0, dot(n, lightDir)), 6.0);
+    col += spec * 0.32 * wIn;
+
+    // 贴边那条细亮轮廓（玻璃厚度反的光）
+    col += wOut * 0.16;
 
     // 边上一点点柔化，免得硬边像描线
     float aa = 1.0 - smoothstep(-1.5, 0.5, d);
@@ -204,11 +214,26 @@ fun Modifier.liquidGlass(
 
     return drawWithContent {
         drawIntoCanvas { canvas ->
+            val nc = canvas.nativeCanvas
+            // 投影：往下偏一点点、几层叠出软边，让玻璃浮起来。
+            // （硬件加速下 BlurMaskFilter 不生效，所以用分层代替模糊）
+            val shadowPaint = android.graphics.Paint().apply { isAntiAlias = true }
+            val layers = 5
+            for (i in layers downTo 1) {
+                val spread = i * 2.2f
+                shadowPaint.color = android.graphics.Color.argb(4, 0, 0, 0)
+                nc.drawRoundRect(
+                    rect.left - spread, rect.top + spread * 0.55f,
+                    rect.right + spread, rect.bottom + spread * 1.45f,
+                    style.radius + spread, style.radius + spread,
+                    shadowPaint
+                )
+            }
             val paint = android.graphics.Paint().apply {
                 this.shader = shader
                 isAntiAlias = true
             }
-            canvas.nativeCanvas.drawRect(
+            nc.drawRect(
                 rect.left, rect.top, rect.right, rect.bottom, paint
             )
         }
