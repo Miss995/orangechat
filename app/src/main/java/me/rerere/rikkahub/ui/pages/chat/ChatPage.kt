@@ -674,8 +674,10 @@ private fun ChatPageContent(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
-                        .height(56.dp)
+                        // ⚠️ padding 要在 height 前面：写反了 padding 会从里面吃掉高度，
+                        // 56dp 只剩 16dp（2026-11-06 踩到，日志 rect 高 48px = 16dp）
                         .padding(top = innerPadding.calculateTopPadding())
+                        .height(56.dp)
                         .onGloballyPositioned { glassBarRect = it.boundsInParent() }
                         .liquidGlass(liquidHost, glassBarRect, LiquidGlassStyle(radius = 0f))
                 )
