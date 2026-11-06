@@ -516,7 +516,12 @@ private fun ChatPageContent(
             },
             containerColor = Color.Transparent,
         ) { innerPadding ->
-            Box(modifier = Modifier.fillMaxSize().liquidGlassSource(liquidHost)) {
+            Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .liquidGlassSource(liquidHost, MaterialTheme.colorScheme.background)
+            ) {
             ChatList(
                 innerPadding = innerPadding,
                 conversation = conversation,
@@ -622,6 +627,7 @@ private fun ChatPageContent(
                     vm.saveConversationAsync()
                 },
             )
+            }
                 // 【顶部波形条 · 2026-10-31】正在播放的那条。一直在组合里，自己轮询、自己收。
                 NowPlayingBar(
                     modifier = Modifier

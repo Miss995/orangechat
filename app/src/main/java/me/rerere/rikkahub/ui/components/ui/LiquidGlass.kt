@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.TileMode
@@ -104,7 +105,7 @@ data class LiquidGlassStyle(
     val radius: Float = 22f,
     val ior: Float = 1.44f,
     val refract: Float = 1.75f,
-    val thickness: Float = 26f,
+    val thickness: Float = 48f,
     /** 整体不透明度，先给 1（先把形做对，透明度以后按需要调） */
     val alpha: Float = 1f,
 )
@@ -141,11 +142,21 @@ fun rememberLiquidGlassHost(): LiquidGlassHost {
  * 把这一层的内容录给 [host] 当背景。画出来的还是原样，只是多录了一份。
  */
 @Composable
-fun Modifier.liquidGlassSource(host: LiquidGlassHost): Modifier {
+fun Modifier.liquidGlassSource(
+    host: LiquidGlassHost,
+    background: Color = Color.Unspecified,
+): Modifier {
     val layer = host.layer
     if (layer == null) return this
     return this.drawWithContent {
-        layer.record { this@drawWithContent.drawContent() }
+        layer.record {
+            // 底色先铺一层：页面容器本身是透明的，不铺的话录出来的图整张 alpha=0，
+            // 玻璃采样到一片空，画出来就是黑的（2026-11-06 第一版踩到）。
+            if (background != Color.Unspecified) {
+                drawRect(background)
+            }
+            this@drawWithContent.drawContent()
+        }
         drawLayer(layer)
     }
 }
