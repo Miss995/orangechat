@@ -63,6 +63,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpTool
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.rikkahub.data.service.MemoryBankService
+import me.rerere.rikkahub.data.service.NotificationReplyReceiver
 import me.rerere.rikkahub.data.service.PendingQuoteStore
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
@@ -130,6 +131,7 @@ import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.web.BadRequestException
 import me.rerere.rikkahub.web.NotFoundException
+import me.rerere.rikkahub.utils.RemoteReplyConfig
 import me.rerere.rikkahub.utils.applyPlaceholders
 import me.rerere.rikkahub.utils.sendNotification
 import me.rerere.rikkahub.utils.cancelNotification
@@ -2523,6 +2525,17 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
         cancelLiveUpdateNotification(conversationId)
 
         val conversation = getConversationFlow(conversationId).value
+        // 【通知栏快捷回复 · 2026-11-06 宝要的】跟主动消息那条一样，通知上直接带回复框。
+        // 必须是 FLAG_MUTABLE：RemoteInput 要系统往这个 intent 里塞回复文字，IMMUTABLE 会静默失效。
+        val replyPendingIntent = PendingIntent.getBroadcast(
+            context,
+            conversationId.hashCode() xor 0x5EED,
+            Intent(context, NotificationReplyReceiver::class.java).apply {
+                putExtra(NotificationReplyReceiver.EXTRA_CONVERSATION_ID, conversationId.toString())
+                putExtra(NotificationReplyReceiver.EXTRA_NOTIFICATION_ID, 1)
+            },
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         context.sendNotification(
             channelId = CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID,
             notificationId = 1
@@ -2533,6 +2546,11 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
             useDefaults = true
             category = NotificationCompat.CATEGORY_MESSAGE
             contentIntent = getPendingIntent(context, conversationId)
+            remoteReply = RemoteReplyConfig(
+                actionLabel = "回复",
+                resultKey = NotificationReplyReceiver.EXTRA_RESULT_KEY,
+                actionIntent = replyPendingIntent,
+            )
         }
     }
 
