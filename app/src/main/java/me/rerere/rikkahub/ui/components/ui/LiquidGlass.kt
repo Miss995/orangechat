@@ -182,7 +182,12 @@ fun Modifier.liquidGlass(
             setFloatUniform("uRefract", style.refract)
             setFloatUniform("uThick", style.thickness)
             setFloatUniform("uAlpha", style.alpha)
-            setInputShader("uBg", ImageShader(bg, TileMode.Clamp, TileMode.Clamp))
+            // ⚠️ ImageShader 把整张图铺在 0..1 的坐标空间里，而 shader 里的 p 是像素坐标。
+            // 不换算的话采样只会落在图角上一小块，拉满整条（2026-11-06 第二版踩到）。
+            val m = androidx.compose.ui.graphics.Matrix().apply {
+                scale(1f / bg.width, 1f / bg.height)
+            }
+            setInputShader("uBg", ImageShader(bg, TileMode.Clamp, TileMode.Clamp, m))
         }
     }.getOrNull() ?: return this
 
