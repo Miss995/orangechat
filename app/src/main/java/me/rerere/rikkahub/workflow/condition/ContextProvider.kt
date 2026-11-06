@@ -78,7 +78,10 @@ class ContextProvider(
         val result = if (recent.isEmpty()) null
         else {
             val conv = recent.first()
-            val fullConv = conversationRepository.getConversationById(conv.id)
+            // 2026-11-06: 必须带 loadLimit=1。不带时 loadMessageNodes 会全量加载，
+            // 撞上 1200 万字符的内存预算就"停止加载、返回已解析的部分"——
+            // 大会话（1695 节点）读到一半就停，lastOrNull() 拿到的是读到哪算哪的那条（实测是 92 天前的）。
+            val fullConv = conversationRepository.getConversationById(conv.id, loadLimit = 1)
             val lastMsg = fullConv?.messageNodes?.lastOrNull()?.messages?.lastOrNull()
             val createdAt: LocalDateTime? = lastMsg?.createdAt
             val ms = createdAt?.toInstant(TimeZone.currentSystemDefault())?.toEpochMilliseconds()
