@@ -310,8 +310,9 @@ private fun ChatPageContent(
         color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize()
     ) {
-        // 【液态玻璃 · 2026-11-07】录制层挪到最外面：要连 AssistantBackground 一起录，
-        // 否则内层只录到 ChatList，得靠铺不透明底色兜底，反过来把背景图盖死。
+        // 【液态玻璃 · 2026-11-07】录制层：背景图 + 内容一起录。
+        // ⚠️ 玻璃条绝不能进这一层 —— 它读的那张图正是这一层每帧录的，会自己喂自己卡死。
+        Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -675,20 +676,23 @@ private fun ChatPageContent(
                         Text("▣", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                // 【液态玻璃 · 2026-11-06】顶上一条玻璃，压在消息上面（第一版：只为看效果）
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        // ⚠️ padding 要在 height 前面：写反了 padding 会从里面吃掉高度，
-                        // 56dp 只剩 16dp（2026-11-06 踩到，日志 rect 高 48px = 16dp）
-                        .padding(top = innerPadding.calculateTopPadding())
-                        .height(56.dp)
-                        .onGloballyPositioned { glassBarRect = it.boundsInParent() }
-                        .liquidGlass(liquidHost, glassBarRect, LiquidGlassStyle(radius = 0f))
-                )
             }
         }
+        }
+
+            // 【液态玻璃 · 2026-11-07】玻璃条挪到录制层外面：它在录制层里的话，
+            // 读的正是这一层每帧刚录的图，录完一更新它就重画 → 又录一遍 → 自己喂自己卡死。
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    // ⚠️ padding 要在 height 前面：写反了 padding 会从里面吃掉高度，
+                    // 56dp 只剩 16dp（2026-11-06 踩到，日志 rect 高 48px = 16dp）
+                    .statusBarsPadding()
+                    .height(56.dp)
+                    .onGloballyPositioned { glassBarRect = it.boundsInParent() }
+                    .liquidGlass(liquidHost, glassBarRect, LiquidGlassStyle(radius = 0f))
+            )
         }
     }
 
