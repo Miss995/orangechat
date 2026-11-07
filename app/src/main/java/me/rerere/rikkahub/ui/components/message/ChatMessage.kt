@@ -679,10 +679,11 @@ private fun MessagePartsBlock(
                     // 【思考链独立成气泡 · 2026-11-07】外面包一层气泡（跟正文同款），
                     // 内部 bare=true 不再画 Card —— 这样它才采得到背景，玻璃也能用上。
                     BubbleSurface(
-                        // 【思考链气泡别撑满 · 2026-11-07 宝："一个气泡能装三只小猫"】
-                        // 它只有"思考了 N 秒"几个字，铺满整行太空。给个上限让它收着。
-                        modifier = Modifier.widthIn(max = 300.dp),
+                        // 【宽度跟正文一致 · 2026-11-07 20:28 宝纠正】
+                        // 之前想用宽度上限把它收窄，错了：正文/工具/思考三个宽度并排站着会散。
+                        // 宽度统一，只在高度上省（见 contentPadding）。
                         whiteText = false,
+                        contentPadding = 4.dp,
                         imagePath = displaySettings.assistantBubbleImagePath,
                         cornerRadius = displaySettings.bubbleCornerRadius.dp,
                         color = displaySettings.assistantBubbleColor?.let { it.toComposeColor() }
@@ -693,10 +694,7 @@ private fun MessagePartsBlock(
                         ChainOfThought(
                             modifier = if (loading) Modifier else Modifier.animateContentSize(),
                             steps = block.steps,
-                            // 【折叠态一律收窄 · 2026-11-07 宝："还是如此肥美吗"】
-                            // 原来传 isReasoningOnlyBlock：块里掺了工具步骤就走"铺满"，所以气泡一直满行。
-                            // 思考链现在自己是一只气泡，折叠态就该按内容收着。
-                            collapsedAdaptiveWidth = true,
+                            collapsedAdaptiveWidth = isReasoningOnlyBlock,
                             animateChanges = !loading,
                             bare = true,
                         ) { step ->
@@ -1365,6 +1363,8 @@ private fun BubbleSurface(
     // 【白字只在正文气泡上用 · 2026-11-07 宝："代码和图标改成白的，看得眼花"】
     // 思考链里全是工具名/行内代码，白字落在浅底上就花了 → 那处传 false。
     whiteText: Boolean = true,
+    // 【内边距可调 · 2026-11-07 20:28】思考链只有一行字，8dp 上下会把它撑肥。
+    contentPadding: Dp = 8.dp,
     imagePath: String,
     cornerRadius: Dp,
     color: Color,
@@ -1394,7 +1394,7 @@ private fun BubbleSurface(
                         .background(color.copy(alpha = bubbleAlpha))
                 )
             }
-            Column(modifier = Modifier.padding(8.dp)) { content() }
+            Column(modifier = Modifier.padding(contentPadding)) { content() }
         }
     } else {
         // 【液态玻璃 · 2026-11-07】气泡做成玻璃：把自己在根里的矩形交给 shader 去采背景图。
@@ -1454,7 +1454,7 @@ private fun BubbleSurface(
             contentColor = if (glassReady && whiteText) Color.White else LocalContentColor.current,
             onClick = onClick ?: {},
         ) {
-            Column(modifier = Modifier.padding(8.dp)) { content() }
+            Column(modifier = Modifier.padding(contentPadding)) { content() }
         }
     }
 }
