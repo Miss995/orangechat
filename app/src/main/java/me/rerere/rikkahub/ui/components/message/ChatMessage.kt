@@ -56,6 +56,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
@@ -1418,6 +1419,11 @@ private fun BubbleSurface(
             shape = RoundedCornerShape(cornerRadius),
             // 玻璃模式下底色让出去，否则不透
             color = if (glassReady) Color.Transparent else color.copy(alpha = bubbleAlpha),
+            // 【玻璃上的字 · 2026-11-07 宝说"可以把字调成白的"】
+            // Surface 默认用 contentColorFor(背景色)：玻璃模式背景是 Transparent，
+            // 它按浅色底算，于是给了深色字 —— 在花枝背景上糊成一团。
+            // 玻璃上一律用白字（真玻璃控件都是这么做的）。
+            contentColor = if (glassReady) Color.White else LocalContentColor.current,
             onClick = onClick ?: {},
         ) {
             Column(modifier = Modifier.padding(8.dp)) { content() }
