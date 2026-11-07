@@ -1828,6 +1828,19 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                             },
                         )
                     )
+                    // 插件导入（2026-11-07）：猫自己把插件文件写进 Orangechat/plugins/<id>/ 再重扫。
+                    // 以前装插件只能宝手动选 zip / 选文件夹，这道门开给猫自己走。
+                    // 只负责「装上」，「启用」还是 plugin_switch 那套（两件事分开）。
+                    add(
+                        me.rerere.rikkahub.data.ai.tools.buildPluginInstallTool(
+                            getPluginManager = {
+                                val pm = org.koin.java.KoinJavaComponent
+                                    .getKoin().get<me.rerere.rikkahub.plugin.manager.PluginManager>()
+                                pm.awaitInitialization()
+                                pm
+                            },
+                        )
+                    )
                     // 激进模式开关 (2026-09-28 宝拍板): 让 AI 自己开一段、用完关掉。
                     // 它是常驻前台服务，所以 onSetEnabled 里要真的去 start/stop；
                     // 跟"主动消息"互斥这一点跟设置页保持一致。
