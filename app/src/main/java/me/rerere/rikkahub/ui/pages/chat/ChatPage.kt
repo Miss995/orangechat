@@ -313,6 +313,7 @@ private fun ChatPageContent(
         // 【液态玻璃 · 2026-11-07】录制层：背景图 + 内容一起录。
         // ⚠️ 玻璃条绝不能进这一层 —— 它读的那张图正是这一层每帧录的，会自己喂自己卡死。
         Box(modifier = Modifier.fillMaxSize()) {
+        CompositionLocalProvider(LocalLiquidGlassHost provides liquidHost) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -677,6 +678,7 @@ private fun ChatPageContent(
                     }
                 }
             }
+        }
         }
         }
 

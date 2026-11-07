@@ -200,6 +200,15 @@ fun rememberLiquidGlassHost(): LiquidGlassHost {
 }
 
 /**
+ * 录制器往下传的通道。
+ *
+ * 气泡在列表深处（ChatPage → ChatList → ChatMessage → BubbleSurface），
+ * 一层层当参数传下去太脏，所以用 CompositionLocal。ChatPage 那边 provide，
+ * 底下谁想套玻璃就 LocalLiquidGlassHost.current 拿。
+ */
+val LocalLiquidGlassHost = androidx.compose.runtime.staticCompositionLocalOf<LiquidGlassHost?> { null }
+
+/**
  * 把这一层的内容录给 [host] 当背景。画出来的还是原样，只是多录了一份。
  */
 @Composable

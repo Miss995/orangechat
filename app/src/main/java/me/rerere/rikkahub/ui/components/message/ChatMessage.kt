@@ -145,6 +145,9 @@ import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
 import me.rerere.rikkahub.ui.components.ui.ChainOfThought
 import me.rerere.rikkahub.ui.components.ui.Favicon
+import me.rerere.rikkahub.ui.components.ui.LiquidGlassStyle
+import me.rerere.rikkahub.ui.components.ui.LocalLiquidGlassHost
+import me.rerere.rikkahub.ui.components.ui.liquidGlass
 import me.rerere.rikkahub.ui.components.ui.LocalCardColor
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.modifier.shimmer
@@ -172,6 +175,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -1366,10 +1370,29 @@ private fun BubbleSurface(
             Column(modifier = Modifier.padding(8.dp)) { content() }
         }
     } else {
+        // 【液态玻璃 · 2026-11-07】气泡做成玻璃：把自己在根里的矩形交给 shader 去采背景图。
+        // 拿不到 host（比如别的界面）就原样走 Surface，不影响别处。
+        val glassHost = LocalLiquidGlassHost.current
+        var glassRect by remember { mutableStateOf(Rect.Zero) }
+        val density = LocalDensity.current
+        val ds = LocalDisplaySettings.current
+        val glassModifier = if (glassHost != null) {
+            Modifier
+                .onGloballyPositioned { glassRect = it.boundsInRoot() }
+                .liquidGlass(
+                    glassHost, glassRect,
+                    LiquidGlassStyle(
+                        radius = with(density) { cornerRadius.toPx() },
+                        blur = ds.liquidGlassBlur,
+                    )
+                )
+        } else Modifier
+
         Surface(
-            modifier = Modifier.animateContentSize(),
+            modifier = Modifier.animateContentSize().then(glassModifier),
             shape = RoundedCornerShape(cornerRadius),
-            color = color.copy(alpha = bubbleAlpha),
+            // 玻璃模式下底色让出去，否则不透
+            color = if (glassHost != null) Color.Transparent else color.copy(alpha = bubbleAlpha),
             onClick = onClick ?: {},
         ) {
             Column(modifier = Modifier.padding(8.dp)) { content() }
