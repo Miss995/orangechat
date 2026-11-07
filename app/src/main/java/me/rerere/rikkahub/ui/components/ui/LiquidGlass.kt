@@ -319,21 +319,10 @@ fun Modifier.liquidGlass(
         }
         drawIntoCanvas { canvas ->
             val nc = canvas.nativeCanvas
-            // 投影：往下偏一点点、几层叠出软边，让玻璃浮起来。
-            // （硬件加速下 BlurMaskFilter 不生效，所以用分层代替模糊）
-            val shadowPaint = android.graphics.Paint().apply { isAntiAlias = true }
-            val layers = 6
-            for (i in layers downTo 1) {
-                val spread = i * 2.8f
-                shadowPaint.color = android.graphics.Color.argb(7, 0, 0, 0)
-                // nativeCanvas 的坐标原点在这块自己的左上角，不是屏幕左上角 —— 这里一律用局部坐标
-                nc.drawRoundRect(
-                    -spread, spread * 0.55f,
-                    size.width + spread, size.height + spread * 1.45f,
-                    style.radius + spread, style.radius + spread,
-                    shadowPaint
-                )
-            }
+            // 【投影 · 2026-11-07 14:48 整个删掉】宝说气泡边缘外面有一圈"向外突出、像直角"的阴影，
+            // 浅色背景上特别明显。真凶就是这里：6 层 drawRoundRect 往斜下方扩（每层 +2.8px），
+            // 扩出去的矩形比气泡大一圈，圆角也跟着变大 → 在圆角外侧露出四块直角色。
+            // 玻璃的"浮起感"应该靠迎光那侧的亮，不靠投影。
             val paint = android.graphics.Paint().apply {
                 this.shader = shader
                 isAntiAlias = true
