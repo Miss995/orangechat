@@ -2000,9 +2000,15 @@ private fun QuotedMessageChip(
             .joinToString(" ") { it.text }
             .trim()
             .ifBlank { "（没有文字内容）" }
-    Surface(
-        shape = RoundedCornerShape(10.dp),
+    // 【引用条上玻璃 · 2026-11-07】原来自己画底（Surface），采不到背景 → 换成 BubbleSurface。
+    // 圆角 10dp 照旧，内边距交给里面那行（contentPadding = 0），视觉不变，只是多了玻璃这条路。
+    BubbleSurface(
+        cornerRadius = 10.dp,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        overlayEnabled = false,
+        bubbleAlpha = 1f,
+        contentPadding = 0.dp,
+        imagePath = "",
         modifier = Modifier
             .widthIn(max = 280.dp)
             // 【引用跳回 2026-10-10】点一下跳回被引的那条（没给回调就不给点）
