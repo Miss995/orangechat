@@ -46,6 +46,8 @@ import kotlinx.coroutines.delay
 internal const val LIQUID_GLASS_AGSL = """
 uniform shader uBg;
 uniform float4  uRect;
+// 这块自己的宽高（像素）。【形状只看它】—— 跟滚动位置无关，所以高光不会跟着跑。
+uniform float2  uSize;
 uniform float   uRadius;
 uniform float   uIOR;
 uniform float   uRefract;
@@ -54,9 +56,11 @@ uniform float   uAlpha;
 uniform float   uBlur;
 uniform float2  uBgInv;
 
+// 【形状 · 2026-11-07 宝指的】只吃局部坐标 + 自己的宽高。
+// 之前用整页矩形算，位置一变高光就跟着缩，看着像玻璃自己缩起来了。
 float sdf(float2 p) {
-    float2 c = (uRect.xy + uRect.zw) * 0.5;
-    float2 hs = (uRect.zw - uRect.xy) * 0.5;
+    float2 hs = uSize * 0.5;
+    float2 c  = hs;
     float r = min(uRadius, min(hs.x, hs.y));
     float2 q = abs(p - c) - hs + r;
     float m = max(q.x, q.y);
@@ -87,11 +91,10 @@ half4 sampleBgBlur(float2 p) {
 }
 
 half4 main(float2 p) {
-    // 【坐标系 · 2026-11-07 宝指出的】p 是这块自己的坐标（0..w），uRect 是整页坐标。
-    // 之前拿 p 直接去比 uRect，形状算出来全在外面 —— 玻璃一直没画对，只剩一点残影。
-    // 统一：进来先转成图纸坐标，后面全程用 pg。
-    float2 pg = p + uRect.xy;
-    float d = sdf(pg);
+    // 【坐标系 · 2026-11-07】两套坐标分开：
+    //   形状（轮廓/高光/圆角）→ 只用局部 p（0..w），位置动它不动
+    //   采样 → sampleBg 内部自己 +uRect.xy，这里照样传局部
+    float d = sdf(p);
     // 玻璃外面：什么都不画（让下面原本的内容露出来）
     if (d > 1.5) return half4(0.0);
 
@@ -99,8 +102,8 @@ half4 main(float2 p) {
     float h = sqrt(max(0.0, 1.0 - (1.0 - e) * (1.0 - e)));
     float slope = (1.0 - e) / max(h, 0.08);
 
-    float d1 = sdf(pg + float2(1.0, 0.0));
-    float d2 = sdf(pg + float2(0.0, 1.0));
+    float d1 = sdf(p + float2(1.0, 0.0));
+    float d2 = sdf(p + float2(0.0, 1.0));
     float2 g = normalize(float2(d1 - d, d2 - d) + float2(0.000001));
     float3 n = normalize(float3(-g * slope * 0.55, 1.0));
     float3 v = float3(0.0, 0.0, 1.0);
@@ -129,14 +132,10 @@ half4 main(float2 p) {
     float spec = pow(max(0.0, dot(n, lightDir)), 6.0);
     col += spec * 0.32 * wIn;
 
-    // 【立体 · 2026-11-07】只有"亮"会像一张纸贴边。真玻璃有厚度：
-    // ① 整体上亮下暗（顶面朝光，底面背光）
-    float2 ctr = (uRect.xy + uRect.zw) * 0.5;
-    float  ty  = clamp((pg.y - uRect.y) / max(uRect.w - uRect.y, 1.0), 0.0, 1.0);
-    col *= mix(1.06, 0.80, ty);
-
-    // ② 背光那侧（光从左上来 → 右下是背光面）压一道暗，跟高光拉开对比
-    float2 toEdge   = normalize(pg - ctr + float2(0.000001));
+    // 【立体 · 2026-11-07】原来那条"整体上亮下暗"已删（宝说看着黑黑的）。
+    // 只留背光那侧一道弱的暗，跟高光拉开对比就够。
+    float2 ctr      = uSize * 0.5;
+    float2 toEdge   = normalize(p - ctr + float2(0.000001));
     float  backSide = smoothstep(-0.15, 0.85, dot(toEdge, normalize(float2(0.55, 0.83))));
     col *= mix(1.0, 0.72, backSide * wOut * 1.6 + backSide * wIn * 0.35);
 
@@ -259,6 +258,8 @@ fun Modifier.liquidGlass(
     val shader = runCatching {
         RuntimeShader(LIQUID_GLASS_AGSL).apply {
             setFloatUniform("uRect", rect.left, rect.top, rect.right, rect.bottom)
+            // 形状只认宽高（跟滚动位置无关），高光和轮廓才钉得住
+            setFloatUniform("uSize", rect.width, rect.height)
             setFloatUniform("uRadius", style.radius)
             setFloatUniform("uIOR", style.ior)
             setFloatUniform("uRefract", style.refract)
