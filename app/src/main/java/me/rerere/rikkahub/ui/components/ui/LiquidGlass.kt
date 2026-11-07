@@ -127,7 +127,7 @@ half4 main(float2 p) {
 
     // 【立体 · 2026-11-07】只有"亮"会像一张纸贴边。真玻璃有厚度：
     // ① 整体上亮下暗（顶面朝光，底面背光）
-    float3 ctr = (uRect.xy + uRect.zw) * 0.5;
+    float2 ctr = (uRect.xy + uRect.zw) * 0.5;
     float  ty  = clamp((p.y - uRect.y) / max(uRect.w - uRect.y, 1.0), 0.0, 1.0);
     col *= mix(1.06, 0.80, ty);
 
@@ -246,6 +246,10 @@ fun Modifier.liquidGlass(
             setFloatUniform("uBgInv", 1f / bg.width, 1f / bg.height)
             setInputShader("uBg", ImageShader(bg, TileMode.Clamp, TileMode.Clamp))
         }
+    }.onFailure {
+        me.rerere.rikkahub.data.ai.AppLogBuffer.log(
+            "LiquidGlass", "shader COMPILE FAILED: ${it.javaClass.simpleName}: ${it.message}"
+        )
     }.getOrNull() ?: return this
 
     return drawWithContent {
