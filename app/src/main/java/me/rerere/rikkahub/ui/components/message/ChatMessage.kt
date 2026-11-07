@@ -679,6 +679,9 @@ private fun MessagePartsBlock(
                     // 【思考链独立成气泡 · 2026-11-07】外面包一层气泡（跟正文同款），
                     // 内部 bare=true 不再画 Card —— 这样它才采得到背景，玻璃也能用上。
                     BubbleSurface(
+                        // 【思考链气泡别撑满 · 2026-11-07 宝："一个气泡能装三只小猫"】
+                        // 它只有"思考了 N 秒"几个字，铺满整行太空。给个上限让它收着。
+                        modifier = Modifier.widthIn(max = 300.dp),
                         imagePath = displaySettings.assistantBubbleImagePath,
                         cornerRadius = displaySettings.bubbleCornerRadius.dp,
                         color = displaySettings.assistantBubbleColor?.let { it.toComposeColor() }
@@ -1354,6 +1357,7 @@ private fun MessagePartsBlock(
  
 @Composable
 private fun BubbleSurface(
+    modifier: Modifier = Modifier,
     imagePath: String,
     cornerRadius: Dp,
     color: Color,
@@ -1365,7 +1369,7 @@ private fun BubbleSurface(
     val hasImage = imagePath.isNotBlank() && java.io.File(imagePath).exists()
     if (hasImage) {
         Box(
-            modifier = Modifier
+            modifier = modifier
                 .animateContentSize()
                 .clip(RoundedCornerShape(cornerRadius))
                 .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
@@ -1432,7 +1436,7 @@ private fun BubbleSurface(
         } else Modifier
 
         Surface(
-            modifier = Modifier.animateContentSize().then(glassModifier),
+            modifier = modifier.animateContentSize().then(glassModifier),
             shape = RoundedCornerShape(cornerRadius),
             // 玻璃模式下底色让出去，否则不透
             color = if (glassReady) Color.Transparent else color.copy(alpha = bubbleAlpha),
