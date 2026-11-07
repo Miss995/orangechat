@@ -125,8 +125,19 @@ half4 main(float2 p) {
     float spec = pow(max(0.0, dot(n, lightDir)), 6.0);
     col += spec * 0.32 * wIn;
 
+    // 【立体 · 2026-11-07】只有"亮"会像一张纸贴边。真玻璃有厚度：
+    // ① 整体上亮下暗（顶面朝光，底面背光）
+    float3 ctr = (uRect.xy + uRect.zw) * 0.5;
+    float  ty  = clamp((p.y - uRect.y) / max(uRect.w - uRect.y, 1.0), 0.0, 1.0);
+    col *= mix(1.06, 0.80, ty);
+
+    // ② 背光那侧（光从左上来 → 右下是背光面）压一道暗，跟高光拉开对比
+    float2 toEdge   = normalize(p - ctr + float2(0.000001));
+    float  backSide = smoothstep(-0.15, 0.85, dot(toEdge, normalize(float2(0.55, 0.83))));
+    col *= mix(1.0, 0.72, backSide * wOut * 1.6 + backSide * wIn * 0.35);
+
     // 贴边那条细亮轮廓（玻璃厚度反的光）
-    col += wOut * 0.16;
+    col += wOut * 0.20;
 
     // 边上一点点柔化，免得硬边像描线
     float aa = 1.0 - smoothstep(-1.5, 0.5, d);
@@ -144,8 +155,8 @@ data class LiquidGlassStyle(
     val thickness: Float = 22f,
     /** 整体不透明度，先给 1（先把形做对，透明度以后按需要调） */
     val alpha: Float = 1f,
-    /** 磨砂半径（像素）。0 = 纯折射（像水），越大越糊。12 大概是"毛玻璃"的手感 */
-    val blur: Float = 12f,
+    /** 磨砂半径（像素）。0 = 纯折射（像水），越大越糊。宝 2026-11-07 选的就是 0 */
+    val blur: Float = 0f,
 )
 
 /**
@@ -243,10 +254,10 @@ fun Modifier.liquidGlass(
             // 投影：往下偏一点点、几层叠出软边，让玻璃浮起来。
             // （硬件加速下 BlurMaskFilter 不生效，所以用分层代替模糊）
             val shadowPaint = android.graphics.Paint().apply { isAntiAlias = true }
-            val layers = 5
+            val layers = 6
             for (i in layers downTo 1) {
-                val spread = i * 2.2f
-                shadowPaint.color = android.graphics.Color.argb(4, 0, 0, 0)
+                val spread = i * 2.8f
+                shadowPaint.color = android.graphics.Color.argb(7, 0, 0, 0)
                 nc.drawRoundRect(
                     rect.left - spread, rect.top + spread * 0.55f,
                     rect.right + spread, rect.bottom + spread * 1.45f,
