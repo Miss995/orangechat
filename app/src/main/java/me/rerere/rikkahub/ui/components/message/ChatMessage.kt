@@ -1445,8 +1445,10 @@ private fun BubbleSurface(
         Surface(
             modifier = modifier.animateContentSize().then(glassModifier),
             shape = RoundedCornerShape(cornerRadius),
-            // 玻璃模式下底色让出去，否则不透
-            color = if (glassReady) Color.Transparent else color.copy(alpha = bubbleAlpha),
+            // 【玻璃也垫一层底 · 2026-11-07 20:57】原来玻璃模式底色全让出去（Transparent），
+            // 宝把磨砂拉到最大之后背景糊成大色块，白字压在浅色块上还是看不清 —— 磨砂治不了明暗差。
+            // 所以留 10% 主题底色：浅色主题垫白、深色主题垫深，字色有个稳定的对手就不跟背景赌了。
+            color = if (glassReady) color.copy(alpha = 0.10f) else color.copy(alpha = bubbleAlpha),
             // 【玻璃上的字 · 2026-11-07 宝说"可以把字调成白的"】
             // Surface 默认用 contentColorFor(背景色)：玻璃模式背景是 Transparent，
             // 它按浅色底算，于是给了深色字 —— 在花枝背景上糊成一团。
