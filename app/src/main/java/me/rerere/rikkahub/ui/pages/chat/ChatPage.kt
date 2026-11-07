@@ -310,6 +310,13 @@ private fun ChatPageContent(
         color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize()
     ) {
+        // 【液态玻璃 · 2026-11-07】录制层挪到最外面：要连 AssistantBackground 一起录，
+        // 否则内层只录到 ChatList，得靠铺不透明底色兜底，反过来把背景图盖死。
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .liquidGlassSource(liquidHost, MaterialTheme.colorScheme.background)
+        ) {
         AssistantBackground(setting = setting)
         Scaffold(
             bottomBar = {
@@ -520,7 +527,6 @@ private fun ChatPageContent(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .liquidGlassSource(liquidHost, MaterialTheme.colorScheme.background)
             ) {
             ChatList(
                 innerPadding = innerPadding,
@@ -682,6 +688,7 @@ private fun ChatPageContent(
                         .liquidGlass(liquidHost, glassBarRect, LiquidGlassStyle(radius = 0f))
                 )
             }
+        }
         }
     }
 
