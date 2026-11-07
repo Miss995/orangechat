@@ -136,14 +136,11 @@ half4 main(float2 p) {
     // ② 位移收窄：wIn 只在边缘斜面区非零，乘上去之后中间彻底不推
     float2 off = n.xy * reachIn * wIn;
 
-    // ③ 色散：RGB 各自一点点偏移，越靠边越明显（wIn 天然自带这个梯度）
-    float2 disp = g * wIn * 1.6;
-
-    float3 col;
-    col.r = sampleBgBlur(zoom + off + disp).r;
-    col.g = sampleBgBlur(zoom + off).g;
-    col.b = sampleBgBlur(zoom + off - disp).b;
-    col = col * 0.62 + sampleBgBlur(zoom + off * 0.45).rgb * 0.38;
+    // ③ 色散：【2026-11-07 14:02 宝说"翻动时出现彩色的线，好恐怖"】直接删掉。
+    // 技术上是无害的（纯软件算色，屏幕只是显示），但边缘整条边都会挂一圈彩，
+    // 在深色背景上看着像坏点。不值得，去掉。
+    float3 col = sampleBgBlur(zoom + off).rgb * 0.62
+               + sampleBgBlur(zoom + off * 0.45).rgb * 0.38;
 
     // 边缘高光：只有朝光的那一侧边亮（光从左上来，跟阴影方向对上）
     float3 lightDir = normalize(float3(-0.55, -0.75, 0.62));
