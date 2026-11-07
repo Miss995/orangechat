@@ -41,6 +41,9 @@ import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
 internal const val LIQUID_GLASS_AGSL = """
@@ -301,9 +304,12 @@ fun Modifier.liquidGlass(
     }
     // 【光心 · 2026-11-07 傍晚】屏幕中心换算到本元素局部坐标。
     // 屏幕中心在世界里是固定的；元素滚动时 rect 变，这个局部值就变 → 亮边自己游。
-    val winSize = LocalWindowInfo.current.containerSize
-    val lightX = winSize.width * 0.5f - rect.left
-    val lightY = winSize.height * 0.5f - rect.top
+    val cfg = LocalConfiguration.current
+    val den = LocalDensity.current
+    val screenW = with(den) { cfg.screenWidthDp.dp.toPx() }
+    val screenH = with(den) { cfg.screenHeightDp.dp.toPx() }
+    val lightX = screenW * 0.5f - rect.left
+    val lightY = screenH * 0.5f - rect.top
 
     val shader = runCatching {
         RuntimeShader(LIQUID_GLASS_AGSL).apply {
