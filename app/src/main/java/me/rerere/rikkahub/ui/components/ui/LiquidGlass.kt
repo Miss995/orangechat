@@ -328,7 +328,7 @@ fun Modifier.liquidGlass(
             }
             // 【调试 · 2026-11-07】量：传进 shader 的 rect 和实际绘制区的 size 对不对得上。
             // 顶上那条错、滑下来就好 —— 先看是不是"rect 是旧位置/旧高度"。
-            if (host.debugCount < 8) {
+            if (host.debugCount % 30 == 0) {
                 host.debugCount++
                 me.rerere.rikkahub.data.ai.AppLogBuffer.log(
                     "LiquidGlass",
