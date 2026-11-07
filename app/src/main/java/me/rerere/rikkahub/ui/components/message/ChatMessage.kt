@@ -1376,7 +1376,11 @@ private fun BubbleSurface(
         var glassRect by remember { mutableStateOf(Rect.Zero) }
         val density = LocalDensity.current
         val ds = LocalDisplaySettings.current
-        val glassModifier = if (glassHost != null) {
+        // 【2026-11-07 日志实证】LazyColumn 复用/重建 item 时 glassRect 会被重置成 Rect.Zero，
+        // 要等下一帧 onGloballyPositioned 才填回来。那一刻 uSize 也是 0，sdf 缩成一个点
+        // → 高光缩在左上角、不贴气泡。所以 rect 无效时干脆不画玻璃、用回原底色。
+        val glassReady = glassHost != null && glassRect.width > 0f
+        val glassModifier = if (glassReady) {
             Modifier
                 .onGloballyPositioned { glassRect = it.boundsInRoot() }
                 .liquidGlass(
@@ -1392,7 +1396,7 @@ private fun BubbleSurface(
             modifier = Modifier.animateContentSize().then(glassModifier),
             shape = RoundedCornerShape(cornerRadius),
             // 玻璃模式下底色让出去，否则不透
-            color = if (glassHost != null) Color.Transparent else color.copy(alpha = bubbleAlpha),
+            color = if (glassReady) Color.Transparent else color.copy(alpha = bubbleAlpha),
             onClick = onClick ?: {},
         ) {
             Column(modifier = Modifier.padding(8.dp)) { content() }
