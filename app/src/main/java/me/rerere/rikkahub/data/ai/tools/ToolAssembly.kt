@@ -103,6 +103,10 @@ suspend fun buildAssistantTools(
             add(buildRecallOngoingTool(ext, assistant.id.toString()))
         }
 
+        // 听声音 (2026-11-07): 把宝最近一条语音条的音频送去 voice.rickycat.asia 分析，
+        // 拿回音高/抖动/停顿——橘仔"自己听"的那一格。
+        add(buildVoiceFeelTool(conversationId))
+
         addAll(extraTools)
     }
     // 斜杠命令模式：只暴露安全工具（危险工具收着，宝 2026-09-01 拍板「危险的橘仔收着」）

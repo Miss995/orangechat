@@ -217,10 +217,5 @@ class ToolSurfaceBuilder(
                 },
             )
         )
-
-        // 听声音 (2026-11-07): 把宝最近一条语音条的音频送去 voice.rickycat.asia 分析,
-        // 拿回音高/抖动/停顿——橘仔"自己听"的那一格。不挂 LocalToolOption,
-        // 跟 mcp_switch / plugin_switch 一样是常驻能力。
-        add(buildVoiceFeelTool(invocationContext.callerConversationId))
     }
 }
