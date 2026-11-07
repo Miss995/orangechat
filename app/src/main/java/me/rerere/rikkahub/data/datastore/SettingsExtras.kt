@@ -71,6 +71,8 @@ data class DisplaySetting(
     val volumeKeyScrollRatio: Float = 1.0f,
     val chatBubbleTransparency: Float = 0f,
     val thinkingChainTransparency: Float = 0f,
+    // 液态玻璃磨砂半径（像素）。0 = 纯折射（像水），越大越糊
+    val liquidGlassBlur: Float = 12f,
     // 自定义字体
     val customFontPath: String = "",
     // 输入框自定义背景

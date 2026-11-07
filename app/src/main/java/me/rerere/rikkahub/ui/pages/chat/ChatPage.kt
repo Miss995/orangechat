@@ -691,7 +691,10 @@ private fun ChatPageContent(
                     .statusBarsPadding()
                     .height(56.dp)
                     .onGloballyPositioned { glassBarRect = it.boundsInParent() }
-                    .liquidGlass(liquidHost, glassBarRect, LiquidGlassStyle(radius = 0f))
+                    .liquidGlass(
+                        liquidHost, glassBarRect,
+                        LiquidGlassStyle(radius = 0f, blur = setting.displaySetting.liquidGlassBlur)
+                    )
             )
         }
     }
