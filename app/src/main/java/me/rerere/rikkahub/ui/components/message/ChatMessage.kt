@@ -91,6 +91,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
+import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -176,6 +177,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -1385,9 +1387,11 @@ private fun BubbleSurface(
         val glassModifier = if (glassHost != null) {
             Modifier
                 .onGloballyPositioned {
-                    val r = it.boundsInRoot()
-                    // 【排查 · 2026-11-07 宝说气泡里的背景滑到某处就不动了】
-                    // 要确认的是：滚动时这个回调到底有没有被调用（没有 → rect 停在旧值 → 背景钉住）
+                    // 【真凶 · 2026-11-07 宝说"气泡往上滑，背景滑到一定程度就不动了"】
+                    // 原来用 boundsInRoot()，而这个方法**会被父级裁剪**（文档原话：clipped by the parents）。
+                    // 气泡滑出 LazyColumn 顶部后 top 就被钉在列表边界上、不再变 → 采样点钉死 → 背景不动。
+                    // 换成 positionInRoot() + size：位置不受裁剪影响，滚多少报多少。
+                    val r = Rect(it.positionInRoot(), it.size.toSize())
                     if (r.left != glassRect.left || r.top != glassRect.top) {
                         me.rerere.rikkahub.data.ai.AppLogBuffer.log(
                             "LiquidGlass",
