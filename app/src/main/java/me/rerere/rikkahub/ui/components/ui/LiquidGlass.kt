@@ -136,6 +136,17 @@ half4 main(float2 p) {
     float  backSide = smoothstep(-0.15, 0.85, dot(toEdge, normalize(float2(0.55, 0.83))));
     col *= mix(1.0, 0.72, backSide * wOut * 1.6 + backSide * wIn * 0.35);
 
+    // 【边 · 2026-11-07】玻璃采的就是背景图，外面也是同一张图 —— 两边颜色一样，
+    // 光靠折射看不出"这里有一块东西"。真玻璃的边是明暗挤出来的：
+    // ① 贴边 2.5px 一圈硬亮线（切面反光）
+    float distIn = -d;                                  // 到边的距离，里面为正
+    float hardRim = 1.0 - smoothstep(0.0, 2.5, distIn);
+    col += hardRim * 0.55;
+
+    // ② 内侧 9px 一圈轻压暗（厚度吸收），跟亮线一挤，边就切出来了
+    float innerBand = (1.0 - smoothstep(0.0, 9.0, distIn)) - hardRim;
+    col *= 1.0 - max(innerBand, 0.0) * 0.30;
+
     // 贴边那条细亮轮廓（玻璃厚度反的光）
     col += wOut * 0.20;
 
