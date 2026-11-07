@@ -183,6 +183,7 @@ class LiquidGlassHost {
     internal var layer: GraphicsLayer? by mutableStateOf(null)
     internal var background: ImageBitmap? by mutableStateOf(null)
     internal var logged: Boolean = false
+    internal var debugCount: Int = 0
 }
 
 @Composable
@@ -298,6 +299,17 @@ fun Modifier.liquidGlass(
             val paint = android.graphics.Paint().apply {
                 this.shader = shader
                 isAntiAlias = true
+            }
+            // 【调试 · 2026-11-07】量：传进 shader 的 rect 和实际绘制区的 size 对不对得上。
+            // 顶上那条错、滑下来就好 —— 先看是不是"rect 是旧位置/旧高度"。
+            if (host.debugCount < 8) {
+                host.debugCount++
+                me.rerere.rikkahub.data.ai.AppLogBuffer.log(
+                    "LiquidGlass",
+                    "draw rect=(${rect.left.toInt()},${rect.top.toInt()},${rect.width.toInt()}x${rect.height.toInt()}) " +
+                        "size=(${size.width.toInt()}x${size.height.toInt()}) " +
+                        "dW=${(rect.width - size.width).toInt()} dH=${(rect.height - size.height).toInt()}"
+                )
             }
             nc.drawRect(0f, 0f, size.width, size.height, paint)
         }
