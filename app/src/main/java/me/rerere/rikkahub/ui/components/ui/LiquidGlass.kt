@@ -152,7 +152,9 @@ half4 main(float2 p) {
     float2 ctr      = uSize * 0.5;
     float2 toEdge   = normalize(p - ctr + float2(0.000001));
     float  backSide = smoothstep(-0.15, 0.85, dot(toEdge, normalize(float2(0.55, 0.83))));
-    col *= mix(1.0, 0.72, backSide * wOut * 1.6 + backSide * wIn * 0.35);
+    // 【背光侧压暗 · 2026-11-07 14:34 删掉】宝说气泡边缘有一圈深色阴影，浅色背景上特别明显。
+    // 真凶就是这行：它只在背光侧压暗，而且边缘权重给到 1.6 倍 → 那一圈比周围暗 28% → 看着像阴影。
+    // 玻璃的"存在感"不该靠压暗（压暗=蒙灰），靠饱和度 + 迎光侧的亮就够了。
 
     // 【边 · 2026-11-07 下午 查完 Apple Liquid Glass 的做法后重做】
     // 之前几版全是"描边思维"：整圈勾一条亮线 + 一条暗线，靠对比撑轮廓。
