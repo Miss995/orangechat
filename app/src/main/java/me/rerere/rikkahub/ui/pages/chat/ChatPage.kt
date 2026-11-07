@@ -6,6 +6,7 @@
 
 package me.rerere.rikkahub.ui.pages.chat
 
+import me.rerere.rikkahub.ui.components.ui.LocalLiquidGlassHost
 import me.rerere.rikkahub.ui.components.ui.rememberLiquidGlassHost
 import me.rerere.rikkahub.ui.components.ui.liquidGlass
 import me.rerere.rikkahub.ui.components.ui.liquidGlassSource
@@ -52,6 +53,7 @@ import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
