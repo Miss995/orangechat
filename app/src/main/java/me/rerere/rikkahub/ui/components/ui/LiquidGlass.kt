@@ -121,11 +121,29 @@ half4 main(float2 p) {
     float reachIn  = uThick * 0.95 * uRefract;
     float reachOut = uThick * 0.55 * 1.28 * uRefract;
 
-    // 折射：按表面法线把背后的内容推开（两次采样，够用又不费）
+    // 【折射 · 2026-11-07 重做】宝说"太夸张不好、太弱又太普通"，根因是只有"推"一个参数：
+    //   整块同一个位移强度 → 边缘斜面区直接推 10px，一调大就歪成一团；调小则整块没感觉。
+    // 现在拆成三件互不干扰的事：
+    //   ① 中心轻微放大（1.03）—— 隔着玻璃看东西会稍微大一点。这一下几乎看不出，但少了它就像贴张膜。
+    //   ② 位移只活在边缘：用 wIn（只在内侧斜面区非零）压住，中间平面完全不推。
+    //   ③ 色散：RGB 三条光分开位移（差 1.5px 左右），边缘会有一点彩 —— 它不靠位移大，所以永远不会夸张。
     float acc = o1.x * 0.0 + o2.x * 0.0 + reachOut * 0.0 + wFace * 0.0; // 占位，防未用告警
-    float2 off = n.xy * reachIn;
-    float3 col = sampleBgBlur(p + off).rgb * 0.58
-               + sampleBgBlur(p - off * 0.55).rgb * 0.42;
+
+    // ① 中心放大：以元素中心为原点缩放采样坐标（>1 表示放大背后的内容）
+    float2 ctr0 = uSize * 0.5;
+    float2 zoom  = (p - ctr0) / 1.03 + ctr0;
+
+    // ② 位移收窄：wIn 只在边缘斜面区非零，乘上去之后中间彻底不推
+    float2 off = n.xy * reachIn * wIn;
+
+    // ③ 色散：RGB 各自一点点偏移，越靠边越明显（wIn 天然自带这个梯度）
+    float2 disp = g * wIn * 1.6;
+
+    float3 col;
+    col.r = sampleBgBlur(zoom + off + disp).r;
+    col.g = sampleBgBlur(zoom + off).g;
+    col.b = sampleBgBlur(zoom + off - disp).b;
+    col = col * 0.62 + sampleBgBlur(zoom + off * 0.45).rgb * 0.38;
 
     // 边缘高光：只有朝光的那一侧边亮（光从左上来，跟阴影方向对上）
     float3 lightDir = normalize(float3(-0.55, -0.75, 0.62));
@@ -328,8 +346,8 @@ fun Modifier.liquidGlass(
             }
             // 【调试 · 2026-11-07】量：传进 shader 的 rect 和实际绘制区的 size 对不对得上。
             // 顶上那条错、滑下来就好 —— 先看是不是"rect 是旧位置/旧高度"。
-            if (host.debugCount % 30 == 0) {
-                host.debugCount++
+            host.debugCount++
+            if (host.debugCount % 30 == 1) {
                 me.rerere.rikkahub.data.ai.AppLogBuffer.log(
                     "LiquidGlass",
                     "draw rect=(${rect.left.toInt()},${rect.top.toInt()},${rect.width.toInt()}x${rect.height.toInt()}) " +
