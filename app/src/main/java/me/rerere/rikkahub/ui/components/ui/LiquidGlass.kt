@@ -279,6 +279,17 @@ fun Modifier.liquidGlass(
     }.getOrNull() ?: return this
 
     return drawWithContent {
+        // 【2026-11-07 宝指出的 B】尺寸不能用测量值：animateContentSize 会让 size 从 0 长到满，
+        // 测量的那一刻可能还是半截 → 玻璃只填上半部分。绘制这一刻的 size 才是真的。
+        // 位置仍然用测量到的左上角（size 里没有位置）。
+        runCatching {
+            shader.setFloatUniform(
+                "uRect",
+                rect.left, rect.top,
+                rect.left + size.width, rect.top + size.height
+            )
+            shader.setFloatUniform("uSize", size.width, size.height)
+        }
         drawIntoCanvas { canvas ->
             val nc = canvas.nativeCanvas
             // 投影：往下偏一点点、几层叠出软边，让玻璃浮起来。
