@@ -87,7 +87,11 @@ half4 sampleBgBlur(float2 p) {
 }
 
 half4 main(float2 p) {
-    float d = sdf(p);
+    // 【坐标系 · 2026-11-07 宝指出的】p 是这块自己的坐标（0..w），uRect 是整页坐标。
+    // 之前拿 p 直接去比 uRect，形状算出来全在外面 —— 玻璃一直没画对，只剩一点残影。
+    // 统一：进来先转成图纸坐标，后面全程用 pg。
+    float2 pg = p + uRect.xy;
+    float d = sdf(pg);
     // 玻璃外面：什么都不画（让下面原本的内容露出来）
     if (d > 1.5) return half4(0.0);
 
@@ -95,8 +99,8 @@ half4 main(float2 p) {
     float h = sqrt(max(0.0, 1.0 - (1.0 - e) * (1.0 - e)));
     float slope = (1.0 - e) / max(h, 0.08);
 
-    float d1 = sdf(p + float2(1.0, 0.0));
-    float d2 = sdf(p + float2(0.0, 1.0));
+    float d1 = sdf(pg + float2(1.0, 0.0));
+    float d2 = sdf(pg + float2(0.0, 1.0));
     float2 g = normalize(float2(d1 - d, d2 - d) + float2(0.000001));
     float3 n = normalize(float3(-g * slope * 0.55, 1.0));
     float3 v = float3(0.0, 0.0, 1.0);
@@ -128,11 +132,11 @@ half4 main(float2 p) {
     // 【立体 · 2026-11-07】只有"亮"会像一张纸贴边。真玻璃有厚度：
     // ① 整体上亮下暗（顶面朝光，底面背光）
     float2 ctr = (uRect.xy + uRect.zw) * 0.5;
-    float  ty  = clamp((p.y - uRect.y) / max(uRect.w - uRect.y, 1.0), 0.0, 1.0);
+    float  ty  = clamp((pg.y - uRect.y) / max(uRect.w - uRect.y, 1.0), 0.0, 1.0);
     col *= mix(1.06, 0.80, ty);
 
     // ② 背光那侧（光从左上来 → 右下是背光面）压一道暗，跟高光拉开对比
-    float2 toEdge   = normalize(p - ctr + float2(0.000001));
+    float2 toEdge   = normalize(pg - ctr + float2(0.000001));
     float  backSide = smoothstep(-0.15, 0.85, dot(toEdge, normalize(float2(0.55, 0.83))));
     col *= mix(1.0, 0.72, backSide * wOut * 1.6 + backSide * wIn * 0.35);
 
@@ -282,9 +286,10 @@ fun Modifier.liquidGlass(
             for (i in layers downTo 1) {
                 val spread = i * 2.8f
                 shadowPaint.color = android.graphics.Color.argb(7, 0, 0, 0)
+                // nativeCanvas 的坐标原点在这块自己的左上角，不是屏幕左上角 —— 这里一律用局部坐标
                 nc.drawRoundRect(
-                    rect.left - spread, rect.top + spread * 0.55f,
-                    rect.right + spread, rect.bottom + spread * 1.45f,
+                    -spread, spread * 0.55f,
+                    size.width + spread, size.height + spread * 1.45f,
                     style.radius + spread, style.radius + spread,
                     shadowPaint
                 )
@@ -293,9 +298,7 @@ fun Modifier.liquidGlass(
                 this.shader = shader
                 isAntiAlias = true
             }
-            nc.drawRect(
-                rect.left, rect.top, rect.right, rect.bottom, paint
-            )
+            nc.drawRect(0f, 0f, size.width, size.height, paint)
         }
         drawContent()
     }
