@@ -273,12 +273,10 @@ private fun ChatPageContent(
     val toaster = LocalToaster.current
     var previewMode by rememberSaveable { mutableStateOf(false) }
     // 【重排·第十三刀 2026-10-09】会话面板（从侧边栏搬出来的那块）
-    // 【液态玻璃 · 2026-11-06】背景录制器 + 玻璃条在这层里的位置
-    val liquidHost = rememberLiquidGlassHost()
+    // 【液态玻璃 · 2026-11-06】背景录制器（顶栏那条测试条已撤，liquidHost 不再需要）
     // 【气泡玻璃 · 2026-11-07 宝指的】内容录制层里含所有气泡，气泡采自己那块就采到自己 → 无限重影。
     // 气泡其实只要背景，所以单独建一个"只罩背景"的 host：静态壁纸，永远采不到气泡。
     val bgGlassHost = rememberLiquidGlassHost()
-    var glassBarRect by remember { mutableStateOf(Rect.Zero) }
     var showSessionPanel by remember { mutableStateOf(false) }
     // 【重排·第六刀 2026-10-08】语音通话入口：顶栏和输入区面板共用一份
     val onVoiceCallAction: () -> Unit = {
@@ -319,11 +317,9 @@ private fun ChatPageContent(
         // ⚠️ 玻璃条绝不能进这一层 —— 它读的那张图正是这一层每帧录的，会自己喂自己卡死。
         Box(modifier = Modifier.fillMaxSize()) {
         CompositionLocalProvider(LocalLiquidGlassHost provides bgGlassHost) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .liquidGlassSource(liquidHost, MaterialTheme.colorScheme.background)
-        ) {
+        // 【2026-11-07 宝】原来这里还有一层 liquidGlassSource(liquidHost) 录整页，只服务那条测试条。
+        // 测试条撤了，这层就不再录 —— 省掉每 300ms 一次整页截图。Box 留着，嵌套不动。
+        Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -693,22 +689,8 @@ private fun ChatPageContent(
         }
         }
 
-            // 【液态玻璃 · 2026-11-07】玻璃条挪到录制层外面：它在录制层里的话，
-            // 读的正是这一层每帧刚录的图，录完一更新它就重画 → 又录一遍 → 自己喂自己卡死。
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    // ⚠️ padding 要在 height 前面：写反了 padding 会从里面吃掉高度，
-                    // 56dp 只剩 16dp（2026-11-06 踩到，日志 rect 高 48px = 16dp）
-                    .statusBarsPadding()
-                    .height(56.dp)
-                    .onGloballyPositioned { glassBarRect = it.boundsInParent() }
-                    .liquidGlass(
-                        liquidHost, glassBarRect,
-                        LiquidGlassStyle(radius = 0f, blur = setting.displaySetting.liquidGlassBlur)
-                    )
-            )
+            // 【2026-11-07 宝】顶部那条测试玻璃条已撤：占 56dp，聊天记录看着太窄。
+            // 气泡玻璃已经跑通，它任务完成了。（想再要顶栏玻璃，从这里恢复即可。）
         }
     }
 
