@@ -1787,6 +1787,16 @@ addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tool
                     add(
                         me.rerere.rikkahub.data.ai.tools.buildPawprintTool()
                     )
+                    // 生图（2026-11-07）：调设置里的「图像生成模型」出一张图，
+                    // 存进 files/images（跟「图像生成」页面同一个目录），出完直接回对话。
+                    // 用的是 Provider 体系，model / provider 全由设置决定，这只手不挑模型。
+                    add(
+                        me.rerere.rikkahub.data.ai.tools.buildImageGenTool(
+                            settingsStore = settingsStore,
+                            providerManager = providerManager,
+                            filesManager = filesManager,
+                        )
+                    )
                     // Plugin tools
                     addAll(pluginToolProvider.getTools())
                     // 插件开关 (2026-09-28 宝拍板): 让 AI 自己启停插件。
