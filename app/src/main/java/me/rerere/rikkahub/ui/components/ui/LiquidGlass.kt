@@ -51,6 +51,7 @@ uniform float   uIOR;
 uniform float   uRefract;
 uniform float   uThick;
 uniform float   uAlpha;
+uniform float   uBlur;
 uniform float2  uBgInv;
 
 float sdf(float2 p) {
@@ -65,6 +66,25 @@ float sdf(float2 p) {
 
 // p 是这个元素自己的局部坐标，图是整屏的 —— 采样要补上元素在图里的位置
 half4 sampleBg(float2 p) { return uBg.eval(p + uRect.xy); }
+
+// 磨砂：九点散开取平均。采样点一散，细节就被抹平了。
+// 纯折射是"水"，加了这一层才是"磨砂"。
+half4 sampleBgBlur(float2 p) {
+    if (uBlur < 0.5) return sampleBg(p);
+    float2 q = p + uRect.xy;
+    float  a = uBlur;
+    float  b = uBlur * 0.7071;
+    half4 acc = uBg.eval(q);
+    acc += uBg.eval(q + float2( a,  0.0));
+    acc += uBg.eval(q + float2(-a,  0.0));
+    acc += uBg.eval(q + float2(0.0,  a));
+    acc += uBg.eval(q + float2(0.0, -a));
+    acc += uBg.eval(q + float2( b,  b));
+    acc += uBg.eval(q + float2(-b,  b));
+    acc += uBg.eval(q + float2( b, -b));
+    acc += uBg.eval(q + float2(-b, -b));
+    return acc * 0.1111111;
+}
 
 half4 main(float2 p) {
     float d = sdf(p);
@@ -97,8 +117,8 @@ half4 main(float2 p) {
     // 折射：按表面法线把背后的内容推开（两次采样，够用又不费）
     float acc = o1.x * 0.0 + o2.x * 0.0 + reachOut * 0.0 + wFace * 0.0; // 占位，防未用告警
     float2 off = n.xy * reachIn;
-    float3 col = sampleBg(p + off).rgb * 0.58
-               + sampleBg(p - off * 0.55).rgb * 0.42;
+    float3 col = sampleBgBlur(p + off).rgb * 0.58
+               + sampleBgBlur(p - off * 0.55).rgb * 0.42;
 
     // 边缘高光：只有朝光的那一侧边亮（光从左上来，跟阴影方向对上）
     float3 lightDir = normalize(float3(-0.55, -0.75, 0.62));
@@ -124,6 +144,8 @@ data class LiquidGlassStyle(
     val thickness: Float = 22f,
     /** 整体不透明度，先给 1（先把形做对，透明度以后按需要调） */
     val alpha: Float = 1f,
+    /** 磨砂半径（像素）。0 = 纯折射（像水），越大越糊。12 大概是"毛玻璃"的手感 */
+    val blur: Float = 12f,
 )
 
 /**
@@ -207,6 +229,7 @@ fun Modifier.liquidGlass(
             setFloatUniform("uRefract", style.refract)
             setFloatUniform("uThick", style.thickness)
             setFloatUniform("uAlpha", style.alpha)
+            setFloatUniform("uBlur", style.blur)
             // ⚠️ ImageShader 把整张图铺在 0..1 的坐标空间里，而 shader 里的 p 是像素坐标。
             // ImageShader 没有 matrix 参数（2026-11-06 编译报错过），所以在 shader 里用 uBgInv 换算。
             setFloatUniform("uBgInv", 1f / bg.width, 1f / bg.height)
