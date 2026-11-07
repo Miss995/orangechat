@@ -188,7 +188,13 @@ half4 main(float2 p) {
     float upperLeft  = exp(-pow((ang + 2.38) / 0.60, 2.0));
     float lowerRight = exp(-pow((ang - 0.76) / 0.62, 2.0));
 
-    float edgeGlint = hairline * (upperLeft * 0.86 + lowerRight * 0.48);
+    // 【雾 · 2026-11-07 18:46 宝说"像小猫在边缘画了一条线，太细了"】
+    // 规矩：不加粗线本身（线细才是玻璃），在它外面罩一层宽 3px、强度 0.32 的雾。
+    // 线负责"有边界"，雾负责"有厚度"。σ 从 0.62 → 3.0 是宽 5 倍，但中心值仍由 clamp 0.76 封住，
+    // 所以不会过曝 —— 变化全在边缘往外那 3px 的衰减上。
+    float halo = exp(-pow((distIn - 0.55) / 3.0, 2.0)) * 0.32;
+
+    float edgeGlint = (hairline + halo) * (upperLeft * 0.86 + lowerRight * 0.48);
 
     // 【边缘光染环境色 · 2026-11-07 傍晚，抄 Gale 开源那份 glass.css 的 ::before 渐变】
     // 它那条边不是纯白：白 0.62 → 壁纸主色 0.38 → 白 0.04 → 壁纸主色 0.22 → 白 0.30。
