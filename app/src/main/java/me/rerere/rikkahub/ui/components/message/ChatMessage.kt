@@ -682,6 +682,7 @@ private fun MessagePartsBlock(
                         // 【思考链气泡别撑满 · 2026-11-07 宝："一个气泡能装三只小猫"】
                         // 它只有"思考了 N 秒"几个字，铺满整行太空。给个上限让它收着。
                         modifier = Modifier.widthIn(max = 300.dp),
+                        whiteText = false,
                         imagePath = displaySettings.assistantBubbleImagePath,
                         cornerRadius = displaySettings.bubbleCornerRadius.dp,
                         color = displaySettings.assistantBubbleColor?.let { it.toComposeColor() }
@@ -1358,6 +1359,9 @@ private fun MessagePartsBlock(
 @Composable
 private fun BubbleSurface(
     modifier: Modifier = Modifier,
+    // 【白字只在正文气泡上用 · 2026-11-07 宝："代码和图标改成白的，看得眼花"】
+    // 思考链里全是工具名/行内代码，白字落在浅底上就花了 → 那处传 false。
+    whiteText: Boolean = true,
     imagePath: String,
     cornerRadius: Dp,
     color: Color,
@@ -1444,7 +1448,7 @@ private fun BubbleSurface(
             // Surface 默认用 contentColorFor(背景色)：玻璃模式背景是 Transparent，
             // 它按浅色底算，于是给了深色字 —— 在花枝背景上糊成一团。
             // 玻璃上一律用白字（真玻璃控件都是这么做的）。
-            contentColor = if (glassReady) Color.White else LocalContentColor.current,
+            contentColor = if (glassReady && whiteText) Color.White else LocalContentColor.current,
             onClick = onClick ?: {},
         ) {
             Column(modifier = Modifier.padding(8.dp)) { content() }
