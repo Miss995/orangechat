@@ -41,9 +41,6 @@ import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.rememberGraphicsLayer
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
 internal const val LIQUID_GLASS_AGSL = """
@@ -192,7 +189,22 @@ half4 main(float2 p) {
     float lowerRight = exp(-pow((ang - 0.76) / 0.62, 2.0));
 
     float edgeGlint = hairline * (upperLeft * 0.66 + lowerRight * 0.48);
-    col = mix(col, float3(1.0), clamp(edgeGlint, 0.0, 0.76));
+
+    // 【边缘光染环境色 · 2026-11-07 傍晚，抄 Gale 开源那份 glass.css 的 ::before 渐变】
+    // 它那条边不是纯白：白 0.62 → 壁纸主色 0.38 → 白 0.04 → 壁纸主色 0.22 → 白 0.30。
+    // 这里用玻璃底下已经采到的颜色当"环境色"，混 38% 进去 —— 光像从背景里长出来的，不是贴上去的。
+    float3 ambient = clamp(col * 1.35, 0.0, 1.0);
+    float3 glintCol = mix(ambient, float3(1.0), 0.62);
+    col = mix(col, glintCol, clamp(edgeGlint, 0.0, 0.76));
+
+    // 【左右色散 · 2026-11-07 傍晚，抄它 box-shadow 里那两条 inset】
+    //   inset 1px 0 0  rgba(255,140,180,.10)  ← 左暖
+    //   inset -1px 0 0 rgba(130,190,255,.14)  ← 右冷
+    // 只挂在 hairline 上（细线区域），且量很小 —— 加多了会脏。
+    float sideX = (p.x / max(uSize.x, 1.0)) * 2.0 - 1.0;   // -1 左 .. +1 右
+    float warm  = clamp(-sideX, 0.0, 1.0);
+    float cool  = clamp( sideX, 0.0, 1.0);
+    col += hairline * (warm * float3(0.10, 0.02, -0.02) + cool * float3(-0.02, 0.02, 0.10));
 
     // 【饱和度 · 2026-11-07 新增】CSS 那边是 blur + saturate(1.6)：玻璃后面的颜色会**更浓一点**。
     // 少了这一下，画面就是"糊"而不是"玻璃"。
@@ -291,6 +303,10 @@ fun Modifier.liquidGlass(
     host: LiquidGlassHost,
     rect: Rect,
     style: LiquidGlassStyle = LiquidGlassStyle(),
+    // 屏幕尺寸（像素）。Modifier 扩展不能标 @Composable（里面的 Local* 读不了），
+    // 所以由调用方在 Composable 里算好传进来。传 0 = 光心退回元素中心（不游走）。
+    screenW: Float = 0f,
+    screenH: Float = 0f,
 ): Modifier {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return this
     val bg = host.background ?: return this
@@ -304,12 +320,8 @@ fun Modifier.liquidGlass(
     }
     // 【光心 · 2026-11-07 傍晚】屏幕中心换算到本元素局部坐标。
     // 屏幕中心在世界里是固定的；元素滚动时 rect 变，这个局部值就变 → 亮边自己游。
-    val cfg = LocalConfiguration.current
-    val den = LocalDensity.current
-    val screenW = with(den) { cfg.screenWidthDp.dp.toPx() }
-    val screenH = with(den) { cfg.screenHeightDp.dp.toPx() }
-    val lightX = screenW * 0.5f - rect.left
-    val lightY = screenH * 0.5f - rect.top
+    val lightX = if (screenW > 0f) screenW * 0.5f - rect.left else rect.width * 0.5f
+    val lightY = if (screenH > 0f) screenH * 0.5f - rect.top else rect.height * 0.5f
 
     val shader = runCatching {
         RuntimeShader(LIQUID_GLASS_AGSL).apply {

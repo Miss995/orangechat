@@ -180,6 +180,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -1408,7 +1409,10 @@ private fun BubbleSurface(
                             LiquidGlassStyle(
                                 radius = with(density) { cornerRadius.toPx() },
                                 blur = ds.liquidGlassBlur,
-                            )
+                            ),
+                            // 屏幕像素尺寸：给 shader 算"光心在哪"。取不到就传 0，光心退回元素中心。
+                            screenW = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() },
+                            screenH = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() },
                         )
                     } else Modifier
                 )
