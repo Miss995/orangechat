@@ -1384,7 +1384,18 @@ private fun BubbleSurface(
         val glassReady = glassHost != null && glassRect.width > 0f
         val glassModifier = if (glassHost != null) {
             Modifier
-                .onGloballyPositioned { glassRect = it.boundsInRoot() }
+                .onGloballyPositioned {
+                    val r = it.boundsInRoot()
+                    // 【排查 · 2026-11-07 宝说气泡里的背景滑到某处就不动了】
+                    // 要确认的是：滚动时这个回调到底有没有被调用（没有 → rect 停在旧值 → 背景钉住）
+                    if (r.left != glassRect.left || r.top != glassRect.top) {
+                        me.rerere.rikkahub.data.ai.AppLogBuffer.log(
+                            "LiquidGlass",
+                            "GPos ${glassRect.left.toInt()},${glassRect.top.toInt()} -> ${r.left.toInt()},${r.top.toInt()}"
+                        )
+                    }
+                    glassRect = r
+                }
                 .then(
                     if (glassReady) {
                         Modifier.liquidGlass(
