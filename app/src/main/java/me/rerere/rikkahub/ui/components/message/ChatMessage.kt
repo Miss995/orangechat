@@ -676,45 +676,57 @@ private fun MessagePartsBlock(
                     val isReasoningOnlyBlock = block.steps.fastAll { it is ThinkingStep.ReasoningStep }
                     // 【流式降级 · 2026-10-02】生成中不做尺寸动画：内容每 100ms 变一次，
                     // 动画会不停重启、每帧重新测量整块。写完（loading=false）再恢复。
-                    ChainOfThought(
-                        modifier = if (loading) Modifier else Modifier.animateContentSize(),
-                        steps = block.steps,
-                        collapsedAdaptiveWidth = isReasoningOnlyBlock,
-                        animateChanges = !loading,
-                    ) { step ->
-                        when (step) {
-                            is ThinkingStep.ReasoningStep -> {
-                                key(step.reasoning.createdAt) {
-                                    ChatMessageReasoningStep(
-                                        reasoning = step.reasoning,
-                                        model = model,
-                                        assistant = assistant,
-                                        collapsedAdaptiveWidth = isReasoningOnlyBlock,
-                                    )
+                    // 【思考链独立成气泡 · 2026-11-07】外面包一层气泡（跟正文同款），
+                    // 内部 bare=true 不再画 Card —— 这样它才采得到背景，玻璃也能用上。
+                    BubbleSurface(
+                        imagePath = displaySettings.assistantBubbleImagePath,
+                        cornerRadius = displaySettings.bubbleCornerRadius.dp,
+                        color = displaySettings.assistantBubbleColor?.let { it.toComposeColor() }
+                            ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                        overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
+                        bubbleAlpha = bubbleAlpha,
+                    ) {
+                        ChainOfThought(
+                            modifier = if (loading) Modifier else Modifier.animateContentSize(),
+                            steps = block.steps,
+                            collapsedAdaptiveWidth = isReasoningOnlyBlock,
+                            animateChanges = !loading,
+                            bare = true,
+                        ) { step ->
+                            when (step) {
+                                is ThinkingStep.ReasoningStep -> {
+                                    key(step.reasoning.createdAt) {
+                                        ChatMessageReasoningStep(
+                                            reasoning = step.reasoning,
+                                            model = model,
+                                            assistant = assistant,
+                                            collapsedAdaptiveWidth = isReasoningOnlyBlock,
+                                        )
+                                    }
                                 }
-                            }
  
-                            is ThinkingStep.ToolStep -> {
-                                key(step.tool.toolCallId.ifBlank { step.hashCode().toString() }) {
-                                    ChatMessageToolStep(
-                                        tool = step.tool,
-                                        loading = loading && !step.tool.isExecuted,
-                                        allParts = parts,
-                                        onToolApproval = onToolApproval,
-                                        onToolAnswer = onToolAnswer,
-                                    )
+                                is ThinkingStep.ToolStep -> {
+                                    key(step.tool.toolCallId.ifBlank { step.hashCode().toString() }) {
+                                        ChatMessageToolStep(
+                                            tool = step.tool,
+                                            loading = loading && !step.tool.isExecuted,
+                                            allParts = parts,
+                                            onToolApproval = onToolApproval,
+                                            onToolAnswer = onToolAnswer,
+                                        )
+                                    }
                                 }
-                            }
 
-                            // 【插话行 · 2026-10-04 宝定的】宝插的那句，作为思考链里的一行渲染——
-                            // 跟工具、思考同住一张卡片，宽度圆角天然一致。
-                            // embedded = true：不再自己包一层卡片（外面已经是 ChainOfThought 的卡）。
-                            is ThinkingStep.InterjectStep -> {
-                                key("interject-${step.part.hashCode()}") {
-                                    ChatMessageInterjectedMessage(
-                                        part = step.part,
-                                        embedded = true,
-                                    )
+                                // 【插话行 · 2026-10-04 宝定的】宝插的那句，作为思考链里的一行渲染——
+                                // 跟工具、思考同住一张卡片，宽度圆角天然一致。
+                                // embedded = true：不再自己包一层卡片（外面已经是 ChainOfThought 的卡）。
+                                is ThinkingStep.InterjectStep -> {
+                                    key("interject-${step.part.hashCode()}") {
+                                        ChatMessageInterjectedMessage(
+                                            part = step.part,
+                                            embedded = true,
+                                        )
+                                    }
                                 }
                             }
                         }

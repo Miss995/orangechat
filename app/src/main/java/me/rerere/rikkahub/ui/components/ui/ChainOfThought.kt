@@ -85,6 +85,10 @@ fun <T> ChainOfThought(
     // 【流式降级 · 2026-10-02】生成中关掉尺寸动画：内容每 100ms 变一次，
     // 动画会不停重启、每次都重算整块布局。写完（loading=false）再恢复。
     animateChanges: Boolean = true,
+    // 【思考链独立成气泡 · 2026-11-07 19:58 宝："正文的气泡能不能分给思考链"】
+    // true 时内部不画 Card（不占底色、不切圆角），外观交给外层的 BubbleSurface。
+    // 只影响传 true 的调用处（聊天主路径），导出/用户消息侧行为不变。
+    bare: Boolean = false,
     content: @Composable ChainOfThoughtScope.(T) -> Unit
 ) {
     val settings = LocalSettings.current
@@ -105,11 +109,21 @@ fun <T> ChainOfThought(
     CompositionLocalProvider(
         LocalCardColor provides cardColors.containerColor
     ) {
-    Card(
-            modifier = modifier,
-            colors = effectiveCardColors,
-            shape = RoundedCornerShape(16.dp),
-        ) {
+    // 容器在这里分叉：bare 时不画底，只保留布局；否则还是原来的 Card。
+    val container: @Composable (Modifier, @Composable () -> Unit) -> Unit =
+        if (bare) {
+            { m, body -> Box(modifier = m) { body() } }
+        } else {
+            { m, body ->
+                Card(
+                    modifier = m,
+                    colors = effectiveCardColors,
+                    shape = RoundedCornerShape(16.dp),
+                ) { body() }
+            }
+        }
+
+    container(modifier) {
             Column(
                 modifier = Modifier
                     .padding(horizontal = 12.dp, vertical = 4.dp)
