@@ -54,6 +54,9 @@ uniform float   uRefract;
 uniform float   uThick;
 uniform float   uAlpha;
 uniform float   uBlur;
+// 光心（相对本元素的局部坐标）。屏幕中心转到元素局部 = 光照在世界里不动、玻璃动了光就游。
+// 2026-11-07 傍晚：不传屏幕绝对坐标，Kotlin 侧算好局部值直接传，shader 不用知道屏幕多大。
+uniform float2  uLightLocal;
 uniform float2  uBgInv;
 
 // 【形状 · 2026-11-07 宝指的】只吃局部坐标 + 自己的宽高。
@@ -77,17 +80,29 @@ half4 sampleBgBlur(float2 p) {
     if (uBlur < 0.5) return sampleBg(p);
     float2 q = p + uRect.xy;
     float  a = uBlur;
-    float  b = uBlur * 0.7071;
-    half4 acc = uBg.eval(q);
-    acc += uBg.eval(q + float2( a,  0.0));
-    acc += uBg.eval(q + float2(-a,  0.0));
-    acc += uBg.eval(q + float2(0.0,  a));
-    acc += uBg.eval(q + float2(0.0, -a));
-    acc += uBg.eval(q + float2( b,  b));
-    acc += uBg.eval(q + float2(-b,  b));
-    acc += uBg.eval(q + float2( b, -b));
-    acc += uBg.eval(q + float2(-b, -b));
-    return acc * 0.1111111;
+    float  i1 = a * 0.55;          // 内环
+    float  i2 = i1 * 0.7071;       // 内环对角
+    float  o1 = a;                 // 外环
+    float  o2 = o1 * 0.7071;       // 外环对角
+    // 中心最重，内环次之，外环最轻 —— 权重按距离衰减，平均才平滑；九点均等分是颗粒感的来源
+    half4 acc = uBg.eval(q) * 0.16;
+    acc += uBg.eval(q + float2( i1, 0.0)) * 0.06;
+    acc += uBg.eval(q + float2(-i1, 0.0)) * 0.06;
+    acc += uBg.eval(q + float2(0.0,  i1)) * 0.06;
+    acc += uBg.eval(q + float2(0.0, -i1)) * 0.06;
+    acc += uBg.eval(q + float2( i2,  i2)) * 0.06;
+    acc += uBg.eval(q + float2(-i2,  i2)) * 0.06;
+    acc += uBg.eval(q + float2( i2, -i2)) * 0.06;
+    acc += uBg.eval(q + float2(-i2, -i2)) * 0.06;
+    acc += uBg.eval(q + float2( o1, 0.0)) * 0.045;
+    acc += uBg.eval(q + float2(-o1, 0.0)) * 0.045;
+    acc += uBg.eval(q + float2(0.0,  o1)) * 0.045;
+    acc += uBg.eval(q + float2(0.0, -o1)) * 0.045;
+    acc += uBg.eval(q + float2( o2,  o2)) * 0.045;
+    acc += uBg.eval(q + float2(-o2,  o2)) * 0.045;
+    acc += uBg.eval(q + float2( o2, -o2)) * 0.045;
+    acc += uBg.eval(q + float2(-o2, -o2)) * 0.045;
+    return acc;
 }
 
 half4 main(float2 p) {
@@ -165,7 +180,11 @@ half4 main(float2 p) {
     float distIn = -d;
     float hairline = exp(-pow((distIn - 0.55) / 0.62, 2.0));
 
-    float ang = atan(toEdge.y, toEdge.x);
+    // 【高光游走 · 2026-11-07 傍晚】角度改从"光心"算，不从元素中心。
+    // 气泡在屏幕上滚动时 uRect 变、uLightLocal 跟着变 → 角度变 → 亮边沿气泡游走，
+    // 就像光照在世界里没动、玻璃自己走过来了。要"静"就把 uLightLocal 钉成元素中心。
+    float2 toLight = normalize(p - uLightLocal + float2(0.000001));
+    float ang = atan(toLight.y, toLight.x);
     float upperLeft  = exp(-pow((ang + 2.38) / 0.60, 2.0));
     float lowerRight = exp(-pow((ang - 0.76) / 0.62, 2.0));
 
@@ -280,6 +299,12 @@ fun Modifier.liquidGlass(
             "bg=${bg.width}x${bg.height} rect=(${rect.left},${rect.top},${rect.right},${rect.bottom})"
         )
     }
+    // 【光心 · 2026-11-07 傍晚】屏幕中心换算到本元素局部坐标。
+    // 屏幕中心在世界里是固定的；元素滚动时 rect 变，这个局部值就变 → 亮边自己游。
+    val winSize = LocalWindowInfo.current.containerSize
+    val lightX = winSize.width * 0.5f - rect.left
+    val lightY = winSize.height * 0.5f - rect.top
+
     val shader = runCatching {
         RuntimeShader(LIQUID_GLASS_AGSL).apply {
             setFloatUniform("uRect", rect.left, rect.top, rect.right, rect.bottom)
@@ -291,6 +316,7 @@ fun Modifier.liquidGlass(
             setFloatUniform("uThick", style.thickness)
             setFloatUniform("uAlpha", style.alpha)
             setFloatUniform("uBlur", style.blur)
+            setFloatUniform("uLightLocal", lightX, lightY)
             // ⚠️ ImageShader 把整张图铺在 0..1 的坐标空间里，而 shader 里的 p 是像素坐标。
             // ImageShader 没有 matrix 参数（2026-11-06 编译报错过），所以在 shader 里用 uBgInv 换算。
             setFloatUniform("uBgInv", 1f / bg.width, 1f / bg.height)
