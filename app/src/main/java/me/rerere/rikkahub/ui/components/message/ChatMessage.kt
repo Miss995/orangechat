@@ -1379,16 +1379,22 @@ private fun BubbleSurface(
         // 【2026-11-07 日志实证】LazyColumn 复用/重建 item 时 glassRect 会被重置成 Rect.Zero，
         // 要等下一帧 onGloballyPositioned 才填回来。那一刻 uSize 也是 0，sdf 缩成一个点
         // → 高光缩在左上角、不贴气泡。所以 rect 无效时干脆不画玻璃、用回原底色。
+        // ⚠️ 测量必须一直挂着：glassReady 靠 glassRect 判断，而 glassRect 靠 onGloballyPositioned 填。
+        // 把测量一起关进 if 里会死锁（glassRect 永远是 0 → 永远不 ready → 永远不测量），2026-11-07 踩过。
         val glassReady = glassHost != null && glassRect.width > 0f
-        val glassModifier = if (glassReady) {
+        val glassModifier = if (glassHost != null) {
             Modifier
                 .onGloballyPositioned { glassRect = it.boundsInRoot() }
-                .liquidGlass(
-                    glassHost, glassRect,
-                    LiquidGlassStyle(
-                        radius = with(density) { cornerRadius.toPx() },
-                        blur = ds.liquidGlassBlur,
-                    )
+                .then(
+                    if (glassReady) {
+                        Modifier.liquidGlass(
+                            glassHost, glassRect,
+                            LiquidGlassStyle(
+                                radius = with(density) { cornerRadius.toPx() },
+                                blur = ds.liquidGlassBlur,
+                            )
+                        )
+                    } else Modifier
                 )
         } else Modifier
 
