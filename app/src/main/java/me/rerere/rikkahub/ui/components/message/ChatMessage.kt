@@ -255,8 +255,10 @@ fun ChatMessage(
     var menuOffset by remember { mutableStateOf(DpOffset.Zero) }
     // 【点按菜单 · 只有正文响应】手势挂在正文块上，拿到的是"相对正文"的局部坐标；
     // 而菜单锚点在这条 Column 上 —— 用两边的窗口坐标相减换算。
-    var colTopLeft by remember { mutableStateOf(Offset.Zero) }
-    var bodyTopLeft by remember { mutableStateOf(Offset.Zero) }
+    // 【卡顿修复 · 2026-11-08】这两个只是"点按菜单"换算用的窗口坐标，点的时候读一次就够。
+    // 之前用 mutableStateOf 存 → 滚动时每条可见消息每帧写 state → 每帧重组（感知：滑起来重）。
+    // 换成普通变量持有：写它不触发重组，onGloballyPositioned 布局后照旧刷新到最新。
+    val windowPos = remember { WindowPosRef() }
     val navController = LocalNavController.current
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -270,7 +272,7 @@ fun ChatMessage(
             // 手势本身挪到正文块上了（见 MessagePartsBlock 的 onBodyTap）——
             // 点思考链/工具块不再弹菜单。
             .onGloballyPositioned { coords ->
-                colTopLeft = coords.positionInWindow()
+                windowPos.col = coords.positionInWindow()
             },
         horizontalAlignment = if (!isInterjection && message.role == MessageRole.USER) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -332,13 +334,13 @@ fun ChatMessage(
                 // 【点按菜单 · 2026-10-10】只有正文响应点击：局部坐标 + Column 的窗口坐标换算
                 onBodyTap = if (!loading && !isInterjection) {
                     { localOffset ->
-                        val abs = localOffset + bodyTopLeft
-                        val rel = abs - colTopLeft
+                        val abs = localOffset + windowPos.body
+                        val rel = abs - windowPos.col
                         menuOffset = with(density) { DpOffset(rel.x.toDp(), rel.y.toDp()) }
                         menuVisible = true
                     }
                 } else null,
-                onBodyPlaced = { bodyTopLeft = it },
+                onBodyPlaced = { windowPos.body = it },
                 onQuoteText = onQuoteText,
                 interjections = interjections,
             )
@@ -2512,4 +2514,10 @@ internal fun VideoLinkCard(
             }
         }
     }
+}
+
+/** 【卡顿修复 · 2026-11-08】窗口坐标持有器：不进快照系统，写它不会触发任何重组。 */
+private class WindowPosRef {
+    var col: Offset = Offset.Zero
+    var body: Offset = Offset.Zero
 }
