@@ -73,6 +73,8 @@ data class DisplaySetting(
     val thinkingChainTransparency: Float = 0f,
     // 液态玻璃磨砂半径（像素）。0 = 纯折射（像水），越大越糊
     val liquidGlassBlur: Float = 12f,
+    /** 液态玻璃折射强度。0=平板玻璃(不弯折)、0.6=默认、1.75 太夸张(推开80px) */
+    val liquidGlassRefract: Float = 0.6f,
     // 自定义字体
     val customFontPath: String = "",
     // 输入框自定义背景

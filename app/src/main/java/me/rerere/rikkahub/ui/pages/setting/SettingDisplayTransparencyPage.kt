@@ -112,6 +112,27 @@ fun SettingDisplayTransparencyPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     item(
+                        headlineContent = { Text("液态玻璃折射") },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.liquidGlassRefract,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(liquidGlassRefract = it))
+                                    },
+                                    valueRange = 0f..2f,
+                                    steps = 19,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = "${(displaySetting.liquidGlassRefract * 100).toInt()}%")
+                            }
+                        }
+                    )
+                    item(
                         headlineContent = { Text("液态玻璃磨砂") },
                         supportingContent = {
                             Row(
