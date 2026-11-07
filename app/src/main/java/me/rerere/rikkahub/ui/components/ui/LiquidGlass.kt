@@ -154,34 +154,29 @@ half4 main(float2 p) {
     float  backSide = smoothstep(-0.15, 0.85, dot(toEdge, normalize(float2(0.55, 0.83))));
     col *= mix(1.0, 0.72, backSide * wOut * 1.6 + backSide * wIn * 0.35);
 
-    // 【边 · 2026-11-07 宝说"不够真"后重做】原来是一条 2.5px 的死硬亮线 + 9px 一圈暗，
-    // 那是"描边"不是玻璃 —— 宽度跟厚度无关、亮度跟光向无关，所以假。现在：
-    // ① 亮带宽度跟玻璃厚度走，中间最亮、两边淡（钟形，不是方块）
-    // ② 迎光那半边亮、背光那半边暗，不是一个均匀的圈
-    // 【边 · 2026-11-07 宝说"气泡被背景带走了"后重做】
-    // 教训：玻璃的"存在感"全压在边缘上。上一版把贴边亮度降到 0.04，浅色背景上等于没有边
-    // → 气泡就只是"背景的一块"，看着像被背景吞了。
-    // 但也不能靠加粗（加粗=描边，宝已经说过粗）。真玻璃杯的边是**一亮一暗两条极细的线咬在一起**：
-    // ① 1.5px 的亮线（切面反光）
-    // ② 紧贴着它、到 4px 为止的一道暗（厚度吸收）
-    // 两条都只有一两像素，对比极大 → 轮廓出来，但一点不粗。
-    float distIn = -d;                                   // 到边的距离，里面为正
-    float rimLine = 1.0 - smoothstep(0.0, 1.5, distIn);
-    float lit     = dot(toEdge, normalize(float2(-0.55, -0.75)));
-    float litAmt  = smoothstep(-0.60, 1.10, lit);
-    // 亮线：迎光侧更亮，背光侧也留一点（不然轮廓断掉）
-    col += rimLine * mix(0.42, 0.85, litAmt);
+    // 【边 · 2026-11-07 下午 查完 Apple Liquid Glass 的做法后重做】
+    // 之前几版全是"描边思维"：整圈勾一条亮线 + 一条暗线，靠对比撑轮廓。
+    // Apple 的做法不是这样（kube.io 拆 CSS/SVG、Medium 那篇拆 Metal 反推出来的）：
+    //   ① 一圈**宽而极淡**的光，从边往里衰减 —— 不是硬线
+    //   ② **只往上加亮，绝不压暗**（压暗 = 蒙灰，清透感立刻没）
+    //   ③ **只给迎光那半边**，背光侧几乎没有边 —— 整圈都亮就成了描边
+    float distIn = -d;
+    float rimW   = max(uThick * 0.8, 8.0);
+    float tRim   = clamp(distIn / rimW, 0.0, 1.0);
+    float edgeFade = (1.0 - tRim) * (1.0 - tRim);      // 贴边最强，往里平滑衰减
 
-    // 紧贴的暗线
-    float rimDark = (1.0 - smoothstep(0.0, 4.0, distIn)) - rimLine;
-    col *= 1.0 - max(rimDark, 0.0) * 0.30;
+    // 迎光侧权重：朝外的方向跟光向点乘；背光侧 clamp 成 0，那边就不留边
+    float litDot = dot(toEdge, normalize(float2(-0.5, -0.8)));
+    float litAmt = clamp(litDot, 0.0, 1.0);
+    litAmt = litAmt * litAmt;                           // 收窄，让最亮集中在一小块
 
-    // 【2026-11-07】内晕只留一点点，几乎不动亮度（压暗会削清透感，已经踩过）
-    float halo = smoothstep(0.0, uThick * 1.6, distIn);
-    col *= 1.0 - (1.0 - halo) * 0.03;
+    // 冷调的白（略偏蓝）—— 直接加，不乘任何压暗
+    col += edgeFade * litAmt * float3(0.34, 0.35, 0.38);
 
-    // 贴边最外沿
-    col += wOut * 0.30;
+    // 【饱和度 · 2026-11-07 新增】CSS 那边是 blur + saturate(1.6)：玻璃后面的颜色会**更浓一点**。
+    // 少了这一下，画面就是"糊"而不是"玻璃"。
+    float lum = dot(col, float3(0.299, 0.587, 0.114));
+    col = mix(float3(lum), col, 1.16);
 
     // 边上一点点柔化，免得硬边像描线
     float aa = 1.0 - smoothstep(-1.5, 0.5, d);
