@@ -275,6 +275,9 @@ private fun ChatPageContent(
     // 【重排·第十三刀 2026-10-09】会话面板（从侧边栏搬出来的那块）
     // 【液态玻璃 · 2026-11-06】背景录制器 + 玻璃条在这层里的位置
     val liquidHost = rememberLiquidGlassHost()
+    // 【气泡玻璃 · 2026-11-07 宝指的】内容录制层里含所有气泡，气泡采自己那块就采到自己 → 无限重影。
+    // 气泡其实只要背景，所以单独建一个"只罩背景"的 host：静态壁纸，永远采不到气泡。
+    val bgGlassHost = rememberLiquidGlassHost()
     var glassBarRect by remember { mutableStateOf(Rect.Zero) }
     var showSessionPanel by remember { mutableStateOf(false) }
     // 【重排·第六刀 2026-10-08】语音通话入口：顶栏和输入区面板共用一份
@@ -315,13 +318,19 @@ private fun ChatPageContent(
         // 【液态玻璃 · 2026-11-07】录制层：背景图 + 内容一起录。
         // ⚠️ 玻璃条绝不能进这一层 —— 它读的那张图正是这一层每帧录的，会自己喂自己卡死。
         Box(modifier = Modifier.fillMaxSize()) {
-        CompositionLocalProvider(LocalLiquidGlassHost provides liquidHost) {
+        CompositionLocalProvider(LocalLiquidGlassHost provides bgGlassHost) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .liquidGlassSource(liquidHost, MaterialTheme.colorScheme.background)
         ) {
-        AssistantBackground(setting = setting)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .liquidGlassSource(bgGlassHost, MaterialTheme.colorScheme.background)
+        ) {
+            AssistantBackground(setting = setting)
+        }
         Scaffold(
             bottomBar = {
                 ChatInput(
