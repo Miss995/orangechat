@@ -144,22 +144,29 @@ half4 main(float2 p) {
     // ① 亮带宽度跟玻璃厚度走，中间最亮、两边淡（钟形，不是方块）
     // ② 迎光那半边亮、背光那半边暗，不是一个均匀的圈
     float distIn = -d;                                   // 到边的距离，里面为正
-    float rimW   = max(uThick * 0.45, 3.0);              // 亮带宽度
+    // 【2026-11-07 宝说"比较粗"】10px 的亮带等于在边上画了一条实心带。缩到约 5px。
+    float rimW   = max(uThick * 0.22, 2.0);              // 亮带宽度
     float tRim   = clamp(distIn / rimW, 0.0, 1.0);       // 0 = 贴边, 1 = 带的内边界
     float bell   = sin(tRim * 3.14159265);               // 0 → 1 → 0
-    float rimLt  = bell * bell;                          // 更尖一点
+    float rimLt  = bell * bell;
 
     // 朝外的方向（从中心指出去）跟光向点乘：+1 正对光，-1 背光
     float lit    = dot(toEdge, normalize(float2(-0.55, -0.75)));
-    float litAmt = smoothstep(-0.35, 0.85, lit);
+    // 【2026-11-07 宝说"很僵硬"】明暗过渡原来只有 -0.35~0.85，切换太快；放宽一档
+    float litAmt = smoothstep(-0.60, 1.10, lit);
 
-    // 迎光侧：切面反光
-    col += rimLt * mix(0.06, 0.62, litAmt);
+    // 迎光侧：切面反光（亮度也收一点，10px→5px 后原来那个值会显得刺）
+    col += rimLt * mix(0.04, 0.42, litAmt);
     // 背光侧：厚度的吸收，压一道薄的暗
-    col *= 1.0 - rimLt * (1.0 - litAmt) * 0.38;
+    col *= 1.0 - rimLt * (1.0 - litAmt) * 0.28;
+
+    // 【2026-11-07 新增】宽而极淡的内晕：从边往里慢慢淡掉，让边缘"进入"内容而不是"切一刀"。
+    // 这是治"僵硬"的主力 —— 之前只有一圈带 + 一圈暗，太像描边。
+    float halo = smoothstep(0.0, uThick * 1.6, distIn);
+    col *= 1.0 - (1.0 - halo) * 0.12;
 
     // 贴边那条极细的高光，只用来勾轮廓
-    col += wOut * 0.28;
+    col += wOut * 0.22;
 
     // 边上一点点柔化，免得硬边像描线
     float aa = 1.0 - smoothstep(-1.5, 0.5, d);
