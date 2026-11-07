@@ -156,24 +156,21 @@ half4 main(float2 p) {
     // 真凶就是这行：它只在背光侧压暗，而且边缘权重给到 1.6 倍 → 那一圈比周围暗 28% → 看着像阴影。
     // 玻璃的"存在感"不该靠压暗（压暗=蒙灰），靠饱和度 + 迎光侧的亮就够了。
 
-    // 【边 · 2026-11-07 下午 查完 Apple Liquid Glass 的做法后重做】
-    // 之前几版全是"描边思维"：整圈勾一条亮线 + 一条暗线，靠对比撑轮廓。
-    // Apple 的做法不是这样（kube.io 拆 CSS/SVG、Medium 那篇拆 Metal 反推出来的）：
-    //   ① 一圈**宽而极淡**的光，从边往里衰减 —— 不是硬线
-    //   ② **只往上加亮，绝不压暗**（压暗 = 蒙灰，清透感立刻没）
-    //   ③ **只给迎光那半边**，背光侧几乎没有边 —— 整圈都亮就成了描边
+    // 【边 · v2 · 2026-11-07 傍晚】照 whereyanlands v3 PDF 第 5 页的做法重写。
+    // 它把边缘高光拆成两件事**相乘**：一条极细的线 × 按角度分布的亮度。
+    //   ① hairline：高斯，中心在边框内侧半像素，σ 只有 0.62px —— 窄到不像描边
+    //   ② 两个角度高斯：左上最亮（0.66）、右下次亮（0.48），其余几乎为零 —— 不是整圈均匀
+    //   ③ mix 往白里靠 + clamp 封顶 0.76 —— 不死白，留四分之一给底色
+    // 对比旧版：亮带 17.6px（宽 16 倍）、单方向点积、加法混合（会过曝）。
     float distIn = -d;
-    float rimW   = max(uThick * 0.8, 8.0);
-    float tRim   = clamp(distIn / rimW, 0.0, 1.0);
-    float edgeFade = (1.0 - tRim) * (1.0 - tRim);      // 贴边最强，往里平滑衰减
+    float hairline = exp(-pow((distIn - 0.55) / 0.62, 2.0));
 
-    // 迎光侧权重：朝外的方向跟光向点乘；背光侧 clamp 成 0，那边就不留边
-    float litDot = dot(toEdge, normalize(float2(-0.5, -0.8)));
-    float litAmt = clamp(litDot, 0.0, 1.0);
-    litAmt = litAmt * litAmt;                           // 收窄，让最亮集中在一小块
+    float ang = atan(toEdge.y, toEdge.x);
+    float upperLeft  = exp(-pow((ang + 2.38) / 0.60, 2.0));
+    float lowerRight = exp(-pow((ang - 0.76) / 0.62, 2.0));
 
-    // 冷调的白（略偏蓝）—— 直接加，不乘任何压暗
-    col += edgeFade * litAmt * float3(0.34, 0.35, 0.38);
+    float edgeGlint = hairline * (upperLeft * 0.66 + lowerRight * 0.48);
+    col = mix(col, float3(1.0), clamp(edgeGlint, 0.0, 0.76));
 
     // 【饱和度 · 2026-11-07 新增】CSS 那边是 blur + saturate(1.6)：玻璃后面的颜色会**更浓一点**。
     // 少了这一下，画面就是"糊"而不是"玻璃"。
