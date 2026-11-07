@@ -693,7 +693,10 @@ private fun MessagePartsBlock(
                         ChainOfThought(
                             modifier = if (loading) Modifier else Modifier.animateContentSize(),
                             steps = block.steps,
-                            collapsedAdaptiveWidth = isReasoningOnlyBlock,
+                            // 【折叠态一律收窄 · 2026-11-07 宝："还是如此肥美吗"】
+                            // 原来传 isReasoningOnlyBlock：块里掺了工具步骤就走"铺满"，所以气泡一直满行。
+                            // 思考链现在自己是一只气泡，折叠态就该按内容收着。
+                            collapsedAdaptiveWidth = true,
                             animateChanges = !loading,
                             bare = true,
                         ) { step ->
