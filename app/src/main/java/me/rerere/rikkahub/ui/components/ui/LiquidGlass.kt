@@ -139,19 +139,27 @@ half4 main(float2 p) {
     float  backSide = smoothstep(-0.15, 0.85, dot(toEdge, normalize(float2(0.55, 0.83))));
     col *= mix(1.0, 0.72, backSide * wOut * 1.6 + backSide * wIn * 0.35);
 
-    // 【边 · 2026-11-07】玻璃采的就是背景图，外面也是同一张图 —— 两边颜色一样，
-    // 光靠折射看不出"这里有一块东西"。真玻璃的边是明暗挤出来的：
-    // ① 贴边 2.5px 一圈硬亮线（切面反光）
-    float distIn = -d;                                  // 到边的距离，里面为正
-    float hardRim = 1.0 - smoothstep(0.0, 2.5, distIn);
-    col += hardRim * 0.55;
+    // 【边 · 2026-11-07 宝说"不够真"后重做】原来是一条 2.5px 的死硬亮线 + 9px 一圈暗，
+    // 那是"描边"不是玻璃 —— 宽度跟厚度无关、亮度跟光向无关，所以假。现在：
+    // ① 亮带宽度跟玻璃厚度走，中间最亮、两边淡（钟形，不是方块）
+    // ② 迎光那半边亮、背光那半边暗，不是一个均匀的圈
+    float distIn = -d;                                   // 到边的距离，里面为正
+    float rimW   = max(uThick * 0.45, 3.0);              // 亮带宽度
+    float tRim   = clamp(distIn / rimW, 0.0, 1.0);       // 0 = 贴边, 1 = 带的内边界
+    float bell   = sin(tRim * 3.14159265);               // 0 → 1 → 0
+    float rimLt  = bell * bell;                          // 更尖一点
 
-    // ② 内侧 9px 一圈轻压暗（厚度吸收），跟亮线一挤，边就切出来了
-    float innerBand = (1.0 - smoothstep(0.0, 9.0, distIn)) - hardRim;
-    col *= 1.0 - max(innerBand, 0.0) * 0.30;
+    // 朝外的方向（从中心指出去）跟光向点乘：+1 正对光，-1 背光
+    float lit    = dot(toEdge, normalize(float2(-0.55, -0.75)));
+    float litAmt = smoothstep(-0.35, 0.85, lit);
 
-    // 贴边那条细亮轮廓（玻璃厚度反的光）
-    col += wOut * 0.20;
+    // 迎光侧：切面反光
+    col += rimLt * mix(0.06, 0.62, litAmt);
+    // 背光侧：厚度的吸收，压一道薄的暗
+    col *= 1.0 - rimLt * (1.0 - litAmt) * 0.38;
+
+    // 贴边那条极细的高光，只用来勾轮廓
+    col += wOut * 0.28;
 
     // 边上一点点柔化，免得硬边像描线
     float aa = 1.0 - smoothstep(-1.5, 0.5, d);
