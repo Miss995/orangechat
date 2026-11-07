@@ -160,7 +160,7 @@ half4 main(float2 p) {
     // 边缘高光：只有朝光的那一侧边亮（光从左上来，跟阴影方向对上）
     float3 lightDir = normalize(float3(-0.55, -0.75, 0.62));
     float spec = pow(max(0.0, dot(n, lightDir)), 6.0);
-    col += spec * 0.32 * wIn;
+    col += spec * 0.45 * wIn;
 
     // 【立体 · 2026-11-07】原来那条"整体上亮下暗"已删（宝说看着黑黑的）。
     // 只留背光那侧一道弱的暗，跟高光拉开对比就够。
@@ -188,7 +188,7 @@ half4 main(float2 p) {
     float upperLeft  = exp(-pow((ang + 2.38) / 0.60, 2.0));
     float lowerRight = exp(-pow((ang - 0.76) / 0.62, 2.0));
 
-    float edgeGlint = hairline * (upperLeft * 0.66 + lowerRight * 0.48);
+    float edgeGlint = hairline * (upperLeft * 0.86 + lowerRight * 0.48);
 
     // 【边缘光染环境色 · 2026-11-07 傍晚，抄 Gale 开源那份 glass.css 的 ::before 渐变】
     // 它那条边不是纯白：白 0.62 → 壁纸主色 0.38 → 白 0.04 → 壁纸主色 0.22 → 白 0.30。
@@ -213,7 +213,18 @@ half4 main(float2 p) {
 
     // 边上一点点柔化，免得硬边像描线
     float aa = 1.0 - smoothstep(-1.5, 0.5, d);
-    return half4(half3(col), uAlpha * aa);
+    float outA = uAlpha * aa;
+
+    // 【外阴影 · 2026-11-07 傍晚 宝提】"生硬可能因为没有阴影" —— 对，之前六层删光了一刀切。
+    // 这次不压在玻璃内部（内部压暗=蒙灰，14:34 已经翻过车），而是画在**外面**：
+    //   形状往左上挪 5,7 → 阴影就落在右下（光从左上来，影子往右下掉）
+    //   从边界 0.5px 开始，26px 内淡到 0，最浓 22%
+    if (d > 0.5) {
+        float dS = sdf(p - float2(-5.0, -7.0));
+        float sh = step(0.5, dS) * (1.0 - smoothstep(0.5, 26.0, dS)) * 0.22;
+        return half4(half3(0.0), sh);
+    }
+    return half4(half3(col), outA);
 }
 """
 
