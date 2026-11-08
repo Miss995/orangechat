@@ -708,7 +708,7 @@ fun ChatInput(
                     glassHost!!, glassRect,
                     LiquidGlassStyle(
                         radius = with(glassDensity) { 26.dp.toPx() },
-                        refract = 0.6f,
+                        refract = 0.35f,   // 【2026-11-08】0.6 会把底下那条暗缝吸上来成一条黑，降下来
                         thickness = 22f,
                         alpha = 1f,
                         blur = 0f,
@@ -912,7 +912,8 @@ fun ChatInput(
                     },
                 // 【玻璃模式 · 2026-11-08 宝说的】打印机是"上圆下直"（塑料件注塑 + 下缘接纸），
                 // 玻璃只要一层皮 → 换普通圆角，四个角一样
-                shape = if (glassMode) RoundedCornerShape(26.dp) else PrinterBodyShape,
+                // 【胶囊 · 2026-11-08 宝的参考】玻璃模式走全圆（两端半圆，像一片药）
+                shape = if (glassMode) CircleShape else PrinterBodyShape,
                 tonalElevation = 0.dp,
                 // 【打印机外观 2026-10-18】机身底色一律透明：渐变画在下面那层 Box 上
                 // （Surface 的 color 只能纯色，画不了渐变）
