@@ -890,6 +890,8 @@ fun ChatInput(
                     // 两截接在一起 = 纸从机器底下露出来（不是被机身压住）
                     .drawWithContent {
                         drawContent()
+                        // 【玻璃模式 · 2026-11-08】这段是"纸从机器底下露出来"的那一截，玻璃不要
+                        if (glassMode) return@drawWithContent
                         val h = 9.dp.toPx()
                         val insetX = 8.dp.toPx()
                         drawRect(
@@ -906,7 +908,9 @@ fun ChatInput(
                             size = Size(size.width - insetX * 2, h),
                         )
                     },
-                shape = PrinterBodyShape,
+                // 【玻璃模式 · 2026-11-08 宝说的】打印机是"上圆下直"（塑料件注塑 + 下缘接纸），
+                // 玻璃只要一层皮 → 换普通圆角，四个角一样
+                shape = if (glassMode) RoundedCornerShape(26.dp) else PrinterBodyShape,
                 tonalElevation = 0.dp,
                 // 【打印机外观 2026-10-18】机身底色一律透明：渐变画在下面那层 Box 上
                 // （Surface 的 color 只能纯色，画不了渐变）
@@ -930,7 +934,7 @@ fun ChatInput(
                     // 【打印机外观】出纸口：机身顶上那道缝，纸就是从这里出来的
                     // 2026-10-18 做厚度：上沿一道塑料切口的高光，中间落下去变黑，
                     // 下沿再返一点亮 —— 三层才像一条缝，一条渐变永远像贴纸
-                    Box(
+                    if (!glassMode) Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             // 【缝要压在纸上 · 2026-10-19】纸票在 Column 里、画在出纸口之后，
