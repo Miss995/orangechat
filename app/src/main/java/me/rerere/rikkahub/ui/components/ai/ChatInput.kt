@@ -708,16 +708,18 @@ fun ChatInput(
                     glassHost!!, glassRect,
                     LiquidGlassStyle(
                         radius = with(glassDensity) { 26.dp.toPx() },
-                        refract = 0.35f,   // 【2026-11-08】0.6 会把底下那条暗缝吸上来成一条黑，降下来
+                        // 【探针版 · 2026-11-08】边缘全关（折射 0 / 不缩 / 不放 / 影响宽度 0）
+                        // 目的：如果那条黑还在，就 100% 不是玻璃，是布局里的东西。查完再调回来。
+                        refract = 0f,
                         thickness = 22f,
                         alpha = 1f,
                         blur = 0f,
                         // ★ 宝 2026-11-08 在网页上摸出来的那三条
                         // 【2026-11-08 宝指出】边缘那圈灰不是描边，是 rim 太大——采样跑出玻璃外面被拉伸了。
                         // 先压到 0.35 看形状，真对了再往上加。
-                        zoom = 0.95f,
-                        rim = 0.35f,
-                        rimDist = with(glassDensity) { 5.dp.toPx() },
+                        zoom = 1f,
+                        rim = 0f,
+                        rimDist = 0f,
                     ),
                     screenW = with(glassDensity) { LocalConfiguration.current.screenWidthDp.dp.toPx() },
                     screenH = with(glassDensity) { LocalConfiguration.current.screenHeightDp.dp.toPx() },
@@ -2238,7 +2240,8 @@ private fun TextInputRow(
             modifier = Modifier
                 .fillMaxWidth()
                 // 【收窄 · 2026-11-08 宝】M3 TextField 自带 56dp 最小高，光限行数压不下来
-                .then(if (glassMode) Modifier.height(46.dp) else Modifier)
+                // 【2026-11-08 宝：字被切了一半】46dp 太矮，M3 TextField 自己的上下 padding 就把行吃掉了
+                .then(if (glassMode) Modifier.height(58.dp) else Modifier)
                 .onGloballyPositioned { fieldRectState.value = it.boundsInWindow() }
                 .contentReceiver(receiveContentListener)
                 .onFocusChanged {
