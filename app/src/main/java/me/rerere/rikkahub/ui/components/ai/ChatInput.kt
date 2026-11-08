@@ -937,10 +937,10 @@ fun ChatInput(
                 // Use Box so background image can match parent size
                 Box(
                     modifier = if (inputBgAvailable) Modifier
-                        // 【探针 · 2026-11-08 01:44】宝要看那条黑是不是这层"漏底"。
-                        // 临时灌洋红：黑条变成洋红 = 确认是这层没铺东西；还是黑的 = 另有其人。
-                        // 验完立刻改回透明。
-                        else if (glassMode) Modifier.background(Color(0xFFFF00FF))
+                        // 【漏底 · 2026-11-08 01:51 已验】洋红探针一灌，那条黑直接没影
+                        // → 就是这层：玻璃模式下留空 = 不画 = 透到窗口，露出来的就是黑。
+                        // 补页面底色接住它。玻璃采样采的是图形层录制的背景，不受这层影响。
+                        else if (glassMode) Modifier.background(MaterialTheme.colorScheme.background)
                         else Modifier.background(
                             // 【打印机外观】机身：深灰塑料外壳
                             Brush.verticalGradient(
