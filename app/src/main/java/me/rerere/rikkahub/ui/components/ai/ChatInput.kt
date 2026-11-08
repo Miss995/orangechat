@@ -882,7 +882,10 @@ fun ChatInput(
                     // 平时不裁 —— 否则底下那道纸边永远伸不出机身圆角
                     .then(
                         if (settings.displaySetting.enableBlurEffect) Modifier
-                            .clip(PrinterBodyShape)
+                            // 【2026-11-08 那条黑的真凶】模糊层裁的是打印机形状（上圆下直），
+                            // 而外层玻璃已经改成胶囊 —— 两个形状错位，底部就露出一条直边的深色。
+                            // 玻璃模式跟着走同一套形状。
+                            .clip(if (glassMode) CircleShape else PrinterBodyShape)
                             .hazeEffect(
                                 state = hazeState,
                                 style = HazeMaterials.ultraThin(containerColor = hazeTintColor)
