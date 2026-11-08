@@ -708,6 +708,9 @@ fun ChatInput(
                     glassRect = Rect(pos.x, pos.y, pos.x + it.size.width, pos.y + h)
                 }
             }
+            // 【无边框 · 2026-11-08 宝】玻璃模式把整块裁圆：底下残留的打印机件
+            // （出纸口那条深缝、纸仓）怎么都盖不干净，直接裁掉最省事。
+            .then(if (glassMode) Modifier.clip(RoundedCornerShape(28.dp)) else Modifier)
             .then(
                 if (glassReady) Modifier.liquidGlass(
                     glassHost!!, glassRect,
