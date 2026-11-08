@@ -2251,7 +2251,8 @@ private fun TextInputRow(
                 )
             },
             // 【打印机外观】屏是固定大小的：最多两行，再多就在屏里滚
-            lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 2),
+            // 【一行高 · 2026-11-08 宝照抄参考】玻璃模式下只给一行；打印机那版还是两行
+            lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = if (glassMode) 1 else 2),
             // 【手势打架 · 2026-10-17】用外面传进来的实例，外面那道手势闸读的就是它。
             scrollState = inputScrollState,
             keyboardOptions = KeyboardOptions(
