@@ -1333,7 +1333,8 @@ fun ChatInput(
                         // 机器底下压着的一沓纸：只露出一道纸边（左右内缩 8dp，躲开机身圆角）
                         // 【打印机外观 2026-10-18】不能再在机身里 offset 了 ——
                         // 一挪，接缝和纸之间就空出一条机身黑，看着像个莫名其妙的凹槽
-                        Box(
+                        // 【玻璃模式 · 2026-11-08 宝指的就是这条】玻璃是一层皮，底下不该压着一沓纸
+                        if (!glassMode) Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 8.dp)
