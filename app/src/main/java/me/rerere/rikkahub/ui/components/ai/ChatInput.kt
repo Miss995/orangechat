@@ -1169,7 +1169,8 @@ fun ChatInput(
                                         onSendMessage = { sendMessage() },
                                         onUsePickedQuote = onUsePickedQuote,
                                         inputScrollState = inputScrollState,
-                                        fieldRectState = fieldRectState
+                                        fieldRectState = fieldRectState,
+                                        glassMode = glassMode
                                     )
                                     }
                                 }
@@ -2145,6 +2146,8 @@ private fun TextInputRow(
     inputScrollState: ScrollState = rememberScrollState(),
     // 【分区 · 2026-10-17】TextField 把自己在屏幕上的矩形写进来，外面手势闸读它判落点。
     fieldRectState: MutableState<Rect> = remember { mutableStateOf(Rect.Zero) },
+    // 【玻璃输入框 · 2026-11-08】玻璃模式下 TextField 自己的暗绿屏底要让空（不然那块绿底永远在）
+    glassMode: Boolean = false,
 ) {
     val displaySettings = LocalDisplaySettings.current
     val filesManager: FilesManager = koinInject()
@@ -2263,8 +2266,9 @@ private fun TextInputRow(
                 unfocusedIndicatorColor = Color.Transparent,
                 focusedIndicatorColor = Color.Transparent,
                 // 【打印机外观 2026-10-18】LCD：暗绿屏底
-                focusedContainerColor = Color(0xFF0D1712),
-                unfocusedContainerColor = Color(0xFF0D1712),
+                // 【玻璃模式 · 2026-11-08】这层绿底一留，前面改的都没用 —— 它才是看见的那块
+                focusedContainerColor = if (glassMode) Color.Transparent else Color(0xFF0D1712),
+                unfocusedContainerColor = if (glassMode) Color.Transparent else Color(0xFF0D1712),
             ),
             trailingIcon = {
                 if (isFocused) {
