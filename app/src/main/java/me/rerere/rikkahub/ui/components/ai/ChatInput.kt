@@ -1089,16 +1089,19 @@ fun ChatInput(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(9.dp))
-                                    .background(
-                                        Brush.verticalGradient(
-                                            listOf(Color(0xFF1A1715), Color(0xFF141210))
+                                    // 【玻璃模式 · 2026-11-08 宝要②】屏框也是打印机的零件，玻璃模式让空
+                                    .then(
+                                        if (glassMode) Modifier else Modifier.background(
+                                            Brush.verticalGradient(
+                                                listOf(Color(0xFF1A1715), Color(0xFF141210))
+                                            )
                                         )
                                     )
                                     .padding(5.dp)
                             ) {
                                 // 【打印机外观】LCD 底色（外面那 5dp 露出的是屏框）
                                 // 【打印机外观】LCD 底色，圆角 6dp —— 屏是嵌在框里的，不能是直角
-                                Box(
+                                if (!glassMode) Box(
                                     modifier = Modifier
                                         .matchParentSize()
                                         .clip(RoundedCornerShape(6.dp))
