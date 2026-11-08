@@ -940,7 +940,8 @@ fun ChatInput(
                         // 【漏底 · 2026-11-08 01:51 已验】洋红探针一灌，那条黑直接没影
                         // → 就是这层：玻璃模式下留空 = 不画 = 透到窗口，露出来的就是黑。
                         // 补页面底色接住它。玻璃采样采的是图形层录制的背景，不受这层影响。
-                        else if (glassMode) Modifier.background(MaterialTheme.colorScheme.background)
+                        // 【分层染色探针 · 2026-11-08 01:55】机身层 = 红
+                        else if (glassMode) Modifier.background(Color(0xFFFF0000))
                         else Modifier.background(
                             // 【打印机外观】机身：深灰塑料外壳
                             Brush.verticalGradient(
@@ -1354,6 +1355,16 @@ fun ChatInput(
                         // 【打印机外观 2026-10-18】不能再在机身里 offset 了 ——
                         // 一挪，接缝和纸之间就空出一条机身黑，看着像个莫名其妙的凹槽
                         // 【玻璃模式 · 2026-11-08 宝指的就是这条】玻璃是一层皮，底下不该压着一沓纸
+                        // 【分层染色探针 · 2026-11-08 01:55】纸仓层 = 绿
+                        // 这块在玻璃模式下原本整块跳过 → 位置空出来 → 底下没东西 → 黑。
+                        // 先染绿，看那条黑是不是它。
+                        if (glassMode) Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp)
+                                .height(14.dp)
+                                .background(Color(0xFF00FF00))
+                        )
                         if (!glassMode) Box(
                             modifier = Modifier
                                 .fillMaxWidth()
