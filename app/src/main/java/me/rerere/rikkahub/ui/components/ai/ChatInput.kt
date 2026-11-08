@@ -710,7 +710,15 @@ fun ChatInput(
             }
             // 【无边框 · 2026-11-08 宝】玻璃模式把整块裁圆：底下残留的打印机件
             // （出纸口那条深缝、纸仓）怎么都盖不干净，直接裁掉最省事。
-            .then(if (glassMode) Modifier.clip(RoundedCornerShape(28.dp)) else Modifier)
+            // 【那条黑 · 2026-11-09 02:15 第七刀】染色图已经排除：红（机身内层）铺上半、
+            // 绿（纸仓）在最底，黑夹在中间 —— 中间那块是**出纸口和纸仓被跳过留下的空洞**，
+            // 底下没东西接，就透到窗口成黑。给整块铺一层底填上。
+            .then(
+                if (glassMode) Modifier
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(MaterialTheme.colorScheme.background)
+                else Modifier
+            )
             .then(
                 if (glassReady) Modifier.liquidGlass(
                     glassHost!!, glassRect,
