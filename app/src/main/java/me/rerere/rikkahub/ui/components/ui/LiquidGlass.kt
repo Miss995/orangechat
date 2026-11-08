@@ -58,6 +58,8 @@ uniform float   uBlur;
 // 2026-11-07 傍晚：不传屏幕绝对坐标，Kotlin 侧算好局部值直接传，shader 不用知道屏幕多大。
 uniform float2  uLightLocal;
 uniform float   uTime;
+uniform float   uInnerWhite;   // 内圈白强度（体积感，整圈）
+uniform float   uGlint;        // 高光线强度倍数（只走左上/右下两段）
 uniform float2  uBgInv;
 
 // 【形状 · 2026-11-07 宝指的】只吃局部坐标 + 自己的宽高。
@@ -174,12 +176,9 @@ half4 main(float2 p) {
     // 光心正好在元素中心时 dirL 退化成 (0,0)，用兜底方向接住
     float2 dirL = normalize(mix(float2(-0.62, -0.78), toL / max(lenL, 1.0), step(1.0, lenL)));
 
-    // 归一化到 -0.5..0.5，整个面参与（不是只有边缘那一圈）
-    float2 gN = (p - uSize * 0.5) / max(uSize, float2(1.0));
-    // 朝光那一侧亮、背光侧暗。光心会随元素滚动而变 → 明暗方向自己跟着转，不用写死
-    float  gradL = 0.5 - dot(gN, dirL) * 0.95;
-    float  faceGlow = smoothstep(0.20, 0.92, gradL) * 0.14;
-    col += faceGlow;
+    // 【面上高光 · 2026-11-08 三改：撤掉】前面两版都在"面上做高光"，方向就是错的。
+    // 宝的原话："边缘是边缘，它那个高光就是一条包着的线啊……边缘的内圈白是体现体积感的，高光是高光"
+    // —— 要的是**线**，不是**面**。面上什么都不加，留干净给底下的内容。
 
     // 【立体 · 2026-11-07】原来那条"整体上亮下暗"已删（宝说看着黑黑的）。
     // 只留背光那侧一道弱的暗，跟高光拉开对比就够。
@@ -208,20 +207,20 @@ half4 main(float2 p) {
     float2 breathe = float2(sin(uTime * 0.57) * 3.0, sin(uTime * 0.43 + 1.7) * 2.4);
     float2 toLight = normalize(p - (uLightLocal + breathe) + float2(0.000001));
     float ang = atan(toLight.y, toLight.x);
+    // 【高光的两段 · 2026-11-08】只走左上和右下，中间空着 —— 这是宝指的"包着的那种线"。
+    // 顶边那道删掉：宝明确说"边上是空的那种线"，一圈全亮就不叫高光了。
     float upperLeft  = exp(-pow((ang + 2.38) / 0.60, 2.0));
     float lowerRight = exp(-pow((ang - 0.76) / 0.62, 2.0));
-    // 【顶边亮线 · 2026-11-08 宝提】正上方（ang ≈ -PI/2）再补一道。
-    // 左上那道（-2.38）偏横向，顶部正中原来是个暗口，一圈亮线看着"缺一截"。
-    float topEdge = exp(-pow((ang + 1.571) / 0.72, 2.0));
 
-    // 【雾 · 2026-11-07 18:46 宝说"像小猫在边缘画了一条线，太细了"】
-    // 规矩：不加粗线本身（线细才是玻璃），在它外面罩一层宽 3px、强度 0.32 的雾。
-    // 线负责"有边界"，雾负责"有厚度"。σ 从 0.62 → 3.0 是宽 5 倍，但中心值仍由 clamp 0.76 封住，
-    // 所以不会过曝 —— 变化全在边缘往外那 3px 的衰减上。
-    float halo = exp(-pow((distIn - 0.55) / 3.0, 2.0)) * 0.32;
+    // ★★ 这里分两件东西，之前被乘在一起了（宝："边缘的内圈白是体现体积感的，高光是高光"）：
+    //   ① 内圈白 uInnerWhite —— 整圈都有，靠边最亮、往里 3~4px 淡掉。它负责"这是块有厚度的东西"
+    //   ② 高光线 uGlint —— 只在左上/右下两段，极细（σ 0.62px），戴颜色。它负责"这里打了光"
+    // 合成起来：整圈有一层薄白（体积），两段再各自加一道亮线（高光）。
+    float innerWhite = exp(-pow((distIn - 1.1) / 2.7, 2.0)) * uInnerWhite;
+    float glintMask  = upperLeft * 0.95 + lowerRight * 0.55;
+    float glintLine  = hairline * glintMask * uGlint;
 
-    // 权重之和会超过 1，但下面有 clamp(..., 0.76) 封顶，不会过曝
-    float edgeGlint = (hairline + halo) * (upperLeft * 0.78 + lowerRight * 0.42 + topEdge * 0.62);
+    float edgeGlint = innerWhite + glintLine;
 
     // 【边缘光染环境色 · 2026-11-07 傍晚，抄 Gale 开源那份 glass.css 的 ::before 渐变】
     // 它那条边不是纯白：白 0.62 → 壁纸主色 0.38 → 白 0.04 → 壁纸主色 0.22 → 白 0.30。
@@ -229,7 +228,7 @@ half4 main(float2 p) {
     float3 ambient = clamp(col * 1.35, 0.0, 1.0);
     float3 glintCol = mix(ambient, float3(1.0), 0.62);
     // 【边缘亮线加重 · 2026-11-08】iOS 真机对照：那圈线是全靠它撑着脸的，别客气
-    col = mix(col, glintCol, clamp(edgeGlint, 0.0, 0.86));
+    col = mix(col, glintCol, clamp(edgeGlint, 0.0, 0.94));
 
     // 【左右色散 · 2026-11-07 傍晚，抄它 box-shadow 里那两条 inset】
     //   inset 1px 0 0  rgba(255,140,180,.10)  ← 左暖
@@ -274,6 +273,13 @@ data class LiquidGlassStyle(
     val alpha: Float = 1f,
     /** 磨砂半径（像素）。0 = 纯折射（像水），越大越糊。宝 2026-11-07 选的就是 0 */
     val blur: Float = 0f,
+    /**
+     * 内圈白（体积感）。0 = 玻璃没有厚度，像贴了张膜；1 = 一圈白边。
+     * 它走**整圈**，靠边最亮往里淡掉 —— 跟高光是两件事，别混。
+     */
+    val innerWhite: Float = 0.22f,
+    /** 高光线强度倍数。只活在左上/右下两段（中间空着），1.0 = 默认 */
+    val glint: Float = 1f,
 )
 
 /**
@@ -381,6 +387,8 @@ fun Modifier.liquidGlass(
             setFloatUniform("uBlur", style.blur)
             setFloatUniform("uLightLocal", lightX, lightY)
             setFloatUniform("uTime", (System.currentTimeMillis() % 600000L) / 1000f)
+            setFloatUniform("uInnerWhite", style.innerWhite)
+            setFloatUniform("uGlint", style.glint)
             // ⚠️ ImageShader 把整张图铺在 0..1 的坐标空间里，而 shader 里的 p 是像素坐标。
             // ImageShader 没有 matrix 参数（2026-11-06 编译报错过），所以在 shader 里用 uBgInv 换算。
             setFloatUniform("uBgInv", 1f / bg.width, 1f / bg.height)
