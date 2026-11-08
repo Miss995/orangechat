@@ -710,15 +710,11 @@ fun ChatInput(
             }
             // 【无边框 · 2026-11-08 宝】玻璃模式把整块裁圆：底下残留的打印机件
             // （出纸口那条深缝、纸仓）怎么都盖不干净，直接裁掉最省事。
-            // 【那条黑 · 2026-11-09 02:15 第七刀】染色图已经排除：红（机身内层）铺上半、
-            // 绿（纸仓）在最底，黑夹在中间 —— 中间那块是**出纸口和纸仓被跳过留下的空洞**，
-            // 底下没东西接，就透到窗口成黑。给整块铺一层底填上。
-            .then(
-                if (glassMode) Modifier
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(MaterialTheme.colorScheme.background)
-                else Modifier
-            )
+            // 【无边框 · 2026-11-08 宝】玻璃模式下整块裁圆。
+            // 【2026-11-09 02:46】原来这里还铺了一层底色"补底"，但真凶已经查明是
+            // 底部接缝那道 9dp 黑台（a68227d2 跳过它），补底纯属多余 ——
+            // 而且它会挡在玻璃下面，玻璃采样采到的就是纯色，玻璃看着就成白板了。
+            .then(if (glassMode) Modifier.clip(RoundedCornerShape(28.dp)) else Modifier)
             .then(
                 if (glassReady) Modifier.liquidGlass(
                     glassHost!!, glassRect,
@@ -940,11 +936,9 @@ fun ChatInput(
                 tonalElevation = 0.dp,
                 // 【打印机外观 2026-10-18】机身底色一律透明：渐变画在下面那层 Box 上
                 // （Surface 的 color 只能纯色，画不了渐变）
-                // 【那条黑的真凶 · 2026-11-09 02:05 分层染色验出来的】
-                // 染色图：红（机身内层）铺满了上半、绿（纸仓）在最底，
-                // 黑条正好夹在中间 —— 就是**机身容器自己**没铺满露出的那一条。
-                // 它的 color 一直是 Transparent，底下没东西接，透到窗口就是黑。
-                color = if (glassMode) MaterialTheme.colorScheme.background else Color.Transparent,
+                // 【2026-11-09 02:05 试过给这里铺底色，是误判】真凶是底部接缝（a68227d2），
+                // 这里铺底色只会挡在玻璃下面，把玻璃变成白板。恢复透明。
+                color = Color.Transparent,
             ) {
                 // Use Box so background image can match parent size
                 Box(
