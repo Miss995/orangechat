@@ -57,6 +57,7 @@ uniform float   uBlur;
 // 光心（相对本元素的局部坐标）。屏幕中心转到元素局部 = 光照在世界里不动、玻璃动了光就游。
 // 2026-11-07 傍晚：不传屏幕绝对坐标，Kotlin 侧算好局部值直接传，shader 不用知道屏幕多大。
 uniform float2  uLightLocal;
+uniform float   uTime;
 uniform float2  uBgInv;
 
 // 【形状 · 2026-11-07 宝指的】只吃局部坐标 + 自己的宽高。
@@ -162,10 +163,25 @@ half4 main(float2 p) {
     float3 col = sampleBgBlur(zoom + off).rgb * 0.62
                + sampleBgBlur(zoom + off * 0.45).rgb * 0.38;
 
-    // 边缘高光：只有朝光的那一侧边亮（光从左上来，跟阴影方向对上）
-    float3 lightDir = normalize(float3(-0.55, -0.75, 0.62));
-    float spec = pow(max(0.0, dot(n, lightDir)), 6.0);
-    col += spec * 0.45 * wIn;
+    // 【主高光 · 2026-11-08 重做】旧版是"一块死斑"：lightDir 写死、光斑永远钉在同一点，
+    // 静止时像贴上去的一片亮纸（宝原话"静态的感觉很假"）。三处改动：
+    //   ① 方向从 uLightLocal 推出来 → 元素滚动时光心相对位移变，高光自己游走
+    //      （跟 edgeGlint 用同一个机制：光在世界里没动，玻璃自己走过来了）
+    //   ② 指数 6 → 2.6：宽得多，是"一片光"不是"一个点"
+    //   ③ 权重乘 wIn^1.4：贴边强、往里淡出，像光从外面斜照进玻璃
+    float2 toL  = uLightLocal - uSize * 0.5;
+    float  lenL = length(toL);
+    // 光心正好在元素中心时 dirL 会退化成 (0,0)（高光变成整块均匀亮），用兜底方向接住
+    float2 dirL = mix(float2(-0.55, -0.75), toL / max(lenL, 1.0), step(1.0, lenL));
+    float3 lightDir = normalize(float3(dirL.x * 0.85, dirL.y * 1.05, 0.62));
+    float spec = pow(max(0.0, dot(n, lightDir)), 2.6);
+    col += spec * 0.30 * pow(wIn, 1.4);
+
+    // ② 右下反向柔光：另一侧补一点，量很小（0.11），只挂在最外一圈 wOut 上。
+    //    真玻璃不会只有一面亮：环境光从四面来，只是主次不同。
+    float3 lightDir2 = normalize(float3(-lightDir.x * 0.7, -lightDir.y * 0.55, 0.72));
+    float spec2 = pow(max(0.0, dot(n, lightDir2)), 3.4);
+    col += spec2 * 0.11 * wOut;
 
     // 【立体 · 2026-11-07】原来那条"整体上亮下暗"已删（宝说看着黑黑的）。
     // 只留背光那侧一道弱的暗，跟高光拉开对比就够。
@@ -188,10 +204,17 @@ half4 main(float2 p) {
     // 【高光游走 · 2026-11-07 傍晚】角度改从"光心"算，不从元素中心。
     // 气泡在屏幕上滚动时 uRect 变、uLightLocal 跟着变 → 角度变 → 亮边沿气泡游走，
     // 就像光照在世界里没动、玻璃自己走过来了。要"静"就把 uLightLocal 钉成元素中心。
-    float2 toLight = normalize(p - uLightLocal + float2(0.000001));
+    // 【呼吸 · 2026-11-08】光心极慢漂几像素：主波 11 秒一个周期、副波 14.6 秒，幅度 3/2.4px。
+    // 小到看不出"在动"，只觉得"活着"。静止不重绘时会停住（画面一动就接上），这是有意的：
+    // 为了一个几乎看不出的摆动让整块持续重绘，不值。
+    float2 breathe = float2(sin(uTime * 0.57) * 3.0, sin(uTime * 0.43 + 1.7) * 2.4);
+    float2 toLight = normalize(p - (uLightLocal + breathe) + float2(0.000001));
     float ang = atan(toLight.y, toLight.x);
     float upperLeft  = exp(-pow((ang + 2.38) / 0.60, 2.0));
     float lowerRight = exp(-pow((ang - 0.76) / 0.62, 2.0));
+    // 【顶边亮线 · 2026-11-08 宝提】正上方（ang ≈ -PI/2）再补一道。
+    // 左上那道（-2.38）偏横向，顶部正中原来是个暗口，一圈亮线看着"缺一截"。
+    float topEdge = exp(-pow((ang + 1.571) / 0.72, 2.0));
 
     // 【雾 · 2026-11-07 18:46 宝说"像小猫在边缘画了一条线，太细了"】
     // 规矩：不加粗线本身（线细才是玻璃），在它外面罩一层宽 3px、强度 0.32 的雾。
@@ -199,7 +222,8 @@ half4 main(float2 p) {
     // 所以不会过曝 —— 变化全在边缘往外那 3px 的衰减上。
     float halo = exp(-pow((distIn - 0.55) / 3.0, 2.0)) * 0.32;
 
-    float edgeGlint = (hairline + halo) * (upperLeft * 0.86 + lowerRight * 0.48);
+    // 权重之和会超过 1，但下面有 clamp(..., 0.76) 封顶，不会过曝
+    float edgeGlint = (hairline + halo) * (upperLeft * 0.78 + lowerRight * 0.42 + topEdge * 0.62);
 
     // 【边缘光染环境色 · 2026-11-07 傍晚，抄 Gale 开源那份 glass.css 的 ::before 渐变】
     // 它那条边不是纯白：白 0.62 → 壁纸主色 0.38 → 白 0.04 → 壁纸主色 0.22 → 白 0.30。
@@ -357,6 +381,7 @@ fun Modifier.liquidGlass(
             setFloatUniform("uAlpha", style.alpha)
             setFloatUniform("uBlur", style.blur)
             setFloatUniform("uLightLocal", lightX, lightY)
+            setFloatUniform("uTime", (System.currentTimeMillis() % 600000L) / 1000f)
             // ⚠️ ImageShader 把整张图铺在 0..1 的坐标空间里，而 shader 里的 p 是像素坐标。
             // ImageShader 没有 matrix 参数（2026-11-06 编译报错过），所以在 shader 里用 uBgInv 换算。
             setFloatUniform("uBgInv", 1f / bg.width, 1f / bg.height)
@@ -379,6 +404,9 @@ fun Modifier.liquidGlass(
                 rect.left + size.width, rect.top + size.height
             )
             shader.setFloatUniform("uSize", size.width, size.height)
+            // 【呼吸 · 2026-11-08】每次 draw 时刷新时间 —— 画面一动（滚动/重组）高光就接着摆，
+            // 静止时它停住，不需要为了 3px 的摆动保持整块重绘。
+            shader.setFloatUniform("uTime", (System.currentTimeMillis() % 600000L) / 1000f)
         }
         drawIntoCanvas { canvas ->
             val nc = canvas.nativeCanvas
