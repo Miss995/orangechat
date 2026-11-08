@@ -58,6 +58,14 @@ uniform float   uBlur;
 // 2026-11-07 傍晚：不传屏幕绝对坐标，Kotlin 侧算好局部值直接传，shader 不用知道屏幕多大。
 uniform float2  uLightLocal;
 uniform float2  uBgInv;
+// 【液态玻璃 V2 · 2026-11-08 宝在网页上调出来的核心】原来中间写死"放大 3%"，而真正像液态玻璃的是
+// 「中间缩小 + 边缘一圈夸张放大」。拆成三个参数，默认值保持旧行为（气泡上的小果冻不受影响）。
+//   uZoom    : 中间缩放。1.03 = 旧行为（放大 3%）；<1 = 内容缩小
+//   uRim     : 边缘放大强度。0 = 关（旧行为）
+//   uRimDist : 边缘影响多宽（像素）
+uniform float   uZoom;
+uniform float   uRim;
+uniform float   uRimDist;
 
 // 【形状 · 2026-11-07 宝指的】只吃局部坐标 + 自己的宽高。
 // 之前用整页矩形算，位置一变高光就跟着缩，看着像玻璃自己缩起来了。
@@ -146,7 +154,12 @@ half4 main(float2 p) {
 
     // ① 中心放大：以元素中心为原点缩放采样坐标（>1 表示放大背后的内容）
     float2 ctr0 = uSize * 0.5;
-    float2 zoom  = (p - ctr0) / 1.03 + ctr0;
+    // 【V2】kz > 1 → 采样点离中心更近 → 中心内容被放大；kz < 1 → 内容缩小。
+    //      边缘再乘 (1 - uRim*edgeZone)：越靠边 kz 越小 → 内容被拉出来放大。
+    float  dEdge    = max(-d, 0.0);
+    float  edgeZone = 1.0 - smoothstep(0.0, max(uRimDist, 0.5), dEdge);
+    float  kz       = uZoom * (1.0 - uRim * edgeZone);
+    float2 zoom  = (p - ctr0) / max(kz, 0.2) + ctr0;
 
     // ② 位移收窄：wIn 只在边缘斜面区非零，乘上去之后中间彻底不推
     // 【边缘尖峰 · 2026-11-07 19:22 宝说"能不能让边缘一圈的折射特别夸张一点"】
@@ -251,6 +264,12 @@ data class LiquidGlassStyle(
     val alpha: Float = 1f,
     /** 磨砂半径（像素）。0 = 纯折射（像水），越大越糊。宝 2026-11-07 选的就是 0 */
     val blur: Float = 0f,
+    /** 【V2】中间缩放。1.03 = 旧行为（放大 3%）；<1 = 内容缩小（宝 2026-11-08 调出来的样子） */
+    val zoom: Float = 1.03f,
+    /** 【V2】边缘放大强度。0 = 关（旧行为）。0.8~1.5 是宝试出来的范围 */
+    val rim: Float = 0f,
+    /** 【V2】边缘影响多宽（**像素**，调用方用 with(density){dp.toPx()} 换算）。宝常用 6dp≈16px */
+    val rimDist: Float = 13f,
 )
 
 /**
@@ -356,6 +375,10 @@ fun Modifier.liquidGlass(
             setFloatUniform("uThick", style.thickness)
             setFloatUniform("uAlpha", style.alpha)
             setFloatUniform("uBlur", style.blur)
+            setFloatUniform("uZoom", style.zoom)
+            setFloatUniform("uRim", style.rim)
+            // ⚠️ 这个函数不是 @Composable，读不了 LocalDensity —— 所以 rimDist 由调用方换算成**像素**再传
+            setFloatUniform("uRimDist", style.rimDist)
             setFloatUniform("uLightLocal", lightX, lightY)
             // ⚠️ ImageShader 把整张图铺在 0..1 的坐标空间里，而 shader 里的 p 是像素坐标。
             // ImageShader 没有 matrix 参数（2026-11-06 编译报错过），所以在 shader 里用 uBgInv 换算。
