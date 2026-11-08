@@ -719,18 +719,16 @@ fun ChatInput(
                     glassHost!!, glassRect,
                     LiquidGlassStyle(
                         radius = with(glassDensity) { 26.dp.toPx() },
-                        // 【探针版 · 2026-11-08】边缘全关（折射 0 / 不缩 / 不放 / 影响宽度 0）
-                        // 目的：如果那条黑还在，就 100% 不是玻璃，是布局里的东西。查完再调回来。
-                        refract = 0f,
+                        // 【效果开回来了 · 2026-11-09 03:02 宝："倒是给我开回来啊"】
+                        // 探针期全关是为了验那条黑跟玻璃无关 —— 已经验完了（真凶是接缝）。
+                        refract = 0.6f,     // 折射（1.75 会推开 80px 太夸张，0.6 是调过的那档）
                         thickness = 22f,
                         alpha = 1f,
                         blur = 0f,
                         // ★ 宝 2026-11-08 在网页上摸出来的那三条
-                        // 【2026-11-08 宝指出】边缘那圈灰不是描边，是 rim 太大——采样跑出玻璃外面被拉伸了。
-                        // 先压到 0.35 看形状，真对了再往上加。
-                        zoom = 1f,
-                        rim = 0f,
-                        rimDist = 0f,
+                        zoom = 0.97f,       // 中间缩小 3%
+                        rim = 0.18f,        // 边缘厚度（0.3 太圆像泡泡，0.18 是平的玻璃）
+                        rimDist = 6f,       // 边缘影响多宽
                     ),
                     screenW = with(glassDensity) { LocalConfiguration.current.screenWidthDp.dp.toPx() },
                     screenH = with(glassDensity) { LocalConfiguration.current.screenHeightDp.dp.toPx() },
