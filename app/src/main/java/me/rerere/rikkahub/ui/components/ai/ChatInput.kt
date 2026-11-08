@@ -2237,6 +2237,8 @@ private fun TextInputRow(
             ),
             modifier = Modifier
                 .fillMaxWidth()
+                // 【收窄 · 2026-11-08 宝】M3 TextField 自带 56dp 最小高，光限行数压不下来
+                .then(if (glassMode) Modifier.height(46.dp) else Modifier)
                 .onGloballyPositioned { fieldRectState.value = it.boundsInWindow() }
                 .contentReceiver(receiveContentListener)
                 .onFocusChanged {
