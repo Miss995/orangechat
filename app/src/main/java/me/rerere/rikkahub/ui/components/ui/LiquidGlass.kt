@@ -163,25 +163,23 @@ half4 main(float2 p) {
     float3 col = sampleBgBlur(zoom + off).rgb * 0.62
                + sampleBgBlur(zoom + off * 0.45).rgb * 0.38;
 
-    // 【主高光 · 2026-11-08 重做】旧版是"一块死斑"：lightDir 写死、光斑永远钉在同一点，
-    // 静止时像贴上去的一片亮纸（宝原话"静态的感觉很假"）。三处改动：
-    //   ① 方向从 uLightLocal 推出来 → 元素滚动时光心相对位移变，高光自己游走
-    //      （跟 edgeGlint 用同一个机制：光在世界里没动，玻璃自己走过来了）
-    //   ② 指数 6 → 2.6：宽得多，是"一片光"不是"一个点"
-    //   ③ 权重乘 wIn^1.4：贴边强、往里淡出，像光从外面斜照进玻璃
+    // 【面高光 · 2026-11-08 二改】宝发了 iOS 控制中心那张真机图，对着看出差距：
+    //   iOS 那种玻璃**面上几乎没有高光**，只有一层极淡的斜向柔光（左上稍明、右下稍暗）；
+    //   真正有存在感的是**边缘那一圈细亮线**，它完全跟着几何走（直边直、圆角弯、圆形一圈）。
+    // 猫上一版的错：拿边缘法线去算面上高光 → 直线边的法线沿边不变 → 出来就是一道**直的光**。
+    // 现在拆开：面上只铺一层整块的斜向柔渐变（覆盖整个面，不可能是直线），
+    // 边缘那圈交给下面的 edgeGlint，两边互不打架。
     float2 toL  = uLightLocal - uSize * 0.5;
     float  lenL = length(toL);
-    // 光心正好在元素中心时 dirL 会退化成 (0,0)（高光变成整块均匀亮），用兜底方向接住
-    float2 dirL = mix(float2(-0.55, -0.75), toL / max(lenL, 1.0), step(1.0, lenL));
-    float3 lightDir = normalize(float3(dirL.x * 0.85, dirL.y * 1.05, 0.62));
-    float spec = pow(max(0.0, dot(n, lightDir)), 2.6);
-    col += spec * 0.30 * pow(wIn, 1.4);
+    // 光心正好在元素中心时 dirL 退化成 (0,0)，用兜底方向接住
+    float2 dirL = normalize(mix(float2(-0.62, -0.78), toL / max(lenL, 1.0), step(1.0, lenL)));
 
-    // ② 右下反向柔光：另一侧补一点，量很小（0.11），只挂在最外一圈 wOut 上。
-    //    真玻璃不会只有一面亮：环境光从四面来，只是主次不同。
-    float3 lightDir2 = normalize(float3(-lightDir.x * 0.7, -lightDir.y * 0.55, 0.72));
-    float spec2 = pow(max(0.0, dot(n, lightDir2)), 3.4);
-    col += spec2 * 0.11 * wOut;
+    // 归一化到 -0.5..0.5，整个面参与（不是只有边缘那一圈）
+    float2 gN = (p - uSize * 0.5) / max(uSize, float2(1.0));
+    // 朝光那一侧亮、背光侧暗。光心会随元素滚动而变 → 明暗方向自己跟着转，不用写死
+    float  gradL = 0.5 - dot(gN, dirL) * 0.95;
+    float  faceGlow = smoothstep(0.20, 0.92, gradL) * 0.14;
+    col += faceGlow;
 
     // 【立体 · 2026-11-07】原来那条"整体上亮下暗"已删（宝说看着黑黑的）。
     // 只留背光那侧一道弱的暗，跟高光拉开对比就够。
@@ -230,7 +228,8 @@ half4 main(float2 p) {
     // 这里用玻璃底下已经采到的颜色当"环境色"，混 38% 进去 —— 光像从背景里长出来的，不是贴上去的。
     float3 ambient = clamp(col * 1.35, 0.0, 1.0);
     float3 glintCol = mix(ambient, float3(1.0), 0.62);
-    col = mix(col, glintCol, clamp(edgeGlint, 0.0, 0.76));
+    // 【边缘亮线加重 · 2026-11-08】iOS 真机对照：那圈线是全靠它撑着脸的，别客气
+    col = mix(col, glintCol, clamp(edgeGlint, 0.0, 0.86));
 
     // 【左右色散 · 2026-11-07 傍晚，抄它 box-shadow 里那两条 inset】
     //   inset 1px 0 0  rgba(255,140,180,.10)  ← 左暖
