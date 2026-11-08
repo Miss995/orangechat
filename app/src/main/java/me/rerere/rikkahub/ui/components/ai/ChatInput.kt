@@ -885,7 +885,7 @@ fun ChatInput(
                             // 【2026-11-08 那条黑的真凶】模糊层裁的是打印机形状（上圆下直），
                             // 而外层玻璃已经改成胶囊 —— 两个形状错位，底部就露出一条直边的深色。
                             // 玻璃模式跟着走同一套形状。
-                            .clip(if (glassMode) CircleShape else PrinterBodyShape)
+                            .clip(if (glassMode) RoundedCornerShape(28.dp) else PrinterBodyShape)
                             .hazeEffect(
                                 state = hazeState,
                                 style = HazeMaterials.ultraThin(containerColor = hazeTintColor)
@@ -917,8 +917,10 @@ fun ChatInput(
                     },
                 // 【玻璃模式 · 2026-11-08 宝说的】打印机是"上圆下直"（塑料件注塑 + 下缘接纸），
                 // 玻璃只要一层皮 → 换普通圆角，四个角一样
-                // 【胶囊 · 2026-11-08 宝的参考】玻璃模式走全圆（两端半圆，像一片药）
-                shape = if (glassMode) CircleShape else PrinterBodyShape,
+                // 【胶囊 · 2026-11-08 宝的参考】
+                // ⚠️ 不能用 CircleShape —— 它是"按高度一半算"，附件面板一展开整块变高，
+                // 圆角跟着变大，就成一个大方块。改成固定半径：单行时≈胶囊，展开时还是圆角。
+                shape = if (glassMode) RoundedCornerShape(28.dp) else PrinterBodyShape,
                 tonalElevation = 0.dp,
                 // 【打印机外观 2026-10-18】机身底色一律透明：渐变画在下面那层 Box 上
                 // （Surface 的 color 只能纯色，画不了渐变）
