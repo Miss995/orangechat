@@ -713,9 +713,11 @@ fun ChatInput(
                         alpha = 1f,
                         blur = 0f,
                         // ★ 宝 2026-11-08 在网页上摸出来的那三条
-                        zoom = 0.93f,
-                        rim = 1.2f,
-                        rimDist = with(glassDensity) { 6.dp.toPx() },
+                        // 【2026-11-08 宝指出】边缘那圈灰不是描边，是 rim 太大——采样跑出玻璃外面被拉伸了。
+                        // 先压到 0.35 看形状，真对了再往上加。
+                        zoom = 0.95f,
+                        rim = 0.35f,
+                        rimDist = with(glassDensity) { 5.dp.toPx() },
                     ),
                     screenW = with(glassDensity) { LocalConfiguration.current.screenWidthDp.dp.toPx() },
                     screenH = with(glassDensity) { LocalConfiguration.current.screenHeightDp.dp.toPx() },
