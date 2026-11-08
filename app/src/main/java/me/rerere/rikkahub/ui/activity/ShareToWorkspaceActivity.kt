@@ -78,7 +78,7 @@ class ShareToWorkspaceActivity : Activity() {
     }
 
     /** 先试 upload/，目录不存在就退回工作区根目录。 */
-    private fun saveOne(
+    private suspend fun saveOne(
         repo: WorkspaceRepository,
         workspaceId: String,
         uri: Uri,
