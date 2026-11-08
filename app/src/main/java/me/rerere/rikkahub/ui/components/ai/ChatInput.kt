@@ -700,7 +700,12 @@ fun ChatInput(
                 rootBoxRect = it.boundsInWindow()
                 if (glassMode) {
                     val pos = it.positionInRoot()
-                    glassRect = Rect(pos.x, pos.y, pos.x + it.size.width, pos.y + it.size.height)
+                    // 【无边框 · 2026-11-08 宝】玻璃只包输入那一行，不跟附件面板一起画。
+                    // 原来传的是整个块（实测 984x1200），底下一大片没有内容，
+                    // 玻璃一路采下去就在最下面拉出一条黑。
+                    val capH = with(glassDensity) { 200.dp.toPx() }
+                    val h = minOf(it.size.height, capH)
+                    glassRect = Rect(pos.x, pos.y, pos.x + it.size.width, pos.y + h)
                 }
             }
             .then(
