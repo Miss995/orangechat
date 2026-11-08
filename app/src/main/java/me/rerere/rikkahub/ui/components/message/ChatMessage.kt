@@ -885,6 +885,16 @@ private fun MessagePartsBlock(
                                                             thinkRectInWindow = c.boundsInWindow()
                                                         }
                                                     ) {
+                                                        BubbleSurface(
+                                                            imagePath = displaySettings.userBubbleImagePath,
+                                                            cornerRadius = displaySettings.bubbleCornerRadius.dp,
+                                                            color = displaySettings.userBubbleColor?.let { it.toComposeColor() }
+                                                                ?: MaterialTheme.colorScheme.secondaryContainer,
+                                                            overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
+                                                            bubbleAlpha = bubbleAlpha,
+                                                            contentPadding = 4.dp,
+                                                            whiteText = false,
+                                                        ) {
                                                         ChainOfThought(
                                                             steps = listOf(
                                                                 ThinkingStep.ReasoningStep(
@@ -892,6 +902,7 @@ private fun MessagePartsBlock(
                                                                 )
                                                             ),
                                                             collapsedAdaptiveWidth = true,
+                                                            bare = true,
                                                         ) { step ->
                                                             ChatMessageReasoningStep(
                                                                 reasoning = step.reasoning,
@@ -900,7 +911,8 @@ private fun MessagePartsBlock(
                                                                 collapsedAdaptiveWidth = true,
                                                                 isUserReasoning = true,
                                                             )
-                                                        }
+                                                        }  // ChainOfThought
+                                                        }  // BubbleSurface
                                                     }
                                                 }
                                                 is ThinkSegment.Text -> {
