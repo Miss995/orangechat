@@ -937,8 +937,10 @@ fun ChatInput(
                 // Use Box so background image can match parent size
                 Box(
                     modifier = if (inputBgAvailable) Modifier
-                        // 【玻璃模式 · 2026-11-08】这层是打印机机身色，实色会把玻璃盖死 —— 让空
-                        else if (glassMode) Modifier
+                        // 【探针 · 2026-11-08 01:44】宝要看那条黑是不是这层"漏底"。
+                        // 临时灌洋红：黑条变成洋红 = 确认是这层没铺东西；还是黑的 = 另有其人。
+                        // 验完立刻改回透明。
+                        else if (glassMode) Modifier.background(Color(0xFFFF00FF))
                         else Modifier.background(
                             // 【打印机外观】机身：深灰塑料外壳
                             Brush.verticalGradient(
