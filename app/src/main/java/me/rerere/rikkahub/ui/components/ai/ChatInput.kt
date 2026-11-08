@@ -980,7 +980,8 @@ fun ChatInput(
                         // 冒出来的纸票：暖白、上沿直角（贴着那道缝）、下沿收一点点。
                         // 一次只露一张（宝：输入框不能无限叠加），按要紧程度排优先级。
                         // ===== 【打印机外观 2026-10-18】顶盖：两颗 LED + 散热孔 + 机身型号 =====
-                        Row(
+                        // 【玻璃模式 · 2026-11-08 宝】两颗灯和排气孔都是打印机的零件，玻璃只要一层皮
+                        if (!glassMode) Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(start = 12.dp, end = 12.dp, top = 5.dp, bottom = 3.dp),
