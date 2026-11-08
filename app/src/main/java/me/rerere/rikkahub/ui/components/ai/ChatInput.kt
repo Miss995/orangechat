@@ -137,6 +137,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
@@ -171,6 +173,9 @@ import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.FullScreen
 import me.rerere.hugeicons.stroke.Voice
 import me.rerere.hugeicons.stroke.Zap
+import me.rerere.rikkahub.ui.components.ui.LiquidGlassStyle
+import me.rerere.rikkahub.ui.components.ui.LocalLiquidGlassHost
+import me.rerere.rikkahub.ui.components.ui.liquidGlass
 import me.rerere.rikkahub.ui.components.ui.StickerSheet
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpManager
@@ -268,6 +273,9 @@ fun ChatInput(
     onOpenMiniApps: () -> Unit = {},
     // 【引用一句 2026-10-10】选中提示条上点「引用这句」
     onUsePickedQuote: (() -> Unit)? = null,
+    // 【玻璃输入框 · 2026-11-08 宝要的】true = 外面套一层液态玻璃，机身那层底色让空。
+    //   默认 false —— 打印机外观一个字都不变。
+    glassMode: Boolean = false,
 ) {
     val toaster = LocalToaster.current
     val assistant = settings.getCurrentAssistant()
@@ -677,11 +685,42 @@ fun ChatInput(
     // 这两个坐标各量一次，差值就是「该挪多少」。
     // 必须声明在 Box 外面：Box 的参数里就要用它，声明在里面够不着。
     var rootBoxRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    // 【玻璃输入框 · 2026-11-08】把自己在根里的矩形交给 shader 去采背景图。
+    // ⚠️ 用 positionInRoot()，不能用 boundsInRoot() —— 后者会被父级裁剪（2026-11-07 踩过）。
+    val glassHost = LocalLiquidGlassHost.current
+    var glassRect by remember { mutableStateOf(Rect.Zero) }
+    val glassDensity = LocalDensity.current
+    val glassReady = glassMode && glassHost != null && glassRect.width > 0f
     var surfaceRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     // 这里本来只是想要个透明背景，Box 就够，而且不裁。
     // 【量底边 · 2026-10-20】纸要靠 align 贴在这个 Box 的底边，所以得知道它到底在哪。
     Box(
-        modifier = Modifier.onGloballyPositioned { rootBoxRect = it.boundsInWindow() },
+        modifier = Modifier
+            .onGloballyPositioned {
+                rootBoxRect = it.boundsInWindow()
+                if (glassMode) {
+                    val pos = it.positionInRoot()
+                    glassRect = Rect(pos.x, pos.y, pos.x + it.size.width, pos.y + it.size.height)
+                }
+            }
+            .then(
+                if (glassReady) Modifier.liquidGlass(
+                    glassHost!!, glassRect,
+                    LiquidGlassStyle(
+                        radius = with(glassDensity) { 26.dp.toPx() },
+                        refract = 0.6f,
+                        thickness = 22f,
+                        alpha = 1f,
+                        blur = 0f,
+                        // ★ 宝 2026-11-08 在网页上摸出来的那三条
+                        zoom = 0.93f,
+                        rim = 1.2f,
+                        rimDist = with(glassDensity) { 6.dp.toPx() },
+                    ),
+                    screenW = with(glassDensity) { LocalConfiguration.current.screenWidthDp.dp.toPx() },
+                    screenH = with(glassDensity) { LocalConfiguration.current.screenHeightDp.dp.toPx() },
+                ) else Modifier
+            ),
         contentAlignment = Alignment.TopCenter,
     ) {
         // 【纸票的状态判据 · 2026-10-19 提到最外层 · 2026-10-20 搬到这里】
@@ -876,6 +915,8 @@ fun ChatInput(
                 // Use Box so background image can match parent size
                 Box(
                     modifier = if (inputBgAvailable) Modifier
+                        // 【玻璃模式 · 2026-11-08】这层是打印机机身色，实色会把玻璃盖死 —— 让空
+                        else if (glassMode) Modifier
                         else Modifier.background(
                             // 【打印机外观】机身：深灰塑料外壳
                             Brush.verticalGradient(
