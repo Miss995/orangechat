@@ -704,7 +704,7 @@ fun ChatInput(
                     // 原来传的是整个块（实测 984x1200），底下一大片没有内容，
                     // 玻璃一路采下去就在最下面拉出一条黑。
                     val capH = with(glassDensity) { 200.dp.toPx() }
-                    val h = minOf(it.size.height, capH)
+                    val h = minOf(it.size.height.toFloat(), capH)   // Int 和 Float 不能直接 minOf
                     glassRect = Rect(pos.x, pos.y, pos.x + it.size.width, pos.y + h)
                 }
             }
