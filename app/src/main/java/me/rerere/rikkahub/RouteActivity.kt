@@ -270,7 +270,7 @@ class RouteActivity : ComponentActivity() {
             Intent().apply {
                 action = intent?.action
                 putExtra(Intent.EXTRA_TEXT, intent?.getStringExtra(Intent.EXTRA_TEXT))
-                putExtra(Intent.EXTRA_STREAM, intent?.getStringExtra(Intent.EXTRA_STREAM))
+                putExtra(Intent.EXTRA_STREAM, intent?.extras?.get(Intent.EXTRA_STREAM))
                 putExtra(Intent.EXTRA_PROCESS_TEXT, intent?.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT))
             }
         }
@@ -279,8 +279,16 @@ class RouteActivity : ComponentActivity() {
             when (shareIntent.action) {
                 Intent.ACTION_SEND -> {
                     val text = shareIntent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-                    val imageUri = shareIntent.getStringExtra(Intent.EXTRA_STREAM)
+                    // 【2026-11-08】EXTRA_STREAM 是 Uri，getStringExtra 取不到，从 extras 按 Any 取
+                    val imageUri = shareIntent.extras?.get(Intent.EXTRA_STREAM)?.toString()
                     backStack.add(Screen.ShareHandler(text, imageUri))
+                }
+
+                Intent.ACTION_SEND_MULTIPLE -> {
+                    // 多个文件先取第一个（Screen.ShareHandler 一次只带一个）
+                    val text = shareIntent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+                    val firstUri = (shareIntent.extras?.get(Intent.EXTRA_STREAM) as? List<*>)?.firstOrNull()
+                    backStack.add(Screen.ShareHandler(text, firstUri?.toString()))
                 }
 
                 Intent.ACTION_PROCESS_TEXT -> {
