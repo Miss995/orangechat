@@ -1120,6 +1120,7 @@ fun ChatInput(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             ActionIconButton(
+                                glassMode = glassMode,
                                 onClick = {
                                     expandToggle(ExpandState.Panel)
                                 },
@@ -1261,6 +1262,7 @@ fun ChatInput(
                             // 【重排·第五刀 2026-10-08】语音模式下，这个位子换成「切回文字」
                             if (voiceInputMode) {
                                 ActionIconButton(
+                                    glassMode = glassMode,
                                     onClick = {
                                         if (asrState.isRecording) asr.stop()
                                         voiceInputMode = false
@@ -2081,6 +2083,8 @@ fun ChatInput(
 private fun ActionIconButton(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    // 【圆 + 透明 · 2026-11-09 13:28 宝】玻璃模式下不要打印机那套塑料按键，就一个圆。
+    glassMode: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     // 【打印机外观 2026-10-18】跟发送键同一套三层（宝定的）：
@@ -2090,12 +2094,13 @@ private fun ActionIconButton(
     Box(
         modifier = Modifier
             .size(30.dp)
-            .clip(RoundedCornerShape(7.dp))
+            .clip(if (glassMode) CircleShape else RoundedCornerShape(7.dp))
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         contentAlignment = Alignment.Center,
     ) {
         // 底下三层（只铺背景，不吃点击 —— 点击在外层那个 Box 上）
-        Box(
+        // 玻璃模式整块跳过：只要一个圆，不要塑料壳
+        if (!glassMode) Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF0C0908))
