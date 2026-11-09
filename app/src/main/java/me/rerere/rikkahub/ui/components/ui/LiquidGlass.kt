@@ -480,7 +480,23 @@ fun Modifier.liquidGlass(
                         "dW=${(rect.width - size.width).toInt()} dH=${(rect.height - size.height).toInt()}"
                 )
             }
+            // 【物理裁圆角 · 2026-11-09 23:00 宝："他长得跟那个后面加的阴影一毛一样，你自己看像不像"】
+            //   11-07 删掉的是"6 层 drawRoundRect 往外扩"那套投影；但**症状同源**：
+            //   这里 drawRect 画的是正矩形，圆角全靠 shader 里 `if (d > 1.5) return 0` 抹掉，
+            //   而它留了 1.5px 容差 —— 圆角外侧那一圈没抹干净，留成半透明。
+            //   在浅背景上就是"一圈白边 + 四个角露出直角"。
+            //   → 不再靠 shader 抹，先把画布裁成圆角矩形，圆角外面一个像素都出不去。
+            nc.save()
+            val clipPath = android.graphics.Path().apply {
+                addRoundRect(
+                    0f, 0f, size.width, size.height,
+                    style.radius, style.radius,
+                    android.graphics.Path.Direction.CW
+                )
+            }
+            nc.clipPath(clipPath)
             nc.drawRect(0f, 0f, size.width, size.height, paint)
+            nc.restore()
         }
         drawContent()
     }
