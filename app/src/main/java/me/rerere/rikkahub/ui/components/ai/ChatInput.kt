@@ -711,32 +711,10 @@ fun ChatInput(
             // 会。纸票是从机身顶上冒出来的，整块裁 28dp 会把冒出来的那截切掉。
             // 而且它是多余的 —— 机身那层（896 行）本来就裁了 28dp 圆角，
             // 玻璃模式下形状一样。撤掉之后机身还是圆的，纸票不再被切。
-            .then(
-                if (glassReady) Modifier.liquidGlass(
-                    glassHost!!, glassRect,
-                    // 【★ 2026-11-09 12:15 起改读设置】八根滑杆在「设置 → 显示 → 透明度」里，
-                    // 宝自己调，不用每次改代码跑构建。
-                    LiquidGlassStyle(
-                        radius = with(glassDensity) { settings.displaySetting.liquidGlassRadius.dp.toPx() },
-                        // 【效果开回来了 · 2026-11-09 03:02 宝："倒是给我开回来啊"】
-                        // 探针期全关是为了验那条黑跟玻璃无关 —— 已经验完了（真凶是接缝）。
-                        refract = settings.displaySetting.liquidGlassRefract,
-                        thickness = settings.displaySetting.liquidGlassThickness,
-                        alpha = settings.displaySetting.liquidGlassAlpha,
-                        // 磨砂这一格先钉 0：DisplaySetting 里那根 liquidGlassBlur 默认 12（气泡在用），
-                        // 输入框一直是纯折射，跟着读会突然变糊。她要点再单开一格。
-                        blur = 0f,
-                        // ★ 宝 2026-11-08 在网页上摸出来的那三条
-                        zoom = settings.displaySetting.liquidGlassZoom,
-                        rim = settings.displaySetting.liquidGlassRim,
-                        rimDist = settings.displaySetting.liquidGlassRimDist,
-                        edge = settings.displaySetting.liquidGlassEdge,
-                        spec = settings.displaySetting.liquidGlassSpec,
-                    ),
-                    screenW = with(glassDensity) { LocalConfiguration.current.screenWidthDp.dp.toPx() },
-                    screenH = with(glassDensity) { LocalConfiguration.current.screenHeightDp.dp.toPx() },
-                ) else Modifier
-            ),
+            // 【玻璃从这里挪走了 · 2026-11-09 12:57】
+            // 原来挂在这么外层的大 Box 上。而 shader 的形状用的是"我画的这块有多大"，
+            // 这块 Box 装着输入区 + 状态纸 + 附件面板 → 玻璃永远画成一个大方块。
+            // 现在挂到下面那个 Surface（真正的输入框）身上，见 surfaceGlass。
         contentAlignment = Alignment.TopCenter,
     ) {
         // 【纸票的状态判据 · 2026-10-19 提到最外层 · 2026-10-20 搬到这里】
@@ -831,6 +809,29 @@ fun ChatInput(
                             glassRect = surfaceRectInRoot
                         }
                     }
+                    // 【玻璃挂到输入框自己身上 · 2026-11-09 12:57】
+                    // 挂在这里，size 就是 Surface 的尺寸（矮矮的一块），shader 的 SDF 才画得出胶囊。
+                    // 坐标：p 是 Surface 的局部坐标，uRect 是它在 root 的位置，两者相加就是背景图上的位置 ✓
+                    .then(
+                        if (glassReady && glassHost != null) Modifier.liquidGlass(
+                            glassHost, glassRect,
+                            LiquidGlassStyle(
+                                radius = with(glassDensity) { settings.displaySetting.liquidGlassRadius.dp.toPx() },
+                                refract = settings.displaySetting.liquidGlassRefract,
+                                thickness = settings.displaySetting.liquidGlassThickness,
+                                alpha = settings.displaySetting.liquidGlassAlpha,
+                                // 磨砂先钉 0：DisplaySetting 里那根默认 12 是气泡用的，跟着读会突然变糊
+                                blur = 0f,
+                                zoom = settings.displaySetting.liquidGlassZoom,
+                                rim = settings.displaySetting.liquidGlassRim,
+                                rimDist = settings.displaySetting.liquidGlassRimDist,
+                                edge = settings.displaySetting.liquidGlassEdge,
+                                spec = settings.displaySetting.liquidGlassSpec,
+                            ),
+                            screenW = with(glassDensity) { LocalConfiguration.current.screenWidthDp.dp.toPx() },
+                            screenH = with(glassDensity) { LocalConfiguration.current.screenHeightDp.dp.toPx() },
+                        ) else Modifier
+                    )
                     // 【第二刀 2026-10-08】在输入框整块上滑 -> 拉起附件区（跟点 + 同一个动作）
                     // 用 Initial pass 只观察、不消费，免得抢掉输入框自己的手势
                     .pointerInput(Unit) {
