@@ -211,6 +211,13 @@ import java.io.File
 import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 
+/**
+ * 玻璃输入框的高度（扁到像一条线 · 宝 2026-11-09 19:32 发的参考图：雾雨灰境那个键盘条）。
+ * 放成文件级常量，是因为【输入框本体】和【玻璃圆角】分在两个 Composable 里 ——
+ * 上次写成主函数的局部变量，另一个函数看不见，直接编译报 Unresolved reference。
+ */
+private val GLASS_FIELD_HEIGHT = 38.dp
+
 enum class ExpandState {
     Collapsed, Files, Panel,
 }
@@ -796,10 +803,7 @@ fun ChatInput(
             // 而 Surface 已经是 CircleShape（按高度一半算 = 33dp）→ 两个圆角对不上：
             // Surface 圆了，玻璃画出来还是 26 的圆角，看起来就还是方的。
             // 这里跟上面那个 66dp 绑死，改高度只改这两处。
-            // 【扁到像一条线 · 2026-11-09 19:32 宝发的参考图：雾雨灰境那个键盘输入条】
-            // 高度和玻璃圆角都跟着这一个数走，别各写各的 —— 圆角一旦大于高度一半就会溢出。
-            val glassFieldHeight = 38.dp
-            val glassCorner = if (glassMode) glassFieldHeight / 2 else settings.displaySetting.liquidGlassRadius.dp
+            val glassCorner = if (glassMode) GLASS_FIELD_HEIGHT / 2 else settings.displaySetting.liquidGlassRadius.dp
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2315,7 +2319,7 @@ private fun TextInputRow(
                 // 这里先降 6dp，配合外面那道上限一起压。
                 // 【13:22 回填】52dp 时字被切一半 —— M3 TextField 内部那圈空白先吃掉高度。
                 // 空白不用 BasicTextField 重写就动不了，所以只能让高度回来。
-                .then(if (glassMode) Modifier.height(glassFieldHeight) else Modifier)
+                .then(if (glassMode) Modifier.height(GLASS_FIELD_HEIGHT) else Modifier)
                 .onGloballyPositioned { fieldRectState.value = it.boundsInWindow() }
                 .contentReceiver(receiveContentListener)
                 .onFocusChanged {
