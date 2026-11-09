@@ -336,7 +336,17 @@ private fun ChatPageContent(
                 .fillMaxSize()
                 .liquidGlassSource(pageGlassHost, MaterialTheme.colorScheme.background)
         ) {
-            AssistantBackground(setting = setting)
+            // 【气泡的图单独录一份 · 2026-11-09 21:23 宝："气泡的玻璃消失了"】
+            // 猫把 source 换成 pageGlassHost 时，bgGlassHost 就一张图都没收到了 →
+            // 气泡那边 host.background 是空的，liquidGlass 直接原样返回，玻璃就没了。
+            // 所以背景图这一层再套一层 source，同时喂给气泡那个 host。
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .liquidGlassSource(bgGlassHost, MaterialTheme.colorScheme.background)
+            ) {
+                AssistantBackground(setting = setting)
+            }
         Scaffold(
             bottomBar = {
                 // 【搬底栏 · 2026-11-09 21:03 宝："老实巴交，干净一点"】
