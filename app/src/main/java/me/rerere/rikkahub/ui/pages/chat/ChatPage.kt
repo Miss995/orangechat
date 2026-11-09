@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.padding
@@ -277,6 +278,10 @@ private fun ChatPageContent(
     // 【气泡玻璃 · 2026-11-07 宝指的】内容录制层里含所有气泡，气泡采自己那块就采到自己 → 无限重影。
     // 气泡其实只要背景，所以单独建一个"只罩背景"的 host：静态壁纸，永远采不到气泡。
     val bgGlassHost = rememberLiquidGlassHost()
+    // 【搬底栏 · 2026-11-09】输入框要从 Scaffold 底栏搬到录制层外面，
+    // 底栏留一条同高的空位顶住列表留白。高度由输入框自己量出来回填。
+    var inputAreaHeight by remember { mutableStateOf(0.dp) }
+    val cpDensity = androidx.compose.ui.platform.LocalDensity.current
     var showSessionPanel by remember { mutableStateOf(false) }
     // 【重排·第六刀 2026-10-08】语音通话入口：顶栏和输入区面板共用一份
     val onVoiceCallAction: () -> Unit = {
@@ -326,9 +331,182 @@ private fun ChatPageContent(
                 .liquidGlassSource(bgGlassHost, MaterialTheme.colorScheme.background)
         ) {
             AssistantBackground(setting = setting)
-        }
         Scaffold(
             bottomBar = {
+                // 【搬底栏 · 2026-11-09 21:03 宝："老实巴交，干净一点"】
+                // 输入框搬到录制层外面去了（玻璃不能录自己，会自己喂自己），
+                // 这里留一条跟它一样高的空位 —— ChatList 拿 innerPadding 的底部当留白，
+                // 没了这条，气泡会掉到屏幕最底下。
+                Spacer(modifier = Modifier.height(inputAreaHeight))
+            },
+            containerColor = Color.Transparent,
+        ) { innerPadding ->
+            Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+            ) {
+            ChatList(
+                innerPadding = innerPadding,
+                conversation = conversation,
+                state = chatListState,
+                loading = loadingJob != null,
+                processingStatus = processingStatus,
+                previewMode = previewMode,
+                settings = setting,
+                hazeState = hazeState,
+                errors = errors,
+                pendingInterjections = pendingInterjections[conversation.id].orEmpty(),
+                onDismissError = onDismissError,
+                onClearAllErrors = onClearAllErrors,
+                onRegenerate = {
+                    vm.regenerateAtMessage(it)
+                },
+                onEdit = {
+                    inputState.editingMessage = it.id
+                    inputState.setContents(it.parts)
+                },
+                // 【消息引用 2026-09-22】长按选了"引用"→ 挂到输入框上方那条引用条
+                onQuote = {
+                    inputState.quotedMessageId = it.id
+                    // 【引用一句 2026-10-10】这次引的是整条，把上一次可能留下的"那一句"清掉
+                    inputState.quotedText = null
+                    inputState.quotedPreview = it.parts
+                        .filterIsInstance<UIMessagePart.Text>()
+                        .joinToString(" ") { p -> p.text }
+                        .trim()
+                        .take(120)
+                },
+                // 【引用一句 2026-10-10】选中一段文字 → 先存进 inputState，输入框上方冒一条提示；
+                // 点了那条上的「引用这句」才真引用（见下面 ChatInput 的 onUsePickedQuote）。
+                onQuoteText = { msg, text ->
+                    if (text.isBlank()) {
+                        inputState.pickedText = null
+                        inputState.pickedMessageId = null
+                    } else {
+                        inputState.pickedMessageId = msg.id
+                        inputState.pickedText = text
+                    }
+                },
+                onForkMessage = {
+                    scope.launch {
+                        val fork = vm.forkMessage(message = it)
+                        navigateToChatPage(navController, chatId = fork.id)
+                    }
+                },
+                onDelete = {
+                    if (loadingJob != null) {
+                        vm.showDeleteBlockedWhileGeneratingError()
+                    } else {
+                        vm.deleteMessage(it)
+                    }
+                },
+                onUpdateMessage = { newNode ->
+                    vm.updateConversation(
+                        conversation.copy(
+                            messageNodes = conversation.messageNodes.map { node ->
+                                if (node.id == newNode.id) {
+                                    newNode
+                                } else {
+                                    node
+                                }
+                            }
+                        ))
+                    vm.saveConversationAsync()
+                },
+                onClickSuggestion = { suggestion ->
+                    inputState.editingMessage = null
+                    inputState.setMessageText(suggestion)
+                },
+                onTranslate = { message, locale ->
+                    vm.translateMessage(message, locale)
+                },
+                onClearTranslation = { message ->
+                    vm.clearTranslationField(message.id)
+                },
+                onJumpToMessage = { index ->
+                    previewMode = false
+                    scope.launch {
+                        // 窗口剪切后，历史消息 index 需要映射到窗口内的位置；超出窗口则滚到窗口底部
+                        val start = (conversation.messageNodes.size - WINDOW_DISPLAY_SIZE).coerceAtLeast(0)
+                        val target = if (index >= start) index - start else 0
+                        chatListState.animateScrollToItem(target)
+                    }
+                },
+                jumpNodes = jumpNodes,
+                jumpTargetIndex = jumpTargetIndex,
+                onExitJump = onExitJump,
+                onQuotedClick = onQuotedClick,
+                onToolApproval = { toolCallId, approved, reason ->
+                    vm.handleToolApproval(toolCallId, approved, reason)
+                },
+                onToolAnswer = { toolCallId, answer ->
+                    vm.handleToolAnswer(toolCallId, answer)
+                },
+                onToggleFavorite = { node ->
+                    vm.toggleMessageFavorite(node)
+                },
+                onConversationSystemPromptChange = { newPrompt ->
+                    vm.updateConversation(conversation.copy(customSystemPrompt = newPrompt))
+                    vm.saveConversationAsync()
+                },
+            )
+            }
+                // 【顶部波形条 · 2026-10-31】正在播放的那条。一直在组合里，自己轮询、自己收。
+                NowPlayingBar(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(horizontal = 12.dp)
+                        .padding(top = 8.dp)
+                )
+                // 【小任务卡 · 2026-10-06】任务写完后从右边滑进来的卡片，挂顶部
+                TaskCardOverlay(
+                    conversation = conversation,
+                    loading = loadingJob != null,
+                    onTaskDone = { name, byTimeout -> vm.appendTaskReceipt(name, byTimeout) },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = innerPadding.calculateTopPadding() + 8.dp),
+                )
+
+                // 【浮层·网页小窗 2026-10-25】右边一个小圆钮，点开就是网页窗（骨架版，还没接 WebView）
+                var showFloatWindow by remember { mutableStateOf(false) }
+                FloatingBrowserWindow(
+                    visible = showFloatWindow,
+                    onClose = { showFloatWindow = false },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = innerPadding.calculateTopPadding() + 8.dp),
+                )
+                if (!showFloatWindow) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = innerPadding.calculateTopPadding() + 8.dp, end = 10.dp)
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { showFloatWindow = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("▣", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+        }   // ← 录制层收尾（背景 + 气泡，不含输入框）
+        // 【输入框搬出录制层 · 2026-11-09 21:03】
+        // 玻璃读的那张图就是上面录的，它自己绝不能进那一层 —— 会自己喂自己卡死
+        // （2026-11-07 那条测试条就是因为住在外面才没出事）。
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .onGloballyPositioned {
+                    inputAreaHeight = with(cpDensity) { it.size.height.toDp() }
+                },
+        ) {
                 ChatInput(
                     // 【玻璃输入框 · 2026-11-08】宝要的：套一层液态玻璃，打印机那套不动（glassMode 默认 false）
                     glassMode = true,
@@ -531,162 +709,6 @@ private fun ChatPageContent(
                         vm.handleCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
                     },
                 )
-            },
-            containerColor = Color.Transparent,
-        ) { innerPadding ->
-            Box(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-            ) {
-            ChatList(
-                innerPadding = innerPadding,
-                conversation = conversation,
-                state = chatListState,
-                loading = loadingJob != null,
-                processingStatus = processingStatus,
-                previewMode = previewMode,
-                settings = setting,
-                hazeState = hazeState,
-                errors = errors,
-                pendingInterjections = pendingInterjections[conversation.id].orEmpty(),
-                onDismissError = onDismissError,
-                onClearAllErrors = onClearAllErrors,
-                onRegenerate = {
-                    vm.regenerateAtMessage(it)
-                },
-                onEdit = {
-                    inputState.editingMessage = it.id
-                    inputState.setContents(it.parts)
-                },
-                // 【消息引用 2026-09-22】长按选了"引用"→ 挂到输入框上方那条引用条
-                onQuote = {
-                    inputState.quotedMessageId = it.id
-                    // 【引用一句 2026-10-10】这次引的是整条，把上一次可能留下的"那一句"清掉
-                    inputState.quotedText = null
-                    inputState.quotedPreview = it.parts
-                        .filterIsInstance<UIMessagePart.Text>()
-                        .joinToString(" ") { p -> p.text }
-                        .trim()
-                        .take(120)
-                },
-                // 【引用一句 2026-10-10】选中一段文字 → 先存进 inputState，输入框上方冒一条提示；
-                // 点了那条上的「引用这句」才真引用（见下面 ChatInput 的 onUsePickedQuote）。
-                onQuoteText = { msg, text ->
-                    if (text.isBlank()) {
-                        inputState.pickedText = null
-                        inputState.pickedMessageId = null
-                    } else {
-                        inputState.pickedMessageId = msg.id
-                        inputState.pickedText = text
-                    }
-                },
-                onForkMessage = {
-                    scope.launch {
-                        val fork = vm.forkMessage(message = it)
-                        navigateToChatPage(navController, chatId = fork.id)
-                    }
-                },
-                onDelete = {
-                    if (loadingJob != null) {
-                        vm.showDeleteBlockedWhileGeneratingError()
-                    } else {
-                        vm.deleteMessage(it)
-                    }
-                },
-                onUpdateMessage = { newNode ->
-                    vm.updateConversation(
-                        conversation.copy(
-                            messageNodes = conversation.messageNodes.map { node ->
-                                if (node.id == newNode.id) {
-                                    newNode
-                                } else {
-                                    node
-                                }
-                            }
-                        ))
-                    vm.saveConversationAsync()
-                },
-                onClickSuggestion = { suggestion ->
-                    inputState.editingMessage = null
-                    inputState.setMessageText(suggestion)
-                },
-                onTranslate = { message, locale ->
-                    vm.translateMessage(message, locale)
-                },
-                onClearTranslation = { message ->
-                    vm.clearTranslationField(message.id)
-                },
-                onJumpToMessage = { index ->
-                    previewMode = false
-                    scope.launch {
-                        // 窗口剪切后，历史消息 index 需要映射到窗口内的位置；超出窗口则滚到窗口底部
-                        val start = (conversation.messageNodes.size - WINDOW_DISPLAY_SIZE).coerceAtLeast(0)
-                        val target = if (index >= start) index - start else 0
-                        chatListState.animateScrollToItem(target)
-                    }
-                },
-                jumpNodes = jumpNodes,
-                jumpTargetIndex = jumpTargetIndex,
-                onExitJump = onExitJump,
-                onQuotedClick = onQuotedClick,
-                onToolApproval = { toolCallId, approved, reason ->
-                    vm.handleToolApproval(toolCallId, approved, reason)
-                },
-                onToolAnswer = { toolCallId, answer ->
-                    vm.handleToolAnswer(toolCallId, answer)
-                },
-                onToggleFavorite = { node ->
-                    vm.toggleMessageFavorite(node)
-                },
-                onConversationSystemPromptChange = { newPrompt ->
-                    vm.updateConversation(conversation.copy(customSystemPrompt = newPrompt))
-                    vm.saveConversationAsync()
-                },
-            )
-            }
-                // 【顶部波形条 · 2026-10-31】正在播放的那条。一直在组合里，自己轮询、自己收。
-                NowPlayingBar(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .statusBarsPadding()
-                        .padding(horizontal = 12.dp)
-                        .padding(top = 8.dp)
-                )
-                // 【小任务卡 · 2026-10-06】任务写完后从右边滑进来的卡片，挂顶部
-                TaskCardOverlay(
-                    conversation = conversation,
-                    loading = loadingJob != null,
-                    onTaskDone = { name, byTimeout -> vm.appendTaskReceipt(name, byTimeout) },
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = innerPadding.calculateTopPadding() + 8.dp),
-                )
-
-                // 【浮层·网页小窗 2026-10-25】右边一个小圆钮，点开就是网页窗（骨架版，还没接 WebView）
-                var showFloatWindow by remember { mutableStateOf(false) }
-                FloatingBrowserWindow(
-                    visible = showFloatWindow,
-                    onClose = { showFloatWindow = false },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = innerPadding.calculateTopPadding() + 8.dp),
-                )
-                if (!showFloatWindow) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = innerPadding.calculateTopPadding() + 8.dp, end = 10.dp)
-                            .size(30.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .clickable { showFloatWindow = true },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("▣", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
         }
         }
         }
