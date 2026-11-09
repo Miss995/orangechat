@@ -498,8 +498,11 @@ fun Modifier.liquidGlass(
                 )
             }
             nc.clipPath(clipPath)
-            // 【临时对照 · 2026-11-09 23:24】玻璃完全不画，只验那条白线在不在玻璃里。
-            // nc.drawRect(0f, 0f, size.width, size.height, paint)
+            // 【抗锯齿白线 · 2026-11-09 23:37 宝："APP 还有一条很细很细的白线包裹着玻璃，滑杆都纹丝不动"】
+            //   裁剪路径本身带抗锯齿：边界处会留 1px 半透明过渡 → 玻璃边缘一圈 1px 渐变，
+            //   在浅背景上就是一条极细的白线。它跟 uEdge/uSpec 都没关系，所以滑杆拖到底也不动。
+            //   修法：绘制区往外扩 2px，让这圈过渡落在裁剪线外面、被直接削掉。
+            nc.drawRect(-2f, -2f, size.width + 2f, size.height + 2f, paint)
             nc.restore()
         }
         drawContent()
