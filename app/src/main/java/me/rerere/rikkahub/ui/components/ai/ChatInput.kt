@@ -790,6 +790,12 @@ fun ChatInput(
                 }
                 hadAttachments = has
             }
+            // 【胶囊圆角 · 2026-11-09 18:35 宝：还是方的】
+            // 玻璃自己的 radius 读的是设置里那根（默认 26dp，不随块高变化），
+            // 而 Surface 已经是 CircleShape（按高度一半算 = 33dp）→ 两个圆角对不上：
+            // Surface 圆了，玻璃画出来还是 26 的圆角，看起来就还是方的。
+            // 这里跟上面那个 66dp 绑死，改高度只改这两处。
+            val glassCorner = if (glassMode) 33.dp else settings.displaySetting.liquidGlassRadius.dp
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -822,7 +828,7 @@ fun ChatInput(
                         if (glassReady && glassHost != null) Modifier.liquidGlass(
                             glassHost, glassRect,
                             LiquidGlassStyle(
-                                radius = with(glassDensity) { settings.displaySetting.liquidGlassRadius.dp.toPx() },
+                                radius = with(glassDensity) { glassCorner.toPx() },  // 【胶囊】跟 Surface 的 CircleShape 对齐
                                 refract = settings.displaySetting.liquidGlassRefract,
                                 thickness = settings.displaySetting.liquidGlassThickness,
                                 alpha = settings.displaySetting.liquidGlassAlpha,
