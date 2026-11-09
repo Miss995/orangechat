@@ -235,19 +235,34 @@ half4 main(float2 p) {
     //     spec2 = 对角线一条细线（|x+y 归一 - 0.28| 的窄带，只在上半部分，强度 0.11）
     //     两个相加 × uSpec，直接加到颜色上。
     //   App 原来那套是 (细线+雾) × (左上/右下角度分布)、跟着光心游走 —— 另一回事，宝说不对。
-    float2 q01 = p / max(uSize, float2(1.0, 1.0));
-    float  sp1 = smoothstep(0.34, 0.0, length((q01 - float2(0.13, 0.24)) * float2(1.0, 0.60))) * 0.18;
-    float  sp2 = smoothstep(0.15, 0.0, abs((q01.x + q01.y) * 0.72 - 0.28)) * 0.11;
-    sp2 *= smoothstep(0.88, 0.10, q01.y);
-    float specGlint = (sp1 + sp2) * uSpec;
+    // 【高光 = 沿边界的一条细亮线 · 22:04 照 11-09 04:27 版网页（tmp/glass-proto.html 303~341 行）】
+    //   猫上一版搬的是 proto/ 下 11-08 09:27 那份旧稿，里面那套「椭圆斑 + 45° 直线」
+    //   在新版注释里被明确删掉了（宝："圆角玻璃为什么高光是直线"）。
+    //   新版做法：角度用**边界法线**算（atan(点-中心) 在圆角处会跳，法线不会）；
+    //     只留左上/右下两段高斯，中间天然到 0；线是「平顶 + 半像素收边」，
+    //     宽度跟着 mask 用 sqrt 收（亮处粗、暗处细、末端收成一根毫毛，不会一刀切）。
+    float2 nrm = normalize(g);
+    float  ang2 = atan(nrm.y, nrm.x);
+    float  tA = (ang2 + 2.36) / 0.72;
+    float  tB = (ang2 - 0.79) / 0.72;
+    float  glintMask = exp(-tA * tA) * 1.00 + exp(-tB * tB) * 0.55;
+
+    float  wC   = max(uRadius * 0.050, 1.6);   // 线中心离边界多远
+    float  hw   = max(uRadius * 0.036, 1.1);   // 半宽
+    float  dLine  = abs(distIn - wC);
+    float  hwLocal = hw * sqrt(max(glintMask, 0.0));
+    float  aaw    = max(hwLocal, 0.9);
+    float  line   = 1.0 - smoothstep(aaw - 0.8, aaw + 0.8, dLine);
+    float  specGlint = line * glintMask * uSpec;
 
     // 【边缘光染环境色 · 2026-11-07 傍晚，抄 Gale 开源那份 glass.css 的 ::before 渐变】
     // 它那条边不是纯白：白 0.62 → 壁纸主色 0.38 → 白 0.04 → 壁纸主色 0.22 → 白 0.30。
     // 这里用玻璃底下已经采到的颜色当"环境色"，混 38% 进去 —— 光像从背景里长出来的，不是贴上去的。
     float3 ambient = clamp(col * 1.35, 0.0, 1.0);
     float3 glintCol = mix(ambient, float3(1.0), 0.62);
-    col = mix(col, glintCol, clamp(specGlint, 0.0, 0.76));   // 两段高光：还是混合式
-    col += float3(edgeBand * uEdge * 0.55);                  // 整圈边缘：加法，照网页那个系数
+    col = mix(col, glintCol, clamp(specGlint * 0.9, 0.0, 0.76));   // 高光：那条细线
+    // 边缘：网页是「从边界往里渐淡的带」（innerWhite = edge*0.55 + line*0.08），不是一条线
+    col += float3((edgeBand * 0.55 + line * 0.08) * uEdge * 0.85);
 
     // 【左右色散 · 2026-11-07 傍晚，抄它 box-shadow 里那两条 inset】
     //   inset 1px 0 0  rgba(255,140,180,.10)  ← 左暖
