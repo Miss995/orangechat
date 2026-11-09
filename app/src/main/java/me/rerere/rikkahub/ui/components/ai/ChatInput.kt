@@ -792,7 +792,11 @@ fun ChatInput(
             // 【外层从 Box 改成 Column · 2026-10-19】附件要放在机身「下面」当兄弟节点 ——
             // Box 是叠着的（会盖在机身上），Column 是排着的（把整块往上顶）。
             androidx.compose.foundation.layout.Column(
-                modifier = Modifier.onGloballyPositioned { paperAnchorBox = it.boundsInWindow() }
+                modifier = Modifier.onGloballyPositioned { paperAnchorBox = it.boundsInWindow() },
+                // 【分开 · 2026-11-09 12:47 宝："先把它和附件面板分开，它现在一直跟面板连在一起"】
+                // 这层 Column 原来没设间距，输入框和面板贴死，边界一接就看着像一整块（玻璃尤其明显）。
+                // 玻璃模式留 10dp 缝；打印机模式照旧贴死 —— 机身和纸仓本来就是一体的。
+                verticalArrangement = if (glassMode) Arrangement.spacedBy(10.dp) else Arrangement.Top,
             ) {
             // 【机身抖一下 · 2026-10-20 宝："附件吸入、还有抖一下"】
             // 只认"附件从有变没"那一刻 —— 也就是发送。别的时候一律不抖。
