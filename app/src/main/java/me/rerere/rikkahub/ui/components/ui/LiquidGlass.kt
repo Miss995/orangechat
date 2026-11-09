@@ -186,21 +186,16 @@ half4 main(float2 p) {
                + sampleBgBlur(zoom + off * 0.45).rgb * 0.38;
 
     // 边缘高光：只有朝光的那一侧边亮（光从左上来，跟阴影方向对上）
-    float3 lightDir = normalize(float3(-0.55, -0.75, 0.62));
-    float spec = pow(max(0.0, dot(n, lightDir)), 6.0);
+
     // 【这层删了 · 2026-11-09 22:18 宝："到底为什么还有一条白边在啊，是不是前两天的底胶里也有高光"】
     //   它是 11-07 那版留下的 GGX 高光：wIn = pow(rim,2.6) 只在边缘非零 →
     //   等于**又给整圈提亮 45%**。今天新加的整圈带（下面 edgeBand*0.55*0.85）再提 47%，
     //   两层叠起来 ≈ 0.92，视觉上就是一条纯白的描边。
     //   网页里只有最后那一层，这里把旧的收掉，只留新版那条带 + 那条细线。
-    float specLegacy = spec * 0.45 * wIn * 0.0;   // 留个变量占位，防止 n/lightDir 变成未使用
-    col += specLegacy;
 
     // 【立体 · 2026-11-07】原来那条"整体上亮下暗"已删（宝说看着黑黑的）。
     // 只留背光那侧一道弱的暗，跟高光拉开对比就够。
-    float2 ctr      = uSize * 0.5;
-    float2 toEdge   = normalize(p - ctr + float2(0.000001));
-    float  backSide = smoothstep(-0.15, 0.85, dot(toEdge, normalize(float2(0.55, 0.83))));
+
     // 【背光侧压暗 · 2026-11-07 14:34 删掉】宝说气泡边缘有一圈深色阴影，浅色背景上特别明显。
     // 真凶就是这行：它只在背光侧压暗，而且边缘权重给到 1.6 倍 → 那一圈比周围暗 28% → 看着像阴影。
     // 玻璃的"存在感"不该靠压暗（压暗=蒙灰），靠饱和度 + 迎光侧的亮就够了。
@@ -212,21 +207,20 @@ half4 main(float2 p) {
     //   ③ mix 往白里靠 + clamp 封顶 0.76 —— 不死白，留四分之一给底色
     // 对比旧版：亮带 17.6px（宽 16 倍）、单方向点积、加法混合（会过曝）。
     float distIn = -d;
-    float hairline = exp(-pow((distIn - 0.55) / 0.42, 2.0));
+
 
     // 【高光游走 · 2026-11-07 傍晚】角度改从"光心"算，不从元素中心。
     // 气泡在屏幕上滚动时 uRect 变、uLightLocal 跟着变 → 角度变 → 亮边沿气泡游走，
     // 就像光照在世界里没动、玻璃自己走过来了。要"静"就把 uLightLocal 钉成元素中心。
     float2 toLight = normalize(p - uLightLocal + float2(0.000001));
     float ang = atan(toLight.y, toLight.x);
-    float upperLeft  = exp(-pow((ang + 2.38) / 0.60, 2.0));
-    float lowerRight = exp(-pow((ang - 0.76) / 0.62, 2.0));
+
 
     // 【雾 · 2026-11-07 18:46 宝说"像小猫在边缘画了一条线，太细了"】
     // 规矩：不加粗线本身（线细才是玻璃），在它外面罩一层宽 3px、强度 0.32 的雾。
     // 线负责"有边界"，雾负责"有厚度"。σ 从 0.62 → 3.0 是宽 5 倍，但中心值仍由 clamp 0.76 封住，
     // 所以不会过曝 —— 变化全在边缘往外那 3px 的衰减上。
-    float halo = exp(-pow((distIn - 0.55) / 3.0, 2.0)) * 0.32;
+
 
     // 【边缘改成"整圈一条亮带" · 2026-11-09 21:34 宝："网页原版那个边缘和这个边缘的设计不一样"】
     //   网页（glass-input-proto）：g += vec3(edge * uEdge * 0.55)
@@ -285,7 +279,6 @@ half4 main(float2 p) {
     //   这行是 11-07 抄 glass.css ::before 的左右色散，**从来没接过 uEdge/uSpec**：
     //   边缘调 0 它照样画，而且两个 float3 里都有负分量（-0.02）→ 减亮成暗边。
     //   现在挂到 uEdge 上：边缘推到 0，它跟着一起消失。
-    col += hairline * (warm * float3(0.10, 0.02, -0.02) + cool * float3(-0.02, 0.02, 0.10)) * uEdge;
 
     // 【饱和度 · 2026-11-07 新增】CSS 那边是 blur + saturate(1.6)：玻璃后面的颜色会**更浓一点**。
     // 少了这一下，画面就是"糊"而不是"玻璃"。
