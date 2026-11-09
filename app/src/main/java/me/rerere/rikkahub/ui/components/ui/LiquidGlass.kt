@@ -266,7 +266,11 @@ half4 main(float2 p) {
     float3 glintCol = mix(ambient, float3(1.0), 0.62);
     col = mix(col, glintCol, clamp(specGlint * 0.9, 0.0, 0.76));   // 高光：那条细线
     // 边缘：网页是「从边界往里渐淡的带」（innerWhite = edge*0.55 + line*0.08），不是一条线
-    col += float3((edgeBand * 0.55 + line * 0.08) * uEdge * 0.85);
+        // 【均匀白边 · 2026-11-09 23:19 宝："白得特别均匀、特别扎眼、特别抽象"】
+    //   shader 里唯一跟角度无关、整圈一样亮的就是这条厚度带：pow(rim,2.2) 在边界=1，
+    //   ×0.55×0.85 = 提亮 47% → 在浅背景上就是一圈均匀的白。
+    //   压到 0.12（≈8%）：厚度感还在，白边不再是"边"。
+    col += float3((edgeBand * 0.12 + line * 0.08) * uEdge * 0.85);
 
     // 【左右色散 · 2026-11-07 傍晚，抄它 box-shadow 里那两条 inset】
     //   inset 1px 0 0  rgba(255,140,180,.10)  ← 左暖
