@@ -217,17 +217,22 @@ half4 main(float2 p) {
     // 所以不会过曝 —— 变化全在边缘往外那 3px 的衰减上。
     float halo = exp(-pow((distIn - 0.55) / 3.0, 2.0)) * 0.32;
 
-    // 【2026-11-09】原来 (hairline+halo) 和角度分布乘法固定在 0.86/0.48 上，不可调。
-    // 现在拆成两根滑杆：uEdge 管"边缘这一圈有多明显"（整圈），uSpec 管"两段高光有多亮"。
-    // 网页原型的默认值：edge 0.5、spec 1.0（这里沿用 App 原来那组 0.18 / 0.86，宝之前调出来的样子）。
-    float edgeGlint = (hairline + halo) * (upperLeft * 0.86 + lowerRight * 0.48) * uEdge * uSpec;
+    // 【边缘改成"整圈一条亮带" · 2026-11-09 21:34 宝："网页原版那个边缘和这个边缘的设计不一样"】
+    //   网页（glass-input-proto）：g += vec3(edge * uEdge * 0.55)
+    //     —— edge 只跟"离边界多远"有关，跟角度完全无关 → 整圈一条从边往里渐变的亮带，加法叠上去。
+    //   App 之前：(细线 + 雾) × (左上/右下角度分布) → 只有那两段亮，其余地方根本没边；
+    //     而且 uEdge × uSpec 是乘在一起的，两根滑杆互相掐。
+    //   现在拆开：边缘走整圈加法（uEdge 管），高光只管那两段（uSpec 管），各管各的。
+    float edgeBand  = pow(rim, 2.2);   // rim 就在手边：边界 1、中心 0，指数决定这条带多宽
+    float specGlint = (hairline + halo) * (upperLeft * 0.86 + lowerRight * 0.48) * uSpec;
 
     // 【边缘光染环境色 · 2026-11-07 傍晚，抄 Gale 开源那份 glass.css 的 ::before 渐变】
     // 它那条边不是纯白：白 0.62 → 壁纸主色 0.38 → 白 0.04 → 壁纸主色 0.22 → 白 0.30。
     // 这里用玻璃底下已经采到的颜色当"环境色"，混 38% 进去 —— 光像从背景里长出来的，不是贴上去的。
     float3 ambient = clamp(col * 1.35, 0.0, 1.0);
     float3 glintCol = mix(ambient, float3(1.0), 0.62);
-    col = mix(col, glintCol, clamp(edgeGlint, 0.0, 0.76));
+    col = mix(col, glintCol, clamp(specGlint, 0.0, 0.76));   // 两段高光：还是混合式
+    col += float3(edgeBand * uEdge * 0.55);                  // 整圈边缘：加法，照网页那个系数
 
     // 【左右色散 · 2026-11-07 傍晚，抄它 box-shadow 里那两条 inset】
     //   inset 1px 0 0  rgba(255,140,180,.10)  ← 左暖
