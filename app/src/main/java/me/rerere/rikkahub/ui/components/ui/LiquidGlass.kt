@@ -498,7 +498,8 @@ fun Modifier.liquidGlass(
                 )
             }
             nc.clipPath(clipPath)
-            nc.drawRect(0f, 0f, size.width, size.height, paint)
+            // 【临时对照 · 2026-11-09 23:24】玻璃完全不画，只验那条白线在不在玻璃里。
+            // nc.drawRect(0f, 0f, size.width, size.height, paint)
             nc.restore()
         }
         drawContent()
