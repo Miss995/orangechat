@@ -1445,8 +1445,17 @@ private fun BubbleSurface(
                             glassHost, glassRect,
                             LiquidGlassStyle(
                                 radius = with(density) { cornerRadius.toPx() },
+                                // 【气泡也接上滑杆 · 2026-11-09 21:51 宝："为什么改了他不给绑到设置滑条上？一直在挑衅我"】
+                                // 之前只传了 radius/blur/refract，其余全走默认死值；
+                                // 今天改了 shader 的 edge（整圈亮带），气泡拿到的还是默认 1.0，边就特别重。
                                 blur = ds.liquidGlassBlur,
                                 refract = ds.liquidGlassRefract,
+                                thickness = ds.liquidGlassThickness,
+                                zoom = ds.liquidGlassZoom,
+                                rim = ds.liquidGlassRim,
+                                rimDist = ds.liquidGlassRimDist,
+                                edge = ds.liquidGlassEdge,
+                                spec = ds.liquidGlassSpec,
                             ),
                             // 屏幕像素尺寸：给 shader 算"光心在哪"。取不到就传 0，光心退回元素中心。
                             screenW = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() },
