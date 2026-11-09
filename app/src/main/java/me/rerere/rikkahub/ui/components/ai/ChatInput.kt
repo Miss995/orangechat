@@ -2285,6 +2285,10 @@ private fun TextInputRow(
             textStyle = LocalTextStyle.current.copy(
                 // 【打印机外观 2026-10-18】LCD 上的绿光字
                 color = Color(0xFF7FFFA8),
+                // 【光标别当竹子 · 2026-11-09 19:00】宝发的截图：光标是一根特别长的绿水滴。
+                // Compose 的光标高度就是行高，行高不压，光标就跟着长。
+                // 玻璃模式下把行高钉在 20sp（字是 bodyLarge 那档，20 够用不挤）。
+                lineHeight = if (glassMode) 20.sp else LocalTextStyle.current.lineHeight,
                 fontFamily = when (displaySettings.chatFontFamily) {
                     ChatFontFamily.DEFAULT -> FontFamily.Default
                     ChatFontFamily.SERIF -> FontFamily.Serif
@@ -2319,7 +2323,7 @@ private fun TextInputRow(
             // M3 的 TextField 自带上下各 16dp 的内容内边距 + 56dp 最小高，
             // 高度卡在 58 怎么调都压不下来 —— 被吃掉的不是外面那层，是里面这圈空白。
             // M3 1.5 的 TextField 多了一个 contentPadding，正好能把那圈让空，不用整支重写。
-            contentPadding = if (glassMode) PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+            contentPadding = if (glassMode) PaddingValues(horizontal = 12.dp, vertical = 13.dp)
                              else TextFieldDefaults.contentPaddingWithoutLabel(),
             placeholder = {
                 // 【打印机外观 2026-10-18】占位字淡一点，像屏上没点亮的像素
