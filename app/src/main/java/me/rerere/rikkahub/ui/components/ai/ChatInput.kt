@@ -928,7 +928,10 @@ fun ChatInput(
                     // 【打印机外观 2026-10-18】裁切只在开模糊时需要；
                     // 平时不裁 —— 否则底下那道纸边永远伸不出机身圆角
                     .then(
-                        if (settings.displaySetting.enableBlurEffect) Modifier
+                        // 【玻璃模式不要磨砂 · 2026-11-09 20:12 宝："背后还有一点雾雾的感觉"】
+                        // 这层是 App 自己的 Haze 毛玻璃（不是液态玻璃），它把背后糊白了一片。
+                        // 玻璃要的是"透"不是"糊"—— 玻璃模式下整层跳过。
+                        if (settings.displaySetting.enableBlurEffect && !glassMode) Modifier
                             // 【2026-11-08 那条黑的真凶】模糊层裁的是打印机形状（上圆下直），
                             // 而外层玻璃已经改成胶囊 —— 两个形状错位，底部就露出一条直边的深色。
                             // 玻璃模式跟着走同一套形状。
