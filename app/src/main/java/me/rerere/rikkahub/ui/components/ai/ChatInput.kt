@@ -793,6 +793,9 @@ fun ChatInput(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // 【矮一点 · 2026-11-09 13:14】整块原来 81dp 高，圆角 28 看着还是方的。
+                    // 压到 60dp 以内，圆角占比接近一半 → 才像胶囊。超了会被裁，所以别设更小。
+                    .then(if (glassMode) Modifier.height(60.dp) else Modifier)
                     // 【抖 · 2026-10-20】原型 machShake 是"往下 1.6px 再回来"，
                     // 一个 sin 半波就够了：0→1→0。
                     .graphicsLayer {
@@ -2277,7 +2280,10 @@ private fun TextInputRow(
                 .fillMaxWidth()
                 // 【收窄 · 2026-11-08 宝】M3 TextField 自带 56dp 最小高，光限行数压不下来
                 // 【2026-11-08 宝：字被切了一半】46dp 太矮，M3 TextField 自己的上下 padding 就把行吃掉了
-                .then(if (glassMode) Modifier.height(58.dp) else Modifier)
+                // 【矮一点 · 2026-11-09 13:14 宝："怎么着他都是一个方方的形状，有没有啥办法让他矮一点"】
+                // 量出来整块 81dp（1032x222px），圆角 28 只占三分之一 → 看着是圆角矩形。
+                // 这里先降 6dp，配合外面那道上限一起压。
+                .then(if (glassMode) Modifier.height(52.dp) else Modifier)
                 .onGloballyPositioned { fieldRectState.value = it.boundsInWindow() }
                 .contentReceiver(receiveContentListener)
                 .onFocusChanged {
