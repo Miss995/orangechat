@@ -229,7 +229,17 @@ half4 main(float2 p) {
     //     而且 uEdge × uSpec 是乘在一起的，两根滑杆互相掐。
     //   现在拆开：边缘走整圈加法（uEdge 管），高光只管那两段（uSpec 管），各管各的。
     float edgeBand  = pow(rim, 2.2);   // rim 就在手边：边界 1、中心 0，指数决定这条带多宽
-    float specGlint = (hairline + halo) * (upperLeft * 0.86 + lowerRight * 0.48) * uSpec;
+    // 【高光换成网页那套 · 2026-11-09 21:48 宝："你的高光是错的吧，网页里那个高光真的是这么调的吗"】
+    //   网页（glass-input-proto 第 248~252 行）是两个固定位置的亮，跟角度、跟光心都无关：
+    //     spec1 = 左上角一块压扁的柔光斑（中心 0.13/0.24，纵轴压到 0.6，半径 0.34，强度 0.18）
+    //     spec2 = 对角线一条细线（|x+y 归一 - 0.28| 的窄带，只在上半部分，强度 0.11）
+    //     两个相加 × uSpec，直接加到颜色上。
+    //   App 原来那套是 (细线+雾) × (左上/右下角度分布)、跟着光心游走 —— 另一回事，宝说不对。
+    float2 q01 = p / max(uSize, float2(1.0, 1.0));
+    float  sp1 = smoothstep(0.34, 0.0, length((q01 - float2(0.13, 0.24)) * float2(1.0, 0.60))) * 0.18;
+    float  sp2 = smoothstep(0.15, 0.0, abs((q01.x + q01.y) * 0.72 - 0.28)) * 0.11;
+    sp2 *= smoothstep(0.88, 0.10, q01.y);
+    float specGlint = (sp1 + sp2) * uSpec;
 
     // 【边缘光染环境色 · 2026-11-07 傍晚，抄 Gale 开源那份 glass.css 的 ::before 渐变】
     // 它那条边不是纯白：白 0.62 → 壁纸主色 0.38 → 白 0.04 → 壁纸主色 0.22 → 白 0.30。
