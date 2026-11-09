@@ -278,6 +278,12 @@ private fun ChatPageContent(
     // 【气泡玻璃 · 2026-11-07 宝指的】内容录制层里含所有气泡，气泡采自己那块就采到自己 → 无限重影。
     // 气泡其实只要背景，所以单独建一个"只罩背景"的 host：静态壁纸，永远采不到气泡。
     val bgGlassHost = rememberLiquidGlassHost()
+    // 【两份 host · 2026-11-09 21:14 宝点破："你是不是忘记区分输入框和气泡的玻璃了"】
+    //   ① bgGlassHost   —— 只录背景图。气泡（BubbleSurface）读这个，跟 11-07 以来一样。
+    //   ② pageGlassHost —— 录"背景 + 气泡"。输入框读这个，才透得出气泡。
+    // 之前只有一个 host、又把整个 Scaffold 录进去 → 气泡玻璃读到了"包含自己"的图，
+    // 自己喂自己，整块糊成一团。
+    val pageGlassHost = rememberLiquidGlassHost()
     // 【搬底栏 · 2026-11-09】输入框要从 Scaffold 底栏搬到录制层外面，
     // 底栏留一条同高的空位顶住列表留白。高度由输入框自己量出来回填。
     var inputAreaHeight by remember { mutableStateOf(0.dp) }
@@ -328,7 +334,7 @@ private fun ChatPageContent(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .liquidGlassSource(bgGlassHost, MaterialTheme.colorScheme.background)
+                .liquidGlassSource(pageGlassHost, MaterialTheme.colorScheme.background)
         ) {
             AssistantBackground(setting = setting)
         Scaffold(
@@ -499,6 +505,9 @@ private fun ChatPageContent(
         // 【输入框搬出录制层 · 2026-11-09 21:03】
         // 玻璃读的那张图就是上面录的，它自己绝不能进那一层 —— 会自己喂自己卡死
         // （2026-11-07 那条测试条就是因为住在外面才没出事）。
+        androidx.compose.runtime.CompositionLocalProvider(
+            me.rerere.rikkahub.ui.components.ui.LocalLiquidGlassHost provides pageGlassHost
+        ) {   // 输入框走第二份 host：采"背景+气泡"，而外面的气泡仍用 bgGlassHost
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -709,6 +718,7 @@ private fun ChatPageContent(
                         vm.handleCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
                     },
                 )
+        }
         }
         }
         }
