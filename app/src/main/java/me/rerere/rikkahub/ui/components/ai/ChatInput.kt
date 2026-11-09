@@ -2312,7 +2312,7 @@ private fun TextInputRow(
                 // 这里先降 6dp，配合外面那道上限一起压。
                 // 【13:22 回填】52dp 时字被切一半 —— M3 TextField 内部那圈空白先吃掉高度。
                 // 空白不用 BasicTextField 重写就动不了，所以只能让高度回来。
-                .then(if (glassMode) Modifier.height(50.dp) else Modifier)
+                .then(if (glassMode) Modifier.height(44.dp) else Modifier)
                 .onGloballyPositioned { fieldRectState.value = it.boundsInWindow() }
                 .contentReceiver(receiveContentListener)
                 .onFocusChanged {
@@ -2323,7 +2323,8 @@ private fun TextInputRow(
             // M3 的 TextField 自带上下各 16dp 的内容内边距 + 56dp 最小高，
             // 高度卡在 58 怎么调都压不下来 —— 被吃掉的不是外面那层，是里面这圈空白。
             // M3 1.5 的 TextField 多了一个 contentPadding，正好能把那圈让空，不用整支重写。
-            contentPadding = if (glassMode) PaddingValues(horizontal = 12.dp, vertical = 13.dp)
+            // 【贴着字走 · 2026-11-09 19:10 宝："还是好肥"】
+            contentPadding = if (glassMode) PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                              else TextFieldDefaults.contentPaddingWithoutLabel(),
             placeholder = {
                 // 【打印机外观 2026-10-18】占位字淡一点，像屏上没点亮的像素
