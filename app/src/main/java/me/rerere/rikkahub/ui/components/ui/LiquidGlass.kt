@@ -164,7 +164,12 @@ half4 main(float2 p) {
     float  dEdge    = max(-d, 0.0);
     float  edgeZone = 1.0 - smoothstep(0.0, max(uRimDist, 0.5), dEdge);
     float  kz       = uZoom * (1.0 - uRim * edgeZone);
-    float2 zoom  = (p - ctr0) / max(kz, 0.2) + ctr0;
+    // 【凸度调 0 应该等于"关掉" · 2026-11-09 21:37 宝："全调零他为什么把内容缩得这么小？你整我？"】
+    //   kz 是除数，0 会除零，原来写 max(kz, 0.2) —— 保底只想着别崩，
+    //   没管"调 0 的人想要什么"：0 被顶成 0.2，采样点被推到 5 倍远，内容缩成一小块。
+    //   改成 0 和负数一律当 1.0（不缩放），滑杆推到底就是真的关掉。
+    float  safeKz = (kz <= 0.0) ? 1.0 : kz;
+    float2 zoom  = (p - ctr0) / safeKz + ctr0;
 
     // ② 位移收窄：wIn 只在边缘斜面区非零，乘上去之后中间彻底不推
     // 【边缘尖峰 · 2026-11-07 19:22 宝说"能不能让边缘一圈的折射特别夸张一点"】
