@@ -212,7 +212,7 @@ half4 main(float2 p) {
     //   ③ mix 往白里靠 + clamp 封顶 0.76 —— 不死白，留四分之一给底色
     // 对比旧版：亮带 17.6px（宽 16 倍）、单方向点积、加法混合（会过曝）。
     float distIn = -d;
-    float hairline = exp(-pow((distIn - 0.55) / 0.62, 2.0));
+    float hairline = exp(-pow((distIn - 0.55) / 0.42, 2.0));
 
     // 【高光游走 · 2026-11-07 傍晚】角度改从"光心"算，不从元素中心。
     // 气泡在屏幕上滚动时 uRect 变、uLightLocal 跟着变 → 角度变 → 亮边沿气泡游走，
@@ -277,7 +277,11 @@ half4 main(float2 p) {
     float sideX = (p.x / max(uSize.x, 1.0)) * 2.0 - 1.0;   // -1 左 .. +1 右
     float warm  = clamp(-sideX, 0.0, 1.0);
     float cool  = clamp( sideX, 0.0, 1.0);
-    col += hairline * (warm * float3(0.10, 0.02, -0.02) + cool * float3(-0.02, 0.02, 0.10));
+    // 【接上滑杆 · 2026-11-09 22:34 宝："边缘有黑黑的东西，我怀疑是前天加的那个高光和阴影"】
+    //   这行是 11-07 抄 glass.css ::before 的左右色散，**从来没接过 uEdge/uSpec**：
+    //   边缘调 0 它照样画，而且两个 float3 里都有负分量（-0.02）→ 减亮成暗边。
+    //   现在挂到 uEdge 上：边缘推到 0，它跟着一起消失。
+    col += hairline * (warm * float3(0.10, 0.02, -0.02) + cool * float3(-0.02, 0.02, 0.10)) * uEdge;
 
     // 【饱和度 · 2026-11-07 新增】CSS 那边是 blur + saturate(1.6)：玻璃后面的颜色会**更浓一点**。
     // 少了这一下，画面就是"糊"而不是"玻璃"。
