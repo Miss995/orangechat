@@ -811,7 +811,10 @@ fun ChatInput(
                     // 压到 60dp 以内，圆角占比接近一半 → 才像胶囊。超了会被裁，所以别设更小。
                     // 【矮一点 · 2026-11-09 13:14，13:22 调回 66】60dp 时把字压掉了，给到 66：
                     // 比原来的 81 矮一截，字也完整。
-                    .then(if (glassMode) Modifier.height(66.dp) else Modifier)
+                    // 【外面也压扁 · 2026-11-09 19:55 宝：里面细了，外面还是带圆角的方形】
+                    // 外层写死 66，内层 38 —— 66 的块上算 19 的圆角，出来就是圆角矩形。
+                    // 现在两层都用同一个数，圆角才等于高度一半，才是真胶囊。
+                    .then(if (glassMode) Modifier.height(GLASS_FIELD_HEIGHT) else Modifier)
                     // 【抖 · 2026-10-20】原型 machShake 是"往下 1.6px 再回来"，
                     // 一个 sin 半波就够了：0→1→0。
                     .graphicsLayer {
@@ -1240,6 +1243,9 @@ fun ChatInput(
                                     }
                                 }
                                 // 【打印机外观】扫描线：细横纹，像真屏
+                                // 【玻璃模式不画 · 2026-11-09 19:55 宝："那个是当时写打印机的时候
+                                // 为了 LED 屏像一点加的那个线"】—— 猫先前把它认成玻璃边缘高光了，认错。
+                                if (!glassMode) {
                                 Canvas(
                                     modifier = Modifier
                                         .matchParentSize()
@@ -1256,6 +1262,7 @@ fun ChatInput(
                                         )
                                         y += step
                                     }
+                                }
                                 }
                                 // 【打印机外观】斜向反光
                                 Box(
@@ -2291,7 +2298,9 @@ private fun TextInputRow(
             state = state.textContent,
             textStyle = LocalTextStyle.current.copy(
                 // 【打印机外观 2026-10-18】LCD 上的绿光字
-                color = Color(0xFF7FFFA8),
+                // 【玻璃模式改黑 · 2026-11-09 19:55 宝："字给我改成黑的"】
+                // 玻璃是浅色半透明的，绿光字在浅底上根本看不清。
+                color = if (glassMode) Color.Black else Color(0xFF7FFFA8),
                 // 【光标别当竹子 · 2026-11-09 19:00】宝发的截图：光标是一根特别长的绿水滴。
                 // Compose 的光标高度就是行高，行高不压，光标就跟着长。
                 // 玻璃模式下把行高钉在 20sp（字是 bodyLarge 那档，20 够用不挤）。
@@ -2336,8 +2345,10 @@ private fun TextInputRow(
             placeholder = {
                 // 【打印机外观 2026-10-18】占位字淡一点，像屏上没点亮的像素
                 Text(
-                    text = stringResource(R.string.chat_input_placeholder),
-                    color = Color(0xFF7FFFA8).copy(alpha = 0.35f),
+                    // 【跟小猫说话 · 2026-11-09 19:55 宝："把那个输入的默认文字改成跟小猫说话"】
+                    text = if (glassMode) "跟小猫说话" else stringResource(R.string.chat_input_placeholder),
+                    color = if (glassMode) Color.Black.copy(alpha = 0.45f)
+                            else Color(0xFF7FFFA8).copy(alpha = 0.35f),
                 )
             },
             // 【打印机外观】屏是固定大小的：最多两行，再多就在屏里滚
@@ -2362,7 +2373,8 @@ private fun TextInputRow(
                 // 【光标跟字走 · 2026-10-21 宝："输入框的那个光标颜色"原来是蓝的，
                 // 那支蓝是 Material 默认的，跟这块暗绿屏完全不搭。屏上的字是 #7FFFA8，
                 // 光标就取同一个色 —— 它本来就是"下一笔要落在哪"的意思，该跟字同源。
-                cursorColor = Color(0xFF7FFFA8),
+                // 【光标跟着字走 · 玻璃模式字是黑的，光标不能还是绿的】
+                cursorColor = if (glassMode) Color.Black else Color(0xFF7FFFA8),
                 unfocusedIndicatorColor = Color.Transparent,
                 focusedIndicatorColor = Color.Transparent,
                 // 【打印机外观 2026-10-18】LCD：暗绿屏底
