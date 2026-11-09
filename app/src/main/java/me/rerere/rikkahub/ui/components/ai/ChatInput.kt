@@ -689,6 +689,8 @@ fun ChatInput(
     // ⚠️ 用 positionInRoot()，不能用 boundsInRoot() —— 后者会被父级裁剪（2026-11-07 踩过）。
     val glassHost = LocalLiquidGlassHost.current
     var glassRect by remember { mutableStateOf(Rect.Zero) }
+    // 输入框那层在 root 坐标系里的矩形（玻璃要用它，跟录背景图同一坐标系）
+    var surfaceRectInRoot by remember { mutableStateOf(Rect.Zero) }
     val glassDensity = LocalDensity.current
     val glassReady = glassMode && glassHost != null && glassRect.width > 0f
     var surfaceRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
@@ -698,15 +700,10 @@ fun ChatInput(
         modifier = Modifier
             .onGloballyPositioned {
                 rootBoxRect = it.boundsInWindow()
-                if (glassMode) {
-                    val pos = it.positionInRoot()
-                    // 【无边框 · 2026-11-08 宝】玻璃只包输入那一行，不跟附件面板一起画。
-                    // 原来传的是整个块（实测 984x1200），底下一大片没有内容，
-                    // 玻璃一路采下去就在最下面拉出一条黑。
-                    val capH = with(glassDensity) { 200.dp.toPx() }
-                    val h = minOf(it.size.height.toFloat(), capH)   // Int 和 Float 不能直接 minOf
-                    glassRect = Rect(pos.x, pos.y, pos.x + it.size.width, pos.y + h)
-                }
+                // 【玻璃的矩形 · 2026-11-09 12:35 改】不再从这块 Box 量。
+                // 这个 Box 里装着输入区 + 状态纸 + 附件面板，整块实测能有 1200px 高，
+                // 之前用 capH=200dp 硬截 → 玻璃画成一个 200dp 的大方块（宝："超级高，是个带圆角的方形"）。
+                // 现在改由下面那个 Surface（真正的输入框）自己量，见 surfaceRectInRoot。
             }
             // 【无边框 · 2026-11-08 宝】玻璃模式把整块裁圆：底下残留的打印机件
             // （出纸口那条深缝、纸仓）怎么都盖不干净，直接裁掉最省事。
@@ -822,6 +819,13 @@ fun ChatInput(
                     .onGloballyPositioned {
                         surfaceOriginInWindow = it.localToWindow(Offset.Zero)
                         surfaceRect = it.boundsInWindow()
+                        // 【玻璃只包这一块 · 2026-11-09 12:35】用 positionInRoot（跟背景图同坐标系），
+                        // 不用 boundsInWindow —— 那个是屏幕坐标，折算回 root 还得减窗口偏移。
+                        if (glassMode) {
+                            val p2 = it.positionInRoot()
+                            surfaceRectInRoot = Rect(p2.x, p2.y, p2.x + it.size.width, p2.y + it.size.height)
+                            glassRect = surfaceRectInRoot
+                        }
                     }
                     // 【第二刀 2026-10-08】在输入框整块上滑 -> 拉起附件区（跟点 + 同一个动作）
                     // 用 Initial pass 只观察、不消费，免得抢掉输入框自己的手势
