@@ -1111,9 +1111,12 @@ fun ChatInput(
                         }
 
                         // 【重排·第四刀 2026-10-08】+ 和发送键挪到输入框左右两侧
+                        // 【按钮被切一半 · 2026-11-09 13:27 宝】真凶是这里的 Bottom：
+                        // 按钮贴着底边对齐，而玻璃模式下整块只有 66dp、圆角 28 —— 底角正是那道弧线，
+                        // 按钮斜贴在弧上就露出半截。改成垂直居中，它就落在直边上了。
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                            verticalAlignment = Alignment.Bottom,
+                            verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             ActionIconButton(
