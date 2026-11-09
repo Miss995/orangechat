@@ -1320,7 +1320,10 @@ fun ChatInput(
                                     //   ② 一圈「键色自己的暗版」（这才是阴影 —— 黑色在深机身里根本看不见，
                                     //      橘键的影子必须是深橘）
                                     //   ③ 中间纯亮色（键面全亮，不带任何渐变/暗部）
-                                    Box(
+                                    // 【发送键也透明 · 2026-11-09 13:38 宝："怎么只有加号变成透明的了"]
+                                    // 它跟 ＋ 不是同一份代码：三层塑料壳是画在 ActionIconButton 的内容里的，
+                                    // 组件里那个 glassMode 只撤掉了组件自己的壳，没管这里。
+                                    if (!glassMode) Box(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .background(Color(0xFF0C0908))
