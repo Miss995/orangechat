@@ -238,7 +238,7 @@ half4 main(float2 p) {
     //   这条就是白边：pow(rim,2.2) 在边界处=1，×0.55×0.85 后边界被提亮 47%，
     //   在浅背景上就是一道白描边。网页那边淡，是猫系数给重了。
     //   现在只留一丝（0.10）做厚度感的根，带也收窄（指数 4.0）—— 不再是"边"，是"往里渐淡"。
-    float edgeBand  = pow(rim, 4.0);
+    float edgeBand  = pow(rim, 2.2);
     // 【高光换成网页那套 · 2026-11-09 21:48 宝："你的高光是错的吧，网页里那个高光真的是这么调的吗"】
     //   网页（glass-input-proto 第 248~252 行）是两个固定位置的亮，跟角度、跟光心都无关：
     //     spec1 = 左上角一块压扁的柔光斑（中心 0.13/0.24，纵轴压到 0.6，半径 0.34，强度 0.18）
@@ -272,7 +272,7 @@ half4 main(float2 p) {
     float3 glintCol = mix(ambient, float3(1.0), 0.62);
     col = mix(col, glintCol, clamp(specGlint * 0.9, 0.0, 0.76));   // 高光：那条细线
     // 边缘：网页是「从边界往里渐淡的带」（innerWhite = edge*0.55 + line*0.08），不是一条线
-    col += float3((edgeBand * 0.10 + line * 0.06) * uEdge * 0.85);
+    col += float3((edgeBand * 0.55 + line * 0.08) * uEdge * 0.85);
 
     // 【左右色散 · 2026-11-07 傍晚，抄它 box-shadow 里那两条 inset】
     //   inset 1px 0 0  rgba(255,140,180,.10)  ← 左暖
