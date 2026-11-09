@@ -78,17 +78,21 @@ data class DisplaySetting(
     // ===== 液态玻璃 · 输入框那一块可调的六样（2026-11-09）=====
     // 网页原型上那八根滑杆搬进 App：折射、磨砂沿用上面两个，剩下六个在这里。
     // 只给输入框的玻璃读；气泡那边仍走 liquidGlassBlur / liquidGlassRefract。
-    /** 圆角（dp）。26 = 现在输入框的圆角 */
+    /** 圆角（dp）。网页原型没有这根，App 需要（形状靠它） */
     val liquidGlassRadius: Float = 26f,
-    /** 厚度（决定弯折的范围，像素）。22 = 现在这档 */
+    /** 厚度。对应网页 r0「厚度」，App 这版是像素：22 = 现在这档 */
     val liquidGlassThickness: Float = 22f,
-    /** 不透明度。1 = 全不透 */
+    /** 不透明度。网页原型没有这根，留着做整体淡出 */
     val liquidGlassAlpha: Float = 1f,
-    /** 中间缩放。1.03=放大3%(旧)、0.97=缩小3%(宝调的) */
+    /** 边缘。对应网页 r3「边缘」uEdge：内圈白，整圈，管"这是块有厚度的东西" */
+    val liquidGlassEdge: Float = 1f,
+    /** 高光。对应网页 r4「高光」uSpec：只管左上/右下两段细亮线，管"清透" */
+    val liquidGlassSpec: Float = 1f,
+    /** 凸度。对应网页 r5「凸度」uZoom：1.03=放大3%(旧)、0.97=缩小3%(宝调的) */
     val liquidGlassZoom: Float = 0.97f,
-    /** 边缘放大强度。0=关(旧)、0.18=平的玻璃、0.3=圆得像泡泡 */
+    /** 边放。对应网页 r6「边放」uRim：最外一圈放大强度。0=关、1.5=宝调的那档 */
     val liquidGlassRim: Float = 0.18f,
-    /** 边缘影响多宽（像素）。6 = 窄边、13 = 宽边 */
+    /** 边距。对应网页 r7「边距」uRimDist：边缘放大影响多宽（像素）。6 = 窄、13 = 宽 */
     val liquidGlassRimDist: Float = 6f,
     // 自定义字体
     val customFontPath: String = "",

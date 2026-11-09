@@ -196,7 +196,7 @@ fun SettingDisplayTransparencyPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     item(
-                        headlineContent = { Text("液态玻璃中间缩放") },
+                        headlineContent = { Text("液态玻璃凸度") },
                         supportingContent = {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -217,7 +217,7 @@ fun SettingDisplayTransparencyPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     item(
-                        headlineContent = { Text("液态玻璃边缘放大") },
+                        headlineContent = { Text("液态玻璃边放") },
                         supportingContent = {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -238,7 +238,7 @@ fun SettingDisplayTransparencyPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     item(
-                        headlineContent = { Text("液态玻璃边缘宽度") },
+                        headlineContent = { Text("液态玻璃边距") },
                         supportingContent = {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -259,7 +259,7 @@ fun SettingDisplayTransparencyPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     item(
-                        headlineContent = { Text("液态玻璃不透明度") },
+                        headlineContent = { Text("液态玻璃边缘") },
                         supportingContent = {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -267,15 +267,36 @@ fun SettingDisplayTransparencyPage(vm: SettingVM = koinViewModel()) {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 Slider(
-                                    value = displaySetting.liquidGlassAlpha,
+                                    value = displaySetting.liquidGlassEdge,
                                     onValueChange = {
-                                        updateDisplaySetting(displaySetting.copy(liquidGlassAlpha = it))
+                                        updateDisplaySetting(displaySetting.copy(liquidGlassEdge = it))
                                     },
-                                    valueRange = 0f..1f,
-                                    steps = 19,
+                                    valueRange = 0f..1.2f,
+                                    steps = 23,
                                     modifier = Modifier.weight(1f)
                                 )
-                                Text(text = "${(displaySetting.liquidGlassAlpha * 100).toInt()}%")
+                                Text(text = String.format("%.2f", displaySetting.liquidGlassEdge))
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("液态玻璃高光") },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.liquidGlassSpec,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(liquidGlassSpec = it))
+                                    },
+                                    valueRange = 0f..2.5f,
+                                    steps = 49,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = String.format("%.2f", displaySetting.liquidGlassSpec))
                             }
                         }
                     )

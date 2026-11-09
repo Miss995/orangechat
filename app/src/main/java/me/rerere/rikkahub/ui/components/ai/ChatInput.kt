@@ -733,6 +733,8 @@ fun ChatInput(
                         zoom = settings.displaySetting.liquidGlassZoom,
                         rim = settings.displaySetting.liquidGlassRim,
                         rimDist = settings.displaySetting.liquidGlassRimDist,
+                        edge = settings.displaySetting.liquidGlassEdge,
+                        spec = settings.displaySetting.liquidGlassSpec,
                     ),
                     screenW = with(glassDensity) { LocalConfiguration.current.screenWidthDp.dp.toPx() },
                     screenH = with(glassDensity) { LocalConfiguration.current.screenHeightDp.dp.toPx() },

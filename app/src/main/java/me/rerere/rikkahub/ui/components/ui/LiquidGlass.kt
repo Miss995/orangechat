@@ -66,6 +66,11 @@ uniform float2  uBgInv;
 uniform float   uZoom;
 uniform float   uRim;
 uniform float   uRimDist;
+// 【2026-11-09 补 · 对着网页原型 glass-input-proto.html 的八根滑杆】
+//   边缘 uEdge：内圈白（整圈，管"这是块有厚度的东西"），网页 r3，范围 0..1.2
+//   高光 uSpec：左上/右下那两段细亮线（管清透），网页 r4，范围 0..2.5
+uniform float   uEdge;
+uniform float   uSpec;
 
 // 【形状 · 2026-11-07 宝指的】只吃局部坐标 + 自己的宽高。
 // 之前用整页矩形算，位置一变高光就跟着缩，看着像玻璃自己缩起来了。
@@ -212,7 +217,10 @@ half4 main(float2 p) {
     // 所以不会过曝 —— 变化全在边缘往外那 3px 的衰减上。
     float halo = exp(-pow((distIn - 0.55) / 3.0, 2.0)) * 0.32;
 
-    float edgeGlint = (hairline + halo) * (upperLeft * 0.86 + lowerRight * 0.48);
+    // 【2026-11-09】原来 (hairline+halo) 和角度分布乘法固定在 0.86/0.48 上，不可调。
+    // 现在拆成两根滑杆：uEdge 管"边缘这一圈有多明显"（整圈），uSpec 管"两段高光有多亮"。
+    // 网页原型的默认值：edge 0.5、spec 1.0（这里沿用 App 原来那组 0.18 / 0.86，宝之前调出来的样子）。
+    float edgeGlint = (hairline + halo) * (upperLeft * 0.86 + lowerRight * 0.48) * uEdge * uSpec;
 
     // 【边缘光染环境色 · 2026-11-07 傍晚，抄 Gale 开源那份 glass.css 的 ::before 渐变】
     // 它那条边不是纯白：白 0.62 → 壁纸主色 0.38 → 白 0.04 → 壁纸主色 0.22 → 白 0.30。
@@ -264,12 +272,16 @@ data class LiquidGlassStyle(
     val alpha: Float = 1f,
     /** 磨砂半径（像素）。0 = 纯折射（像水），越大越糊。宝 2026-11-07 选的就是 0 */
     val blur: Float = 0f,
-    /** 【V2】中间缩放。1.03 = 旧行为（放大 3%）；<1 = 内容缩小（宝 2026-11-08 调出来的样子） */
+    /** 【V2】凸度，对应网页的「凸度」uZoom。1.03 = 旧行为（放大 3%）；<1 = 内容缩小 */
     val zoom: Float = 1.03f,
-    /** 【V2】边缘放大强度。0 = 关（旧行为）。0.8~1.5 是宝试出来的范围 */
+    /** 【V2】边缘放大强度，对应网页的「边放」uRim。0 = 关（旧行为）。0.8~1.5 是宝试出来的范围 */
     val rim: Float = 0f,
-    /** 【V2】边缘影响多宽（**像素**，调用方用 with(density){dp.toPx()} 换算）。宝常用 6dp≈16px */
+    /** 【V2】边缘影响多宽（**像素**，调用方用 with(density){dp.toPx()} 换算）。对应网页的「边距」 */
     val rimDist: Float = 13f,
+    /** 【2026-11-09】边缘这一圈的强弱，对应网页的「边缘」uEdge。整圈，管"有厚度" */
+    val edge: Float = 1f,
+    /** 【2026-11-09】两段高光的亮度，对应网页的「高光」uSpec。只管左上/右下两段，管"清透" */
+    val spec: Float = 1f,
 )
 
 /**
@@ -379,6 +391,8 @@ fun Modifier.liquidGlass(
             setFloatUniform("uRim", style.rim)
             // ⚠️ 这个函数不是 @Composable，读不了 LocalDensity —— 所以 rimDist 由调用方换算成**像素**再传
             setFloatUniform("uRimDist", style.rimDist)
+            setFloatUniform("uEdge", style.edge)
+            setFloatUniform("uSpec", style.spec)
             setFloatUniform("uLightLocal", lightX, lightY)
             // ⚠️ ImageShader 把整张图铺在 0..1 的坐标空间里，而 shader 里的 p 是像素坐标。
             // ImageShader 没有 matrix 参数（2026-11-06 编译报错过），所以在 shader 里用 uBgInv 换算。
