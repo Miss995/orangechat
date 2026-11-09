@@ -804,9 +804,30 @@ fun ChatInput(
             // Surface 圆了，玻璃画出来还是 26 的圆角，看起来就还是方的。
             // 这里跟上面那个 66dp 绑死，改高度只改这两处。
             val glassCorner = if (glassMode) GLASS_FIELD_HEIGHT / 2 else settings.displaySetting.liquidGlassRadius.dp
+            // 【按钮分离 · 2026-11-09 20:21 宝："拆"】
+            // 原来是 【Surface[Row[＋][输入框]]】—— 一块玻璃盖住整行，＋ 也在这块玻璃里，
+            // 所以怎么调都像一条钢板。拆成 【Row[＋][Surface[输入框]]】：
+            // 玻璃只盖输入框，＋ 是它自己一个圆，两块之间有缝。
+            // ⚠️ Row 里 Surface 必须用 weight，不能 fillMaxWidth（会把 ＋ 挤出去）。
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+            if (glassMode) {
+                ActionIconButton(
+                    glassMode = glassMode,
+                    onClick = { expandToggle(ExpandState.Panel) },
+                    onLongClick = { showStickerSheet = true }) {
+                    Icon(
+                        imageVector = if (expand == ExpandState.Panel) HugeIcons.Cancel01 else HugeIcons.Add01,
+                        contentDescription = stringResource(R.string.more_options)
+                    )
+                }
+            }
             Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .weight(1f)
                     // 【矮一点 · 2026-11-09 13:14】整块原来 81dp 高，圆角 28 看着还是方的。
                     // 压到 60dp 以内，圆角占比接近一半 → 才像胶囊。超了会被裁，所以别设更小。
                     // 【矮一点 · 2026-11-09 13:14，13:22 调回 66】60dp 时把字压掉了，给到 66：
@@ -1138,10 +1159,13 @@ fun ChatInput(
                         // 按钮贴着底边对齐，而玻璃模式下整块只有 66dp、圆角 28 —— 底角正是那道弧线，
                         // 按钮斜贴在弧上就露出半截。改成垂直居中，它就落在直边上了。
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                            // 【按钮分离 · 2026-11-09 20:21】玻璃模式下 ＋ 提到 Surface 外面了，
+                            // 内层就不再自己留那道 8dp 边（不然左右各缩一次）。
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = if (glassMode) 0.dp else 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
+                            if (!glassMode) {
                             ActionIconButton(
                                 glassMode = glassMode,
                                 onClick = {
@@ -1153,6 +1177,7 @@ fun ChatInput(
                                     imageVector = if (expand == ExpandState.Panel) HugeIcons.Cancel01 else HugeIcons.Add01,
                                     contentDescription = stringResource(R.string.more_options)
                                 )
+                            }
                             }
 
                             // 【打印机外观】屏框 + LCD：输入框像嵌在机身里的屏
@@ -1484,6 +1509,7 @@ fun ChatInput(
                     }
                 }
             }
+            }   // ← Row（按钮分离）
 
                 // ===== 【出纸票 · 挂在机身外面】=====
                             // 【出纸动效 · 2026-10-18 宝定的】纸不是"啪"一下出现的：
