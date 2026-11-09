@@ -833,13 +833,16 @@ fun ChatInput(
                                 glassHost, plusRectInRoot,
                                 LiquidGlassStyle(
                                     radius = with(glassDensity) { 15.dp.toPx() },
-                                    refract = settings.displaySetting.liquidGlassRefract * 0.45f,
-                                    thickness = 10f,
+                                    // 【按钮不再打折 · 2026-11-09 21:58 宝："感觉太不明显了，像普通的透明效果，还是把它还给我"】
+                                    // 原来这里是 ×0.45、厚度钉 10、边距钉 3、凸度取四成 ——
+                                    // 想着"按钮小，参数也该小几倍"，结果小到看不出是玻璃了。现在直接读设置。
+                                    refract = settings.displaySetting.liquidGlassRefract,
+                                    thickness = settings.displaySetting.liquidGlassThickness,
                                     alpha = settings.displaySetting.liquidGlassAlpha,
                                     blur = 0f,
-                                    zoom = 1f + (settings.displaySetting.liquidGlassZoom - 1f) * 0.4f,
+                                    zoom = settings.displaySetting.liquidGlassZoom,
                                     rim = settings.displaySetting.liquidGlassRim,
-                                    rimDist = 3f,
+                                    rimDist = settings.displaySetting.liquidGlassRimDist,
                                     edge = settings.displaySetting.liquidGlassEdge,
                                     spec = settings.displaySetting.liquidGlassSpec,
                                 ),
