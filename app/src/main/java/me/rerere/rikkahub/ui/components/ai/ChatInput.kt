@@ -699,6 +699,9 @@ fun ChatInput(
     var glassRect by remember { mutableStateOf(Rect.Zero) }
     // 输入框那层在 root 坐标系里的矩形（玻璃要用它，跟录背景图同一坐标系）
     var surfaceRectInRoot by remember { mutableStateOf(Rect.Zero) }
+    // 【加号包玻璃 · 2026-11-09 20:34】按钮出去以后，它也要自己一块玻璃。
+    // 玻璃靠"知道自己在屏幕上的位置"才能采到背后的东西，所以单独量一份坐标。
+    var plusRectInRoot by remember { mutableStateOf(Rect.Zero) }
     val glassDensity = LocalDensity.current
     val glassReady = glassMode && glassHost != null && glassRect.width > 0f
     var surfaceRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
@@ -815,14 +818,46 @@ fun ChatInput(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
             if (glassMode) {
-                ActionIconButton(
-                    glassMode = glassMode,
-                    onClick = { expandToggle(ExpandState.Panel) },
-                    onLongClick = { showStickerSheet = true }) {
-                    Icon(
-                        imageVector = if (expand == ExpandState.Panel) HugeIcons.Cancel01 else HugeIcons.Add01,
-                        contentDescription = stringResource(R.string.more_options)
-                    )
+                // 【加号也包玻璃 · 2026-11-09 20:34 宝："按钮可以给我包上玻璃吗亲"】
+                // 小圆块的玻璃要单独一套参数：半径 15 的圆上，边缘那圈放大占得太满，
+                // 照搬输入框那套（厚度 22、折射 3.0）会整块变形。所以这里压薄、收边、折射减半。
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .onGloballyPositioned {
+                            val p = it.positionInRoot()
+                            plusRectInRoot = Rect(p.x, p.y, p.x + it.size.width, p.y + it.size.height)
+                        }
+                        .then(
+                            if (glassHost != null && plusRectInRoot.width > 0f) Modifier.liquidGlass(
+                                glassHost, plusRectInRoot,
+                                LiquidGlassStyle(
+                                    radius = with(glassDensity) { 15.dp.toPx() },
+                                    refract = settings.displaySetting.liquidGlassRefract * 0.45f,
+                                    thickness = 10f,
+                                    alpha = settings.displaySetting.liquidGlassAlpha,
+                                    blur = 0f,
+                                    zoom = 1f + (settings.displaySetting.liquidGlassZoom - 1f) * 0.4f,
+                                    rim = settings.displaySetting.liquidGlassRim,
+                                    rimDist = 3f,
+                                    edge = settings.displaySetting.liquidGlassEdge,
+                                    spec = settings.displaySetting.liquidGlassSpec,
+                                ),
+                                screenW = with(glassDensity) { LocalConfiguration.current.screenWidthDp.dp.toPx() },
+                                screenH = with(glassDensity) { LocalConfiguration.current.screenHeightDp.dp.toPx() },
+                            ) else Modifier
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ActionIconButton(
+                        glassMode = glassMode,
+                        onClick = { expandToggle(ExpandState.Panel) },
+                        onLongClick = { showStickerSheet = true }) {
+                        Icon(
+                            imageVector = if (expand == ExpandState.Panel) HugeIcons.Cancel01 else HugeIcons.Add01,
+                            contentDescription = stringResource(R.string.more_options)
+                        )
+                    }
                 }
             }
             Surface(
@@ -1161,7 +1196,9 @@ fun ChatInput(
                         Row(
                             // 【按钮分离 · 2026-11-09 20:21】玻璃模式下 ＋ 提到 Surface 外面了，
                             // 内层就不再自己留那道 8dp 边（不然左右各缩一次）。
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = if (glassMode) 0.dp else 8.dp),
+                            modifier = Modifier.fillMaxWidth().// 【往回收一点 · 2026-11-09 20:34 宝："发送键的位置有点歪"】
+                            // 玻璃模式下原来是 0，按钮贴着右边那条弧线，看着就往外飘。
+                            padding(horizontal = if (glassMode) 6.dp else 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
