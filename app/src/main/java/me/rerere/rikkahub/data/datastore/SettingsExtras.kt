@@ -75,6 +75,21 @@ data class DisplaySetting(
     val liquidGlassBlur: Float = 12f,
     /** 液态玻璃折射强度。0=平板玻璃(不弯折)、0.6=默认、1.75 太夸张(推开80px) */
     val liquidGlassRefract: Float = 0.6f,
+    // ===== 液态玻璃 · 输入框那一块可调的六样（2026-11-09）=====
+    // 网页原型上那八根滑杆搬进 App：折射、磨砂沿用上面两个，剩下六个在这里。
+    // 只给输入框的玻璃读；气泡那边仍走 liquidGlassBlur / liquidGlassRefract。
+    /** 圆角（dp）。26 = 现在输入框的圆角 */
+    val liquidGlassRadius: Float = 26f,
+    /** 厚度（决定弯折的范围，像素）。22 = 现在这档 */
+    val liquidGlassThickness: Float = 22f,
+    /** 不透明度。1 = 全不透 */
+    val liquidGlassAlpha: Float = 1f,
+    /** 中间缩放。1.03=放大3%(旧)、0.97=缩小3%(宝调的) */
+    val liquidGlassZoom: Float = 0.97f,
+    /** 边缘放大强度。0=关(旧)、0.18=平的玻璃、0.3=圆得像泡泡 */
+    val liquidGlassRim: Float = 0.18f,
+    /** 边缘影响多宽（像素）。6 = 窄边、13 = 宽边 */
+    val liquidGlassRimDist: Float = 6f,
     // 自定义字体
     val customFontPath: String = "",
     // 输入框自定义背景

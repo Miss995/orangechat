@@ -717,18 +717,22 @@ fun ChatInput(
             .then(
                 if (glassReady) Modifier.liquidGlass(
                     glassHost!!, glassRect,
+                    // 【★ 2026-11-09 12:15 起改读设置】八根滑杆在「设置 → 显示 → 透明度」里，
+                    // 宝自己调，不用每次改代码跑构建。
                     LiquidGlassStyle(
-                        radius = with(glassDensity) { 26.dp.toPx() },
+                        radius = with(glassDensity) { settings.displaySetting.liquidGlassRadius.dp.toPx() },
                         // 【效果开回来了 · 2026-11-09 03:02 宝："倒是给我开回来啊"】
                         // 探针期全关是为了验那条黑跟玻璃无关 —— 已经验完了（真凶是接缝）。
-                        refract = 0.6f,     // 折射（1.75 会推开 80px 太夸张，0.6 是调过的那档）
-                        thickness = 22f,
-                        alpha = 1f,
+                        refract = settings.displaySetting.liquidGlassRefract,
+                        thickness = settings.displaySetting.liquidGlassThickness,
+                        alpha = settings.displaySetting.liquidGlassAlpha,
+                        // 磨砂这一格先钉 0：DisplaySetting 里那根 liquidGlassBlur 默认 12（气泡在用），
+                        // 输入框一直是纯折射，跟着读会突然变糊。她要点再单开一格。
                         blur = 0f,
                         // ★ 宝 2026-11-08 在网页上摸出来的那三条
-                        zoom = 0.97f,       // 中间缩小 3%
-                        rim = 0.18f,        // 边缘厚度（0.3 太圆像泡泡，0.18 是平的玻璃）
-                        rimDist = 6f,       // 边缘影响多宽
+                        zoom = settings.displaySetting.liquidGlassZoom,
+                        rim = settings.displaySetting.liquidGlassRim,
+                        rimDist = settings.displaySetting.liquidGlassRimDist,
                     ),
                     screenW = with(glassDensity) { LocalConfiguration.current.screenWidthDp.dp.toPx() },
                     screenH = with(glassDensity) { LocalConfiguration.current.screenHeightDp.dp.toPx() },
