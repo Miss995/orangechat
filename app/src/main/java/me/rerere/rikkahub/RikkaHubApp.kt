@@ -134,10 +134,12 @@ class RikkaHubApp : Application() {
         // Start aggressive mode (device event AI trigger) if enabled
         startAggressiveModeIfEnabled()
 
-        // 【语音唤醒 2026-11-10 · 第一版验证，故意不带开关】
-        // 目的只有一个：验证 KWS 到底听不听得见。听得到再换设置页开关。
-        runCatching { startVoiceWakeTemp() }.onFailure { e ->
-            android.util.Log.e(TAG, "startVoiceWake failed", e)
+        // 【语音唤醒 2026-11-10】现在有开关了：设置里 voiceWakeEnabled，默认关。
+        // 默认关的理由：它要一直占麦克风、耗电，还会被视频里连说两遍「小猫」误触发。
+        get<AppScope>().launch {
+            runCatching { startVoiceWakeIfEnabled() }.onFailure { e ->
+                android.util.Log.e(TAG, "startVoiceWake failed", e)
+            }
         }
 
         // Reschedule daily_cron alarm if plugins need it
@@ -152,8 +154,14 @@ class RikkaHubApp : Application() {
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
     }
 
-    /** 【语音唤醒 2026-11-10 · 临时】无开关直接起，只用于验证 KWS 能否听见。 */
-    private fun startVoiceWakeTemp() {
+    /** 【语音唤醒 2026-11-10】按设置里的开关决定起不起。 */
+    private suspend fun startVoiceWakeIfEnabled() {
+        val enabled = get<SettingsStore>().settingsFlowRaw.first()
+            .proactiveMessageSetting.voiceWakeEnabled
+        if (!enabled) {
+            android.util.Log.i(TAG, "VoiceWake: disabled by setting, skip")
+            return
+        }
         val granted = androidx.core.content.ContextCompat.checkSelfPermission(
             this, android.Manifest.permission.RECORD_AUDIO
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED

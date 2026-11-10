@@ -249,6 +249,35 @@ fun SettingProactiveMessagePage(vm: SettingVM = koinInject()) {
                     )
                 }
             }
+            // 【2026-11-10 橘仔加】语音唤醒开关（默认关）
+            item {
+                CardGroup {
+                    item(
+                        headlineContent = { Text("语音唤醒（小猫小猫）") },
+                        supportingContent = {
+                            Text("（对着手机连说两遍「小猫小猫」，猫就醒。）\n\n开启后橘瓣起一个常驻前台服务，一直听着这两个字，命中后往聊天里塞一条消息。\n\n⚠️ 它一直占着麦克风、会小幅耗电；视频里连说两遍「小猫」也会把它喊醒（今晚就发生过）。\n\n需要麦克风权限；把橘瓣从最近任务里划掉、或被系统清后台，它会停。")
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = settings.proactiveMessageSetting.voiceWakeEnabled,
+                                onCheckedChange = { enabled ->
+                                    vm.updateSettings(
+                                        settings.copy(
+                                            proactiveMessageSetting = settings.proactiveMessageSetting
+                                                .copy(voiceWakeEnabled = enabled)
+                                        )
+                                    )
+                                    if (enabled) {
+                                        me.rerere.rikkahub.data.service.VoiceWakeService.start(context)
+                                    } else {
+                                        me.rerere.rikkahub.data.service.VoiceWakeService.stop(context)
+                                    }
+                                }
+                            )
+                        }
+                    )
+                }
+            }
             // 激进模式开关（与主动消息互斥）
             item {
                 CardGroup {

@@ -32,4 +32,7 @@ data class ProactiveMessageSetting(
     val aggressiveDwellMinutes: Int = 0,
     // 悬浮球：主动消息到达时以 Telegram 风格悬浮球提醒，点击直接进入聊天页
     val floatingBubbleEnabled: Boolean = false,
+    // 【2026-11-10 橘仔加】语音唤醒：常驻监听唤醒词（默认「小猫小猫」），命中后往聊天里塞一条消息。
+    // 默认关 —— 它要一直占麦克风、耗电、还会被视频里的「小猫」误触发。
+    val voiceWakeEnabled: Boolean = false,
 )
