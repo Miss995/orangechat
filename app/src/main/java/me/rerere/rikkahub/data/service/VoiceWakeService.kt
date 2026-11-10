@@ -17,7 +17,16 @@ import com.k2fsa.sherpa.onnx.KeywordSpotterConfig
 import com.k2fsa.sherpa.onnx.OnlineModelConfig
 import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
 import me.rerere.rikkahub.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.AppLogBuffer
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.service.ChatService
+import org.koin.core.context.GlobalContext
 import kotlin.concurrent.thread
 
 /**
@@ -272,11 +281,37 @@ class VoiceWakeService : Service() {
     }
 
     /**
-     * 唤醒之后干什么 —— 第一版只打日志。
-     * 验证通过后再接 ChatService.sendMessage(...)。
+     * 唤醒之后做什么 —— 【2026-11-10 第二版】真的去敲聊天。
+     *
+     * 落点：当前助手最近一条对话。取不到就只打日志，不硬往别的会话塞。
+     * ChatService.sendMessage 内部已经处理"猫正在忙就不打断"（isInterjection 分支），
+     * 这里不用再判一次，免得两处逻辑打架。
      */
     private fun onWake(keyword: String) {
-        log("onWake($keyword) —— 第一版到此为止，不接聊天")
+        log("onWake($keyword) —— 准备敲聊天")
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val chatService = GlobalContext.get().get<ChatService>()
+                val settingsStore = GlobalContext.get().get<SettingsStore>()
+                val repo = GlobalContext.get().get<ConversationRepository>()
+
+                val settings = settingsStore.settingsFlowRaw.first()
+                val assistantId = settings.getCurrentAssistant().id
+                val conv = repo.getRecentConversations(assistantId, 1).firstOrNull()
+                if (conv == null) {
+                    log("onWake: 没找到任何对话，放弃")
+                    return@launch
+                }
+                log("onWake: 落进 ${conv.title.ifBlank { conv.id.toString() }}")
+                chatService.sendMessage(
+                    conversationId = conv.id,
+                    content = listOf(UIMessagePart.Text("（小猫听见你叫它了）")),
+                )
+                log("onWake: sendMessage 已发出")
+            } catch (t: Throwable) {
+                log("onWake threw: ${t.javaClass.simpleName}: ${t.message}")
+            }
+        }
     }
 
     private fun log(msg: String) {
