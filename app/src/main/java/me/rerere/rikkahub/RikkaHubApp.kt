@@ -134,6 +134,12 @@ class RikkaHubApp : Application() {
         // Start aggressive mode (device event AI trigger) if enabled
         startAggressiveModeIfEnabled()
 
+        // 【语音唤醒 2026-11-10 · 第一版验证，故意不带开关】
+        // 目的只有一个：验证 KWS 到底听不听得见。听得到再换设置页开关。
+        runCatching { startVoiceWakeTemp() }.onFailure { e ->
+            android.util.Log.e(TAG, "startVoiceWake failed", e)
+        }
+
         // Reschedule daily_cron alarm if plugins need it
         rescheduleDailyCronIfEnabled()
 
@@ -144,6 +150,19 @@ class RikkaHubApp : Application() {
         incrementLaunchCount()
 
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
+    }
+
+    /** 【语音唤醒 2026-11-10 · 临时】无开关直接起，只用于验证 KWS 能否听见。 */
+    private fun startVoiceWakeTemp() {
+        val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            android.util.Log.w(TAG, "VoiceWake: RECORD_AUDIO not granted, skip")
+            return
+        }
+        me.rerere.rikkahub.data.service.VoiceWakeService.start(this)
+        android.util.Log.i(TAG, "VoiceWake: service started")
     }
 
     private fun incrementLaunchCount() {

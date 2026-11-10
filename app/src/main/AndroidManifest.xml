@@ -37,6 +37,8 @@
   <uses-permission android:name="android.permission.WRITE_SETTINGS"
     tools:ignore="ProtectedPermissions" />
   <uses-permission android:name="android.permission.SET_WALLPAPER" />
+  <!-- 【语音唤醒 2026-11-10】常驻监听需要免电池优化，否则半夜被系统掐 -->
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
   <uses-feature
     android:name="android.hardware.camera"
@@ -459,6 +461,13 @@
     <service
       android:name=".service.VoiceCallService"
       android:exported="false"
+      android:foregroundServiceType="microphone" />
+
+    <!-- 【语音唤醒 2026-11-10】sherpa-onnx KWS 常驻监听 -->
+    <service
+      android:name=".data.service.VoiceWakeService"
+      android:exported="false"
+      android:stopWithTask="false"
       android:foregroundServiceType="microphone" />
 
     <!-- KeepAlive Restart Receiver（提升国产 ROM 存活率） -->
