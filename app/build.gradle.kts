@@ -339,6 +339,9 @@ dependencies {
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
 
+    // 【语音唤醒 2026-11-10】sherpa-onnx KWS（离线关键词检测，Apache-2.0，纯 CPU）
+    implementation(libs.sherpa.onnx)
+
     // jmDNS (mDNS/Bonjour for .local hostname)
     implementation(libs.jmdns)
 

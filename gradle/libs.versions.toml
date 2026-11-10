@@ -77,6 +77,9 @@ xz = "1.12"
 termux = "0.118.0"
 diffutils = "4.17"
 
+# 【语音唤醒 2026-11-10】sherpa-onnx KWS 引擎
+sherpa-onnx = "1.13.5"
+
 [libraries]
 androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "cameraCore" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -196,6 +199,8 @@ xz = { module = "org.tukaani:xz", version.ref = "xz" }
 termux-terminal-view = { module = "com.termux.termux-app:terminal-view", version.ref = "termux" }
 guava-listenablefuture = { module = "com.google.guava:listenablefuture", version = "9999.0-empty-to-avoid-conflict-with-guava" }
 diffutils = { module = "io.github.java-diff-utils:java-diff-utils", version.ref = "diffutils" }
+# 【语音唤醒 2026-11-10】JitPack 坐标（settings.gradle.kts 里已有 jitpack.io 仓库）
+sherpa-onnx = { module = "com.github.k2-fsa.sherpa-onnx:sherpa-onnx", version.ref = "sherpa-onnx" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
