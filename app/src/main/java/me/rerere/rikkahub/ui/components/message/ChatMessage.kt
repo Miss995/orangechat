@@ -1376,7 +1376,6 @@ private fun MessagePartsBlock(
     }
 }
  
-@Composable
 /**
  * 九宫格绘制：四个角按原像素贴，四条边只往一个方向拉，中间两个方向都拉。
  *
@@ -1425,6 +1424,7 @@ private fun DrawScope.drawNinePatch(bmp: ImageBitmap, insetFrac: Float = 0.25f) 
     patch(ix, iy, sw - 2 * ix, sh - 2 * iy, dx, dy, W - 2 * dx, H - 2 * dy)
 }
 
+@Composable
 private fun BubbleSurface(
     modifier: Modifier = Modifier,
     // 【白字只在正文气泡上用 · 2026-11-07 宝："代码和图标改成白的，看得眼花"】
