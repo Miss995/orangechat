@@ -321,7 +321,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                             onValueChange = {
                                                 updateDisplaySetting(displaySetting.copy(bubbleCropL = it))
                                             },
-                                            valueRange = 0f..0.45,
+                                            valueRange = 0f..0.45f,
                                             modifier = Modifier.weight(1f)
                                         )
                                         Text(text = "${(displaySetting.bubbleCropL * 100).toInt()}%")
@@ -337,7 +337,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                             onValueChange = {
                                                 updateDisplaySetting(displaySetting.copy(bubbleCropT = it))
                                             },
-                                            valueRange = 0f..0.45,
+                                            valueRange = 0f..0.45f,
                                             modifier = Modifier.weight(1f)
                                         )
                                         Text(text = "${(displaySetting.bubbleCropT * 100).toInt()}%")
@@ -353,7 +353,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                             onValueChange = {
                                                 updateDisplaySetting(displaySetting.copy(bubbleCropR = it))
                                             },
-                                            valueRange = 0f..0.45,
+                                            valueRange = 0f..0.45f,
                                             modifier = Modifier.weight(1f)
                                         )
                                         Text(text = "${(displaySetting.bubbleCropR * 100).toInt()}%")
@@ -369,7 +369,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                             onValueChange = {
                                                 updateDisplaySetting(displaySetting.copy(bubbleCropB = it))
                                             },
-                                            valueRange = 0f..0.45,
+                                            valueRange = 0f..0.45f,
                                             modifier = Modifier.weight(1f)
                                         )
                                         Text(text = "${(displaySetting.bubbleCropB * 100).toInt()}%")
