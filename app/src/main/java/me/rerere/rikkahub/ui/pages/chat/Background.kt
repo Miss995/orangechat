@@ -23,6 +23,11 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 
 @Composable
 fun AssistantBackground(setting: Settings) {
+    // 【水波背景 · 2026-11-14 22:3x 宝："不行"，背景还是那张花】
+    // 水画在 ChatPage 的录制层外面、页面最底下。这一层要是再画背景图/纯色，
+    // 就把它整个盖住了 —— 所以水开着的时候这里什么都不画。
+    if (setting.displaySetting.chatWaterBackground) return
+
     val assistant = setting.getCurrentAssistant()
     val chatBackgroundColor = setting.displaySetting.chatBackgroundColor?.let { it.toComposeColor() }
 
