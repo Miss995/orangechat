@@ -80,6 +80,11 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import kotlin.math.min
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -1372,6 +1377,54 @@ private fun MessagePartsBlock(
 }
  
 @Composable
+/**
+ * 九宫格绘制：四个角按原像素贴，四条边只往一个方向拉，中间两个方向都拉。
+ *
+ * [insetFrac] = 四个角各占图的边长比例（0.25 = 四分之一）。
+ * 图最好是正方形 —— 这样气泡再宽再窄，四角都不会被拉变形。
+ * 2026-11-14 加：为气泡背景图服务，替换掉原来"整张 Crop"的画法。
+ */
+private fun DrawScope.drawNinePatch(bmp: ImageBitmap, insetFrac: Float = 0.25f) {
+    val sw = bmp.width.toFloat()
+    val sh = bmp.height.toFloat()
+    val W = size.width
+    val H = size.height
+    if (sw <= 0f || sh <= 0f || W <= 0f || H <= 0f) return
+
+    val ix = sw * insetFrac
+    val iy = sh * insetFrac
+    // 目标区太小的时候，角最多各占一半，别互相压过去
+    val dx = min(ix, W / 2f)
+    val dy = min(iy, H / 2f)
+
+    fun patch(
+        sx: Float, sy: Float, sw2: Float, sh2: Float,
+        dx0: Float, dy0: Float, dw: Float, dh: Float,
+    ) {
+        if (sw2 <= 0f || sh2 <= 0f || dw <= 0f || dh <= 0f) return
+        drawImage(
+            image = bmp,
+            srcOffset = IntOffset(sx.toInt(), sy.toInt()),
+            srcSize = IntSize(sw2.toInt(), sh2.toInt()),
+            dstOffset = IntOffset(dx0.toInt(), dy0.toInt()),
+            dstSize = IntSize(dw.toInt(), dh.toInt()),
+        )
+    }
+
+    // 四角：原样贴，不拉伸
+    patch(0f, 0f, ix, iy, 0f, 0f, dx, dy)
+    patch(sw - ix, 0f, ix, iy, W - dx, 0f, dx, dy)
+    patch(0f, sh - iy, ix, iy, 0f, H - dy, dx, dy)
+    patch(sw - ix, sh - iy, ix, iy, W - dx, H - dy, dx, dy)
+    // 四边：只往一个方向拉
+    patch(ix, 0f, sw - 2 * ix, iy, dx, 0f, W - 2 * dx, dy)
+    patch(ix, sh - iy, sw - 2 * ix, iy, dx, H - dy, W - 2 * dx, dy)
+    patch(0f, iy, ix, sh - 2 * iy, 0f, dy, dx, H - 2 * dy)
+    patch(sw - ix, iy, ix, sh - 2 * iy, W - dx, dy, dx, H - 2 * dy)
+    // 中间：两个方向都拉
+    patch(ix, iy, sw - 2 * ix, sh - 2 * iy, dx, dy, W - 2 * dx, H - 2 * dy)
+}
+
 private fun BubbleSurface(
     modifier: Modifier = Modifier,
     // 【白字只在正文气泡上用 · 2026-11-07 宝："代码和图标改成白的，看得眼花"】
@@ -1395,12 +1448,20 @@ private fun BubbleSurface(
                 .clip(RoundedCornerShape(cornerRadius))
                 .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
         ) {
-            AsyncImage(
-                model = imagePath,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize()
-            )
+            // 【九宫格 · 2026-11-14 宝要"纯爱漫画框"那种四角带花纹的气泡】
+            // 原来是 ContentScale.Crop：整张图缩放填满再居中裁。气泡是宽扁的，
+            // 花边框的四个角会被裁掉两个。改成九宫格：四角原样贴、四边单向拉伸、
+            // 中间双向拉伸 —— 她用正方形画的花边框，拉成任何宽高比例都不变形。
+            val bubbleBitmap = remember(imagePath) {
+                runCatching {
+                    android.graphics.BitmapFactory.decodeFile(imagePath)?.asImageBitmap()
+                }.getOrNull()
+            }
+            if (bubbleBitmap != null) {
+                Canvas(modifier = Modifier.matchParentSize()) {
+                    drawNinePatch(bubbleBitmap)
+                }
+            }
             if (overlayEnabled) {
                 Box(
                     modifier = Modifier
