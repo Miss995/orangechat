@@ -324,6 +324,14 @@ private fun ChatPageContent(
         color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize()
     ) {
+        // 【水波背景 · 2026-11-14 宝："后面都变成全黑了"】
+        // ⚠️ 水绝不能进下面那两层 liquidGlassSource：WebView 是硬件层，
+        //    GraphicsLayer 录不到它 —— 录出来是空的，drawLayer 再把铺的那层主题色
+        //    整个画上去，就成了全黑。所以水放在录制层【外面】、页面最底下。
+        if (setting.displaySetting.chatWaterBackground) {
+            WaterBackground(modifier = Modifier.fillMaxSize())
+        }
+
         // 【液态玻璃 · 2026-11-07】录制层：背景图 + 内容一起录。
         // ⚠️ 玻璃条绝不能进这一层 —— 它读的那张图正是这一层每帧录的，会自己喂自己卡死。
         Box(modifier = Modifier.fillMaxSize()) {
@@ -334,7 +342,8 @@ private fun ChatPageContent(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .liquidGlassSource(pageGlassHost, MaterialTheme.colorScheme.background)
+                .then(if (setting.displaySetting.chatWaterBackground) Modifier
+                      else Modifier.liquidGlassSource(pageGlassHost, MaterialTheme.colorScheme.background))
         ) {
             // 【气泡的图单独录一份 · 2026-11-09 21:23 宝："气泡的玻璃消失了"】
             // 猫把 source 换成 pageGlassHost 时，bgGlassHost 就一张图都没收到了 →
@@ -343,7 +352,8 @@ private fun ChatPageContent(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .liquidGlassSource(bgGlassHost, MaterialTheme.colorScheme.background)
+                    .then(if (setting.displaySetting.chatWaterBackground) Modifier
+                          else Modifier.liquidGlassSource(bgGlassHost, MaterialTheme.colorScheme.background))
             ) {
                 AssistantBackground(setting = setting)
             }

@@ -27,11 +27,8 @@ fun AssistantBackground(setting: Settings) {
     val chatBackgroundColor = setting.displaySetting.chatBackgroundColor?.let { it.toComposeColor() }
 
     when {
-        // 【水波背景 · 2026-11-14】优先级最高：开了就直接盖掉图/纯色，不跟下面两套判断打架。
-        setting.displaySetting.chatWaterBackground -> {
-            WaterBackground(modifier = Modifier.fillMaxSize())
-        }
-
+        // 水波背景不在这儿画了 —— 它挪到 ChatPage 的录制层外面了（见那边的注释：
+        // WebView 录不进 GraphicsLayer，留在这层会被画成一片黑）。
         assistant.background != null -> {
             // 用户手动为助手设置的背景图，优先级最高
             val backgroundColor = chatBackgroundColor ?: MaterialTheme.colorScheme.background
