@@ -125,6 +125,9 @@ data class DisplaySetting(
     val userBubbleImagePath: String = "",
     val assistantBubbleImagePath: String = "",
     val bubbleCornerRadius: Float = 16f,
+    // 【九宫格切分比例 · 2026-11-14】气泡背景图四个角各占多少（0.25 = 四分之一）。
+    // 宝："盲选太抽象了" → 做成设置页里能拖的滑杆 + 实时预览。
+    val bubbleNinePatchInset: Float = 0.25f,
     val bubbleImageOverlayEnabled: Boolean = false, // 关=纯图片, 开=图片+主题色遮罩
 )
 

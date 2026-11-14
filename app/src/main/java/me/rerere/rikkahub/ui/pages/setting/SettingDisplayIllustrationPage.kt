@@ -41,6 +41,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Canvas
+import me.rerere.rikkahub.ui.components.ui.drawNinePatch
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -288,6 +290,65 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(text = "${displaySetting.bubbleCornerRadius.toInt()}")
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("九宫格切分比例") },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.bubbleNinePatchInset,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(bubbleNinePatchInset = it))
+                                    },
+                                    valueRange = 0.10f..0.45f,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = "${(displaySetting.bubbleNinePatchInset * 100).toInt()}%")
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("预览") },
+                        supportingContent = {
+                            val path = displaySetting.userBubbleImagePath
+                                .ifBlank { displaySetting.assistantBubbleImagePath }
+                            // ⚠️ remember 必须无条件调用，不能塞进 if 里
+                            val bmp = remember(path) {
+                                if (path.isNotBlank() && File(path).exists()) {
+                                    runCatching {
+                                        android.graphics.BitmapFactory.decodeFile(path)?.asImageBitmap()
+                                    }.getOrNull()
+                                } else null
+                            }
+                            if (bmp != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(96.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.CenterEnd)
+                                            .fillMaxWidth(0.72f)
+                                            .height(64.dp)
+                                    ) {
+                                        Canvas(modifier = Modifier.matchParentSize()) {
+                                            drawNinePatch(bmp, displaySetting.bubbleNinePatchInset)
+                                        }
+                                        Text(
+                                            text = "示例：今天也在一起",
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                        )
+                                    }
+                                }
+                            } else {
+                                Text("先选一张气泡背景图，这里就会出预览")
                             }
                         }
                     )
