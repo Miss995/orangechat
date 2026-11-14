@@ -1395,10 +1395,20 @@ private fun BubbleSurface(
 ) {
     val hasImage = imagePath.isNotBlank() && java.io.File(imagePath).exists()
     if (hasImage) {
+        val bubbleDs = LocalDisplaySettings.current
+        val bleedDp = bubbleDs.bubbleBleed
+        val bleedPx = with(androidx.compose.ui.platform.LocalDensity.current) { bleedDp.dp.toPx() }
         Box(
             modifier = modifier
-                .animateContentSize()
-                .clip(RoundedCornerShape(cornerRadius))
+                // 【出血模式 · 2026-11-14 宝画的兔子：耳朵伸在气泡外面】
+                // animateContentSize 和 clip 都会把画到气泡外的部分裁掉 → 耳朵会没。
+                // 出血打开时这两个都跳过（代价：没有尺寸变化动画）。
+                .then(
+                    if (bleedDp > 0f) Modifier
+                    else Modifier
+                        .animateContentSize()
+                        .clip(RoundedCornerShape(cornerRadius))
+                )
                 .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
         ) {
             // 【九宫格 · 2026-11-14 宝要"纯爱漫画框"那种四角带花纹的气泡】
@@ -1411,10 +1421,9 @@ private fun BubbleSurface(
                 }.getOrNull()
             }
             if (bubbleBitmap != null) {
-                // 切分比例走设置（设置 → 显示 → 插图素材 → 九宫格切分比例）
-                val inset = LocalDisplaySettings.current.bubbleNinePatchInset
+                // 切分比例 / 出血都走设置（设置 → 显示 → 插图素材 → 气泡背景）
                 Canvas(modifier = Modifier.matchParentSize()) {
-                    drawNinePatch(bubbleBitmap, inset)
+                    drawNinePatch(bubbleBitmap, bubbleDs.bubbleNinePatchInset, bleedPx)
                 }
             }
             if (overlayEnabled) {

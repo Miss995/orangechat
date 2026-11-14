@@ -25,11 +25,20 @@ import kotlin.math.min
  * [insetFrac] = 四个角各占图的边长比例（0.25 = 四分之一）。
  * 图最好是正方形 —— 这样气泡再宽再窄，四角都不会被拉变形。
  */
-fun DrawScope.drawNinePatch(bmp: ImageBitmap, insetFrac: Float = 0.25f) {
+fun DrawScope.drawNinePatch(
+    bmp: ImageBitmap,
+    insetFrac: Float = 0.25f,
+    // 【出血 · 2026-11-14】往外多画多少像素。给"耳朵伸出气泡外面"这类图用 ——
+    // 图本身会画到气泡边界之外（Compose 的 DrawScope 不裁剪，除非上层套了 clip）。
+    expandPx: Float = 0f,
+) {
     val sw = bmp.width.toFloat()
     val sh = bmp.height.toFloat()
-    val W = size.width
-    val H = size.height
+    val W = size.width + expandPx * 2
+    val H = size.height + expandPx * 2
+    // 画的时候整体往左上挪，让多出来的那圈露在气泡外面
+    val ox = -expandPx
+    val oy = -expandPx
     if (sw <= 0f || sh <= 0f || W <= 0f || H <= 0f) return
 
     val ix = sw * insetFrac
@@ -47,7 +56,7 @@ fun DrawScope.drawNinePatch(bmp: ImageBitmap, insetFrac: Float = 0.25f) {
             image = bmp,
             srcOffset = IntOffset(sx.toInt(), sy.toInt()),
             srcSize = IntSize(sw2.toInt(), sh2.toInt()),
-            dstOffset = IntOffset(dx0.toInt(), dy0.toInt()),
+            dstOffset = IntOffset((ox + dx0).toInt(), (oy + dy0).toInt()),
             dstSize = IntSize(dw.toInt(), dh.toInt()),
         )
     }

@@ -128,6 +128,10 @@ data class DisplaySetting(
     // 【九宫格切分比例 · 2026-11-14】气泡背景图四个角各占多少（0.25 = 四分之一）。
     // 宝："盲选太抽象了" → 做成设置页里能拖的滑杆 + 实时预览。
     val bubbleNinePatchInset: Float = 0.25f,
+    // 【气泡出血 · 2026-11-14 宝画的兔子耳朵伸出气泡外】背景图往外多画多少 dp。
+    // 0 = 不扩（原来那样，图就画在气泡里）。大于 0 时气泡会跳过裁剪和尺寸动画
+    // —— 那两个都会把画到外面的部分切掉。
+    val bubbleBleed: Float = 0f,
     val bubbleImageOverlayEnabled: Boolean = false, // 关=纯图片, 开=图片+主题色遮罩
 )
 

@@ -314,6 +314,33 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     item(
+                        headlineContent = { Text("气泡出血(图能画到气泡外)") },
+                        supportingContent = {
+                            Column {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Slider(
+                                        value = displaySetting.bubbleBleed,
+                                        onValueChange = {
+                                            updateDisplaySetting(displaySetting.copy(bubbleBleed = it))
+                                        },
+                                        valueRange = 0f..40f,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(text = "${displaySetting.bubbleBleed.toInt()}dp")
+                                }
+                                Text(
+                                    if (displaySetting.bubbleBleed > 0f)
+                                        "图往外多画这么多，伸出去的部分不会被裁 —— 耳朵就用这个"
+                                    else "0 = 图只画在气泡里"
+                                )
+                            }
+                        }
+                    )
+                    item(
                         headlineContent = { Text("预览") },
                         supportingContent = {
                             val path = displaySetting.userBubbleImagePath
@@ -326,11 +353,15 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     }.getOrNull()
                                 } else null
                             }
+                            val previewBleedPx = with(androidx.compose.ui.platform.LocalDensity.current) {
+                                displaySetting.bubbleBleed.dp.toPx()
+                            }
                             if (bmp != null) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(96.dp)
+                                        // 预览区高度也按出血放大，伸出来的部分才有地方露
+                                        .height(96.dp + displaySetting.bubbleBleed.dp * 2)
                                 ) {
                                     Box(
                                         modifier = Modifier
@@ -339,7 +370,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                             .height(64.dp)
                                     ) {
                                         Canvas(modifier = Modifier.matchParentSize()) {
-                                            drawNinePatch(bmp, displaySetting.bubbleNinePatchInset)
+                                            drawNinePatch(bmp, displaySetting.bubbleNinePatchInset, previewBleedPx)
                                         }
                                         Text(
                                             text = "示例：今天也在一起",
