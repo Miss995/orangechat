@@ -119,6 +119,9 @@ data class DisplaySetting(
     val thinkingFontSizeRatio: Float = 1.0f,
     val thinkingBubbleColor: Long? = null,
     val chatBackgroundColor: Long? = null,
+    // 【水波背景 · 2026-11-14】把网页上那池水搬进聊天页当背景（WebView 挂 water.html?bare=1）
+    // ⚠️ 临时默认开 —— 设置页开关做好之后改成 false
+    val chatWaterBackground: Boolean = true,
     val primaryColor: Long? = null,
     val inputFieldColor: Long? = null,
     // 气泡背景图 & 圆角
