@@ -43,7 +43,7 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.Canvas
-import me.rerere.rikkahub.ui.components.ui.drawNinePatch
+import me.rerere.rikkahub.ui.components.ui.drawBubbleImage
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -295,82 +295,166 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     item(
-                        headlineContent = { Text("水平切分(左/右)") },
+                        headlineContent = { Text("平铺模式") },
+                        supportingContent = { Text("开 = 中间那块重复贴（形状不变形）；关 = 拉伸（会变形）") },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.bubbleTiled,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(bubbleTiled = it))
+                                }
+                            )
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("四边裁剪") },
                         supportingContent = {
                             Column {
-                                                                    Row(
+                                    Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
                                         Text(text = "左", modifier = Modifier.width(28.dp))
                                         Slider(
-                                            value = displaySetting.bubbleSplitX1,
+                                            value = displaySetting.bubbleCropL,
                                             onValueChange = {
-                                                updateDisplaySetting(displaySetting.copy(bubbleSplitX1 = it))
+                                                updateDisplaySetting(displaySetting.copy(bubbleCropL = it))
                                             },
-                                            valueRange = 0f..1f,
+                                            valueRange = 0f..0.45,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        Text(text = "${(displaySetting.bubbleSplitX1 * 100).toInt()}%")
+                                        Text(text = "${(displaySetting.bubbleCropL * 100).toInt()}%")
                                     }
-                                                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) {
-                                        Text(text = "右", modifier = Modifier.width(28.dp))
-                                        Slider(
-                                            value = displaySetting.bubbleSplitX2,
-                                            onValueChange = {
-                                                updateDisplaySetting(displaySetting.copy(bubbleSplitX2 = it))
-                                            },
-                                            valueRange = 0f..1f,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        Text(text = "${(displaySetting.bubbleSplitX2 * 100).toInt()}%")
-                                    }
-                                Text("两条线之间那段会被横向拉长；贴到一起就不拉")
-                            }
-                        }
-                    )
-                    item(
-                        headlineContent = { Text("垂直切分(上/下)") },
-                        supportingContent = {
-                            Column {
-                                                                    Row(
+                                    Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
                                         Text(text = "上", modifier = Modifier.width(28.dp))
                                         Slider(
-                                            value = displaySetting.bubbleSplitY1,
+                                            value = displaySetting.bubbleCropT,
                                             onValueChange = {
-                                                updateDisplaySetting(displaySetting.copy(bubbleSplitY1 = it))
+                                                updateDisplaySetting(displaySetting.copy(bubbleCropT = it))
                                             },
-                                            valueRange = 0f..1f,
+                                            valueRange = 0f..0.45,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        Text(text = "${(displaySetting.bubbleSplitY1 * 100).toInt()}%")
+                                        Text(text = "${(displaySetting.bubbleCropT * 100).toInt()}%")
                                     }
-                                                                    Row(
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(text = "右", modifier = Modifier.width(28.dp))
+                                        Slider(
+                                            value = displaySetting.bubbleCropR,
+                                            onValueChange = {
+                                                updateDisplaySetting(displaySetting.copy(bubbleCropR = it))
+                                            },
+                                            valueRange = 0f..0.45,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(text = "${(displaySetting.bubbleCropR * 100).toInt()}%")
+                                    }
+                                    Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
                                         Text(text = "下", modifier = Modifier.width(28.dp))
                                         Slider(
-                                            value = displaySetting.bubbleSplitY2,
+                                            value = displaySetting.bubbleCropB,
                                             onValueChange = {
-                                                updateDisplaySetting(displaySetting.copy(bubbleSplitY2 = it))
+                                                updateDisplaySetting(displaySetting.copy(bubbleCropB = it))
+                                            },
+                                            valueRange = 0f..0.45,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(text = "${(displaySetting.bubbleCropB * 100).toInt()}%")
+                                    }
+                                Text("手画的图边上常留白，先裁掉再切")
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("横向可重复区") },
+                        supportingContent = {
+                            Column {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(text = "起", modifier = Modifier.width(28.dp))
+                                        Slider(
+                                            value = displaySetting.bubbleRepeatX1,
+                                            onValueChange = {
+                                                updateDisplaySetting(displaySetting.copy(bubbleRepeatX1 = it))
                                             },
                                             valueRange = 0f..1f,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        Text(text = "${(displaySetting.bubbleSplitY2 * 100).toInt()}%")
+                                        Text(text = "${(displaySetting.bubbleRepeatX1 * 100).toInt()}%")
                                     }
-                                Text("耳朵那种上下固定、只想让中间拉长的，就压这两根")
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(text = "终", modifier = Modifier.width(28.dp))
+                                        Slider(
+                                            value = displaySetting.bubbleRepeatX2,
+                                            onValueChange = {
+                                                updateDisplaySetting(displaySetting.copy(bubbleRepeatX2 = it))
+                                            },
+                                            valueRange = 0f..1f,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(text = "${(displaySetting.bubbleRepeatX2 * 100).toInt()}%")
+                                    }
+                                Text("两条线之间那段会被重复铺开；贴到一起就不铺")
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("纵向可重复区") },
+                        supportingContent = {
+                            Column {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(text = "起", modifier = Modifier.width(28.dp))
+                                        Slider(
+                                            value = displaySetting.bubbleRepeatY1,
+                                            onValueChange = {
+                                                updateDisplaySetting(displaySetting.copy(bubbleRepeatY1 = it))
+                                            },
+                                            valueRange = 0f..1f,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(text = "${(displaySetting.bubbleRepeatY1 * 100).toInt()}%")
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(text = "终", modifier = Modifier.width(28.dp))
+                                        Slider(
+                                            value = displaySetting.bubbleRepeatY2,
+                                            onValueChange = {
+                                                updateDisplaySetting(displaySetting.copy(bubbleRepeatY2 = it))
+                                            },
+                                            valueRange = 0f..1f,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(text = "${(displaySetting.bubbleRepeatY2 * 100).toInt()}%")
+                                    }
+                                Text("耳朵那种想整块锁死不动的，把这一区压窄")
                             }
                         }
                     )
@@ -451,12 +535,17 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                             .height(64.dp)
                                     ) {
                                         Canvas(modifier = Modifier.matchParentSize()) {
-                                            drawNinePatch(
+                                            drawBubbleImage(
                                                 bmp = bmp,
-                                                splitLeft = displaySetting.bubbleSplitX1,
-                                                splitRight = displaySetting.bubbleSplitX2,
-                                                splitTop = displaySetting.bubbleSplitY1,
-                                                splitBottom = displaySetting.bubbleSplitY2,
+                                                cropLeft = displaySetting.bubbleCropL,
+                                                cropTop = displaySetting.bubbleCropT,
+                                                cropRight = displaySetting.bubbleCropR,
+                                                cropBottom = displaySetting.bubbleCropB,
+                                                repeatXStart = displaySetting.bubbleRepeatX1,
+                                                repeatXEnd = displaySetting.bubbleRepeatX2,
+                                                repeatYStart = displaySetting.bubbleRepeatY1,
+                                                repeatYEnd = displaySetting.bubbleRepeatY2,
+                                                tiled = displaySetting.bubbleTiled,
                                                 expandPx = previewBleedPx,
                                             )
                                         }

@@ -125,14 +125,20 @@ data class DisplaySetting(
     val userBubbleImagePath: String = "",
     val assistantBubbleImagePath: String = "",
     val bubbleCornerRadius: Float = 16f,
-    // 【气泡九宫格切分线 · 2026-11-15 00:0x 宝："丑到让我害怕了，一点都不像我们家兔子"】
-    // 一根"四角一样大"的滑杆太粗，会把耳朵切进"会被横向拉长"的那条边里、拉成椭圆。
-    // 改成四个切分点，都是 0..1 的比例（相对原图）：
-    //   两条线之间的那一段 = 会被拉伸的部分；想锁死不拉，就把两条线拖到贴一起。
-    val bubbleSplitX1: Float = 0.25f,   // 左切分线
-    val bubbleSplitX2: Float = 0.75f,   // 右切分线
-    val bubbleSplitY1: Float = 0.25f,   // 上切分线
-    val bubbleSplitY2: Float = 0.75f,   // 下切分线
+    // 【气泡背景图 · 2026-11-15 凌晨参考 Operit 重做】
+    // 宝画的兔子耳朵被拉成椭圆 —— 根因是"拉伸"，改成"平铺"就不变形了。
+    // 四边裁剪（先把手画图边上的留白切掉，0~0.45）
+    val bubbleCropL: Float = 0f,
+    val bubbleCropT: Float = 0f,
+    val bubbleCropR: Float = 0f,
+    val bubbleCropB: Float = 0f,
+    // 可重复区的起止（0~1，相对裁完的图）。两条线贴到一起 = 那块不铺
+    val bubbleRepeatX1: Float = 0.35f,
+    val bubbleRepeatX2: Float = 0.65f,
+    val bubbleRepeatY1: Float = 0.35f,
+    val bubbleRepeatY2: Float = 0.65f,
+    // true = 平铺（形状不变），false = 拉伸（会变形）
+    val bubbleTiled: Boolean = true,
     // 【气泡左右内边距】-1 = 跟随内容默认内边距，不单独设
     val bubblePaddingH: Float = -1f,
     // 【气泡出血 · 2026-11-14 宝画的兔子耳朵伸出气泡外】背景图往外多画多少 dp。

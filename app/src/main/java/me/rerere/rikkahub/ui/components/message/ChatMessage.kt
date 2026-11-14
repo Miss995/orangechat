@@ -80,7 +80,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import me.rerere.rikkahub.ui.components.ui.drawNinePatch
+import me.rerere.rikkahub.ui.components.ui.drawBubbleImage
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.IntOffset
@@ -1421,14 +1421,19 @@ private fun BubbleSurface(
                 }.getOrNull()
             }
             if (bubbleBitmap != null) {
-                // 四条切分线 + 出血都走设置（设置 → 显示 → 插图素材 → 气泡背景）
+                // 裁剪/重复区间/平铺模式 都走设置（设置 → 显示 → 插图素材 → 气泡背景）
                 Canvas(modifier = Modifier.matchParentSize()) {
-                    drawNinePatch(
+                    drawBubbleImage(
                         bmp = bubbleBitmap,
-                        splitLeft = bubbleDs.bubbleSplitX1,
-                        splitRight = bubbleDs.bubbleSplitX2,
-                        splitTop = bubbleDs.bubbleSplitY1,
-                        splitBottom = bubbleDs.bubbleSplitY2,
+                        cropLeft = bubbleDs.bubbleCropL,
+                        cropTop = bubbleDs.bubbleCropT,
+                        cropRight = bubbleDs.bubbleCropR,
+                        cropBottom = bubbleDs.bubbleCropB,
+                        repeatXStart = bubbleDs.bubbleRepeatX1,
+                        repeatXEnd = bubbleDs.bubbleRepeatX2,
+                        repeatYStart = bubbleDs.bubbleRepeatY1,
+                        repeatYEnd = bubbleDs.bubbleRepeatY2,
+                        tiled = bubbleDs.bubbleTiled,
                         expandPx = bleedPx,
                     )
                 }
