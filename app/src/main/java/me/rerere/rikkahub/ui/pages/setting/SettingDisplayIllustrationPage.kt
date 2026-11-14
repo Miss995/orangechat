@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -294,7 +295,87 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     item(
-                        headlineContent = { Text("九宫格切分比例") },
+                        headlineContent = { Text("水平切分(左/右)") },
+                        supportingContent = {
+                            Column {
+                                                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(text = "左", modifier = Modifier.width(28.dp))
+                                        Slider(
+                                            value = displaySetting.bubbleSplitX1,
+                                            onValueChange = {
+                                                updateDisplaySetting(displaySetting.copy(bubbleSplitX1 = it))
+                                            },
+                                            valueRange = 0f..1f,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(text = "${(displaySetting.bubbleSplitX1 * 100).toInt()}%")
+                                    }
+                                                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(text = "右", modifier = Modifier.width(28.dp))
+                                        Slider(
+                                            value = displaySetting.bubbleSplitX2,
+                                            onValueChange = {
+                                                updateDisplaySetting(displaySetting.copy(bubbleSplitX2 = it))
+                                            },
+                                            valueRange = 0f..1f,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(text = "${(displaySetting.bubbleSplitX2 * 100).toInt()}%")
+                                    }
+                                Text("两条线之间那段会被横向拉长；贴到一起就不拉")
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("垂直切分(上/下)") },
+                        supportingContent = {
+                            Column {
+                                                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(text = "上", modifier = Modifier.width(28.dp))
+                                        Slider(
+                                            value = displaySetting.bubbleSplitY1,
+                                            onValueChange = {
+                                                updateDisplaySetting(displaySetting.copy(bubbleSplitY1 = it))
+                                            },
+                                            valueRange = 0f..1f,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(text = "${(displaySetting.bubbleSplitY1 * 100).toInt()}%")
+                                    }
+                                                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(text = "下", modifier = Modifier.width(28.dp))
+                                        Slider(
+                                            value = displaySetting.bubbleSplitY2,
+                                            onValueChange = {
+                                                updateDisplaySetting(displaySetting.copy(bubbleSplitY2 = it))
+                                            },
+                                            valueRange = 0f..1f,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(text = "${(displaySetting.bubbleSplitY2 * 100).toInt()}%")
+                                    }
+                                Text("耳朵那种上下固定、只想让中间拉长的，就压这两根")
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("左右内边距") },
                         supportingContent = {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -302,14 +383,14 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 Slider(
-                                    value = displaySetting.bubbleNinePatchInset,
+                                    value = if (displaySetting.bubblePaddingH < 0f) 8f else displaySetting.bubblePaddingH,
                                     onValueChange = {
-                                        updateDisplaySetting(displaySetting.copy(bubbleNinePatchInset = it))
+                                        updateDisplaySetting(displaySetting.copy(bubblePaddingH = it))
                                     },
-                                    valueRange = 0.10f..0.45f,
+                                    valueRange = 0f..40f,
                                     modifier = Modifier.weight(1f)
                                 )
-                                Text(text = "${(displaySetting.bubbleNinePatchInset * 100).toInt()}%")
+                                Text(text = "${(if (displaySetting.bubblePaddingH < 0f) 8f else displaySetting.bubblePaddingH).toInt()}dp")
                             }
                         }
                     )
@@ -370,7 +451,14 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                             .height(64.dp)
                                     ) {
                                         Canvas(modifier = Modifier.matchParentSize()) {
-                                            drawNinePatch(bmp, displaySetting.bubbleNinePatchInset, previewBleedPx)
+                                            drawNinePatch(
+                                                bmp = bmp,
+                                                splitLeft = displaySetting.bubbleSplitX1,
+                                                splitRight = displaySetting.bubbleSplitX2,
+                                                splitTop = displaySetting.bubbleSplitY1,
+                                                splitBottom = displaySetting.bubbleSplitY2,
+                                                expandPx = previewBleedPx,
+                                            )
                                         }
                                         Text(
                                             text = "示例：今天也在一起",

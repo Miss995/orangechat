@@ -1421,9 +1421,16 @@ private fun BubbleSurface(
                 }.getOrNull()
             }
             if (bubbleBitmap != null) {
-                // 切分比例 / 出血都走设置（设置 → 显示 → 插图素材 → 气泡背景）
+                // 四条切分线 + 出血都走设置（设置 → 显示 → 插图素材 → 气泡背景）
                 Canvas(modifier = Modifier.matchParentSize()) {
-                    drawNinePatch(bubbleBitmap, bubbleDs.bubbleNinePatchInset, bleedPx)
+                    drawNinePatch(
+                        bmp = bubbleBitmap,
+                        splitLeft = bubbleDs.bubbleSplitX1,
+                        splitRight = bubbleDs.bubbleSplitX2,
+                        splitTop = bubbleDs.bubbleSplitY1,
+                        splitBottom = bubbleDs.bubbleSplitY2,
+                        expandPx = bleedPx,
+                    )
                 }
             }
             if (overlayEnabled) {
@@ -1433,7 +1440,16 @@ private fun BubbleSurface(
                         .background(color.copy(alpha = bubbleAlpha))
                 )
             }
-            Column(modifier = Modifier.padding(contentPadding)) { content() }
+            // 左右内边距可以单独调（气泡图两边有花纹的时候，字别压上去）
+            val padH = if (bubbleDs.bubblePaddingH >= 0f) bubbleDs.bubblePaddingH.dp else contentPadding
+            Column(
+                modifier = Modifier.padding(
+                    start = padH,
+                    end = padH,
+                    top = contentPadding,
+                    bottom = contentPadding,
+                )
+            ) { content() }
         }
     } else {
         // 【液态玻璃 · 2026-11-07】气泡做成玻璃：把自己在根里的矩形交给 shader 去采背景图。
