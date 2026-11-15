@@ -102,12 +102,14 @@ fun DrawScope.drawBubbleImage(
     // 唯一例外：四角加起来比目标还宽/高，说明切分比例切太狠了，这时才同比缩一下兜住。
     val capSumW = capL + capR
     val capSumH = capT + capB
+    // 横竖必须用【同一个】缩放比，否则四角会被拉长/压扁（变形）
     val shrinkW = if (capSumW > W && capSumW > 0) W / capSumW.toFloat() else 1f
     val shrinkH = if (capSumH > H && capSumH > 0) H / capSumH.toFloat() else 1f
-    val dCapL = capL * shrinkW
-    val dCapR = capR * shrinkW
-    val dCapT = capT * shrinkH
-    val dCapB = capB * shrinkH
+    val shrink = minOf(shrinkW, shrinkH)
+    val dCapL = capL * shrink
+    val dCapR = capR * shrink
+    val dCapT = capT * shrink
+    val dCapB = capB * shrink
     val dMidW = max(0f, W - dCapL - dCapR)
     val dMidH = max(0f, H - dCapT - dCapB)
 
