@@ -112,9 +112,12 @@ float2 waterGrad(float2 p, float t) {
 }
 
 half4 main(float2 fragCoord) {
-    // p 归一化到「屏幕高度 = 1」的坐标，波长才跟屏幕尺寸无关
-    float2 p = fragCoord / uSize.y;
+    // 【坐标系照搬网页 · 2026-11-16 01:09 宝："看不出什么门道，就是一大团"】
+    // 网页：p = (uv-0.5)*vec2(aspect,1)；pp = p*2.5  →  跨度 2.5
+    // 原来是 fragCoord/uSize.y（跨度 1）→ 同样的波长占半屏，纹理全糊成一团
     float2 uv = fragCoord / uSize;
+    float aspect = uSize.x / uSize.y;
+    float2 p = (uv - 0.5) * float2(aspect, 1.0) * 2.5;
 
     float t = uTime;
 
@@ -148,7 +151,7 @@ half4 main(float2 fragCoord) {
     half alpha = cG.a;
 
     // ── 明暗：顺着坡度打一盏斜光
-    float3 L = normalize(float3(0.45, 0.65, 1.0));
+    float3 L = normalize(float3(-0.46, 0.58, 0.67));   // 跟网页一致：光源在左上外
     float3 N = normalize(float3(-g.x * 0.06, -g.y * 0.06, 1.0));
     float diff = clamp(dot(N, L), 0.0, 1.0);
     col *= half(0.86 + 0.24 * diff);
