@@ -1039,6 +1039,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
             }
         }
     }
+}
 
 /** 首行缩进当前该显示多少：切换「我的」时取自己那套（没设就跟随 AI），负数按 0 显示 */
 private fun bubbleIndentVal(d: me.rerere.rikkahub.data.datastore.DisplaySetting, editMine: Boolean): Float {
@@ -1068,4 +1069,3 @@ private fun me.rerere.rikkahub.data.datastore.DisplaySetting.mergedFor(editMine:
         bubbleFirstLineIndent = userBubbleFirstLineIndent ?: bubbleFirstLineIndent,
         bubbleBleed = userBubbleBleed ?: bubbleBleed,
     )
-}
