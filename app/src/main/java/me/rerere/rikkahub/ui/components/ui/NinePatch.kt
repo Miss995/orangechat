@@ -17,8 +17,13 @@
 
 package me.rerere.rikkahub.ui.components.ui
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import kotlin.math.max
@@ -49,6 +54,7 @@ fun DrawScope.drawBubbleImage(
     repeatYEnd: Float = 0.65f,
     tiled: Boolean = true,
     expandPx: Float = 0f,
+    showGuide: Boolean = false,
 ) {
     val bmW = bmp.width
     val bmH = bmp.height
@@ -185,5 +191,24 @@ fun DrawScope.drawBubbleImage(
         one(sxL, syM, capL, midH, 0f, dCapT, dCapL, dMidH)
         one(sxR, syM, capR, midH, W - dCapR, dCapT, dCapR, dMidH)
         one(sxM, syM, midW, midH, dCapL, dCapT, dMidW, dMidH)
+    }
+
+    // ④ 切分线（只在预览里开）：把九块的分界画在结果上，别再盲拖
+    if (showGuide) {
+        val dash = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+        val xa = ox + dCapL
+        val xb = ox + W - dCapR
+        val ya = oy + dCapT
+        val yb = oy + H - dCapB
+        drawLine(Color(0xFFFF3B30), Offset(xa, 0f), Offset(xa, size.height), 2f, pathEffect = dash)
+        drawLine(Color(0xFFFF3B30), Offset(xb, 0f), Offset(xb, size.height), 2f, pathEffect = dash)
+        drawLine(Color(0xFFFF3B30), Offset(0f, ya), Offset(size.width, ya), 2f, pathEffect = dash)
+        drawLine(Color(0xFFFF3B30), Offset(0f, yb), Offset(size.width, yb), 2f, pathEffect = dash)
+        drawRect(
+            color = Color(0x88FF9500),
+            topLeft = Offset(ox, oy),
+            size = Size(W, H),
+            style = Stroke(width = 1.5f),
+        )
     }
 }
