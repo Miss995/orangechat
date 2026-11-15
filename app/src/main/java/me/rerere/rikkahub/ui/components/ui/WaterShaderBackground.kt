@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.components.ui
 import android.graphics.RenderEffect
 import android.graphics.RuntimeShader
 import android.os.Build
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -100,6 +101,11 @@ float2 waterGrad(float2 p, float t) {
     float2 D4 = float2(0.259, 0.966); float K4 = 48.332;
     float2 D5 = float2(-0.174, 0.985); float K5 = 69.813;
     float2 D6 = float2(-0.616, 0.788); float K6 = 104.720;
+    // 【2026-11-16 02:20】w1..w6 在 waterHeight 里是局部变量，这里是另一个函数，
+    // 得自己声明一份。上一版漏了这六行，AGSL 直接 unknown identifier → 构造 RuntimeShader
+    // 抛异常 → main 线程闪退。
+    float w1 = uW1/100.0; float w2 = uW2/100.0; float w3 = uW3/100.0;
+    float w4 = uW4/100.0; float w5 = uW5/100.0; float w6 = uW6/100.0;
 
     float2 disp = float2(0.0);
     disp += D1 * (uGerstner * w1 * cos(dot(p, D1) * K1 + t * 0.85));
@@ -110,13 +116,14 @@ float2 waterGrad(float2 p, float t) {
     disp += D6 * (uGerstner * w6 * cos(dot(p, D6) * K6 + t * 2.35));
     float2 pw = p + disp;
 
+    // 权重跟着滑条走（原来这里写死成 0.35/0.22/... = 默认值，滑条只影响高度不影响折射）
     float2 g = float2(0.0);
-    g += D1 * (K1 * cos(dot(pw, D1) * K1 + t * 0.85) * 0.35);
-    g += D2 * (K2 * cos(dot(pw, D2) * K2 + t * 1.15) * 0.22);
-    g += D3 * (K3 * cos(dot(pw, D3) * K3 + t * 1.45) * 0.14);
-    g += D4 * (K4 * cos(dot(pw, D4) * K4 + t * 1.75) * 0.09);
-    g += D5 * (K5 * cos(dot(pw, D5) * K5 + t * 2.05) * 0.06);
-    g += D6 * (K6 * cos(dot(pw, D6) * K6 + t * 2.35) * 0.04);
+    g += D1 * (K1 * cos(dot(pw, D1) * K1 + t * 0.85) * w1);
+    g += D2 * (K2 * cos(dot(pw, D2) * K2 + t * 1.15) * w2);
+    g += D3 * (K3 * cos(dot(pw, D3) * K3 + t * 1.45) * w3);
+    g += D4 * (K4 * cos(dot(pw, D4) * K4 + t * 1.75) * w4);
+    g += D5 * (K5 * cos(dot(pw, D5) * K5 + t * 2.05) * w5);
+    g += D6 * (K6 * cos(dot(pw, D6) * K6 + t * 2.35) * w6);
     return g * 0.5;
 }
 
@@ -202,7 +209,16 @@ fun rememberWaterRefraction(
 ): Modifier {
     if (!enabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return Modifier
 
-    val shader = remember { RuntimeShader(WATER_REFRACT) }
+    // 【2026-11-16 02:20】AGSL 里写错一个标识符，构造 RuntimeShader 就会抛
+    // IllegalArgumentException，而且是在 main 线程 → 整个聊天页直接闪退。
+    // 这里兜住：编译不过就当这个效果不存在，退回普通背景，别把 App 带走。
+    val shader: RuntimeShader? = remember {
+        runCatching { RuntimeShader(WATER_REFRACT) }
+            .onFailure { Log.e("WaterShader", "AGSL 编译失败，水波背景已跳过", it) }
+            .getOrNull()
+    }
+    if (shader == null) return Modifier
+
     val time by produceState(0f) {
         val start = withFrameNanos { it }
         while (true) {
