@@ -533,6 +533,26 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     item(
+                        headlineContent = { Text("首行缩进（只缩第一行）") },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = if (displaySetting.bubbleFirstLineIndent < 0f) 0f else displaySetting.bubbleFirstLineIndent,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(bubbleFirstLineIndent = it))
+                                    },
+                                    valueRange = 0f..120f,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = "${(if (displaySetting.bubbleFirstLineIndent < 0f) 0f else displaySetting.bubbleFirstLineIndent).toInt()}sp")
+                            }
+                        }
+                    )
+                    item(
                         headlineContent = { Text("气泡出血(图能画到气泡外)") },
                         supportingContent = {
                             Column {
@@ -743,7 +763,12 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                             )
                                         }
                                         Text(
-                                            text = "示例：今天也在一起",
+                                            text = "示例：今天也在一起\n第二行顶格，能看出缩进",
+                                            style = androidx.compose.ui.text.TextStyle(
+                                                textIndent = androidx.compose.ui.text.style.TextIndent(
+                                                    firstLine = (if (displaySetting.bubbleFirstLineIndent < 0f) 0f else displaySetting.bubbleFirstLineIndent).sp
+                                                )
+                                            ),
                                             modifier = Modifier.padding(
                                                 start = if (displaySetting.bubblePaddingL >= 0f) displaySetting.bubblePaddingL.dp else 8.dp,
                                                 top = if (displaySetting.bubblePaddingT >= 0f) displaySetting.bubblePaddingT.dp else 8.dp,

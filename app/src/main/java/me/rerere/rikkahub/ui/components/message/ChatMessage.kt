@@ -1457,14 +1457,23 @@ private fun BubbleSurface(
             val padT = if (bubbleDs.bubblePaddingT >= 0f) bubbleDs.bubblePaddingT.dp else contentPadding
             val padR = if (bubbleDs.bubblePaddingR >= 0f) bubbleDs.bubblePaddingR.dp else contentPadding
             val padB = if (bubbleDs.bubblePaddingB >= 0f) bubbleDs.bubblePaddingB.dp else contentPadding
-            Column(
-                modifier = Modifier.padding(
-                    start = padL,
-                    top = padT,
-                    end = padR,
-                    bottom = padB,
+            // 【首行缩进 · 2026-11-15】只缩第一行，后面顶格。
+            // 用 ProvideTextStyle 传下去 —— 正文走 MarkdownBlock，它的 style 默认就是 LocalTextStyle
+            val indent = if (bubbleDs.bubbleFirstLineIndent >= 0f) bubbleDs.bubbleFirstLineIndent else 0f
+            ProvideTextStyle(
+                LocalTextStyle.current.copy(
+                    textIndent = androidx.compose.ui.text.style.TextIndent(firstLine = indent.sp)
                 )
-            ) { content() }
+            ) {
+                Column(
+                    modifier = Modifier.padding(
+                        start = padL,
+                        top = padT,
+                        end = padR,
+                        bottom = padB,
+                    )
+                ) { content() }
+            }
         }
     } else {
         // 【液态玻璃 · 2026-11-07】气泡做成玻璃：把自己在根里的矩形交给 shader 去采背景图。

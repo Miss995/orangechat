@@ -147,6 +147,9 @@ data class DisplaySetting(
     val bubblePaddingT: Float = -1f,
     val bubblePaddingR: Float = -1f,
     val bubblePaddingB: Float = -1f,
+    // 【首行缩进 · 2026-11-15 宝：上面一行字少、下面一行字多（躲开气泡上的图案）】
+    // 单位 sp，-1 = 不缩进。只影响第一行，后面几行照常顶格
+    val bubbleFirstLineIndent: Float = -1f,
     // 【气泡出血 · 2026-11-14 宝画的兔子耳朵伸出气泡外】背景图往外多画多少 dp。
     // 0 = 不扩（原来那样，图就画在气泡里）。大于 0 时气泡会跳过裁剪和尺寸动画
     // —— 那两个都会把画到外面的部分切掉。
