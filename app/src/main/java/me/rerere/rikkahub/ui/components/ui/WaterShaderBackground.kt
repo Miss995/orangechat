@@ -1,107 +1,80 @@
 package me.rerere.rikkahub.ui.components.ui
 
+import android.graphics.RenderEffect
 import android.graphics.RuntimeShader
 import android.os.Build
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
 
 /**
- * 水 · AGSL 骨架（第一版）
+ * 水 · 折射版
  *
- * 【为什么走这条路 · 2026-11-15】
- * 上一次试的是把 water.html 塞进聊天页背景（WebView），
- * 但 WebView 是硬件层，Compose 的 drawLayer 录不进 GraphicsLayer，
- * 重试三版全黑，最后回退。（memory 410）
+ * 【跟上一版的区别 · 2026-11-16】
+ * 上一版（骨架）是自己在画一片水，跟聊天背景图是两张皮。
+ * 这一版走 RenderEffect.createRuntimeShaderEffect(shader, "uBg")：
+ * **底下已经画好的东西会自动作为纹理喂进来**（uBg），
+ * 水只管按浪的斜率把它拧一下 —— 你的背景图、以后换成任何图，它都自动跟着。
  *
- * 这一次跟液态玻璃一样：把 GLSL 翻成 AGSL，用 RuntimeShader 直接画。
- *
- * 【这一版只求"能跑"】
- * 只有几层正弦叠加 + 一点高光，没有任何涟漪/焦散/折射。
- * 先确认 AGSL 能不能在聊天页背景上真的动起来，再往里加东西。
+ * 这条路跟液态玻璃（LiquidGlass.kt）是同一套：RenderEffect 不可变，uniform 一变就重建。
  */
-private const val WATER_SKELETON = """
+private const val WATER_REFRACT = """
+uniform shader uBg;
 uniform float2 uSize;
 uniform float uTime;
-uniform float3 uDeep;
-uniform float3 uShallow;
+uniform float uStrength;
+uniform float uShine;
 
-half4 main(float2 fragCoord) {
-    float2 uv = fragCoord / uSize;
+half4 main(float2 p) {
+    float2 uv = p / uSize;
 
-    // ── 浪高：几层不同方向的正弦叠起来（先不管物理，只要"像水面在动"）
-    float h = 0.0;
-    h += sin(uv.x * 6.2831 * 1.4 + uTime * 1.1) * 0.50;
-    h += sin(uv.y * 6.2831 * 2.1 - uTime * 0.8) * 0.30;
-    h += sin((uv.x + uv.y) * 6.2831 * 1.7 + uTime * 1.6) * 0.20;
-    h += sin((uv.x - uv.y) * 6.2831 * 3.3 - uTime * 2.3) * 0.12;
+    // ── 两个方向各自的"斜率"（先用相位差近似，不追求物理，只要像水在动）
+    float dx = sin(uv.y * 6.2831 * 2.1 + uTime * 0.90) * 0.55
+             + sin((uv.x + uv.y) * 6.2831 * 1.70 + uTime * 1.60) * 0.45;
+    float dy = sin(uv.x * 6.2831 * 1.40 + uTime * 1.10) * 0.55
+             + sin((uv.y - uv.x) * 6.2831 * 2.60 + uTime * 1.30) * 0.45;
 
-    // 归一化到 0..1
-    float shade = h * 0.5 + 0.5;
+    // ── 折射：采样点偏一点。偏多少 = 折射强弱
+    float2 off = float2(dx, dy) * uStrength;
+    half4 bg = uBg.eval(p + off);
 
-    // ── 底色：深处偏暗蓝，浅处偏青
-    half3 col = mix(half3(uDeep), half3(uShallow), half(shade));
+    // ── 一点高光（浪尖发亮）
+    float spec = pow(max(dx * 0.5 + 0.5, 0.0), 7.0) * uShine;
+    bg.rgb += half3(spec);
 
-    // ── 一点高光（把高度取个高次方，高处发亮）
-    float spec = pow(max(shade, 0.0), 7.0);
-    col += half3(spec * 0.28);
-
-    // ── 边缘压暗一点，别让整屏一样亮
-    float2 c = uv - float2(0.5, 0.5);
-    float vig = 1.0 - smoothstep(0.35, 0.85, length(c));
-    col *= half(0.75 + 0.25 * vig);
-
-    return half4(col, 1.0);
+    return bg;
 }
 """
 
+/**
+ * 给某一层加上"水在动"的折射。
+ * 用法：挂在背景那一层上（里面放背景图/颜色），别挂在整个页面（消息也会被拧）。
+ */
 @Composable
-fun WaterShaderBackground(modifier: Modifier = Modifier) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-        // API 33 以下没有 RuntimeShader，画个渐变兜底，别白屏
-        Canvas(modifier.fillMaxSize()) {
-            drawRect(
-                brush = Brush.verticalGradient(
-                    listOf(Color(0xFF0A1E2A), Color(0xFF1B4A5A), Color(0xFF2E6E7E))
-                )
-            )
-        }
-        return
-    }
+fun rememberWaterRefraction(enabled: Boolean, strengthPx: Float = 14f): Modifier {
+    if (!enabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return Modifier
 
-    val shader = remember { RuntimeShader(WATER_SKELETON) }
-
+    val shader = remember { RuntimeShader(WATER_REFRACT) }
     val time by produceState(0f) {
         val start = withFrameNanos { it }
         while (true) {
-            withFrameNanos { now ->
-                value = (now - start) / 1_000_000_000f
-            }
+            withFrameNanos { now -> value = (now - start) / 1_000_000_000f }
         }
     }
 
-    // 【走 nativeCanvas · 2026-11-16】Compose 这版里没有 asComposeShader，
-    // 直接把 android.graphics.Shader 塞给 Paint 画（跟 RuntimeShader 天生一对）
-    val paint = remember { android.graphics.Paint() }
-
-    Canvas(modifier.fillMaxSize()) {
-        if (size.width < 1f || size.height < 1f) return@Canvas
+    return Modifier.graphicsLayer {
+        if (size.width < 1f || size.height < 1f) return@graphicsLayer
         shader.setFloatUniform("uSize", size.width, size.height)
         shader.setFloatUniform("uTime", time)
-        shader.setFloatUniform("uDeep", 0.04f, 0.12f, 0.17f)
-        shader.setFloatUniform("uShallow", 0.24f, 0.58f, 0.66f)
-        paint.shader = shader
-        drawIntoCanvas { canvas ->
-            canvas.nativeCanvas.drawRect(0f, 0f, size.width, size.height, paint)
-        }
+        shader.setFloatUniform("uStrength", strengthPx)
+        shader.setFloatUniform("uShine", 0.10f)
+        renderEffect = RenderEffect
+            .createRuntimeShaderEffect(shader, "uBg")
+            .asComposeRenderEffect()
     }
 }

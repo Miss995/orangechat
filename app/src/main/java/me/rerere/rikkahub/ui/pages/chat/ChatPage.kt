@@ -6,7 +6,7 @@
 
 package me.rerere.rikkahub.ui.pages.chat
 
-import me.rerere.rikkahub.ui.components.ui.WaterShaderBackground
+import me.rerere.rikkahub.ui.components.ui.rememberWaterRefraction
 import me.rerere.rikkahub.ui.components.ui.LocalLiquidGlassHost
 import me.rerere.rikkahub.ui.components.ui.rememberLiquidGlassHost
 import me.rerere.rikkahub.ui.components.ui.liquidGlass
@@ -345,12 +345,13 @@ private fun ChatPageContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .liquidGlassSource(bgGlassHost, MaterialTheme.colorScheme.background)
+                    // 【水 · 折射版 · 2026-11-16】挂在这一层而不是盖一层：
+                    // RenderEffect 会把底下画好的背景自动喂进 shader（uBg），
+                    // 水只管把它拧一下 —— 换任何背景图都自动跟随。
+                    // 注意：只挂背景这一层，消息列表在外面，不会被拧。
+                    .then(rememberWaterRefraction(setting.displaySetting.waterBgEnabled))
             ) {
                 AssistantBackground(setting = setting)
-                // 【水波纹 · 2026-11-16】放在录制层里，玻璃就能采到水（每帧重绘，卡的话再挪出去）
-                if (setting.displaySetting.waterBgEnabled) {
-                    WaterShaderBackground()
-                }
             }
         Scaffold(
             bottomBar = {
