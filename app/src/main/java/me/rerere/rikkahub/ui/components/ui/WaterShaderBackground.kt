@@ -37,6 +37,13 @@ uniform float uWave;
 uniform float uAbsorb;   // 水体吸收：红光先被吃掉，深处偏蓝绿（宝说的"透光"）
 uniform float uDisp;     // 色散：三通道偏移差
 uniform float uLens;     // 边缘放大：中心放大、四周往回收
+// 六波各自的权重/方向/波长（十八根滑条）
+uniform float uW1; uniform float uW2; uniform float uW3;
+uniform float uW4; uniform float uW5; uniform float uW6;
+uniform float uA1; uniform float uA2; uniform float uA3;
+uniform float uA4; uniform float uA5; uniform float uA6;
+uniform float uL1; uniform float uL2; uniform float uL3;
+uniform float uL4; uniform float uL5; uniform float uL6;
 
 // waveSin：网页里对 sin 做了轻微整形（峰更尖、谷更平），这里照用
 float waveSin(float x) {
@@ -53,32 +60,34 @@ float waveSin(float x) {
 //  128 : -0.616 / 0.788 / 0.06 / 104.720 / 0.04
 
 float waterHeight(float2 p, float t) {
-    float2 D1 = float2(0.990, 0.139); float K1 = 12.566;
-    float2 D2 = float2(0.866, 0.500); float K2 = 20.944;
-    float2 D3 = float2(0.616, 0.788); float K3 = 31.416;
-    float2 D4 = float2(0.259, 0.966); float K4 = 48.332;
-    float2 D5 = float2(-0.174, 0.985); float K5 = 69.813;
-    float2 D6 = float2(-0.616, 0.788); float K6 = 104.720;
+    float2 D1 = float2(cos(radians(uA1)), sin(radians(uA1))); float K1 = 6.2832 / max(uL1, 0.02);
+    float2 D2 = float2(cos(radians(uA2)), sin(radians(uA2))); float K2 = 6.2832 / max(uL2, 0.02);
+    float2 D3 = float2(cos(radians(uA3)), sin(radians(uA3))); float K3 = 6.2832 / max(uL3, 0.02);
+    float2 D4 = float2(cos(radians(uA4)), sin(radians(uA4))); float K4 = 6.2832 / max(uL4, 0.02);
+    float2 D5 = float2(cos(radians(uA5)), sin(radians(uA5))); float K5 = 6.2832 / max(uL5, 0.02);
+    float2 D6 = float2(cos(radians(uA6)), sin(radians(uA6))); float K6 = 6.2832 / max(uL6, 0.02);
+    float w1 = uW1/100.0; float w2 = uW2/100.0; float w3 = uW3/100.0;
+    float w4 = uW4/100.0; float w5 = uW5/100.0; float w6 = uW6/100.0;
 
     // Gerstner 位移：波峰附近的点被往波峰方向推，等值线自己就弯了
     // 相位用【原位置 p】算，不是挪过的位置（否则是位移自己推自己）
     float2 disp = float2(0.0);
-    disp += D1 * (uGerstner * 0.35 * cos(dot(p, D1) * K1 + t * 0.85));
-    disp += D2 * (uGerstner * 0.22 * cos(dot(p, D2) * K2 + t * 1.15));
-    disp += D3 * (uGerstner * 0.14 * cos(dot(p, D3) * K3 + t * 1.45));
-    disp += D4 * (uGerstner * 0.09 * cos(dot(p, D4) * K4 + t * 1.75));
-    disp += D5 * (uGerstner * 0.06 * cos(dot(p, D5) * K5 + t * 2.05));
-    disp += D6 * (uGerstner * 0.04 * cos(dot(p, D6) * K6 + t * 2.35));
+    disp += D1 * (uGerstner * w1 * cos(dot(p, D1) * K1 + t * 0.85));
+    disp += D2 * (uGerstner * w2 * cos(dot(p, D2) * K2 + t * 1.15));
+    disp += D3 * (uGerstner * w3 * cos(dot(p, D3) * K3 + t * 1.45));
+    disp += D4 * (uGerstner * w4 * cos(dot(p, D4) * K4 + t * 1.75));
+    disp += D5 * (uGerstner * w5 * cos(dot(p, D5) * K5 + t * 2.05));
+    disp += D6 * (uGerstner * w6 * cos(dot(p, D6) * K6 + t * 2.35));
 
     float2 pw = p + disp;
 
     float h = 0.0;
-    h += waveSin(dot(pw, D1) * K1 + t * 0.85) * 0.35;
-    h += waveSin(dot(pw, D2) * K2 + t * 1.15) * 0.22;
-    h += waveSin(dot(pw, D3) * K3 + t * 1.45) * 0.14;
-    h += waveSin(dot(pw, D4) * K4 + t * 1.75) * 0.09;
-    h += waveSin(dot(pw, D5) * K5 + t * 2.05) * 0.06;
-    h += waveSin(dot(pw, D6) * K6 + t * 2.35) * 0.04;
+    h += waveSin(dot(pw, D1) * K1 + t * 0.85) * w1;
+    h += waveSin(dot(pw, D2) * K2 + t * 1.15) * w2;
+    h += waveSin(dot(pw, D3) * K3 + t * 1.45) * w3;
+    h += waveSin(dot(pw, D4) * K4 + t * 1.75) * w4;
+    h += waveSin(dot(pw, D5) * K5 + t * 2.05) * w5;
+    h += waveSin(dot(pw, D6) * K6 + t * 2.35) * w6;
 
     return clamp(h * 0.5 + 0.5, 0.0, 1.0);
 }
@@ -93,12 +102,12 @@ float2 waterGrad(float2 p, float t) {
     float2 D6 = float2(-0.616, 0.788); float K6 = 104.720;
 
     float2 disp = float2(0.0);
-    disp += D1 * (uGerstner * 0.35 * cos(dot(p, D1) * K1 + t * 0.85));
-    disp += D2 * (uGerstner * 0.22 * cos(dot(p, D2) * K2 + t * 1.15));
-    disp += D3 * (uGerstner * 0.14 * cos(dot(p, D3) * K3 + t * 1.45));
-    disp += D4 * (uGerstner * 0.09 * cos(dot(p, D4) * K4 + t * 1.75));
-    disp += D5 * (uGerstner * 0.06 * cos(dot(p, D5) * K5 + t * 2.05));
-    disp += D6 * (uGerstner * 0.04 * cos(dot(p, D6) * K6 + t * 2.35));
+    disp += D1 * (uGerstner * w1 * cos(dot(p, D1) * K1 + t * 0.85));
+    disp += D2 * (uGerstner * w2 * cos(dot(p, D2) * K2 + t * 1.15));
+    disp += D3 * (uGerstner * w3 * cos(dot(p, D3) * K3 + t * 1.45));
+    disp += D4 * (uGerstner * w4 * cos(dot(p, D4) * K4 + t * 1.75));
+    disp += D5 * (uGerstner * w5 * cos(dot(p, D5) * K5 + t * 2.05));
+    disp += D6 * (uGerstner * w6 * cos(dot(p, D6) * K6 + t * 2.35));
     float2 pw = p + disp;
 
     float2 g = float2(0.0);
@@ -187,6 +196,9 @@ fun rememberWaterRefraction(
     absorb: Float = 0.45f,
     dispersion: Float = 0.035f,
     lens: Float = 0.10f,
+    weights: List<Float> = listOf(35f, 22f, 14f, 9f, 6f, 4f),
+    angles: List<Float> = listOf(8f, 30f, 52f, 75f, 100f, 128f),
+    lengths: List<Float> = listOf(0.5f, 0.3f, 0.2f, 0.13f, 0.09f, 0.06f),
 ): Modifier {
     if (!enabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return Modifier
 
@@ -210,8 +222,15 @@ fun rememberWaterRefraction(
         shader.setFloatUniform("uAbsorb", absorb)
         shader.setFloatUniform("uDisp", dispersion)
         shader.setFloatUniform("uLens", lens)
+        setSix(shader, "uW", weights); setSix(shader, "uA", angles); setSix(shader, "uL", lengths)
         renderEffect = RenderEffect
             .createRuntimeShaderEffect(shader, "uBg")
             .asComposeRenderEffect()
     }
+}
+
+/** 一次塞六个同名不同号的 uniform：uW1..uW6 / uA1..uA6 / uL1..uL6 */
+private fun setSix(shader: RuntimeShader, prefix: String, values: List<Float>) {
+    val v = values.take(6) + List(maxOf(0, 6 - values.size)) { 0f }
+    for (i in 0 until 6) shader.setFloatUniform("$prefix${i + 1}", v[i])
 }

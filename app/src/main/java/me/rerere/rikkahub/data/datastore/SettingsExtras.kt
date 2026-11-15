@@ -185,6 +185,13 @@ data class DisplaySetting(
     val waterAbsorb: Float = 0.45f,     // 吸收（水色偏冷，0=完全不吃）
     val waterDisp: Float = 0.035f,      // 色散（边缘彩边）
     val waterLens: Float = 0.10f,       // 边缘放大（透镜）
+    // 六波：权重(0-100) / 方向(度) / 波长
+    val waterW1: Float = 35f, val waterW2: Float = 22f, val waterW3: Float = 14f,
+    val waterW4: Float = 9f, val waterW5: Float = 6f, val waterW6: Float = 4f,
+    val waterA1: Float = 8f, val waterA2: Float = 30f, val waterA3: Float = 52f,
+    val waterA4: Float = 75f, val waterA5: Float = 100f, val waterA6: Float = 128f,
+    val waterL1: Float = 0.5f, val waterL2: Float = 0.3f, val waterL3: Float = 0.2f,
+    val waterL4: Float = 0.13f, val waterL5: Float = 0.09f, val waterL6: Float = 0.06f,
 )
 
 @Serializable

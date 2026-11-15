@@ -358,6 +358,21 @@ private fun ChatPageContent(
                             absorb = setting.displaySetting.waterAbsorb,
                             dispersion = setting.displaySetting.waterDisp,
                             lens = setting.displaySetting.waterLens,
+                            weights = listOf(
+                                setting.displaySetting.waterW1, setting.displaySetting.waterW2,
+                                setting.displaySetting.waterW3, setting.displaySetting.waterW4,
+                                setting.displaySetting.waterW5, setting.displaySetting.waterW6,
+                            ),
+                            angles = listOf(
+                                setting.displaySetting.waterA1, setting.displaySetting.waterA2,
+                                setting.displaySetting.waterA3, setting.displaySetting.waterA4,
+                                setting.displaySetting.waterA5, setting.displaySetting.waterA6,
+                            ),
+                            lengths = listOf(
+                                setting.displaySetting.waterL1, setting.displaySetting.waterL2,
+                                setting.displaySetting.waterL3, setting.displaySetting.waterL4,
+                                setting.displaySetting.waterL5, setting.displaySetting.waterL6,
+                            ),
                         )
                     )
             ) {

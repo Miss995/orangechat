@@ -195,6 +195,66 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                 WaterSliderRow("边缘放大（透镜）", displaySetting.waterLens, 0f..0.4f) { v ->
                     updateDisplaySetting(displaySetting.copy(waterLens = v))
                 }
+                GroupTitle("六波 · 权重（0-100，越大越高）")
+                WaterSliderRow("波1", displaySetting.waterW1, 0f..100f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterW1 = v))
+                }
+                WaterSliderRow("波2", displaySetting.waterW2, 0f..100f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterW2 = v))
+                }
+                WaterSliderRow("波3", displaySetting.waterW3, 0f..100f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterW3 = v))
+                }
+                WaterSliderRow("波4", displaySetting.waterW4, 0f..100f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterW4 = v))
+                }
+                WaterSliderRow("波5", displaySetting.waterW5, 0f..100f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterW5 = v))
+                }
+                WaterSliderRow("波6", displaySetting.waterW6, 0f..100f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterW6 = v))
+                }
+
+                GroupTitle("六波 · 方向（度）")
+                WaterSliderRow("波1 角", displaySetting.waterA1, 0f..360f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterA1 = v))
+                }
+                WaterSliderRow("波2 角", displaySetting.waterA2, 0f..360f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterA2 = v))
+                }
+                WaterSliderRow("波3 角", displaySetting.waterA3, 0f..360f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterA3 = v))
+                }
+                WaterSliderRow("波4 角", displaySetting.waterA4, 0f..360f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterA4 = v))
+                }
+                WaterSliderRow("波5 角", displaySetting.waterA5, 0f..360f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterA5 = v))
+                }
+                WaterSliderRow("波6 角", displaySetting.waterA6, 0f..360f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterA6 = v))
+                }
+
+                GroupTitle("六波 · 波长（越小越密）")
+                WaterSliderRow("波1 距", displaySetting.waterL1, 0.02f..1f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterL1 = v))
+                }
+                WaterSliderRow("波2 距", displaySetting.waterL2, 0.02f..1f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterL2 = v))
+                }
+                WaterSliderRow("波3 距", displaySetting.waterL3, 0.02f..1f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterL3 = v))
+                }
+                WaterSliderRow("波4 距", displaySetting.waterL4, 0.02f..1f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterL4 = v))
+                }
+                WaterSliderRow("波5 距", displaySetting.waterL5, 0.02f..1f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterL5 = v))
+                }
+                WaterSliderRow("波6 距", displaySetting.waterL6, 0.02f..1f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterL6 = v))
+                }
+
             }
         }
     }
@@ -1186,4 +1246,14 @@ private fun WaterSliderRow(
             valueRange = range,
         )
     }
+}
+
+@Composable
+private fun GroupTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
+    )
 }
