@@ -52,7 +52,7 @@ fun DrawScope.drawBubbleImage(
     repeatXEnd: Float = 0.65f,
     repeatYStart: Float = 0.35f,
     repeatYEnd: Float = 0.65f,
-    tiled: Boolean = true,
+    tiled: Boolean = false,
     expandPx: Float = 0f,
     showGuide: Boolean = false,
 ) {
@@ -98,11 +98,16 @@ fun DrawScope.drawBubbleImage(
         return
     }
 
-    // ③ 四角按原像素贴，目标太小就各占一半
-    val dCapL = min(capL.toFloat(), W / 2f)
-    val dCapR = min(capR.toFloat(), W / 2f)
-    val dCapT = min(capT.toFloat(), H / 2f)
-    val dCapB = min(capB.toFloat(), H / 2f)
+    // ③ 四角按【原图像素】贴 —— 标准九宫格：长短消息四角一样大，永不缩放。
+    // 唯一例外：四角加起来比目标还宽/高，说明切分比例切太狠了，这时才同比缩一下兜住。
+    val capSumW = capL + capR
+    val capSumH = capT + capB
+    val shrinkW = if (capSumW > W && capSumW > 0) W / capSumW.toFloat() else 1f
+    val shrinkH = if (capSumH > H && capSumH > 0) H / capSumH.toFloat() else 1f
+    val dCapL = capL * shrinkW
+    val dCapR = capR * shrinkW
+    val dCapT = capT * shrinkH
+    val dCapB = capB * shrinkH
     val dMidW = max(0f, W - dCapL - dCapR)
     val dMidH = max(0f, H - dCapT - dCapB)
 
