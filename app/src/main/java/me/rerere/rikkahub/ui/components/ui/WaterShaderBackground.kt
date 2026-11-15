@@ -34,6 +34,9 @@ uniform float uShine;
 uniform float uSpecPow;
 uniform float uGerstner;
 uniform float uWave;
+uniform float uAbsorb;   // 水体吸收：红光先被吃掉，深处偏蓝绿（宝说的"透光"）
+uniform float uDisp;     // 色散：三通道偏移差
+uniform float uLens;     // 边缘放大：中心放大、四周往回收
 
 // waveSin：网页里对 sin 做了轻微整形（峰更尖、谷更平），这里照用
 float waveSin(float x) {
@@ -110,7 +113,7 @@ float2 waterGrad(float2 p, float t) {
 
 half4 main(float2 fragCoord) {
     // p 归一化到「屏幕高度 = 1」的坐标，波长才跟屏幕尺寸无关
-    float2 p = fragCoord / uSize.y * 1.0;
+    float2 p = fragCoord / uSize.y;
     float2 uv = fragCoord / uSize;
 
     float t = uTime;
@@ -120,25 +123,47 @@ half4 main(float2 fragCoord) {
 
     // ── 折射：按坡度去别处取像素。位移 = -梯度 × 强度
     float2 off = -g * uRefr;
-    // 屏幕边缘收一点，别把背景图的边拉到画面里来
+
+    // ── 边缘放大（透镜感）：越靠边，采样点越往中心收 → 中心看着胀、四周收
+    float2 c = (uv - 0.5) * 2.0;
+    float r2 = dot(c, c);
+    float2 lens = c * (1.0 - uLens * r2);
+    off += (lens - c) * 0.5 * uSize;
+
+    // 屏幕边缘收一点，别把背景图的边拉进来
     float2 edge = smoothstep(float2(0.0), float2(0.06), uv)
                 * smoothstep(float2(0.0), float2(0.06), 1.0 - uv);
     off *= edge;
 
-    half4 bg = uBg.eval(fragCoord + off);
+    // ── 色散：三个通道偏得不一样（红折得最少、蓝折得最多），边缘就出彩边
+    float2 oR = off * (1.0 + uDisp);
+    float2 oG = off;
+    float2 oB = off * (1.0 - uDisp);
 
-    // ── 明暗：顺着坡度的方向打一盏斜光
+    half4 cR = uBg.eval(fragCoord + oR);
+    half4 cG = uBg.eval(fragCoord + oG);
+    half4 cB = uBg.eval(fragCoord + oB);
+
+    half3 col = half3(cR.r, cG.g, cB.b);
+    half alpha = cG.a;
+
+    // ── 明暗：顺着坡度打一盏斜光
     float3 L = normalize(float3(0.45, 0.65, 1.0));
     float3 N = normalize(float3(-g.x * 0.06, -g.y * 0.06, 1.0));
     float diff = clamp(dot(N, L), 0.0, 1.0);
-    float shade = 0.86 + 0.24 * diff;
-    bg.rgb = bg.rgb * half(shade);
+    col *= half(0.86 + 0.24 * diff);
 
-    // ── 高光：浪尖两个亮斑（沿着坡度的方向走，所以会跟条纹一起动）
+    // ── 水体吸收（宝说的"透光"）：颜色不写死，
+    //    从底下的东西来，再按「深度」吃点红光 —— 浅处接近原色，深处偏蓝绿
+    float depthAmt = clamp(1.0 - h, 0.0, 1.0) * uAbsorb;
+    half3 absorb = half3(0.62, 0.94, 1.00);   // 红损失最多
+    col = col * mix(half3(1.0), absorb, half(depthAmt));
+
+    // ── 高光：浪尖发亮
     float spec = pow(clamp(diff, 0.0, 1.0), uSpecPow) * uShine;
-    bg.rgb += half3(spec);
+    col += half3(spec);
 
-    return bg;
+    return half4(col, alpha);
 }
 """
 
@@ -153,6 +178,9 @@ fun rememberWaterRefraction(
     shine: Float = 0.16f,
     specPow: Float = 26f,
     gerstner: Float = 0.55f,
+    absorb: Float = 0.55f,
+    dispersion: Float = 0.035f,
+    lens: Float = 0.10f,
 ): Modifier {
     if (!enabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return Modifier
 
@@ -173,6 +201,9 @@ fun rememberWaterRefraction(
         shader.setFloatUniform("uSpecPow", specPow)
         shader.setFloatUniform("uGerstner", gerstner)
         shader.setFloatUniform("uWave", 1f)
+        shader.setFloatUniform("uAbsorb", absorb)
+        shader.setFloatUniform("uDisp", dispersion)
+        shader.setFloatUniform("uLens", lens)
         renderEffect = RenderEffect
             .createRuntimeShaderEffect(shader, "uBg")
             .asComposeRenderEffect()
