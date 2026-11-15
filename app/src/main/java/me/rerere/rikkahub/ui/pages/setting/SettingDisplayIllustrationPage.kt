@@ -469,22 +469,66 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     item(
-                        headlineContent = { Text("左右内边距") },
+                        headlineContent = { Text("文字内边距（四边各一个）") },
                         supportingContent = {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Slider(
-                                    value = if (displaySetting.bubblePaddingH < 0f) 8f else displaySetting.bubblePaddingH,
-                                    onValueChange = {
-                                        updateDisplaySetting(displaySetting.copy(bubblePaddingH = it))
-                                    },
-                                    valueRange = 0f..40f,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(text = "${(if (displaySetting.bubblePaddingH < 0f) 8f else displaySetting.bubblePaddingH).toInt()}dp")
+                            fun padVal(v: Float): Float = if (v < 0f) 8f else v
+                            Column {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text("左", fontSize = 12.sp)
+                                    Slider(
+                                        value = padVal(displaySetting.bubblePaddingL),
+                                        onValueChange = { updateDisplaySetting(displaySetting.copy(bubblePaddingL = it)) },
+                                        valueRange = 0f..40f,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text("${padVal(displaySetting.bubblePaddingL).toInt()}dp", fontSize = 12.sp)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text("右", fontSize = 12.sp)
+                                    Slider(
+                                        value = padVal(displaySetting.bubblePaddingR),
+                                        onValueChange = { updateDisplaySetting(displaySetting.copy(bubblePaddingR = it)) },
+                                        valueRange = 0f..40f,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text("${padVal(displaySetting.bubblePaddingR).toInt()}dp", fontSize = 12.sp)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text("上", fontSize = 12.sp)
+                                    Slider(
+                                        value = padVal(displaySetting.bubblePaddingT),
+                                        onValueChange = { updateDisplaySetting(displaySetting.copy(bubblePaddingT = it)) },
+                                        valueRange = 0f..40f,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text("${padVal(displaySetting.bubblePaddingT).toInt()}dp", fontSize = 12.sp)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text("下", fontSize = 12.sp)
+                                    Slider(
+                                        value = padVal(displaySetting.bubblePaddingB),
+                                        onValueChange = { updateDisplaySetting(displaySetting.copy(bubblePaddingB = it)) },
+                                        valueRange = 0f..40f,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text("${padVal(displaySetting.bubblePaddingB).toInt()}dp", fontSize = 12.sp)
+                                }
                             }
                         }
                     )
@@ -700,7 +744,12 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                         }
                                         Text(
                                             text = "示例：今天也在一起",
-                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                            modifier = Modifier.padding(
+                                                start = if (displaySetting.bubblePaddingL >= 0f) displaySetting.bubblePaddingL.dp else 8.dp,
+                                                top = if (displaySetting.bubblePaddingT >= 0f) displaySetting.bubblePaddingT.dp else 8.dp,
+                                                end = if (displaySetting.bubblePaddingR >= 0f) displaySetting.bubblePaddingR.dp else 8.dp,
+                                                bottom = if (displaySetting.bubblePaddingB >= 0f) displaySetting.bubblePaddingB.dp else 8.dp,
+                                            ),
                                         )
                                     }
                                 }

@@ -139,8 +139,14 @@ data class DisplaySetting(
     val bubbleRepeatY2: Float = 0.65f,
     // true = 平铺（形状不变），false = 拉伸（会变形）
     val bubbleTiled: Boolean = true,
-    // 【气泡左右内边距】-1 = 跟随内容默认内边距，不单独设
+    // 【气泡左右内边距】-1 = 跟随内容默认内边距，不单独设（旧字段，已由下面四个取代）
     val bubblePaddingH: Float = -1f,
+    // 【气泡文字内边距 · 2026-11-15 宝：四边各一个，想松就松】
+    // -1 = 跟随内容默认（8dp），>= 0 才生效
+    val bubblePaddingL: Float = -1f,
+    val bubblePaddingT: Float = -1f,
+    val bubblePaddingR: Float = -1f,
+    val bubblePaddingB: Float = -1f,
     // 【气泡出血 · 2026-11-14 宝画的兔子耳朵伸出气泡外】背景图往外多画多少 dp。
     // 0 = 不扩（原来那样，图就画在气泡里）。大于 0 时气泡会跳过裁剪和尺寸动画
     // —— 那两个都会把画到外面的部分切掉。

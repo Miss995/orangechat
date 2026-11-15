@@ -1445,14 +1445,18 @@ private fun BubbleSurface(
                         .background(color.copy(alpha = bubbleAlpha))
                 )
             }
-            // 左右内边距可以单独调（气泡图两边有花纹的时候，字别压上去）
-            val padH = if (bubbleDs.bubblePaddingH >= 0f) bubbleDs.bubblePaddingH.dp else contentPadding
+            // 四边内边距各自可调（气泡图有花纹/耳朵的时候，字别压上去）
+            // 【2026-11-15 宝：原来只有左右，上下写死 8dp】-1 = 用 contentPadding
+            val padL = if (bubbleDs.bubblePaddingL >= 0f) bubbleDs.bubblePaddingL.dp else contentPadding
+            val padT = if (bubbleDs.bubblePaddingT >= 0f) bubbleDs.bubblePaddingT.dp else contentPadding
+            val padR = if (bubbleDs.bubblePaddingR >= 0f) bubbleDs.bubblePaddingR.dp else contentPadding
+            val padB = if (bubbleDs.bubblePaddingB >= 0f) bubbleDs.bubblePaddingB.dp else contentPadding
             Column(
                 modifier = Modifier.padding(
-                    start = padH,
-                    end = padH,
-                    top = contentPadding,
-                    bottom = contentPadding,
+                    start = padL,
+                    top = padT,
+                    end = padR,
+                    bottom = padB,
                 )
             ) { content() }
         }
