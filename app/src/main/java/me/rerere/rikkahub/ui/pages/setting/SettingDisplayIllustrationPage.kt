@@ -518,7 +518,6 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     }.getOrNull()
                                 } else null
                             }
-                            val showGuideState = remember { mutableStateOf(true) }
                             val previewBleedPx = with(androidx.compose.ui.platform.LocalDensity.current) {
                                 displaySetting.bubbleBleed.dp.toPx()
                             }
@@ -548,7 +547,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                                 repeatYEnd = displaySetting.bubbleRepeatY2,
                                                 tiled = displaySetting.bubbleTiled,
                                                 expandPx = previewBleedPx,
-                                                showGuide = showGuideState.value,
+                                                showGuide = true,
                                             )
                                         }
                                         Text(
@@ -559,20 +558,6 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                 }
                             } else {
                                 Text("先选一张气泡背景图，这里就会出预览")
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.padding(top = 6.dp),
-                            ) {
-                                Switch(
-                                    checked = showGuideState.value,
-                                    onCheckedChange = { showGuideState.value = it },
-                                )
-                                Text(
-                                    "显示切分线（红虚线=九块分界，橙框=出血范围）",
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
                             }
                         }
                     )
