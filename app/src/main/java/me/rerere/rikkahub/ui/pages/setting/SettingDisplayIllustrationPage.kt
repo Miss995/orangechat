@@ -768,33 +768,37 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     }.getOrNull()
                                 } else null
                             }
+                            // 【预览也要跟着开关走 · 2026-11-15】原来读的是 AI 那套参数
+                            val dsPrev = rememberUpdatedState(displaySetting)
+                            val dp = dsPrev.value.mergedFor(editMine)
                             val previewBleedPx = with(androidx.compose.ui.platform.LocalDensity.current) {
-                                displaySetting.bubbleBleed.dp.toPx()
+                                dp.bubbleBleed.dp.toPx()
                             }
                             if (bmp != null) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(96.dp + displaySetting.bubbleBleed.dp * 2)
+                                        // 【加高 · 2026-11-15】原来 96，两行字 + 上下内边距放不下，第二行被裁
+                                        .height(124.dp + dp.bubbleBleed.dp * 2)
                                 ) {
                                     Box(
                                         modifier = Modifier
                                             .align(Alignment.CenterEnd)
                                             .fillMaxWidth(0.72f)
-                                            .height(64.dp)
+                                            .height(92.dp)
                                     ) {
                                         Canvas(modifier = Modifier.matchParentSize()) {
                                             drawBubbleImage(
                                                 bmp = bmp,
-                                                cropLeft = displaySetting.bubbleCropL,
-                                                cropTop = displaySetting.bubbleCropT,
-                                                cropRight = displaySetting.bubbleCropR,
-                                                cropBottom = displaySetting.bubbleCropB,
-                                                repeatXStart = displaySetting.bubbleRepeatX1,
-                                                repeatXEnd = displaySetting.bubbleRepeatX2,
-                                                repeatYStart = displaySetting.bubbleRepeatY1,
-                                                repeatYEnd = displaySetting.bubbleRepeatY2,
-                                                tiled = displaySetting.bubbleTiled,
+                                                cropLeft = dp.bubbleCropL,
+                                                cropTop = dp.bubbleCropT,
+                                                cropRight = dp.bubbleCropR,
+                                                cropBottom = dp.bubbleCropB,
+                                                repeatXStart = dp.bubbleRepeatX1,
+                                                repeatXEnd = dp.bubbleRepeatX2,
+                                                repeatYStart = dp.bubbleRepeatY1,
+                                                repeatYEnd = dp.bubbleRepeatY2,
+                                                tiled = dp.bubbleTiled,
                                                 expandPx = previewBleedPx,
                                                 showGuide = false,
                                             )
@@ -803,14 +807,14 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                             text = "示例：今天也在一起\n第二行顶格，能看出缩进",
                                             style = androidx.compose.ui.text.TextStyle(
                                                 textIndent = androidx.compose.ui.text.style.TextIndent(
-                                                    firstLine = (if (displaySetting.bubbleFirstLineIndent < 0f) 0f else displaySetting.bubbleFirstLineIndent).sp
+                                                    firstLine = (if (dp.bubbleFirstLineIndent < 0f) 0f else dp.bubbleFirstLineIndent).sp
                                                 )
                                             ),
                                             modifier = Modifier.padding(
-                                                start = if (displaySetting.bubblePaddingL >= 0f) displaySetting.bubblePaddingL.dp else 8.dp,
-                                                top = if (displaySetting.bubblePaddingT >= 0f) displaySetting.bubblePaddingT.dp else 8.dp,
-                                                end = if (displaySetting.bubblePaddingR >= 0f) displaySetting.bubblePaddingR.dp else 8.dp,
-                                                bottom = if (displaySetting.bubblePaddingB >= 0f) displaySetting.bubblePaddingB.dp else 8.dp,
+                                                start = if (dp.bubblePaddingL >= 0f) dp.bubblePaddingL.dp else 8.dp,
+                                                top = if (dp.bubblePaddingT >= 0f) dp.bubblePaddingT.dp else 8.dp,
+                                                end = if (dp.bubblePaddingR >= 0f) dp.bubblePaddingR.dp else 8.dp,
+                                                bottom = if (dp.bubblePaddingB >= 0f) dp.bubblePaddingB.dp else 8.dp,
                                             ),
                                         )
                                     }
