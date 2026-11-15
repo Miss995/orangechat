@@ -124,9 +124,9 @@ fun DrawScope.drawBubbleImage(
         )
     }
 
-    /** 横向平铺：按原像素宽一块块贴满 [dw]（保持源高 [sh]）。 */
-    fun tileH(sx: Int, sy: Int, sw: Int, sh: Int, dx: Float, dy: Float, dw: Float) {
-        if (sw <= 0 || sh <= 0 || dw <= 0f) return
+    /** 横向平铺：按原像素宽一块块贴满 [dw]；高度用 [dh]（跟四角一起缩过的值）。 */
+    fun tileH(sx: Int, sy: Int, sw: Int, sh: Int, dx: Float, dy: Float, dw: Float, dh: Float) {
+        if (sw <= 0 || sh <= 0 || dw <= 0f || dh <= 0f) return
         var x = 0f
         while (x < dw - 0.01f) {
             val w = min(sw.toFloat(), dw - x)
@@ -136,15 +136,15 @@ fun DrawScope.drawBubbleImage(
                 srcOffset = IntOffset(sx, sy),
                 srcSize = IntSize(srcPart, sh),
                 dstOffset = IntOffset((ox + dx + x).roundToInt(), (oy + dy).roundToInt()),
-                dstSize = IntSize(w.roundToInt(), sh),
+                dstSize = IntSize(w.roundToInt(), dh.roundToInt()),
             )
             x += sw
         }
     }
 
-    /** 纵向平铺：按原像素高一块块贴满 [dh]（保持源宽 [sw]）。 */
-    fun tileV(sx: Int, sy: Int, sw: Int, sh: Int, dx: Float, dy: Float, dh: Float) {
-        if (sw <= 0 || sh <= 0 || dh <= 0f) return
+    /** 纵向平铺：按原像素高一块块贴满 [dh]；宽度用 [dw]（跟四角一起缩过的值）。 */
+    fun tileV(sx: Int, sy: Int, sw: Int, sh: Int, dx: Float, dy: Float, dh: Float, dw: Float) {
+        if (sw <= 0 || sh <= 0 || dh <= 0f || dw <= 0f) return
         var y = 0f
         while (y < dh - 0.01f) {
             val h = min(sh.toFloat(), dh - y)
@@ -154,7 +154,7 @@ fun DrawScope.drawBubbleImage(
                 srcOffset = IntOffset(sx, sy),
                 srcSize = IntSize(sw, srcPart),
                 dstOffset = IntOffset((ox + dx).roundToInt(), (oy + dy + y).roundToInt()),
-                dstSize = IntSize(sw, h.roundToInt()),
+                dstSize = IntSize(dw.roundToInt(), h.roundToInt()),
             )
             y += sh
         }
@@ -176,10 +176,10 @@ fun DrawScope.drawBubbleImage(
 
     // 四边：按 [tiled] 决定平铺（保花纹不变形）还是拉伸
     if (tiled) {
-        tileH(sxM, syT, midW, capT, dCapL, 0f, dMidW)
-        tileH(sxM, syB, midW, capB, dCapL, H - dCapB, dMidW)
-        tileV(sxL, syM, capL, midH, 0f, dCapT, dMidH)
-        tileV(sxR, syM, capR, midH, W - dCapR, dCapT, dMidH)
+        tileH(sxM, syT, midW, capT, dCapL, 0f, dMidW, dCapT)
+        tileH(sxM, syB, midW, capB, dCapL, H - dCapB, dMidW, dCapB)
+        tileV(sxL, syM, capL, midH, 0f, dCapT, dMidH, dCapL)
+        tileV(sxR, syM, capR, midH, W - dCapR, dCapT, dMidH, dCapR)
     } else {
         one(sxM, syT, midW, capT, dCapL, 0f, dMidW, dCapT)
         one(sxM, syB, midW, capB, dCapL, H - dCapB, dMidW, dCapB)
