@@ -158,8 +158,11 @@ half4 main(float2 fragCoord) {
 
     // ── 水体吸收（宝说的"透光"）：颜色不写死，
     //    从底下的东西来，再按「深度」吃点红光 —— 浅处接近原色，深处偏蓝绿
+    // 【2026-11-16 01:22 宝换成粉壁纸，水还是青的】
+    // 原来 absorb=(0.62,0.94,1.00)：红吃 38%，任何浅色乘上去都变青。
+    // 真实的水是红光先被吃没错，但只在「深」的地方明显 —— 幅度收小、并且从 0 起步。
     float depthAmt = clamp(1.0 - h, 0.0, 1.0) * uAbsorb;
-    half3 absorb = half3(0.62, 0.94, 1.00);   // 红损失最多
+    half3 absorb = half3(0.88, 0.98, 1.00);   // 红只吃 12%，绿 2%
     col = col * mix(half3(1.0), absorb, half(depthAmt));
 
     // ── 高光：浪尖发亮
@@ -181,7 +184,7 @@ fun rememberWaterRefraction(
     shine: Float = 0.16f,
     specPow: Float = 26f,
     gerstner: Float = 0.55f,
-    absorb: Float = 0.55f,
+    absorb: Float = 0.45f,
     dispersion: Float = 0.035f,
     lens: Float = 0.10f,
 ): Modifier {
