@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -36,8 +37,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
@@ -47,6 +51,7 @@ import me.rerere.rikkahub.ui.components.ui.drawBubbleImage
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.File
@@ -521,6 +526,10 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                             val previewBleedPx = with(androidx.compose.ui.platform.LocalDensity.current) {
                                 displaySetting.bubbleBleed.dp.toPx()
                             }
+                            // 切分线可以直接用手指拖：拖到哪，九宫格就切到哪
+                            val dsNow = rememberUpdatedState(displaySetting)
+                            var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+                            val dragLine = remember { mutableStateOf(0) } // 0=没在拖 1=左竖 2=右竖 3=上横 4=下横
                             if (bmp != null) {
                                 Box(
                                     modifier = Modifier
@@ -534,7 +543,78 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                             .fillMaxWidth(0.72f)
                                             .height(64.dp)
                                     ) {
-                                        Canvas(modifier = Modifier.matchParentSize()) {
+                                        Canvas(
+                                            modifier = Modifier
+                                                .matchParentSize()
+                                                .onSizeChanged { canvasSize = it }
+                                                .pointerInput(bmp, canvasSize, previewBleedPx) {
+                                                    val cw = size.width.toFloat()
+                                                    val ch = size.height.toFloat()
+                                                    val ep = previewBleedPx
+                                                    // 四条线在画布上的位置（像素）
+                                                    fun lineX(): FloatArray {
+                                                        val d = dsNow.value
+                                                        val sw = bmp.width * (1f - d.bubbleCropL - d.bubbleCropR)
+                                                        val sh = bmp.height * (1f - d.bubbleCropT - d.bubbleCropB)
+                                                        return floatArrayOf(
+                                                            -ep + sw * d.bubbleRepeatX1,
+                                                            cw + ep - sw * (1f - d.bubbleRepeatX2),
+                                                            -ep + sh * d.bubbleRepeatY1,
+                                                            ch + ep - sh * (1f - d.bubbleRepeatY2),
+                                                        )
+                                                    }
+                                                    val sw0 = bmp.width * (1f - dsNow.value.bubbleCropL - dsNow.value.bubbleCropR)
+                                                    val sh0 = bmp.height * (1f - dsNow.value.bubbleCropT - dsNow.value.bubbleCropB)
+                                                    if (sw0 <= 1f || sh0 <= 1f) return@pointerInput
+                                                    detectDragGestures(
+                                                        onDragStart = { pos ->
+                                                            val xs = lineX()
+                                                            val best = listOf(
+                                                                1 to kotlin.math.abs(pos.x - xs[0]),
+                                                                2 to kotlin.math.abs(pos.x - xs[1]),
+                                                                3 to kotlin.math.abs(pos.y - xs[2]),
+                                                                4 to kotlin.math.abs(pos.y - xs[3]),
+                                                            ).minByOrNull { it.second }
+                                                            dragLine.value = if (best != null && best.second < 44f) best.first else 0
+                                                        },
+                                                        onDragEnd = { dragLine.value = 0 },
+                                                        onDragCancel = { dragLine.value = 0 },
+                                                        onDrag = { change, _ ->
+                                                            val li = dragLine.value
+                                                            if (li != 0) {
+                                                                change.consume()
+                                                                val d = dsNow.value
+                                                                val sw = bmp.width * (1f - d.bubbleCropL - d.bubbleCropR)
+                                                                val sh = bmp.height * (1f - d.bubbleCropT - d.bubbleCropB)
+                                                                if (sw > 1f && sh > 1f) {
+                                                                    val px = change.position.x
+                                                                    val py = change.position.y
+                                                                    when (li) {
+                                                                        1 -> {
+                                                                            val v = ((px + ep) / sw).coerceIn(0f, (d.bubbleRepeatX2 - 0.02f).coerceAtLeast(0f))
+                                                                            updateDisplaySetting(d.copy(bubbleRepeatX1 = v))
+                                                                        }
+                                                                        2 -> {
+                                                                            val edge = ((cw + ep - px) / sw).coerceIn(0f, 1f)
+                                                                            val v = (1f - edge).coerceIn((d.bubbleRepeatX1 + 0.02f).coerceAtMost(1f), 1f)
+                                                                            updateDisplaySetting(d.copy(bubbleRepeatX2 = v))
+                                                                        }
+                                                                        3 -> {
+                                                                            val v = ((py + ep) / sh).coerceIn(0f, (d.bubbleRepeatY2 - 0.02f).coerceAtLeast(0f))
+                                                                            updateDisplaySetting(d.copy(bubbleRepeatY1 = v))
+                                                                        }
+                                                                        4 -> {
+                                                                            val edge = ((ch + ep - py) / sh).coerceIn(0f, 1f)
+                                                                            val v = (1f - edge).coerceIn((d.bubbleRepeatY1 + 0.02f).coerceAtMost(1f), 1f)
+                                                                            updateDisplaySetting(d.copy(bubbleRepeatY2 = v))
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                        ) {
                                             drawBubbleImage(
                                                 bmp = bmp,
                                                 cropLeft = displaySetting.bubbleCropL,
