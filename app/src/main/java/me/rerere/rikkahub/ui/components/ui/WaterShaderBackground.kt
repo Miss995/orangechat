@@ -67,26 +67,28 @@ float waterHeight(float2 p, float t) {
     float2 D4 = float2(cos(radians(uA4)), sin(radians(uA4))); float K4 = 6.2832 / max(uL4, 0.02);
     float2 D5 = float2(cos(radians(uA5)), sin(radians(uA5))); float K5 = 6.2832 / max(uL5, 0.02);
     float2 D6 = float2(cos(radians(uA6)), sin(radians(uA6))); float K6 = 6.2832 / max(uL6, 0.02);
+    float w1 = uW1/100.0; float w2 = uW2/100.0; float w3 = uW3/100.0;
+    float w4 = uW4/100.0; float w5 = uW5/100.0; float w6 = uW6/100.0;
 
     // Gerstner 位移：波峰附近的点被往波峰方向推，等值线自己就弯了
     // 相位用【原位置 p】算，不是挪过的位置（否则是位移自己推自己）
     float2 disp = float2(0.0);
-    disp += D1 * (uGerstner * (uW1*0.01) * cos(dot(p, D1) * K1 + t * 0.85));
-    disp += D2 * (uGerstner * (uW2*0.01) * cos(dot(p, D2) * K2 + t * 1.15));
-    disp += D3 * (uGerstner * (uW3*0.01) * cos(dot(p, D3) * K3 + t * 1.45));
-    disp += D4 * (uGerstner * (uW4*0.01) * cos(dot(p, D4) * K4 + t * 1.75));
-    disp += D5 * (uGerstner * (uW5*0.01) * cos(dot(p, D5) * K5 + t * 2.05));
-    disp += D6 * (uGerstner * (uW6*0.01) * cos(dot(p, D6) * K6 + t * 2.35));
+    disp += D1 * (uGerstner * w1 * cos(dot(p, D1) * K1 + t * 0.85));
+    disp += D2 * (uGerstner * w2 * cos(dot(p, D2) * K2 + t * 1.15));
+    disp += D3 * (uGerstner * w3 * cos(dot(p, D3) * K3 + t * 1.45));
+    disp += D4 * (uGerstner * w4 * cos(dot(p, D4) * K4 + t * 1.75));
+    disp += D5 * (uGerstner * w5 * cos(dot(p, D5) * K5 + t * 2.05));
+    disp += D6 * (uGerstner * w6 * cos(dot(p, D6) * K6 + t * 2.35));
 
     float2 pw = p + disp;
 
     float h = 0.0;
-    h += waveSin(dot(pw, D1) * K1 + t * 0.85) * (uW1*0.01);
-    h += waveSin(dot(pw, D2) * K2 + t * 1.15) * (uW2*0.01);
-    h += waveSin(dot(pw, D3) * K3 + t * 1.45) * (uW3*0.01);
-    h += waveSin(dot(pw, D4) * K4 + t * 1.75) * (uW4*0.01);
-    h += waveSin(dot(pw, D5) * K5 + t * 2.05) * (uW5*0.01);
-    h += waveSin(dot(pw, D6) * K6 + t * 2.35) * (uW6*0.01);
+    h += waveSin(dot(pw, D1) * K1 + t * 0.85) * w1;
+    h += waveSin(dot(pw, D2) * K2 + t * 1.15) * w2;
+    h += waveSin(dot(pw, D3) * K3 + t * 1.45) * w3;
+    h += waveSin(dot(pw, D4) * K4 + t * 1.75) * w4;
+    h += waveSin(dot(pw, D5) * K5 + t * 2.05) * w5;
+    h += waveSin(dot(pw, D6) * K6 + t * 2.35) * w6;
 
     return clamp(h * 0.5 + 0.5, 0.0, 1.0);
 }
@@ -102,14 +104,16 @@ float2 waterGrad(float2 p, float t) {
     // 【2026-11-16 02:20】w1..w6 在 waterHeight 里是局部变量，这里是另一个函数，
     // 得自己声明一份。上一版漏了这六行，AGSL 直接 unknown identifier → 构造 RuntimeShader
     // 抛异常 → main 线程闪退。
+    float w1 = uW1/100.0; float w2 = uW2/100.0; float w3 = uW3/100.0;
+    float w4 = uW4/100.0; float w5 = uW5/100.0; float w6 = uW6/100.0;
 
     float2 disp = float2(0.0);
-    disp += D1 * (uGerstner * (uW1*0.01) * cos(dot(p, D1) * K1 + t * 0.85));
-    disp += D2 * (uGerstner * (uW2*0.01) * cos(dot(p, D2) * K2 + t * 1.15));
-    disp += D3 * (uGerstner * (uW3*0.01) * cos(dot(p, D3) * K3 + t * 1.45));
-    disp += D4 * (uGerstner * (uW4*0.01) * cos(dot(p, D4) * K4 + t * 1.75));
-    disp += D5 * (uGerstner * (uW5*0.01) * cos(dot(p, D5) * K5 + t * 2.05));
-    disp += D6 * (uGerstner * (uW6*0.01) * cos(dot(p, D6) * K6 + t * 2.35));
+    disp += D1 * (uGerstner * w1 * cos(dot(p, D1) * K1 + t * 0.85));
+    disp += D2 * (uGerstner * w2 * cos(dot(p, D2) * K2 + t * 1.15));
+    disp += D3 * (uGerstner * w3 * cos(dot(p, D3) * K3 + t * 1.45));
+    disp += D4 * (uGerstner * w4 * cos(dot(p, D4) * K4 + t * 1.75));
+    disp += D5 * (uGerstner * w5 * cos(dot(p, D5) * K5 + t * 2.05));
+    disp += D6 * (uGerstner * w6 * cos(dot(p, D6) * K6 + t * 2.35));
     float2 pw = p + disp;
 
     // 权重跟着滑条走（原来这里写死成 0.35/0.22/... = 默认值，滑条只影响高度不影响折射）
