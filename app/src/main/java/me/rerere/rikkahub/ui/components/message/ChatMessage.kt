@@ -893,7 +893,8 @@ private fun MessagePartsBlock(
                                                     ) {
                                                         BubbleSurface(
                                                             imagePath = displaySettings.userBubbleImagePath,
-                                                            cornerRadius = displaySettings.bubbleCornerRadius.dp,
+                                                            cornerRadius = (displaySettings.userBubbleCornerRadius ?: displaySettings.bubbleCornerRadius).dp,
+                                                            forUser = true,
                                                             color = displaySettings.userBubbleColor?.let { it.toComposeColor() }
                                                                 ?: MaterialTheme.colorScheme.secondaryContainer,
                                                             overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
@@ -936,7 +937,8 @@ private fun MessagePartsBlock(
                                                                 key(segIndex) {
                                                                     BubbleSurface(
                                                                         imagePath = displaySettings.userBubbleImagePath,
-                                                                        cornerRadius = displaySettings.bubbleCornerRadius.dp,
+                                                                        cornerRadius = (displaySettings.userBubbleCornerRadius ?: displaySettings.bubbleCornerRadius).dp,
+                                                                        forUser = true,
                                                                         color = displaySettings.userBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.secondaryContainer,
                                                                         overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
                                                                         bubbleAlpha = bubbleAlpha,
@@ -957,7 +959,8 @@ private fun MessagePartsBlock(
                                                     } else {
                                                         BubbleSurface(
                                                             imagePath = displaySettings.userBubbleImagePath,
-                                                            cornerRadius = displaySettings.bubbleCornerRadius.dp,
+                                                            cornerRadius = (displaySettings.userBubbleCornerRadius ?: displaySettings.bubbleCornerRadius).dp,
+                                                            forUser = true,
                                                             color = displaySettings.userBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.secondaryContainer,
                                                             overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
                                                             bubbleAlpha = bubbleAlpha,
@@ -1391,12 +1394,18 @@ private fun BubbleSurface(
     overlayEnabled: Boolean,
     bubbleAlpha: Float,
     onClick: (() -> Unit)? = null,
+    // 【两套 · 2026-11-15 宝：原来这套参数只设得了 AI 那一边】
+    // true = 这是"我"的气泡，优先用 userBubbleXxx 那套；没设过（null）就跟随 AI 那套
+    forUser: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val hasImage = imagePath.isNotBlank() && java.io.File(imagePath).exists()
     if (hasImage) {
         val bubbleDs = LocalDisplaySettings.current
-        val bleedDp = bubbleDs.bubbleBleed
+        // 两套参数：forUser 时优先取"我"那套，没设（null）就跟随 AI
+        fun pf(usr: Float?, ai: Float): Float = if (forUser) (usr ?: ai) else ai
+        fun pb(usr: Boolean?, ai: Boolean): Boolean = if (forUser) (usr ?: ai) else ai
+        val bleedDp = pf(bubbleDs.userBubbleBleed, bubbleDs.bubbleBleed)
         val bleedPx = with(androidx.compose.ui.platform.LocalDensity.current) { bleedDp.dp.toPx() }
         // 【四角的固定基准 · 2026-11-15】气泡一行/两行/三行时，四角大小必须不变，
         // 所以缩放比按这两个"最小气泡尺寸"算，而不是按当前实际尺寸。
@@ -1429,15 +1438,15 @@ private fun BubbleSurface(
                 Canvas(modifier = Modifier.matchParentSize()) {
                     drawBubbleImage(
                         bmp = bubbleBitmap,
-                        cropLeft = bubbleDs.bubbleCropL,
-                        cropTop = bubbleDs.bubbleCropT,
-                        cropRight = bubbleDs.bubbleCropR,
-                        cropBottom = bubbleDs.bubbleCropB,
-                        repeatXStart = bubbleDs.bubbleRepeatX1,
-                        repeatXEnd = bubbleDs.bubbleRepeatX2,
-                        repeatYStart = bubbleDs.bubbleRepeatY1,
-                        repeatYEnd = bubbleDs.bubbleRepeatY2,
-                        tiled = bubbleDs.bubbleTiled,
+                        cropLeft = pf(bubbleDs.userBubbleCropL, bubbleDs.bubbleCropL),
+                        cropTop = pf(bubbleDs.userBubbleCropT, bubbleDs.bubbleCropT),
+                        cropRight = pf(bubbleDs.userBubbleCropR, bubbleDs.bubbleCropR),
+                        cropBottom = pf(bubbleDs.userBubbleCropB, bubbleDs.bubbleCropB),
+                        repeatXStart = pf(bubbleDs.userBubbleRepeatX1, bubbleDs.bubbleRepeatX1),
+                        repeatXEnd = pf(bubbleDs.userBubbleRepeatX2, bubbleDs.bubbleRepeatX2),
+                        repeatYStart = pf(bubbleDs.userBubbleRepeatY1, bubbleDs.bubbleRepeatY1),
+                        repeatYEnd = pf(bubbleDs.userBubbleRepeatY2, bubbleDs.bubbleRepeatY2),
+                        tiled = pb(bubbleDs.userBubbleTiled, bubbleDs.bubbleTiled),
                         expandPx = bleedPx,
                         baseWidthPx = bubbleBaseWPx,
                         baseHeightPx = bubbleBaseHPx,
@@ -1453,13 +1462,13 @@ private fun BubbleSurface(
             }
             // 四边内边距各自可调（气泡图有花纹/耳朵的时候，字别压上去）
             // 【2026-11-15 宝：原来只有左右，上下写死 8dp】-1 = 用 contentPadding
-            val padL = if (bubbleDs.bubblePaddingL >= 0f) bubbleDs.bubblePaddingL.dp else contentPadding
-            val padT = if (bubbleDs.bubblePaddingT >= 0f) bubbleDs.bubblePaddingT.dp else contentPadding
-            val padR = if (bubbleDs.bubblePaddingR >= 0f) bubbleDs.bubblePaddingR.dp else contentPadding
-            val padB = if (bubbleDs.bubblePaddingB >= 0f) bubbleDs.bubblePaddingB.dp else contentPadding
+            val padL = if (pf(bubbleDs.userBubblePaddingL, bubbleDs.bubblePaddingL) >= 0f) pf(bubbleDs.userBubblePaddingL, bubbleDs.bubblePaddingL).dp else contentPadding
+            val padT = if (pf(bubbleDs.userBubblePaddingT, bubbleDs.bubblePaddingT) >= 0f) pf(bubbleDs.userBubblePaddingT, bubbleDs.bubblePaddingT).dp else contentPadding
+            val padR = if (pf(bubbleDs.userBubblePaddingR, bubbleDs.bubblePaddingR) >= 0f) pf(bubbleDs.userBubblePaddingR, bubbleDs.bubblePaddingR).dp else contentPadding
+            val padB = if (pf(bubbleDs.userBubblePaddingB, bubbleDs.bubblePaddingB) >= 0f) pf(bubbleDs.userBubblePaddingB, bubbleDs.bubblePaddingB).dp else contentPadding
             // 【首行缩进 · 2026-11-15】只缩第一行，后面顶格。
             // 用 ProvideTextStyle 传下去 —— 正文走 MarkdownBlock，它的 style 默认就是 LocalTextStyle
-            val indent = if (bubbleDs.bubbleFirstLineIndent >= 0f) bubbleDs.bubbleFirstLineIndent else 0f
+            val indent = if (pf(bubbleDs.userBubbleFirstLineIndent, bubbleDs.bubbleFirstLineIndent) >= 0f) pf(bubbleDs.userBubbleFirstLineIndent, bubbleDs.bubbleFirstLineIndent) else 0f
             ProvideTextStyle(
                 LocalTextStyle.current.copy(
                     textIndent = androidx.compose.ui.text.style.TextIndent(firstLine = indent.sp)

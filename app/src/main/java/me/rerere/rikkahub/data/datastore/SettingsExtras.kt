@@ -155,6 +155,26 @@ data class DisplaySetting(
     // —— 那两个都会把画到外面的部分切掉。
     val bubbleBleed: Float = 0f,
     val bubbleImageOverlayEnabled: Boolean = false, // 关=纯图片, 开=图片+主题色遮罩
+
+    // ===== 【我这边的一套 · 2026-11-15 宝：原来这套只设得了 AI 那一边】=====
+    // 全部 null = 跟随上面 AI 那套（所以旧数据、你现在的设置一个都不会变）；
+    // 哪一项有值，那一项就独立。设置页切到「我的气泡」时才会写进来。
+    val userBubbleCornerRadius: Float? = null,
+    val userBubbleCropL: Float? = null,
+    val userBubbleCropT: Float? = null,
+    val userBubbleCropR: Float? = null,
+    val userBubbleCropB: Float? = null,
+    val userBubbleRepeatX1: Float? = null,
+    val userBubbleRepeatX2: Float? = null,
+    val userBubbleRepeatY1: Float? = null,
+    val userBubbleRepeatY2: Float? = null,
+    val userBubbleTiled: Boolean? = null,
+    val userBubblePaddingL: Float? = null,
+    val userBubblePaddingT: Float? = null,
+    val userBubblePaddingR: Float? = null,
+    val userBubblePaddingB: Float? = null,
+    val userBubbleFirstLineIndent: Float? = null,
+    val userBubbleBleed: Float? = null,
 )
 
 @Serializable

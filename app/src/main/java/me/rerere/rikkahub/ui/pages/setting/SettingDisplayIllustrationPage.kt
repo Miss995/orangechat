@@ -132,6 +132,9 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
 
     // Bubble background picker launcher
     val bubbleBgDir = remember { File(context.filesDir, "bubble_backgrounds").apply { mkdirs() } }
+    // 【两套气泡 · 2026-11-15】false = 编辑 AI 那套（旧行为），true = 编辑我自己那套
+    val editMineState = remember { mutableStateOf(false) }
+    val editMine = editMineState.value
     val userBubbleBgPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
             val destFile = File(bubbleBgDir, "user_bubble_${System.currentTimeMillis()}.png")
@@ -285,6 +288,21 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                         },
                     )
                     item(
+                        headlineContent = { Text("正在编辑：${if (editMine) "我的气泡" else "AI 的气泡"}") },
+                        supportingContent = {
+                            Text(
+                                if (editMine) "下面这些滑杆改的是我这边；AI 那边保持不动"
+                                else "下面这些滑杆改的是 AI 那边；我这边没单独设过，就跟着它走"
+                            )
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = editMine,
+                                onCheckedChange = { editMineState.value = it }
+                            )
+                        }
+                    )
+                    item(
                         headlineContent = { Text("气泡圆角(0=直角)") },
                         supportingContent = {
                             Row(
@@ -293,9 +311,9 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 Slider(
-                                    value = displaySetting.bubbleCornerRadius,
+                                    value = if (editMine) (displaySetting.userBubbleCornerRadius ?: displaySetting.bubbleCornerRadius) else displaySetting.bubbleCornerRadius,
                                     onValueChange = {
-                                        updateDisplaySetting(displaySetting.copy(bubbleCornerRadius = it))
+                                        updateDisplaySetting(if (editMine) displaySetting.copy(userBubbleCornerRadius = it) else displaySetting.copy(bubbleCornerRadius = it))
                                     },
                                     valueRange = 0f..32f,
                                     modifier = Modifier.weight(1f)
@@ -309,9 +327,9 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text("开 = 中间那块重复贴（形状不变形）；关 = 拉伸（会变形）") },
                         trailingContent = {
                             Switch(
-                                checked = displaySetting.bubbleTiled,
+                                checked = if (editMine) (displaySetting.userBubbleTiled ?: displaySetting.bubbleTiled) else displaySetting.bubbleTiled,
                                 onCheckedChange = {
-                                    updateDisplaySetting(displaySetting.copy(bubbleTiled = it))
+                                    updateDisplaySetting(if (editMine) displaySetting.copy(userBubbleTiled = it) else displaySetting.copy(bubbleTiled = it))
                                 }
                             )
                         }
@@ -327,14 +345,14 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     ) {
                                         Text(text = "左", modifier = Modifier.width(28.dp))
                                         Slider(
-                                            value = displaySetting.bubbleCropL,
+                                            value = if (editMine) (displaySetting.userBubbleCropL ?: displaySetting.bubbleCropL) else displaySetting.bubbleCropL,
                                             onValueChange = {
-                                                updateDisplaySetting(displaySetting.copy(bubbleCropL = it))
+                                                updateDisplaySetting(if (editMine) displaySetting.copy(userBubbleCropL = it) else displaySetting.copy(bubbleCropL = it))
                                             },
                                             valueRange = 0f..0.45f,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        Text(text = "${(displaySetting.bubbleCropL * 100).toInt()}%")
+                                        Text(text = "${((if (editMine) (displaySetting.userBubbleCropL ?: displaySetting.bubbleCropL) else displaySetting.bubbleCropL) * 100).toInt()}%")
                                     }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -343,14 +361,14 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     ) {
                                         Text(text = "上", modifier = Modifier.width(28.dp))
                                         Slider(
-                                            value = displaySetting.bubbleCropT,
+                                            value = if (editMine) (displaySetting.userBubbleCropT ?: displaySetting.bubbleCropT) else displaySetting.bubbleCropT,
                                             onValueChange = {
-                                                updateDisplaySetting(displaySetting.copy(bubbleCropT = it))
+                                                updateDisplaySetting(if (editMine) displaySetting.copy(userBubbleCropT = it) else displaySetting.copy(bubbleCropT = it))
                                             },
                                             valueRange = 0f..0.45f,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        Text(text = "${(displaySetting.bubbleCropT * 100).toInt()}%")
+                                        Text(text = "${((if (editMine) (displaySetting.userBubbleCropT ?: displaySetting.bubbleCropT) else displaySetting.bubbleCropT) * 100).toInt()}%")
                                     }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -359,14 +377,14 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     ) {
                                         Text(text = "右", modifier = Modifier.width(28.dp))
                                         Slider(
-                                            value = displaySetting.bubbleCropR,
+                                            value = if (editMine) (displaySetting.userBubbleCropR ?: displaySetting.bubbleCropR) else displaySetting.bubbleCropR,
                                             onValueChange = {
-                                                updateDisplaySetting(displaySetting.copy(bubbleCropR = it))
+                                                updateDisplaySetting(if (editMine) displaySetting.copy(userBubbleCropR = it) else displaySetting.copy(bubbleCropR = it))
                                             },
                                             valueRange = 0f..0.45f,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        Text(text = "${(displaySetting.bubbleCropR * 100).toInt()}%")
+                                        Text(text = "${((if (editMine) (displaySetting.userBubbleCropR ?: displaySetting.bubbleCropR) else displaySetting.bubbleCropR) * 100).toInt()}%")
                                     }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -375,14 +393,14 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     ) {
                                         Text(text = "下", modifier = Modifier.width(28.dp))
                                         Slider(
-                                            value = displaySetting.bubbleCropB,
+                                            value = if (editMine) (displaySetting.userBubbleCropB ?: displaySetting.bubbleCropB) else displaySetting.bubbleCropB,
                                             onValueChange = {
-                                                updateDisplaySetting(displaySetting.copy(bubbleCropB = it))
+                                                updateDisplaySetting(if (editMine) displaySetting.copy(userBubbleCropB = it) else displaySetting.copy(bubbleCropB = it))
                                             },
                                             valueRange = 0f..0.45f,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        Text(text = "${(displaySetting.bubbleCropB * 100).toInt()}%")
+                                        Text(text = "${((if (editMine) (displaySetting.userBubbleCropB ?: displaySetting.bubbleCropB) else displaySetting.bubbleCropB) * 100).toInt()}%")
                                     }
                                 Text("手画的图边上常留白，先裁掉再切")
                             }
@@ -399,14 +417,14 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     ) {
                                         Text(text = "起", modifier = Modifier.width(28.dp))
                                         Slider(
-                                            value = displaySetting.bubbleRepeatX1,
+                                            value = if (editMine) (displaySetting.userBubbleRepeatX1 ?: displaySetting.bubbleRepeatX1) else displaySetting.bubbleRepeatX1,
                                             onValueChange = {
-                                                updateDisplaySetting(displaySetting.copy(bubbleRepeatX1 = it))
+                                                updateDisplaySetting(if (editMine) displaySetting.copy(userBubbleRepeatX1 = it) else displaySetting.copy(bubbleRepeatX1 = it))
                                             },
                                             valueRange = 0f..1f,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        Text(text = "${(displaySetting.bubbleRepeatX1 * 100).toInt()}%")
+                                        Text(text = "${((if (editMine) (displaySetting.userBubbleRepeatX1 ?: displaySetting.bubbleRepeatX1) else displaySetting.bubbleRepeatX1) * 100).toInt()}%")
                                     }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -415,14 +433,14 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     ) {
                                         Text(text = "终", modifier = Modifier.width(28.dp))
                                         Slider(
-                                            value = displaySetting.bubbleRepeatX2,
+                                            value = if (editMine) (displaySetting.userBubbleRepeatX2 ?: displaySetting.bubbleRepeatX2) else displaySetting.bubbleRepeatX2,
                                             onValueChange = {
-                                                updateDisplaySetting(displaySetting.copy(bubbleRepeatX2 = it))
+                                                updateDisplaySetting(if (editMine) displaySetting.copy(userBubbleRepeatX2 = it) else displaySetting.copy(bubbleRepeatX2 = it))
                                             },
                                             valueRange = 0f..1f,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        Text(text = "${(displaySetting.bubbleRepeatX2 * 100).toInt()}%")
+                                        Text(text = "${((if (editMine) (displaySetting.userBubbleRepeatX2 ?: displaySetting.bubbleRepeatX2) else displaySetting.bubbleRepeatX2) * 100).toInt()}%")
                                     }
                                 Text("两条线之间那段会被重复铺开；贴到一起就不铺")
                             }
@@ -439,14 +457,14 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     ) {
                                         Text(text = "起", modifier = Modifier.width(28.dp))
                                         Slider(
-                                            value = displaySetting.bubbleRepeatY1,
+                                            value = if (editMine) (displaySetting.userBubbleRepeatY1 ?: displaySetting.bubbleRepeatY1) else displaySetting.bubbleRepeatY1,
                                             onValueChange = {
-                                                updateDisplaySetting(displaySetting.copy(bubbleRepeatY1 = it))
+                                                updateDisplaySetting(if (editMine) displaySetting.copy(userBubbleRepeatY1 = it) else displaySetting.copy(bubbleRepeatY1 = it))
                                             },
                                             valueRange = 0f..1f,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        Text(text = "${(displaySetting.bubbleRepeatY1 * 100).toInt()}%")
+                                        Text(text = "${((if (editMine) (displaySetting.userBubbleRepeatY1 ?: displaySetting.bubbleRepeatY1) else displaySetting.bubbleRepeatY1) * 100).toInt()}%")
                                     }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -455,14 +473,14 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     ) {
                                         Text(text = "终", modifier = Modifier.width(28.dp))
                                         Slider(
-                                            value = displaySetting.bubbleRepeatY2,
+                                            value = if (editMine) (displaySetting.userBubbleRepeatY2 ?: displaySetting.bubbleRepeatY2) else displaySetting.bubbleRepeatY2,
                                             onValueChange = {
-                                                updateDisplaySetting(displaySetting.copy(bubbleRepeatY2 = it))
+                                                updateDisplaySetting(if (editMine) displaySetting.copy(userBubbleRepeatY2 = it) else displaySetting.copy(bubbleRepeatY2 = it))
                                             },
                                             valueRange = 0f..1f,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        Text(text = "${(displaySetting.bubbleRepeatY2 * 100).toInt()}%")
+                                        Text(text = "${((if (editMine) (displaySetting.userBubbleRepeatY2 ?: displaySetting.bubbleRepeatY2) else displaySetting.bubbleRepeatY2) * 100).toInt()}%")
                                     }
                                 Text("耳朵那种想整块锁死不动的，把这一区压窄")
                             }
@@ -480,12 +498,12 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                 ) {
                                     Text("左", fontSize = 12.sp)
                                     Slider(
-                                        value = padVal(displaySetting.bubblePaddingL),
-                                        onValueChange = { updateDisplaySetting(displaySetting.copy(bubblePaddingL = it)) },
+                                        value = padVal(if (editMine) (displaySetting.userBubblePaddingL ?: displaySetting.bubblePaddingL) else displaySetting.bubblePaddingL),
+                                        onValueChange = { updateDisplaySetting(if (editMine) displaySetting.copy(userBubblePaddingL = it) else displaySetting.copy(bubblePaddingL = it)) },
                                         valueRange = 0f..40f,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    Text("${padVal(displaySetting.bubblePaddingL).toInt()}dp", fontSize = 12.sp)
+                                    Text("${padVal(if (editMine) (displaySetting.userBubblePaddingL ?: displaySetting.bubblePaddingL) else displaySetting.bubblePaddingL).toInt()}dp", fontSize = 12.sp)
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -494,12 +512,12 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                 ) {
                                     Text("右", fontSize = 12.sp)
                                     Slider(
-                                        value = padVal(displaySetting.bubblePaddingR),
-                                        onValueChange = { updateDisplaySetting(displaySetting.copy(bubblePaddingR = it)) },
+                                        value = padVal(if (editMine) (displaySetting.userBubblePaddingR ?: displaySetting.bubblePaddingR) else displaySetting.bubblePaddingR),
+                                        onValueChange = { updateDisplaySetting(if (editMine) displaySetting.copy(userBubblePaddingR = it) else displaySetting.copy(bubblePaddingR = it)) },
                                         valueRange = 0f..40f,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    Text("${padVal(displaySetting.bubblePaddingR).toInt()}dp", fontSize = 12.sp)
+                                    Text("${padVal(if (editMine) (displaySetting.userBubblePaddingR ?: displaySetting.bubblePaddingR) else displaySetting.bubblePaddingR).toInt()}dp", fontSize = 12.sp)
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -508,12 +526,12 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                 ) {
                                     Text("上", fontSize = 12.sp)
                                     Slider(
-                                        value = padVal(displaySetting.bubblePaddingT),
-                                        onValueChange = { updateDisplaySetting(displaySetting.copy(bubblePaddingT = it)) },
+                                        value = padVal(if (editMine) (displaySetting.userBubblePaddingT ?: displaySetting.bubblePaddingT) else displaySetting.bubblePaddingT),
+                                        onValueChange = { updateDisplaySetting(if (editMine) displaySetting.copy(userBubblePaddingT = it) else displaySetting.copy(bubblePaddingT = it)) },
                                         valueRange = 0f..40f,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    Text("${padVal(displaySetting.bubblePaddingT).toInt()}dp", fontSize = 12.sp)
+                                    Text("${padVal(if (editMine) (displaySetting.userBubblePaddingT ?: displaySetting.bubblePaddingT) else displaySetting.bubblePaddingT).toInt()}dp", fontSize = 12.sp)
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -522,12 +540,12 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                 ) {
                                     Text("下", fontSize = 12.sp)
                                     Slider(
-                                        value = padVal(displaySetting.bubblePaddingB),
-                                        onValueChange = { updateDisplaySetting(displaySetting.copy(bubblePaddingB = it)) },
+                                        value = padVal(if (editMine) (displaySetting.userBubblePaddingB ?: displaySetting.bubblePaddingB) else displaySetting.bubblePaddingB),
+                                        onValueChange = { updateDisplaySetting(if (editMine) displaySetting.copy(userBubblePaddingB = it) else displaySetting.copy(bubblePaddingB = it)) },
                                         valueRange = 0f..40f,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    Text("${padVal(displaySetting.bubblePaddingB).toInt()}dp", fontSize = 12.sp)
+                                    Text("${padVal(if (editMine) (displaySetting.userBubblePaddingB ?: displaySetting.bubblePaddingB) else displaySetting.bubblePaddingB).toInt()}dp", fontSize = 12.sp)
                                 }
                             }
                         }
@@ -541,14 +559,14 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 Slider(
-                                    value = if (displaySetting.bubbleFirstLineIndent < 0f) 0f else displaySetting.bubbleFirstLineIndent,
+                                    value = bubbleIndentVal(displaySetting, editMine),
                                     onValueChange = {
-                                        updateDisplaySetting(displaySetting.copy(bubbleFirstLineIndent = it))
+                                        updateDisplaySetting(if (editMine) displaySetting.copy(userBubbleFirstLineIndent = it) else displaySetting.copy(bubbleFirstLineIndent = it))
                                     },
                                     valueRange = 0f..120f,
                                     modifier = Modifier.weight(1f)
                                 )
-                                Text(text = "${(if (displaySetting.bubbleFirstLineIndent < 0f) 0f else displaySetting.bubbleFirstLineIndent).toInt()}sp")
+                                Text(text = "${bubbleIndentVal(displaySetting, editMine).toInt()}sp")
                             }
                         }
                     )
@@ -562,9 +580,9 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     Slider(
-                                        value = displaySetting.bubbleBleed,
+                                        value = if (editMine) (displaySetting.userBubbleBleed ?: displaySetting.bubbleBleed) else displaySetting.bubbleBleed,
                                         onValueChange = {
-                                            updateDisplaySetting(displaySetting.copy(bubbleBleed = it))
+                                            updateDisplaySetting(if (editMine) displaySetting.copy(userBubbleBleed = it) else displaySetting.copy(bubbleBleed = it))
                                         },
                                         valueRange = 0f..40f,
                                         modifier = Modifier.weight(1f)
@@ -572,7 +590,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                     Text(text = "${displaySetting.bubbleBleed.toInt()}dp")
                                 }
                                 Text(
-                                    if (displaySetting.bubbleBleed > 0f)
+                                    if ((if (editMine) (displaySetting.userBubbleBleed ?: displaySetting.bubbleBleed) else displaySetting.bubbleBleed) > 0f)
                                         "图往外多画这么多，伸出去的部分不会被裁 —— 耳朵就用这个"
                                     else "0 = 图只画在气泡里"
                                 )
@@ -615,7 +633,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                                 .pointerInput(bmp) {
                                                     val k = size.width / bmp.width.toFloat()
                                                     fun cur(): FloatArray {
-                                                        val d = dsNow.value
+                                                        val d = dsNow.value.mergedFor(editMine)
                                                         val cl = d.bubbleCropL * bmp.width * k
                                                         val ct = d.bubbleCropT * bmp.height * k
                                                         val cr = d.bubbleCropR * bmp.width * k
@@ -646,7 +664,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                                             val li = dragLine.value
                                                             if (li != 0) {
                                                                 change.consume()
-                                                                val d = dsNow.value
+                                                                val d = dsNow.value.mergedFor(editMine)
                                                                 val cl = d.bubbleCropL * bmp.width * k
                                                                 val ct = d.bubbleCropT * bmp.height * k
                                                                 val cr = d.bubbleCropR * bmp.width * k
@@ -668,7 +686,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                                     )
                                                 }
                                         ) {
-                                            val d = dsNow.value
+                                            val d = dsNow.value.mergedFor(editMine)
                                             val k = size.width / bmp.width.toFloat()
                                             val cl = d.bubbleCropL * bmp.width * k
                                             val ct = d.bubbleCropT * bmp.height * k
@@ -1021,4 +1039,33 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
             }
         }
     }
+
+/** 首行缩进当前该显示多少：切换「我的」时取自己那套（没设就跟随 AI），负数按 0 显示 */
+private fun bubbleIndentVal(d: me.rerere.rikkahub.data.datastore.SettingsDisplay, editMine: Boolean): Float {
+    val v = if (editMine) (d.userBubbleFirstLineIndent ?: d.bubbleFirstLineIndent) else d.bubbleFirstLineIndent
+    return if (v < 0f) 0f else v
+}
+
+/** 把"我这边"那套合并到 AI 那套上（没单独设过的项保持 AI 的值）。
+ *  预览和滑杆用它，就不用每处都写 if 了。 */
+private fun me.rerere.rikkahub.data.datastore.SettingsDisplay.mergedFor(editMine: Boolean):
+    me.rerere.rikkahub.data.datastore.SettingsDisplay =
+    if (!editMine) this else copy(
+        bubbleCornerRadius = userBubbleCornerRadius ?: bubbleCornerRadius,
+        bubbleCropL = userBubbleCropL ?: bubbleCropL,
+        bubbleCropT = userBubbleCropT ?: bubbleCropT,
+        bubbleCropR = userBubbleCropR ?: bubbleCropR,
+        bubbleCropB = userBubbleCropB ?: bubbleCropB,
+        bubbleRepeatX1 = userBubbleRepeatX1 ?: bubbleRepeatX1,
+        bubbleRepeatX2 = userBubbleRepeatX2 ?: bubbleRepeatX2,
+        bubbleRepeatY1 = userBubbleRepeatY1 ?: bubbleRepeatY1,
+        bubbleRepeatY2 = userBubbleRepeatY2 ?: bubbleRepeatY2,
+        bubbleTiled = userBubbleTiled ?: bubbleTiled,
+        bubblePaddingL = userBubblePaddingL ?: bubblePaddingL,
+        bubblePaddingT = userBubblePaddingT ?: bubblePaddingT,
+        bubblePaddingR = userBubblePaddingR ?: bubblePaddingR,
+        bubblePaddingB = userBubblePaddingB ?: bubblePaddingB,
+        bubbleFirstLineIndent = userBubbleFirstLineIndent ?: bubbleFirstLineIndent,
+        bubbleBleed = userBubbleBleed ?: bubbleBleed,
+    )
 }
