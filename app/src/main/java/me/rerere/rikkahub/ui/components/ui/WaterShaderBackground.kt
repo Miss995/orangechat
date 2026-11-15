@@ -13,15 +13,12 @@ import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 
 /**
- * 水 · 折射版
+ * 水 · 折射版（梯度）
  *
- * 【跟上一版的区别 · 2026-11-16】
- * 上一版（骨架）是自己在画一片水，跟聊天背景图是两张皮。
- * 这一版走 RenderEffect.createRuntimeShaderEffect(shader, "uBg")：
- * **底下已经画好的东西会自动作为纹理喂进来**（uBg），
- * 水只管按浪的斜率把它拧一下 —— 你的背景图、以后换成任何图，它都自动跟着。
- *
- * 这条路跟液态玻璃（LiquidGlass.kt）是同一套：RenderEffect 不可变，uniform 一变就重建。
+ * 【为什么改成求梯度 · 2026-11-16 00:37 宝：\"会晃，但是不像是折射，更像是扭曲\"】
+ * 上一版 x、y 各拿两根正弦当位移 —— 那是「推」，推得不匀就是拉扯（扭曲）。
+ * 真折射的位移必须来自**同一个高度场的梯度**：光线被水面坡度折了一下，落点跟着偏。
+ * 只有位移场是某个标量场的梯度时，图像才不会被剪切变形，看着才像「隔着水看东西」。
  */
 private const val WATER_REFRACT = """
 uniform shader uBg;
@@ -30,24 +27,39 @@ uniform float uTime;
 uniform float uStrength;
 uniform float uShine;
 
+// ── 水面高度：几层不同方向、不同速度的正弦叠起来
+float heightAt(float2 uv, float t) {
+    float h = 0.0;
+    h += sin(uv.x * 6.2831 * 1.40 + t * 1.10) * 0.50;
+    h += sin(uv.y * 6.2831 * 2.10 - t * 0.80) * 0.30;
+    h += sin((uv.x + uv.y) * 6.2831 * 1.70 + t * 1.60) * 0.20;
+    h += sin((uv.x - uv.y) * 6.2831 * 3.30 - t * 2.30) * 0.12;
+    return h;
+}
+
 half4 main(float2 p) {
     float2 uv = p / uSize;
 
-    // ── 两个方向各自的"斜率"（先用相位差近似，不追求物理，只要像水在动）
-    float dx = sin(uv.y * 6.2831 * 2.1 + uTime * 0.90) * 0.55
-             + sin((uv.x + uv.y) * 6.2831 * 1.70 + uTime * 1.60) * 0.45;
-    float dy = sin(uv.x * 6.2831 * 1.40 + uTime * 1.10) * 0.55
-             + sin((uv.y - uv.x) * 6.2831 * 2.60 + uTime * 1.30) * 0.45;
+    // 一个像素的步长（用来求偏导）
+    float e = 1.0 / uSize.y;
 
-    // ── 折射：采样点偏一点。偏多少 = 折射强弱
-    float2 off = float2(dx, dy) * uStrength;
-    half4 bg = uBg.eval(p + off);
+    float h  = heightAt(uv, uTime);
+    float hx = heightAt(uv + float2(e, 0.0), uTime);
+    float hy = heightAt(uv + float2(0.0, e), uTime);
 
-    // ── 一点高光（浪尖发亮）
-    float spec = pow(max(dx * 0.5 + 0.5, 0.0), 7.0) * uShine;
-    bg.rgb += half3(spec);
+    // 梯度 = 坡度。位移取负梯度：坡度越陡，光线折得越厉害
+    // uStrength 直接是「每单位坡度偏多少像素」（梯度量级约 4~5，所以这个数给个位数就够）
+    float2 grad = float2((hx - h) / e, (hy - h) / e);
+    float2 off = -grad * uStrength;
 
-    return bg;
+    // 折射：按坡度去别处取像素
+    half4 c = uBg.eval(p + off);
+
+    // ── 高光：浪尖发亮（高度越高越亮）
+    float spec = pow(max(h * 0.5 + 0.55, 0.0), 8.0) * uShine;
+    c.rgb += half3(spec);
+
+    return c;
 }
 """
 
@@ -56,7 +68,7 @@ half4 main(float2 p) {
  * 用法：挂在背景那一层上（里面放背景图/颜色），别挂在整个页面（消息也会被拧）。
  */
 @Composable
-fun rememberWaterRefraction(enabled: Boolean, strengthPx: Float = 14f): Modifier {
+fun rememberWaterRefraction(enabled: Boolean, strengthPx: Float = 4.5f): Modifier {
     if (!enabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return Modifier
 
     val shader = remember { RuntimeShader(WATER_REFRACT) }
