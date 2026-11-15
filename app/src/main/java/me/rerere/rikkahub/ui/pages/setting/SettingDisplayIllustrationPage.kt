@@ -601,8 +601,9 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                     item(
                         headlineContent = { Text("切分（在图上直接拖线）") },
                         supportingContent = {
-                            val path = displaySetting.userBubbleImagePath
-                                .ifBlank { displaySetting.assistantBubbleImagePath }
+                            // 【跟着开关走 · 2026-11-15 宝：切分和预览也要能看"我"那张】
+                                val path = (if (editMine) displaySetting.userBubbleImagePath else displaySetting.assistantBubbleImagePath)
+                                    .ifBlank { if (editMine) displaySetting.assistantBubbleImagePath else displaySetting.userBubbleImagePath }
                             val bmp = remember(path) {
                                 if (path.isNotBlank() && File(path).exists()) {
                                     runCatching {
@@ -675,10 +676,27 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                                                                     val px = change.position.x
                                                                     val py = change.position.y
                                                                     when (li) {
-                                                                        1 -> updateDisplaySetting(d.copy(bubbleRepeatX1 = ((px - cl) / uw).coerceIn(0f, (d.bubbleRepeatX2 - 0.02f).coerceAtLeast(0f))))
-                                                                        2 -> updateDisplaySetting(d.copy(bubbleRepeatX2 = ((px - cl) / uw).coerceIn((d.bubbleRepeatX1 + 0.02f).coerceAtMost(1f), 1f)))
-                                                                        3 -> updateDisplaySetting(d.copy(bubbleRepeatY1 = ((py - ct) / uh).coerceIn(0f, (d.bubbleRepeatY2 - 0.02f).coerceAtLeast(0f))))
-                                                                        4 -> updateDisplaySetting(d.copy(bubbleRepeatY2 = ((py - ct) / uh).coerceIn((d.bubbleRepeatY1 + 0.02f).coerceAtMost(1f), 1f)))
+                                                                        1 -> {
+                                                                            // 用 dsNow.value（原始）做底，不能用 d（它是合并后的，会把"我"的值整体写回 AI）
+                                                                            val raw = dsNow.value
+                                                                            val v = ((px - cl) / uw).coerceIn(0f, (d.bubbleRepeatX2 - 0.02f).coerceAtLeast(0f))
+                                                                            updateDisplaySetting(if (editMine) raw.copy(userBubbleRepeatX1 = v) else raw.copy(bubbleRepeatX1 = v))
+                                                                        }
+                                                                        2 -> {
+                                                                            val raw = dsNow.value
+                                                                            val v = ((px - cl) / uw).coerceIn((d.bubbleRepeatX1 + 0.02f).coerceAtMost(1f), 1f)
+                                                                            updateDisplaySetting(if (editMine) raw.copy(userBubbleRepeatX2 = v) else raw.copy(bubbleRepeatX2 = v))
+                                                                        }
+                                                                        3 -> {
+                                                                            val raw = dsNow.value
+                                                                            val v = ((py - ct) / uh).coerceIn(0f, (d.bubbleRepeatY2 - 0.02f).coerceAtLeast(0f))
+                                                                            updateDisplaySetting(if (editMine) raw.copy(userBubbleRepeatY1 = v) else raw.copy(bubbleRepeatY1 = v))
+                                                                        }
+                                                                        4 -> {
+                                                                            val raw = dsNow.value
+                                                                            val v = ((py - ct) / uh).coerceIn((d.bubbleRepeatY1 + 0.02f).coerceAtMost(1f), 1f)
+                                                                            updateDisplaySetting(if (editMine) raw.copy(userBubbleRepeatY2 = v) else raw.copy(bubbleRepeatY2 = v))
+                                                                        }
                                                                     }
                                                                 }
                                                             }
@@ -740,8 +758,9 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                     item(
                         headlineContent = { Text("效果预览") },
                         supportingContent = {
-                            val path = displaySetting.userBubbleImagePath
-                                .ifBlank { displaySetting.assistantBubbleImagePath }
+                            // 【跟着开关走 · 2026-11-15 宝：切分和预览也要能看"我"那张】
+                                val path = (if (editMine) displaySetting.userBubbleImagePath else displaySetting.assistantBubbleImagePath)
+                                    .ifBlank { if (editMine) displaySetting.assistantBubbleImagePath else displaySetting.userBubbleImagePath }
                             val bmp = remember(path) {
                                 if (path.isNotBlank() && File(path).exists()) {
                                     runCatching {
