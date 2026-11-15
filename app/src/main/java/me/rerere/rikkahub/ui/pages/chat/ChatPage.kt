@@ -6,6 +6,7 @@
 
 package me.rerere.rikkahub.ui.pages.chat
 
+import me.rerere.rikkahub.ui.components.ui.WaterShaderBackground
 import me.rerere.rikkahub.ui.components.ui.LocalLiquidGlassHost
 import me.rerere.rikkahub.ui.components.ui.rememberLiquidGlassHost
 import me.rerere.rikkahub.ui.components.ui.liquidGlass
@@ -346,6 +347,10 @@ private fun ChatPageContent(
                     .liquidGlassSource(bgGlassHost, MaterialTheme.colorScheme.background)
             ) {
                 AssistantBackground(setting = setting)
+                // 【水波纹 · 2026-11-16】放在录制层里，玻璃就能采到水（每帧重绘，卡的话再挪出去）
+                if (setting.waterBgEnabled) {
+                    WaterShaderBackground()
+                }
             }
         Scaffold(
             bottomBar = {

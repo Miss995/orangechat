@@ -175,6 +175,9 @@ data class DisplaySetting(
     val userBubblePaddingB: Float? = null,
     val userBubbleFirstLineIndent: Float? = null,
     val userBubbleBleed: Float? = null,
+
+    // 【水波纹背景 · 2026-11-16 凌晨】AGSL RuntimeShader 直接画，不走 WebView
+    val waterBgEnabled: Boolean = false,
 )
 
 @Serializable

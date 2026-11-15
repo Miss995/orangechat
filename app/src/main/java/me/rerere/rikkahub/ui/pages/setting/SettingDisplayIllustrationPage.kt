@@ -288,6 +288,22 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                         },
                     )
                     item(
+                        headlineContent = { Text("水波纹背景") },
+                        supportingContent = {
+                            Text(
+                                if (displaySetting.waterBgEnabled)
+                                    "开着 —— AGSL 每帧重绘，费电；卡或者烫就说一声，猫把它关了"
+                                else "关着 —— 打开后聊天页背景是一整片会动的水"
+                            )
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.waterBgEnabled,
+                                onCheckedChange = { updateDisplaySetting(displaySetting.copy(waterBgEnabled = it)) }
+                            )
+                        }
+                    )
+                    item(
                         headlineContent = { Text("正在编辑：${if (editMine) "我的气泡" else "AI 的气泡"}") },
                         supportingContent = {
                             Text(
