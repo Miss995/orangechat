@@ -52,7 +52,7 @@ fun DrawScope.drawBubbleImage(
     repeatXEnd: Float = 0.65f,
     repeatYStart: Float = 0.35f,
     repeatYEnd: Float = 0.65f,
-    tiled: Boolean = false,
+    tiled: Boolean = true,
     expandPx: Float = 0f,
     showGuide: Boolean = false,
 ) {
@@ -172,31 +172,20 @@ fun DrawScope.drawBubbleImage(
     one(sxL, syB, capL, capB, 0f, H - dCapB, dCapL, dCapB)
     one(sxR, syB, capR, capB, W - dCapR, H - dCapB, dCapR, dCapB)
 
+    // 四边：按 [tiled] 决定平铺（保花纹不变形）还是拉伸
     if (tiled) {
-        // 四边：平铺
         tileH(sxM, syT, midW, capT, dCapL, 0f, dMidW)
         tileH(sxM, syB, midW, capB, dCapL, H - dCapB, dMidW)
         tileV(sxL, syM, capL, midH, 0f, dCapT, dMidH)
         tileV(sxR, syM, capR, midH, W - dCapR, dCapT, dMidH)
-        // 中间：双向平铺（逐行横向铺）
-        var y = 0f
-        while (y < dMidH - 0.01f) {
-            val h = min(midH.toFloat(), dMidH - y)
-            val srcPart = if (h >= midH.toFloat()) midH else max(1, (midH * (h / midH.toFloat())).roundToInt())
-            tileH(
-                sx = sxM, sy = syM, sw = midW, sh = srcPart,
-                dx = dCapL, dy = dCapT + y, dw = dMidW,
-            )
-            y += midH
-        }
     } else {
-        // 四边 + 中间：拉伸
         one(sxM, syT, midW, capT, dCapL, 0f, dMidW, dCapT)
         one(sxM, syB, midW, capB, dCapL, H - dCapB, dMidW, dCapB)
         one(sxL, syM, capL, midH, 0f, dCapT, dCapL, dMidH)
         one(sxR, syM, capR, midH, W - dCapR, dCapT, dCapR, dMidH)
-        one(sxM, syM, midW, midH, dCapL, dCapT, dMidW, dMidH)
     }
+    // 中间：永远拉伸。中间是纯色区，平铺只会把接缝露出来
+    one(sxM, syM, midW, midH, dCapL, dCapT, dMidW, dMidH)
 
     // ④ 切分线（只在预览里开）：把九块的分界画在结果上，别再盲拖
     if (showGuide) {
