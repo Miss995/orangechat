@@ -12,8 +12,8 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ShaderBrush
-import androidx.compose.ui.graphics.asComposeShader
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 
 /**
  * 水 · AGSL 骨架（第一版）
@@ -89,12 +89,19 @@ fun WaterShaderBackground(modifier: Modifier = Modifier) {
         }
     }
 
+    // 【走 nativeCanvas · 2026-11-16】Compose 这版里没有 asComposeShader，
+    // 直接把 android.graphics.Shader 塞给 Paint 画（跟 RuntimeShader 天生一对）
+    val paint = remember { android.graphics.Paint() }
+
     Canvas(modifier.fillMaxSize()) {
         if (size.width < 1f || size.height < 1f) return@Canvas
         shader.setFloatUniform("uSize", size.width, size.height)
         shader.setFloatUniform("uTime", time)
         shader.setFloatUniform("uDeep", 0.04f, 0.12f, 0.17f)
         shader.setFloatUniform("uShallow", 0.24f, 0.58f, 0.66f)
-        drawRect(brush = ShaderBrush(shader.asComposeShader()))
+        paint.shader = shader
+        drawIntoCanvas { canvas ->
+            canvas.nativeCanvas.drawRect(0f, 0f, size.width, size.height, paint)
+        }
     }
 }

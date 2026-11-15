@@ -348,7 +348,7 @@ private fun ChatPageContent(
             ) {
                 AssistantBackground(setting = setting)
                 // 【水波纹 · 2026-11-16】放在录制层里，玻璃就能采到水（每帧重绘，卡的话再挪出去）
-                if (setting.waterBgEnabled) {
+                if (setting.displaySetting.waterBgEnabled) {
                     WaterShaderBackground()
                 }
             }
