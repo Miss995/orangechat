@@ -1041,15 +1041,15 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
     }
 
 /** 首行缩进当前该显示多少：切换「我的」时取自己那套（没设就跟随 AI），负数按 0 显示 */
-private fun bubbleIndentVal(d: me.rerere.rikkahub.data.datastore.SettingsDisplay, editMine: Boolean): Float {
+private fun bubbleIndentVal(d: me.rerere.rikkahub.data.datastore.DisplaySetting, editMine: Boolean): Float {
     val v = if (editMine) (d.userBubbleFirstLineIndent ?: d.bubbleFirstLineIndent) else d.bubbleFirstLineIndent
     return if (v < 0f) 0f else v
 }
 
 /** 把"我这边"那套合并到 AI 那套上（没单独设过的项保持 AI 的值）。
  *  预览和滑杆用它，就不用每处都写 if 了。 */
-private fun me.rerere.rikkahub.data.datastore.SettingsDisplay.mergedFor(editMine: Boolean):
-    me.rerere.rikkahub.data.datastore.SettingsDisplay =
+private fun me.rerere.rikkahub.data.datastore.DisplaySetting.mergedFor(editMine: Boolean):
+    me.rerere.rikkahub.data.datastore.DisplaySetting =
     if (!editMine) this else copy(
         bubbleCornerRadius = userBubbleCornerRadius ?: bubbleCornerRadius,
         bubbleCropL = userBubbleCropL ?: bubbleCropL,
