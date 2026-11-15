@@ -66,6 +66,9 @@ import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ModalBottomSheet
 
 @Composable
 fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
@@ -77,6 +80,9 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
         displaySetting = setting
         vm.updateSettings(settings.copy(displaySetting = setting))
     }
+
+    // 【水·面板 · 2026-11-16 01:42 宝："单开一页，怕碰到气泡那堆滑杆"】
+    var showWaterPanel by remember { mutableStateOf(false) }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -151,6 +157,45 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                 destFile.outputStream().use { output -> input.copyTo(output) }
             }
             updateDisplaySetting(displaySetting.copy(assistantBubbleImagePath = destFile.absolutePath))
+        }
+    }
+
+    // 水面参数面板（单开一层，跟气泡滑杆分开）
+    if (showWaterPanel) {
+        ModalBottomSheet(onDismissRequest = { showWaterPanel = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 32.dp),
+            ) {
+                Text("水面参数", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "调完立刻生效。找不到感觉时，先把吸收和色散拉到 0，只看波纹。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                WaterSliderRow("折射强度", displaySetting.waterRefr, 0f..30f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterRefr = v))
+                }
+                WaterSliderRow("卷曲度（Gerstner）", displaySetting.waterGerstner, 0f..1.5f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterGerstner = v))
+                }
+                WaterSliderRow("高光", displaySetting.waterShine, 0f..0.5f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterShine = v))
+                }
+                WaterSliderRow("吸收（水色偏冷）", displaySetting.waterAbsorb, 0f..1f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterAbsorb = v))
+                }
+                WaterSliderRow("色散（边缘彩边）", displaySetting.waterDisp, 0f..0.15f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterDisp = v))
+                }
+                WaterSliderRow("边缘放大（透镜）", displaySetting.waterLens, 0f..0.4f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterLens = v))
+                }
+            }
         }
     }
 
@@ -297,44 +342,17 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                             )
                         },
                         trailingContent = {
-                            Switch(
-                                checked = displaySetting.waterBgEnabled,
-                                onCheckedChange = { updateDisplaySetting(displaySetting.copy(waterBgEnabled = it)) }
-                            )
-                        }
-                    )
-                    // 【水·滑条 · 2026-11-16 01:36】开关打开才显示
-                    if (displaySetting.waterBgEnabled) {
-                        item {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 6.dp),
-                            ) {
-                                WaterSliderRow("折射强度", displaySetting.waterRefr, 0f..30f) {
-                                    updateDisplaySetting(displaySetting.copy(waterRefr = it))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (displaySetting.waterBgEnabled) {
+                                    TextButton(onClick = { showWaterPanel = true }) { Text("调参数") }
                                 }
-                                WaterSliderRow("浪高", displaySetting.waterGerstner, 0f..1.5f) {
-                                    updateDisplaySetting(displaySetting.copy(waterGerstner = it))
-                                }
-                                WaterSliderRow("高光", displaySetting.waterShine, 0f..0.5f) {
-                                    updateDisplaySetting(displaySetting.copy(waterShine = it))
-                                }
-                                WaterSliderRow("吸收（水色偏冷）", displaySetting.waterAbsorb, 0f..1f) {
-                                    updateDisplaySetting(displaySetting.copy(waterAbsorb = it))
-                                }
-                                WaterSliderRow("色散（边缘彩边）", displaySetting.waterDisp, 0f..0.15f) {
-                                    updateDisplaySetting(displaySetting.copy(waterDisp = it))
-                                }
-                                WaterSliderRow("边缘放大（透镜）", displaySetting.waterLens, 0f..0.4f) {
-                                    updateDisplaySetting(displaySetting.copy(waterLens = it))
-                                }
-                                Text(
-                                    "调完立刻生效；卡就把折射和边缘放大往小拉",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                Switch(
+                                    checked = displaySetting.waterBgEnabled,
+                                    onCheckedChange = { updateDisplaySetting(displaySetting.copy(waterBgEnabled = it)) }
                                 )
                             }
                         }
-                    }
+                    )
                     item(
                         headlineContent = { Text("正在编辑：${if (editMine) "我的气泡" else "AI 的气泡"}") },
                         supportingContent = {
