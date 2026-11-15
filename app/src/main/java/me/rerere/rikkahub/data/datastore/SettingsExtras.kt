@@ -178,6 +178,13 @@ data class DisplaySetting(
 
     // 【水波纹背景 · 2026-11-16 凌晨】AGSL RuntimeShader 直接画，不走 WebView
     val waterBgEnabled: Boolean = false,
+    // 【水·滑条 · 2026-11-16 01:36 宝："做滑条吧"】六根，设完立刻生效
+    val waterRefr: Float = 9f,          // 折射强度（像素）
+    val waterGerstner: Float = 0.55f,   // 浪高
+    val waterShine: Float = 0.16f,      // 高光
+    val waterAbsorb: Float = 0.45f,     // 吸收（水色偏冷，0=完全不吃）
+    val waterDisp: Float = 0.035f,      // 色散（边缘彩边）
+    val waterLens: Float = 0.10f,       // 边缘放大（透镜）
 )
 
 @Serializable

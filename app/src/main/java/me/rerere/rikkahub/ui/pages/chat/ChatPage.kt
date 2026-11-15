@@ -349,7 +349,17 @@ private fun ChatPageContent(
                     // RenderEffect 会把底下画好的背景自动喂进 shader（uBg），
                     // 水只管把它拧一下 —— 换任何背景图都自动跟随。
                     // 注意：只挂背景这一层，消息列表在外面，不会被拧。
-                    .then(rememberWaterRefraction(setting.displaySetting.waterBgEnabled))
+                    .then(
+                        rememberWaterRefraction(
+                            enabled = setting.displaySetting.waterBgEnabled,
+                            refractionPx = setting.displaySetting.waterRefr,
+                            gerstner = setting.displaySetting.waterGerstner,
+                            shine = setting.displaySetting.waterShine,
+                            absorb = setting.displaySetting.waterAbsorb,
+                            dispersion = setting.displaySetting.waterDisp,
+                            lens = setting.displaySetting.waterLens,
+                        )
+                    )
             ) {
                 AssistantBackground(setting = setting)
             }

@@ -303,6 +303,38 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                             )
                         }
                     )
+                    // 【水·滑条 · 2026-11-16 01:36】开关打开才显示
+                    if (displaySetting.waterBgEnabled) {
+                        item {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 6.dp),
+                            ) {
+                                WaterSliderRow("折射强度", displaySetting.waterRefr, 0f..30f) {
+                                    updateDisplaySetting(displaySetting.copy(waterRefr = it))
+                                }
+                                WaterSliderRow("浪高", displaySetting.waterGerstner, 0f..1.5f) {
+                                    updateDisplaySetting(displaySetting.copy(waterGerstner = it))
+                                }
+                                WaterSliderRow("高光", displaySetting.waterShine, 0f..0.5f) {
+                                    updateDisplaySetting(displaySetting.copy(waterShine = it))
+                                }
+                                WaterSliderRow("吸收（水色偏冷）", displaySetting.waterAbsorb, 0f..1f) {
+                                    updateDisplaySetting(displaySetting.copy(waterAbsorb = it))
+                                }
+                                WaterSliderRow("色散（边缘彩边）", displaySetting.waterDisp, 0f..0.15f) {
+                                    updateDisplaySetting(displaySetting.copy(waterDisp = it))
+                                }
+                                WaterSliderRow("边缘放大（透镜）", displaySetting.waterLens, 0f..0.4f) {
+                                    updateDisplaySetting(displaySetting.copy(waterLens = it))
+                                }
+                                Text(
+                                    "调完立刻生效；卡就把折射和边缘放大往小拉",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                     item(
                         headlineContent = { Text("正在编辑：${if (editMine) "我的气泡" else "AI 的气泡"}") },
                         supportingContent = {
@@ -1108,3 +1140,32 @@ private fun me.rerere.rikkahub.data.datastore.DisplaySetting.mergedFor(editMine:
         bubbleFirstLineIndent = userBubbleFirstLineIndent ?: bubbleFirstLineIndent,
         bubbleBleed = userBubbleBleed ?: bubbleBleed,
     )
+
+/** 水的一根滑杆：左边名字，右边当前值 */
+@Composable
+private fun WaterSliderRow(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    onValueChange: (Float) -> Unit,
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = if (range.endInclusive <= 0.5f) String.format("%.3f", value)
+                else String.format("%.1f", value),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = range,
+        )
+    }
+}
