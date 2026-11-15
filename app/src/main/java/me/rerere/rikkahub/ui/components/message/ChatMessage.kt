@@ -1398,6 +1398,10 @@ private fun BubbleSurface(
         val bubbleDs = LocalDisplaySettings.current
         val bleedDp = bubbleDs.bubbleBleed
         val bleedPx = with(androidx.compose.ui.platform.LocalDensity.current) { bleedDp.dp.toPx() }
+        // 【四角的固定基准 · 2026-11-15】气泡一行/两行/三行时，四角大小必须不变，
+        // 所以缩放比按这两个"最小气泡尺寸"算，而不是按当前实际尺寸。
+        val bubbleBaseWPx = with(androidx.compose.ui.platform.LocalDensity.current) { 260.dp.toPx() }
+        val bubbleBaseHPx = with(androidx.compose.ui.platform.LocalDensity.current) { 56.dp.toPx() }
         Box(
             modifier = modifier
                 // 【出血模式 · 2026-11-14 宝画的兔子：耳朵伸在气泡外面】
@@ -1435,6 +1439,8 @@ private fun BubbleSurface(
                         repeatYEnd = bubbleDs.bubbleRepeatY2,
                         tiled = bubbleDs.bubbleTiled,
                         expandPx = bleedPx,
+                        baseWidthPx = bubbleBaseWPx,
+                        baseHeightPx = bubbleBaseHPx,
                     )
                 }
             }

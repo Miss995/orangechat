@@ -55,6 +55,10 @@ fun DrawScope.drawBubbleImage(
     tiled: Boolean = true,
     expandPx: Float = 0f,
     showGuide: Boolean = false,
+    // 【固定基准 · 2026-11-15 宝：气泡变高时兔子不能跟着变大】
+    // 四角大小按这两个基准算，与当前气泡实际尺寸无关。<=0 = 沿用旧行为（按当前 size）
+    baseWidthPx: Float = 0f,
+    baseHeightPx: Float = 0f,
 ) {
     val bmW = bmp.width
     val bmH = bmp.height
@@ -103,8 +107,12 @@ fun DrawScope.drawBubbleImage(
     val capSumW = capL + capR
     val capSumH = capT + capB
     // 横竖必须用【同一个】缩放比，否则四角会被拉长/压扁（变形）
-    val shrinkW = if (capSumW > W && capSumW > 0) W / capSumW.toFloat() else 1f
-    val shrinkH = if (capSumH > H && capSumH > 0) H / capSumH.toFloat() else 1f
+    // ★ 参照尺寸用【固定基准】，不用当前气泡尺寸 ——
+    //   不然气泡一行/两行/三行时四角会跟着一起放大（宝 2026-11-15 实测的 bug）
+    val refW = if (baseWidthPx > 0f) baseWidthPx else W
+    val refH = if (baseHeightPx > 0f) baseHeightPx else H
+    val shrinkW = if (capSumW > refW && capSumW > 0) refW / capSumW.toFloat() else 1f
+    val shrinkH = if (capSumH > refH && capSumH > 0) refH / capSumH.toFloat() else 1f
     val shrink = minOf(shrinkW, shrinkH)
     val dCapL = capL * shrink
     val dCapR = capR * shrink
