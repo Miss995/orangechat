@@ -195,7 +195,10 @@ float rippleH(float2 uv, float now, float2 warp) {
 
 
         float front = uRipR[i] + age * uFront;
-        float fall = exp(-age * uDecay) * (1.0 - smoothstep(5.0, 6.0, age));
+        // ★ 2026-11-17 02:44 宝："旧的涟漪会直接消失掉，而不是扩散开" +
+        //   "每个圈都一个大小所以像毛毛虫" —— 真凶在这行：寿命只有 5~6 秒，
+        //   圆还没长大就没了。放到 11~14 秒，让它有时间扩开、大小才拉得开。
+        float fall = exp(-age * uDecay) * (1.0 - smoothstep(11.0, 14.0, age));
         float spread = 1.0 / sqrt(1.0 + dist * 1.8);
         float edgeFade = 1.0 - smoothstep(0.34, 0.56, dist);
 
@@ -350,7 +353,7 @@ fun rememberWaterRefraction(
     causPow: Float = 3.6f,
     ripples: List<RippleSlot> = emptyList(),
     ripScale: Float = 0.03f,
-    ripFront: Float = 0.055f,
+    ripFront: Float = 0.09f,   // 2026-11-17 02:44 扩散加快：早生的明显大一圈，不再一串同样大
     ripDecay: Float = 0.90f,
     ripPhaseSpd: Float = 1.0f,
     weights: List<Float> = listOf(35f, 22f, 14f, 9f, 6f, 4f),

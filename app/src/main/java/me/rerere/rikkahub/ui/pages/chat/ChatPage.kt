@@ -364,9 +364,10 @@ private fun ChatPageContent(
                             // 按下 → 新的一条（末尾最多留 13 条旧的）
                             lastGenX = ch.position.x    // 重置沿途补圆的基准，否则会沿用上一次手势的位置
                             lastGenY = ch.position.y
-                            // ★ 2026-11-17 02:40 宝："涟漪滑动的时候旧的直接放掉啊，不然它会变成毛毛虫"
-                            //   13 条连成一串、每条都在扩散 → 拖出一条虫。只留最近 3 条。
-                            rippleSlots = (rippleSlots.takeLast(2) + RippleSlot(
+                            // ★ 2026-11-17 02:41 宝纠正："我说的放掉是让他自己扩散" —— 不是删掉。
+                            //   恢复 13 条：旧的就留在出生位置自己往外扩，只有最后那条跟着手走。
+                            // ★ 2026-11-17 02:44 队列 13→30：旧的活到自然淡出（11~14 秒），不再被挤掉
+                            rippleSlots = (rippleSlots.takeLast(30) + RippleSlot(
                                 px = ch.position.x,
                                 py = ch.position.y,
                                 bornMs = now,
