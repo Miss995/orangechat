@@ -56,6 +56,8 @@ uniform float uHandY;
 uniform float uHandOn;      // 0=没有手，1=有
 uniform float uHandR;       // 影响半径
 uniform float uHandStr;     // 推的强度
+uniform float uHandDX;      // 手指这一段的移动方向（单位向量 × 长度，shader 里归一）
+uniform float uHandDY;
 uniform float uFront;      // 波前速度
 uniform float uDecay;      // 时间衰减
 uniform float uPhaseSpd;   // 五圈的相位速度
@@ -161,10 +163,16 @@ float rippleH(float2 uv, float now, float2 warp) {
     //   整个「水面」在这块被带歪，涟漪跟着歪。只做即时的（不累积），
     //   真正的液化工具那种「推过就留痕」要帧缓冲，AGSL 没有。
     {
+        // ★ 2026-11-17 01:56 宝："我给你的那张图，他那个角也是圆的吧？你给我放个尖的" ——
+        //   液化是「沿拖动方向整块往前挪」，不是「从手指往外撑」。
+        //   径向撑会把波撑成尖角，沿方向挪才是圆头的水滴。
         float2 dh = uv - float2(uHandX, uHandY);
         float hd = length(dh);
         float infl = exp(-(hd * hd) / max(uHandR * uHandR, 1e-6)) * uHandOn;
-        uv += (dh / max(hd, 1e-5)) * infl * uHandStr;
+        float2 dirRaw = float2(uHandDX, uHandDY);
+        float dl = length(dirRaw);
+        float2 dir = (dl > 1e-5) ? dirRaw / dl : float2(0.0);
+        uv -= dir * infl * uHandStr;      // 采样点往回挪 = 内容顺着方向走
     }
     float h = 0.0;
     float aspect = uSize.x / uSize.y;
@@ -411,8 +419,13 @@ fun rememberWaterRefraction(
         shader.setFloatUniform("uHandX", (dragging?.endX ?: 0f) / size.width)
         shader.setFloatUniform("uHandY", (dragging?.endY ?: 0f) / size.height)
         shader.setFloatUniform("uHandOn", if (dragging != null) 1f else 0f)
-        shader.setFloatUniform("uHandR", 0.10f)     // 影响半径（uv，约屏幕 1/10）
-        shader.setFloatUniform("uHandStr", 0.022f)  // 推的强度
+        shader.setFloatUniform("uHandR", 0.15f)     // 影响半径（uv，宝：画笔尺寸放大一点）
+        shader.setFloatUniform("uHandStr", 0.028f)  // 推的强度
+        // 方向 = 正在拖那条的「起点→终点」
+        val hdx = if (dragging != null) (dragging.endX - dragging.px) / size.width else 0f
+        val hdy = if (dragging != null) (dragging.endY - dragging.py) / size.height else 0f
+        shader.setFloatUniform("uHandDX", hdx)
+        shader.setFloatUniform("uHandDY", hdy)
         shader.setFloatUniform("uNow", SystemClock.uptimeMillis() / 1000f)
         shader.setFloatUniform("uRipScale", ripScale)
         shader.setFloatUniform("uFront", ripFront)
