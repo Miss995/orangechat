@@ -47,6 +47,7 @@ uniform float uCausPow;  // 光斑锐度（越大 → 芯越细）
 // ── 涟漪（2026-11-16 20:51 从网页版 water_new.html 搬的，不是重写）
 //    每个槽：xy=圆心(uv 0-1) / z=出生时刻(秒，跟 uNow 同一张表) / w=强度
 //    半径单独一个数组，因为它在 shader 里还要按"外圈细内圈宽"再算
+uniform float uRipWarp;      // 主波把涟漪采样点推歪的倍率（0=不动，越大越歪）
 uniform float uRipData[56];   // 14 槽 × (x, y, 年龄秒, 强度) —— 年龄在 Kotlin 侧算好，躲开 float 精度
 uniform float uRipR[14];
 uniform float uFront;      // 波前速度
@@ -149,7 +150,7 @@ float2 waterGrad(float2 p, float t) {
 //   · 能量摊在越来越长的圆周上：1/sqrt(r)，不是指数硬砍
 //   · 手指底下真的空（innerMask），不是"很弱"
 //   · 还有一下"坑"（dent）——波不是手指推出来的，是水回填过冲出来的
-float rippleH(float2 uv, float now) {
+float rippleH(float2 uv, float now, float2 warp) {
     float h = 0.0;
     float aspect = uSize.x / uSize.y;
     for (int i = 0; i < 14; i++) {
@@ -161,7 +162,7 @@ float rippleH(float2 uv, float now) {
         float age = rz0;
         if (age < 0.0 || age > 6.0) continue;
 
-        float2 d = uv - float2(rx0, ry0);
+        float2 d = uv - float2(rx0, ry0) + warp;   // warp = 主波把它推歪的那点距离
         d.x *= aspect;
         float dist = length(d);
 
@@ -203,10 +204,13 @@ half4 main(float2 fragCoord) {
     float2 g = waterGrad(p, t);
 
     // ── 涟漪接进水面（不是画光圈，是真把水推开）
-    float rH  = rippleH(uv, uNow);
+    // ★ 涟漪不吃随机噪声，而是被主波推歪（2026-11-16 22:42 宝："那个低频扰动是随机的，不跟着波走，很突兀"）
+    //   g 是 p 空间的梯度（跨度 2.5），乘小系数后直接当 uv 空间的偏置用
+    float2 ripWarp = g * uRipWarp;
+    float rH  = rippleH(uv, uNow, ripWarp);
     float re  = 0.0025;                              // 差分步长（uv 空间）
-    float rHx = rippleH(uv + float2(re, 0.0), uNow);
-    float rHy = rippleH(uv + float2(0.0, re), uNow);
+    float rHx = rippleH(uv + float2(re, 0.0), uNow, ripWarp);
+    float rHy = rippleH(uv + float2(0.0, re), uNow, ripWarp);
     float2 gRip = float2(rHx - rH, rHy - rH) / re;
     h += rH;
     g += gRip * uRipScale;
@@ -370,6 +374,7 @@ fun rememberWaterRefraction(
             slotArr[i * 4 + 3] = rp.strength
             radArr[i] = rp.radius
         }
+        shader.setFloatUniform("uRipWarp", 0.0003f)
         shader.setFloatUniform("uRipData", slotArr)
         if (n > 0) {
             me.rerere.rikkahub.data.ai.AppLogBuffer.log(
