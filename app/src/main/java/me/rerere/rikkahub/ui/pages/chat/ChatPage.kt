@@ -372,6 +372,9 @@ private fun ChatPageContent(
                             absorb = setting.displaySetting.waterAbsorb,
                             dispersion = setting.displaySetting.waterDisp,
                             lens = setting.displaySetting.waterLens,
+                            caustic = setting.displaySetting.waterCaus,
+                            causBase = setting.displaySetting.waterCausBase,
+                            causPow = setting.displaySetting.waterCausPow,
                             weights = listOf(
                                 setting.displaySetting.waterW1, setting.displaySetting.waterW2,
                                 setting.displaySetting.waterW3, setting.displaySetting.waterW4,

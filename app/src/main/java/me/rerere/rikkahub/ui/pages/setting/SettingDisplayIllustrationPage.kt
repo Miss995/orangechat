@@ -195,6 +195,16 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                 WaterSliderRow("边缘放大（透镜）", displaySetting.waterLens, 0f..0.4f) { v ->
                     updateDisplaySetting(displaySetting.copy(waterLens = v))
                 }
+                // 【光斑 · 2026-11-16 20:11】
+                WaterSliderRow("光斑强度", displaySetting.waterCaus, 0f..1.2f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterCaus = v))
+                }
+                WaterSliderRow("光斑阈值（大=少）", displaySetting.waterCausBase, 0.02f..0.30f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterCausBase = v))
+                }
+                WaterSliderRow("光斑锐度（大=细）", displaySetting.waterCausPow, 1f..6f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterCausPow = v))
+                }
                 GroupTitle("六波 · 权重（0-100，越大越高）")
                 WaterSliderRow("波1", displaySetting.waterW1, 0f..100f) { v ->
                     updateDisplaySetting(displaySetting.copy(waterW1 = v))

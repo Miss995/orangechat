@@ -39,6 +39,8 @@ uniform float uAbsorb;   // 水体吸收：红光先被吃掉，深处偏蓝绿�
 uniform float uDisp;     // 色散：三通道偏移差
 uniform float uLens;     // 边缘放大：中心放大、四周往回收
 uniform float uCaustic;  // 光斑（焦散）强度
+uniform float uCausBase; // 光斑阈值（越大 → 越少）
+uniform float uCausPow;  // 光斑锐度（越大 → 芯越细）
 // 六波各自的权重/方向/波长（十八根滑条）
 uniform float uW1; uniform float uW2; uniform float uW3;
 uniform float uW4; uniform float uW5; uniform float uW6;
@@ -201,10 +203,10 @@ half4 main(float2 fragCoord) {
     //    真实焦散：亮线和暗水之间是硬边（她给的参考图里全是锐的），柔的只有外面那层晕。
     //    所以芯的幂次调回高值；19:54 宝说「出来是块不是线」→ 再提到 3.6，只留最深的芯，块散成线。
     // ★ ⑤ 三个通道阈值微差（红窄 / 绿中 / 蓝宽）：边缘自然带一点点彩边
-    float base = 0.110;   // 【20:08 宝】0.060 铺满整屏把背景的花冲没了；再抬到 0.110，只留最深的谷
-    float kR = pow(clamp(dip / (base * 0.88), 0.0, 1.0), 3.6);
-    float kG = pow(clamp(dip / (base * 1.00), 0.0, 1.0), 3.6);
-    float kB = pow(clamp(dip / (base * 1.14), 0.0, 1.0), 3.6);
+    float base = uCausBase;   // 由滑条控制（20:11）
+    float kR = pow(clamp(dip / (base * 0.88), 0.0, 1.0), uCausPow);
+    float kG = pow(clamp(dip / (base * 1.00), 0.0, 1.0), uCausPow);
+    float kB = pow(clamp(dip / (base * 1.14), 0.0, 1.0), uCausPow);
     // ★ ④ 柔光晕：同一个 dip，阈值放大 2.6 倍、低强度 —— 线两侧铺一层淡光
     float haloV = pow(clamp(dip / (base * 2.6), 0.0, 1.0), 1.2) * 0.14;
     // ★ ② 不等宽：dip 越大（交汇处越深）亮度越高，自然更粗更亮；浅处只留一点点
@@ -243,6 +245,8 @@ fun rememberWaterRefraction(
     dispersion: Float = 0.035f,
     lens: Float = 0.10f,
     caustic: Float = 0.22f,
+    causBase: Float = 0.110f,
+    causPow: Float = 3.6f,
     weights: List<Float> = listOf(35f, 22f, 14f, 9f, 6f, 4f),
     angles: List<Float> = listOf(8f, 30f, 52f, 75f, 100f, 128f),
     lengths: List<Float> = listOf(0.5f, 0.3f, 0.2f, 0.13f, 0.09f, 0.06f),
@@ -279,6 +283,8 @@ fun rememberWaterRefraction(
         shader.setFloatUniform("uDisp", dispersion)
         shader.setFloatUniform("uLens", lens)
         shader.setFloatUniform("uCaustic", caustic)
+        shader.setFloatUniform("uCausBase", causBase)
+        shader.setFloatUniform("uCausPow", causPow)
         setSix(shader, "uW", weights); setSix(shader, "uA", angles); setSix(shader, "uL", lengths)
         renderEffect = RenderEffect
             .createRuntimeShaderEffect(shader, "uBg")

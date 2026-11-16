@@ -185,6 +185,10 @@ data class DisplaySetting(
     val waterAbsorb: Float = 0.45f,     // 吸收（水色偏冷，0=完全不吃）
     val waterDisp: Float = 0.035f,      // 色散（边缘彩边）
     val waterLens: Float = 0.10f,       // 边缘放大（透镜）
+    // 【光斑 · 2026-11-16 20:10 宝："为啥不改成滑条啊？"】
+    val waterCaus: Float = 0.22f,       // 光斑强度
+    val waterCausBase: Float = 0.110f,  // 光斑阈值（越大 → 线越少越稀）
+    val waterCausPow: Float = 3.6f,     // 光斑锐度（越大 → 芯越细）
     // 六波：权重(0-100) / 方向(度) / 波长
     val waterW1: Float = 35f, val waterW2: Float = 22f, val waterW3: Float = 14f,
     val waterW4: Float = 9f, val waterW5: Float = 6f, val waterW6: Float = 4f,
