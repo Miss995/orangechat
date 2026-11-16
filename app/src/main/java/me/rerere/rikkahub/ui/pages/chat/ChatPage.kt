@@ -406,6 +406,9 @@ private fun ChatPageContent(
                             causBase = setting.displaySetting.waterCausBase,
                             causPow = setting.displaySetting.waterCausPow,
                             ripples = rippleSlots,
+                            ripScale = setting.displaySetting.waterRipScale,
+                            ripFront = setting.displaySetting.waterRipFront,
+                            ripDecay = setting.displaySetting.waterRipDecay,
                             weights = listOf(
                                 setting.displaySetting.waterW1, setting.displaySetting.waterW2,
                                 setting.displaySetting.waterW3, setting.displaySetting.waterW4,

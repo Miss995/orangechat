@@ -205,6 +205,15 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                 WaterSliderRow("光斑锐度（大=细）", displaySetting.waterCausPow, 1f..6f) { v ->
                     updateDisplaySetting(displaySetting.copy(waterCausPow = v))
                 }
+                WaterSliderRow("涟漪强度", displaySetting.waterRipScale, 0f..0.20f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterRipScale = v))
+                }
+                WaterSliderRow("涟漪速度", displaySetting.waterRipFront, 0.01f..0.20f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterRipFront = v))
+                }
+                WaterSliderRow("涟漪衰减", displaySetting.waterRipDecay, 0.2f..3f) { v ->
+                    updateDisplaySetting(displaySetting.copy(waterRipDecay = v))
+                }
                 GroupTitle("六波 · 权重（0-100，越大越高）")
                 WaterSliderRow("波1", displaySetting.waterW1, 0f..100f) { v ->
                     updateDisplaySetting(displaySetting.copy(waterW1 = v))

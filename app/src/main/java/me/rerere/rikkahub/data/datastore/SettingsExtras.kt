@@ -189,6 +189,10 @@ data class DisplaySetting(
     val waterCaus: Float = 0.22f,       // 光斑强度
     val waterCausBase: Float = 0.110f,  // 光斑阈值（越大 → 线越少越稀）
     val waterCausPow: Float = 3.6f,     // 光斑锐度（越大 → 芯越细）
+    // 【涟漪 · 2026-11-16 22:13 宝："稍微有点小，接滑条吧"】
+    val waterRipScale: Float = 0.06f,   // 涟漪强度（折射位移的倍率）
+    val waterRipFront: Float = 0.055f,  // 波前速度（每秒推多远，uv 空间）
+    val waterRipDecay: Float = 0.90f,   // 时间衰减（越大散得越快）
     // 六波：权重(0-100) / 方向(度) / 波长
     val waterW1: Float = 35f, val waterW2: Float = 22f, val waterW3: Float = 14f,
     val waterW4: Float = 9f, val waterW5: Float = 6f, val waterW6: Float = 4f,
