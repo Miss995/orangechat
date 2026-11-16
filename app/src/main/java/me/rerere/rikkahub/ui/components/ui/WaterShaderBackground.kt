@@ -182,7 +182,9 @@ float rippleH(float2 uv, float now, float2 warp) {
 
         // 包络半径：起点圆已随 age 扩散（大），终点刚生（小）→ 中间插值 = 收窄的尾巴
         float rHead = uRipR[i] + age * uFront;  // 起点半径（跟着扩散速度走）
-        float rTail = 0.014;                    // 终点半径（刚出生，很小）
+        // ★ 2026-11-17 00:53 宝："就算手刚来也有手的宽度啊，哪里能是半径为零"
+        //   尾端半径 = 手指宽度量级（45px ≈ 0.04uv）。之前写 0.014 会收成水滴尖。
+        float rTail = 0.040;                    // 尾端半径 = 手指宽度
         float rEnv  = mix(rHead, rTail, tSeg);
         // 距包络边界：往内为正、往外为负 → 波圈从边界往里一层层退
         float distEnv = rEnv - dist0;

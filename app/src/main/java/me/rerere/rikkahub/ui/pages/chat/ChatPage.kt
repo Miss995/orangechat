@@ -361,14 +361,31 @@ private fun ChatPageContent(
                                 "Ripple", "down (${ch.position.x.toInt()},${ch.position.y.toInt()}) 队列=${rippleSlots.size}"
                             )
                         } else if (rippleSlots.isNotEmpty()) {
-                            // 拖动 → 只把最后那条的终点挪到手指现在的位置
+                            // 拖动 → 两件事：
+                            //   ① 把最后那条的终点挪到手指现在的位置（那条包络尾巴跟着走）
+                            //   ② 每滑 55px 再补一个独立的小圆（2026-11-17 00:53 宝：
+                            //      "滑动过程中只产生一个波吗" —— 不该，沿途每个位置都在推水）
                             val last = rippleSlots.last()
-                            if (last.endX != ch.position.x || last.endY != ch.position.y) {
-                                rippleSlots = rippleSlots.dropLast(1) + last.copy(
+                            var next = if (last.endX != ch.position.x || last.endY != ch.position.y) {
+                                rippleSlots.dropLast(1) + last.copy(
                                     endX = ch.position.x,
                                     endY = ch.position.y,
                                 )
+                            } else rippleSlots
+                            val dxw = ch.position.x - lastGenX
+                            val dyw = ch.position.y - lastGenY
+                            if (lastGenX < 0f || dxw * dxw + dyw * dyw > 55f * 55f) {
+                                next = (next + RippleSlot(
+                                    px = ch.position.x,
+                                    py = ch.position.y,
+                                    bornMs = now,
+                                    strength = 0.45f,
+                                    radius = 0.040f,     // 手指宽度量级
+                                )).takeLast(13) + next.last()
+                                lastGenX = ch.position.x
+                                lastGenY = ch.position.y
                             }
+                            rippleSlots = next
                         }
                     }
                 }
