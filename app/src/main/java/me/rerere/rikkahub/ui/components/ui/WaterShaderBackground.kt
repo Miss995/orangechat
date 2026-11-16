@@ -189,13 +189,26 @@ half4 main(float2 fragCoord) {
     //    ② 水面曲率 det=(1+k·h_xx)(1+k·h_yy)：曲率只能出曲线，天生不是折线网
     //    ③ |∇h| 最大：那找的是「谷的两侧」两条，要的是「谷底」一条
     // ⚠️ 尺度：App 的 p 已经乘过 2.5（等于网页版的 ps），这里不要再乘，否则差 2.5 倍
+    // ★ 按宝给的五条规律重做（2026-11-16 19:10 v2）：
+    //   ① 是网线不是光块 ② 线不等宽（交汇处粗、中间细、有的断）
+    //   ③ 格子圆润 ④ 线两侧有柔光晕 ⑤ 边缘带一丝色散
+    // 上一版用固定阈值 0.065 + 幂次 2.5：只有最深的谷才亮 → 线又稀又硬，像描边。
     float eG = 0.02;
     float hc = waterHeight(p, t);
     float hAvg = (waterHeight(p + float2(eG, 0.0), t) + waterHeight(p - float2(eG, 0.0), t)
                 + waterHeight(p + float2(0.0, eG), t) + waterHeight(p - float2(0.0, eG), t)) * 0.25;
-    float dip = hAvg - hc;                       // >0 = 这儿比四周低 = 原始波上那条暗缝
-    float caustV = pow(clamp(dip / 0.065, 0.0, 1.0), 2.5) * uCaustic;
-    col += half3(caustV * 0.92, caustV * 0.99, caustV) * 1.2;
+    float dip = max(hAvg - hc, 0.0);             // >0 = 这儿比四周低 = 谷
+    // ★ ① 阈值降下来（0.065 → 0.035）：能成线的地方变多，线就密了、也会出现细弱断口
+    // ★ ④ 幂次降下来（2.5 → 1.6）：边缘从"切出来"变成"晕开"
+    // ★ ⑤ 三个通道阈值微差（红窄 / 绿中 / 蓝宽）：边缘自然带一点点彩边
+    float base = 0.035;
+    float kR = pow(clamp(dip / (base * 0.88), 0.0, 1.0), 1.6);
+    float kG = pow(clamp(dip / (base * 1.00), 0.0, 1.0), 1.6);
+    float kB = pow(clamp(dip / (base * 1.14), 0.0, 1.0), 1.6);
+    // ★ ④ 柔光晕：同一个 dip，阈值放大 2.6 倍、低强度 —— 线两侧铺一层淡光
+    float haloV = pow(clamp(dip / (base * 2.6), 0.0, 1.0), 1.2) * 0.30;
+    // ★ ② 不等宽：dip 越大（交汇处越深）亮度越高，自然更粗更亮；浅处只留一点点
+    col += half3((kR + haloV) * 0.92, (kG + haloV) * 0.99, (kB + haloV)) * uCaustic * 1.2;
 
     // ── 高光：浪尖发亮
     float spec = pow(clamp(diff, 0.0, 1.0), uSpecPow) * uShine;
