@@ -224,26 +224,6 @@ private fun AssistantMemoryContent(
                 }
             )
             item(
-                headlineContent = { Text(stringResource(R.string.assistant_page_recent_chats)) },
-                supportingContent = {
-                    Text(
-                        text = stringResource(R.string.assistant_page_recent_chats_desc),
-                    )
-                },
-                trailingContent = {
-                    Switch(
-                        checked = assistant.enableRecentChatsReference,
-                        onCheckedChange = {
-                            onUpdateAssistant(
-                                assistant.copy(
-                                    enableRecentChatsReference = it
-                                )
-                            )
-                        }
-                    )
-                }
-            )
-            item(
                 headlineContent = { Text(stringResource(R.string.assistant_page_time_reminder)) },
                 supportingContent = {
                     Text(
