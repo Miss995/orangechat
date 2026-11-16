@@ -117,11 +117,13 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
 
     return Modifier.dragAndDropTarget(
         shouldStartDragAndDrop = { e ->
+            // 【2026-11-16 修 · 宝实测】原来这里是 `clipData != null && itemCount > 0` 才要，
+            // 但跨 App 拖拽在"启动"阶段拿到的 clipData 是 null（日志实测 items=-1）→
+            // 于是被判成"没数据"直接拒绝 → 松手后系统兜底，弹了分享面板。
+            // 正确做法：启动阶段无条件说要，真正的数据到 onDrop 才有，过滤放那边做。
             val clip = e.toAndroidDragEvent().clipData
-            val ok = clip != null && clip.itemCount > 0
-            // 【2026-11-16 诊断】能打出来 = 拖拽已经进到 App 窗口了；打不出来 = 系统压根没往这边投。
-            AppLogBuffer.log("StickerDrop", "shouldStart items=${clip?.itemCount ?: -1} -> $ok")
-            ok
+            AppLogBuffer.log("StickerDrop", "shouldStart items=${clip?.itemCount ?: -1} -> true(无条件)")
+            true
         },
         target = target
     )
