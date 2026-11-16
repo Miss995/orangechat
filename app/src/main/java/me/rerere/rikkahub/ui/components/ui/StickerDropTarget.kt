@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.ai.transformers.ImageDescriber
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.data.sticker.StickerStore
 
 
@@ -52,7 +53,12 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
         object : DragAndDropTarget {
             override fun onDrop(event: DragAndDropEvent): Boolean {
                 val androidEvent = event.toAndroidDragEvent()
-                val clip = androidEvent.clipData ?: return false
+                val clip = androidEvent.clipData
+                // 【2026-11-16 诊断】宝实测：拖进聊天页仍被系统当分享处理。
+                // 这条用来判断 onDrop 到底有没有被调用 —— 有 = 落进来了，没有 = 拖拽压根没进窗口。
+                val mime = clip?.description?.let { d -> if (d.mimeTypeCount > 0) d.getMimeType(0) else "-" } ?: "-"
+                AppLogBuffer.log("StickerDrop", "onDrop 触发 clip=${clip?.itemCount ?: -1} mime=$mime")
+                if (clip == null) return false
 
                 val uris = buildList {
                     for (i in 0 until clip.itemCount) {
@@ -79,6 +85,7 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
                         }
                     }
                     // 先报「存好了」，别让描述卡住反馈
+                    AppLogBuffer.log("StickerDrop", "存了 ${savedFiles.size} / ${uris.size} 张")
                     currentOnSaved.value(savedFiles.size)
 
                     // ③ 顺手让视觉模型看一眼，把描述写进 sidecar。
@@ -111,7 +118,10 @@ fun rememberStickerDropModifier(onSaved: (Int) -> Unit = {}): Modifier {
     return Modifier.dragAndDropTarget(
         shouldStartDragAndDrop = { e ->
             val clip = e.toAndroidDragEvent().clipData
-            clip != null && clip.itemCount > 0
+            val ok = clip != null && clip.itemCount > 0
+            // 【2026-11-16 诊断】能打出来 = 拖拽已经进到 App 窗口了；打不出来 = 系统压根没往这边投。
+            AppLogBuffer.log("StickerDrop", "shouldStart items=${clip?.itemCount ?: -1} -> $ok")
+            ok
         },
         target = target
     )
