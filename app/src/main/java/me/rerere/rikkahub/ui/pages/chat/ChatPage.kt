@@ -13,6 +13,11 @@ import me.rerere.rikkahub.ui.components.ui.liquidGlass
 import me.rerere.rikkahub.ui.components.ui.liquidGlassSource
 import me.rerere.rikkahub.ui.components.ui.LiquidGlassStyle
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import android.os.SystemClock
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInParent
 
@@ -309,6 +314,11 @@ private fun ChatPageContent(
     // 定时发送对话框（2026-09-17 宝提的小玩法）
     var showScheduleDialog by remember { mutableStateOf(false) }
     val hazeState = rememberHazeState()
+    // 【涟漪 · 2026-11-16 20:37 宝："那个水面的涟漪吧"】
+    // 只观察不拦截：在 Initial 阶段读手指位置就放行，消息和输入框照常能点。
+    // 坐标不用换算 —— 水背景那层是 fillMaxSize，跟这里同一套坐标系。
+    var rippleAt by remember { mutableStateOf(Offset.Unspecified) }
+    var rippleStartMs by remember { mutableLongStateOf(0L) }
 
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)
 
@@ -326,6 +336,18 @@ private fun ChatPageContent(
         color = MaterialTheme.colorScheme.background,
         modifier = Modifier
             .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val ev = awaitPointerEvent(PointerEventPass.Initial)
+                        val down = ev.changes.firstOrNull { it.pressed && !it.previousPressed }
+                        if (down != null) {
+                            rippleAt = down.position
+                            rippleStartMs = SystemClock.uptimeMillis()
+                        }
+                    }
+                }
+            }
             // 【拖图片存表情包 · 2026-10-24｜2026-11-16 补回】
             // 10-24 就加过这两行，后来某次整份覆盖 ChatPage.kt 时被抹掉，这里原样接回。
             // 用法：分屏/小窗把图拖进聊天页，松手就复制进 filesDir/stickers。
@@ -375,6 +397,8 @@ private fun ChatPageContent(
                             caustic = setting.displaySetting.waterCaus,
                             causBase = setting.displaySetting.waterCausBase,
                             causPow = setting.displaySetting.waterCausPow,
+                            rippleAt = rippleAt,
+                            rippleStartMs = rippleStartMs,
                             weights = listOf(
                                 setting.displaySetting.waterW1, setting.displaySetting.waterW2,
                                 setting.displaySetting.waterW3, setting.displaySetting.waterW4,

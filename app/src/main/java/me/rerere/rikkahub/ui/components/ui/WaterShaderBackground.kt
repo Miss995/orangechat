@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.components.ui
 import android.graphics.RenderEffect
 import android.graphics.RuntimeShader
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -12,6 +13,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
 
 /**
  * 水 · 折射版（从 water_new.html 搬过来的 Gerstner 骨架）
@@ -41,6 +43,8 @@ uniform float uLens;     // 边缘放大：中心放大、四周往回收
 uniform float uCaustic;  // 光斑（焦散）强度
 uniform float uCausBase; // 光斑阈值（越大 → 越少）
 uniform float uCausPow;  // 光斑锐度（越大 → 芯越细）
+uniform float2 uRipple;   // 涟漪圆心（像素，和 fragCoord 同一套坐标）
+uniform float uRippleAge; // 距按下过了多少秒；<0 表示没有涟漪
 // 六波各自的权重/方向/波长（十八根滑条）
 uniform float uW1; uniform float uW2; uniform float uW3;
 uniform float uW4; uniform float uW5; uniform float uW6;
@@ -226,6 +230,25 @@ half4 main(float2 fragCoord) {
     float spec = pow(clamp(diff, 0.0, 1.0), uSpecPow) * uShine;
     col += half3(spec);
 
+    // ── 涟漪：手指点一下，一圈圈往外推
+    // 【2026-11-16 20:37 宝："那个水面的涟漪吧"】
+    // uRippleAge = 距按下过了多少秒（<0 表示没有）。三圈错开 0.4 秒出生，
+    // 越往外越宽、越淡 —— 跟真水一样，能量摊在越来越长的圆周上。
+    if (uRippleAge >= 0.0 && uRippleAge < 4.0) {
+        float dR = length(fragCoord - uRipple);
+        for (int k = 0; k < 3; k++) {
+            float aK = uRippleAge - float(k) * 0.40;
+            if (aK > 0.0) {
+                float r = aK * 95.0;              // 每秒推 95 像素
+                float dd = abs(dR - r);
+                float wd = 4.0 + r * 0.025;       // 波峰越远越宽
+                float ring = exp(-pow(dd / wd, 2.0));
+                float fade = exp(-r / 300.0) * exp(-aK * 0.45);
+                col += half3(ring * fade * 0.45);
+            }
+        }
+    }
+
     return half4(col, alpha);
 }
 """
@@ -247,6 +270,8 @@ fun rememberWaterRefraction(
     caustic: Float = 0.22f,
     causBase: Float = 0.110f,
     causPow: Float = 3.6f,
+    rippleAt: Offset = Offset.Unspecified,
+    rippleStartMs: Long = 0L,
     weights: List<Float> = listOf(35f, 22f, 14f, 9f, 6f, 4f),
     angles: List<Float> = listOf(8f, 30f, 52f, 75f, 100f, 128f),
     lengths: List<Float> = listOf(0.5f, 0.3f, 0.2f, 0.13f, 0.09f, 0.06f),
@@ -285,6 +310,16 @@ fun rememberWaterRefraction(
         shader.setFloatUniform("uCaustic", caustic)
         shader.setFloatUniform("uCausBase", causBase)
         shader.setFloatUniform("uCausPow", causPow)
+        if (rippleAt != Offset.Unspecified && rippleStartMs > 0L) {
+            shader.setFloatUniform("uRipple", rippleAt.x, rippleAt.y)
+            shader.setFloatUniform(
+                "uRippleAge",
+                (SystemClock.uptimeMillis() - rippleStartMs) / 1000f
+            )
+        } else {
+            shader.setFloatUniform("uRipple", 0f, 0f)
+            shader.setFloatUniform("uRippleAge", -1f)
+        }
         setSix(shader, "uW", weights); setSix(shader, "uA", angles); setSix(shader, "uL", lengths)
         renderEffect = RenderEffect
             .createRuntimeShaderEffect(shader, "uBg")
