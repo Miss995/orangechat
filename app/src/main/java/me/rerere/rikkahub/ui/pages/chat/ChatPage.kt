@@ -339,18 +339,40 @@ private fun ChatPageContent(
             .fillMaxSize()
             .pointerInput(Unit) {
                 awaitPointerEventScope {
+                    // ★ 2026-11-16 23:18 宝："只能单点，不能滑动"
+                    //   原来只认 "按下那一瞬间"（previousPressed=false），手指一直按着就再也不生成了。
+                    //   现在：按下立刻生成一个；之后每移动满 100px 且距上一次 ≥180ms 再补一个。
+                    //   节流是必须的 —— 槽位只有 14 个、每个活 6 秒，不节流滑三秒能塞几十个全挤爆。
+                    var lastGenX = -1f
+                    var lastGenY = -1f
+                    var lastGenMs = 0L
                     while (true) {
                         val ev = awaitPointerEvent(PointerEventPass.Initial)
-                        val down = ev.changes.firstOrNull { it.pressed && !it.previousPressed }
-                        if (down != null) {
+                        val ch = ev.changes.firstOrNull() ?: continue
+                        if (!ch.pressed) {
+                            lastGenX = -1f   // 抬手，下一次按下重新开始
+                            continue
+                        }
+                        val now = SystemClock.uptimeMillis()
+                        val justDown = !ch.previousPressed
+                        val far = if (lastGenX < 0f) false else {
+                            val dx = ch.position.x - lastGenX
+                            val dy = ch.position.y - lastGenY
+                            dx * dx + dy * dy > 100f * 100f
+                        }
+                        val slow = now - lastGenMs >= 180L
+                        if (justDown || (far && slow)) {
                             rippleSlots = (rippleSlots + RippleSlot(
-                                px = down.position.x,
-                                py = down.position.y,
-                                bornMs = SystemClock.uptimeMillis(),
+                                px = ch.position.x,
+                                py = ch.position.y,
+                                bornMs = now,
                             )).takeLast(14)
+                            lastGenX = ch.position.x
+                            lastGenY = ch.position.y
+                            lastGenMs = now
                             me.rerere.rikkahub.data.ai.AppLogBuffer.log(
                                 "Ripple",
-                                "down (${down.position.x.toInt()},${down.position.y.toInt()}) 队列=${rippleSlots.size}"
+                                "gen${if (justDown) "-down" else "-drag"} (${ch.position.x.toInt()},${ch.position.y.toInt()}) 队列=${rippleSlots.size}"
                             )
                         }
                     }
