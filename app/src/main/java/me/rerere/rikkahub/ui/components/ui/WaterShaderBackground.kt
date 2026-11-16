@@ -50,6 +50,12 @@ uniform float uCausPow;  // 光斑锐度（越大 → 芯越细）
 uniform float uRipWarp;      // 主波把涟漪采样点推歪的倍率（0=不动，越大越歪）
 uniform float uRipData[84];   // 14 槽 × (起点x, 起点y, 年龄秒, 强度, 终点x, 终点y) —— 终=起 是圆（点击），否则是包络尾迹（滑动）
 uniform float uRipR[14];
+// ★ 2026-11-17 01:40 液化解法：手指附近把采样点往外推（宝：涟漪被手带歪）
+uniform float uHandX;       // 手指位置 uv
+uniform float uHandY;
+uniform float uHandOn;      // 0=没有手，1=有
+uniform float uHandR;       // 影响半径
+uniform float uHandStr;     // 推的强度
 uniform float uFront;      // 波前速度
 uniform float uDecay;      // 时间衰减
 uniform float uPhaseSpd;   // 五圈的相位速度
@@ -151,6 +157,15 @@ float2 waterGrad(float2 p, float t) {
 //   · 手指底下真的空（innerMask），不是"很弱"
 //   · 还有一下"坑"（dent）——波不是手指推出来的，是水回填过冲出来的
 float rippleH(float2 uv, float now, float2 warp) {
+    // ★ 2026-11-17 01:40 液化：手指附近把采样点沿径向推开一点点 ——
+    //   整个「水面」在这块被带歪，涟漪跟着歪。只做即时的（不累积），
+    //   真正的液化工具那种「推过就留痕」要帧缓冲，AGSL 没有。
+    {
+        float2 dh = uv - float2(uHandX, uHandY);
+        float hd = length(dh);
+        float infl = exp(-(hd * hd) / max(uHandR * uHandR, 1e-6)) * uHandOn;
+        uv += (dh / max(hd, 1e-5)) * infl * uHandStr;
+    }
     float h = 0.0;
     float aspect = uSize.x / uSize.y;
     for (int i = 0; i < 14; i++) {
@@ -391,6 +406,13 @@ fun rememberWaterRefraction(
             )
         }
         shader.setFloatUniform("uRipR", radArr)
+        // ★ 2026-11-17 01:41 液化：正在拖的那条 = 手在的位置（end 不等于 px/py）
+        val dragging = ripples.lastOrNull()?.takeIf { it.endX != it.px || it.endY != it.py }
+        shader.setFloatUniform("uHandX", (dragging?.endX ?: 0f) / size.width)
+        shader.setFloatUniform("uHandY", (dragging?.endY ?: 0f) / size.height)
+        shader.setFloatUniform("uHandOn", if (dragging != null) 1f else 0f)
+        shader.setFloatUniform("uHandR", 0.10f)     // 影响半径（uv，约屏幕 1/10）
+        shader.setFloatUniform("uHandStr", 0.022f)  // 推的强度
         shader.setFloatUniform("uNow", SystemClock.uptimeMillis() / 1000f)
         shader.setFloatUniform("uRipScale", ripScale)
         shader.setFloatUniform("uFront", ripFront)

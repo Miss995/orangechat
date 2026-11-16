@@ -348,7 +348,17 @@ private fun ChatPageContent(
                     while (true) {
                         val ev = awaitPointerEvent(PointerEventPass.Initial)
                         val ch = ev.changes.firstOrNull() ?: continue
-                        if (!ch.pressed) continue          // 抬手：冻住，不新增
+                        if (!ch.pressed) {
+                            // 抬手：把最后那条的终点归位 → shader 靠"end≠起点"判断手还在不在
+                            if (rippleSlots.isNotEmpty()) {
+                                val l = rippleSlots.last()
+                                if (l.endX != l.px || l.endY != l.py) {
+                                    rippleSlots = rippleSlots.dropLast(1) +
+                                        l.copy(endX = l.px, endY = l.py)
+                                }
+                            }
+                            continue
+                        }
                         val now = SystemClock.uptimeMillis()
                         if (!ch.previousPressed) {
                             // 按下 → 新的一条（末尾最多留 13 条旧的）
