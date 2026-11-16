@@ -367,6 +367,9 @@ fun rememberWaterRefraction(
             radArr[i] = rp.radius
         }
         shader.setFloatUniform("uRipples", slotArr)
+        if (n > 0) {
+            Log.d("WaterShader", "涟漪 n=$n slot0=${slotArr[0]},${slotArr[1]},${slotArr[2]},${slotArr[3]} scale=$ripScale")
+        }
         shader.setFloatUniform("uRipR", radArr)
         shader.setFloatUniform("uNow", SystemClock.uptimeMillis() / 1000f)
         shader.setFloatUniform("uRipScale", ripScale)

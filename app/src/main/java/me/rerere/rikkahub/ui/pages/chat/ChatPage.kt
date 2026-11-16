@@ -348,6 +348,10 @@ private fun ChatPageContent(
                                 py = down.position.y,
                                 bornSec = SystemClock.uptimeMillis() / 1000f,
                             )).takeLast(14)
+                            me.rerere.rikkahub.data.ai.AppLogBuffer.log(
+                                "Ripple",
+                                "down (${down.position.x.toInt()},${down.position.y.toInt()}) 队列=${rippleSlots.size}"
+                            )
                         }
                     }
                 }
