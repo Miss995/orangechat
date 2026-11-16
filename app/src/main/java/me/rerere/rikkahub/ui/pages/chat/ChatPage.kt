@@ -101,6 +101,7 @@ import me.rerere.rikkahub.service.VoiceCallService
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.ScheduleMessageDialog
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.components.ui.rememberStickerDropModifier
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.Navigator
 import me.rerere.rikkahub.ui.hooks.ChatInputState
@@ -323,7 +324,20 @@ private fun ChatPageContent(
 
     Surface(
         color = MaterialTheme.colorScheme.background,
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            // 【拖图片存表情包 · 2026-10-24｜2026-11-16 补回】
+            // 10-24 就加过这两行，后来某次整份覆盖 ChatPage.kt 时被抹掉，这里原样接回。
+            // 用法：分屏/小窗把图拖进聊天页，松手就复制进 filesDir/stickers。
+            .then(
+                rememberStickerDropModifier { n ->
+                    if (n > 0) {
+                        toaster.show("存进表情包了 · $n 张")
+                    } else {
+                        toaster.show("没存下来（这张图可能读不到）", type = ToastType.Warning)
+                    }
+                }
+            )
     ) {
         // 【液态玻璃 · 2026-11-07】录制层：背景图 + 内容一起录。
         // ⚠️ 玻璃条绝不能进这一层 —— 它读的那张图正是这一层每帧录的，会自己喂自己卡死。
