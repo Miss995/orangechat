@@ -158,41 +158,18 @@ float rippleH(float2 uv, float now, float2 warp) {
         float ry0 = uRipData[i * 6 + 1];
         float rz0 = uRipData[i * 6 + 2];   // 已经是"距出生多少秒"
         float rw0 = uRipData[i * 6 + 3];
-        float2 endW = float2(uRipData[i * 6 + 4], uRipData[i * 6 + 5]);
+        float2 d = uv - float2(rx0, ry0);
+        d.x *= aspect;
+        float dist0 = length(d);
+        // ★ 2026-11-16 22:59：不能偏坐标（后面全用 dist 标量，偏 d 等于白偏），
+        //   要偏「半径」：warp 在径向的投影加到 dist 上 → 不同方向半径不同 → 圈被拉歪。
+        //   再按半径加权（内圈少偏、外圈多偏），外圈才看得出"被水揉过"。
+        float rimMod = dot(d / max(dist0, 1e-5), warp) * (0.3 + dist0 * 6.0);
+        float dist = dist0 + rimMod;
         if (rw0 <= 0.001) continue;
         float age = rz0;
         if (age < 0.0 || age > 6.0) continue;
 
-        // ── 包络尾迹（2026-11-17 00:35，宝的模型）：不是"一个点往外扩"，
-        //    是"起点圆 + 终点圆 撑出来的包络"。沿路径插值半径 → 收窄的尾巴。
-        float2 p0 = float2(rx0, ry0);
-        float2 segV = endW - p0;
-        segV.x *= aspect;
-        float segLen2 = dot(segV, segV);
-        float isSeg = step(1e-8, segLen2);      // 1 = 是尾迹，0 = 是圆
-
-        float2 d = uv - p0;
-        d.x *= aspect;
-
-        // 到线段的最近点参数 t（0=起点，1=终点）
-        float tSeg = (segLen2 < 1e-8) ? 0.0
-                   : clamp(dot(d, segV) / segLen2, 0.0, 1.0);
-        float2 closest = segV * tSeg;
-        float dist0 = length(d - closest);      // 到路径的距离（圆时就是到中心的距离）
-
-        // 包络半径：起点圆已随 age 扩散（大），终点刚生（小）→ 中间插值 = 收窄的尾巴
-        float rHead = uRipR[i] + age * uFront;  // 起点半径（跟着扩散速度走）
-        // ★ 2026-11-17 00:53 宝："就算手刚来也有手的宽度啊，哪里能是半径为零"
-        //   尾端半径 = 手指宽度量级（45px ≈ 0.04uv）。之前写 0.014 会收成水滴尖。
-        float rTail = 0.040;                    // 尾端半径 = 手指宽度
-        float rEnv  = mix(rHead, rTail, tSeg);
-        // 距包络边界：往内为正、往外为负 → 波圈从边界往里一层层退
-        float distEnv = rEnv - dist0;
-
-        // 圆模式沿用原算法（dist 从中心往外）；尾迹模式用 distEnv
-        float rimMod = dot(d / max(length(d), 1e-5), warp) * (0.3 + length(d) * 6.0);
-        float distCircle = length(d) + rimMod;
-        float dist = mix(distCircle, distEnv, isSeg);
 
         float front = uRipR[i] + age * uFront;
         float fall = exp(-age * uDecay) * (1.0 - smoothstep(5.0, 6.0, age));
@@ -200,27 +177,15 @@ float rippleH(float2 uv, float now, float2 warp) {
         float edgeFade = 1.0 - smoothstep(0.34, 0.56, dist);
 
         float hAcc = 0.0;
-        if (isSeg < 0.5) {
-            // ── 圆（点击）：原来那五个同心波圈
-            for (int n = 0; n < 5; n++) {
-                float speed = pow(1.16, float(n)) * uPhaseSpd * 0.5;
-                float rn = uRipR[i] + float(n) * 0.009 + uFront * age * speed;
-                float dd = abs(dist - rn);
-                float wv = (0.0052 + rn * 0.016) * (1.0 - float(n) * 0.08);
-                float prof = exp(-pow(dd / wv, 2.0));
-                float ampN = 1.0 - abs(float(n) - 2.0) * 0.22;
-                hAcc += prof * ampN;
-            }
-        } else {
-            // ── 尾迹（滑动）：包络边界最亮，往里一层层退，越往里越弱
-            for (int n = 0; n < 4; n++) {
-                float off = float(n) * 0.011;        // 往内偏移（波的间距）
-                float dd = abs(dist - off);
-                float wv = 0.0060 * (1.0 - float(n) * 0.12);
-                float prof = exp(-pow(dd / wv, 2.0));
-                float ampN = 1.0 - float(n) * 0.20;  // 越往里越弱
-                hAcc += prof * ampN;
-            }
+        for (int n = 0; n < 5; n++) {
+            float speed = pow(1.16, float(n)) * uPhaseSpd * 0.5;
+            float rn = uRipR[i] + float(n) * 0.009 + uFront * age * speed;
+            float dd = abs(dist - rn);
+            float wv = (0.0052 + rn * 0.016) * (1.0 - float(n) * 0.08);
+            float prof = exp(-pow(dd / wv, 2.0));
+            float ampN = 1.0 - abs(float(n) - 2.0) * 0.22;
+            float hh = prof * ampN;
+            hAcc += hh;
         }
         float innerMask = smoothstep(0.0, uRipR[i] * 0.75, dist);
         h += hAcc * fall * spread * edgeFade * innerMask * rw0;
