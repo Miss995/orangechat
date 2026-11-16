@@ -186,7 +186,10 @@ half4 main(float2 fragCoord) {
     // 上一版用固定阈值 0.065 + 幂次 2.5：只有最深的谷才亮 → 线又稀又硬，像描边。
     // ★【19:25 宝】"它像在水上面" —— 坐标要跟着折射扭，光斑才会沉到水底去。
     //   off 是像素单位的，换算回 p 的单位（p 已经乘过 2.5）。
-    float2 pC = p + (off / uSize) * float2(aspect, 1.0) * 2.5;
+    // ★【19:43 宝】"感觉他更像高光了" —— 全跟着扭就变成水面上的亮纹了。
+    //   高光=水面自己发亮（跟波走）；焦散=长在水底的一层网（只被轻轻晃）。
+    //   所以折射权重只取 0.35：沉下去大半，还留一点活气，不至于死板。
+    float2 pC = p + (off / uSize) * float2(aspect, 1.0) * 2.5 * 0.35;
     float eG = 0.02;
     float hc = waterHeight(pC, t);
     float hAvg = (waterHeight(pC + float2(eG, 0.0), t) + waterHeight(pC - float2(eG, 0.0), t)
