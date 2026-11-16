@@ -346,7 +346,7 @@ private fun ChatPageContent(
                             rippleSlots = (rippleSlots + RippleSlot(
                                 px = down.position.x,
                                 py = down.position.y,
-                                bornSec = SystemClock.uptimeMillis() / 1000f,
+                                bornMs = SystemClock.uptimeMillis(),
                             )).takeLast(14)
                             me.rerere.rikkahub.data.ai.AppLogBuffer.log(
                                 "Ripple",

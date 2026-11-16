@@ -47,7 +47,7 @@ uniform float uCausPow;  // 光斑锐度（越大 → 芯越细）
 // ── 涟漪（2026-11-16 20:51 从网页版 water_new.html 搬的，不是重写）
 //    每个槽：xy=圆心(uv 0-1) / z=出生时刻(秒，跟 uNow 同一张表) / w=强度
 //    半径单独一个数组，因为它在 shader 里还要按"外圈细内圈宽"再算
-uniform float uRipData[56];   // 14 槽 × (x, y, 出生秒, 强度)
+uniform float uRipData[56];   // 14 槽 × (x, y, 年龄秒, 强度) —— 年龄在 Kotlin 侧算好，躲开 float 精度
 uniform float uRipR[14];
 uniform float uFront;      // 波前速度
 uniform float uDecay;      // 时间衰减
@@ -155,10 +155,10 @@ float rippleH(float2 uv, float now) {
     for (int i = 0; i < 14; i++) {
         float rx0 = uRipData[i * 4 + 0];
         float ry0 = uRipData[i * 4 + 1];
-        float rz0 = uRipData[i * 4 + 2];
+        float rz0 = uRipData[i * 4 + 2];   // 已经是"距出生多少秒"
         float rw0 = uRipData[i * 4 + 3];
         if (rw0 <= 0.001) continue;
-        float age = now - rz0;
+        float age = rz0;
         if (age < 0.0 || age > 6.0) continue;
 
         float2 d = uv - float2(rx0, ry0);
@@ -316,7 +316,7 @@ fun rememberWaterRefraction(
     causBase: Float = 0.110f,
     causPow: Float = 3.6f,
     ripples: List<RippleSlot> = emptyList(),
-    ripScale: Float = 0.0008f,
+    ripScale: Float = 0.03f,
     ripFront: Float = 0.055f,
     ripDecay: Float = 0.90f,
     ripPhaseSpd: Float = 1.0f,
@@ -366,7 +366,7 @@ fun rememberWaterRefraction(
             val rp = ripples[ripples.size - n + i]   // 最新的在末尾，取最后 n 个
             slotArr[i * 4 + 0] = rp.px / size.width
             slotArr[i * 4 + 1] = rp.py / size.height
-            slotArr[i * 4 + 2] = rp.bornSec
+            slotArr[i * 4 + 2] = (SystemClock.uptimeMillis() - rp.bornMs) / 1000f
             slotArr[i * 4 + 3] = rp.strength
             radArr[i] = rp.radius
         }
@@ -394,7 +394,7 @@ fun rememberWaterRefraction(
 data class RippleSlot(
     val px: Float,
     val py: Float,
-    val bornSec: Float,   // uptime 秒（跟 shader 的 uNow 同一张表）
+    val bornMs: Long,     // SystemClock.uptimeMillis()，每帧再折成"年龄"
     val strength: Float = 0.6f,
     val radius: Float = 0.020f,
 )
