@@ -343,6 +343,8 @@ private fun ChatPageContent(
                     //   按下：新建一条，起点=落点、终点=落点（退化成一个圆）
                     //   拖动：**只更新最后那条的终点**，不新增 —— 手指就是在「拉着」这条尾巴走
                     //   抬手：什么都不做，它就冻在那儿，让 age 继续扩散
+                    var lastGenX = -1f      // 上一次补小圆的位置（拖动沿途补圆用）
+                    var lastGenY = -1f
                     while (true) {
                         val ev = awaitPointerEvent(PointerEventPass.Initial)
                         val ch = ev.changes.firstOrNull() ?: continue
@@ -350,6 +352,8 @@ private fun ChatPageContent(
                         val now = SystemClock.uptimeMillis()
                         if (!ch.previousPressed) {
                             // 按下 → 新的一条（末尾最多留 13 条旧的）
+                            lastGenX = ch.position.x    // 重置沿途补圆的基准，否则会沿用上一次手势的位置
+                            lastGenY = ch.position.y
                             rippleSlots = (rippleSlots.takeLast(13) + RippleSlot(
                                 px = ch.position.x,
                                 py = ch.position.y,
