@@ -162,9 +162,14 @@ float rippleH(float2 uv, float now, float2 warp) {
         float age = rz0;
         if (age < 0.0 || age > 6.0) continue;
 
-        float2 d = uv - float2(rx0, ry0) + warp;   // warp = 主波把它推歪的那点距离
+        float2 d = uv - float2(rx0, ry0);
         d.x *= aspect;
-        float dist = length(d);
+        float dist0 = length(d);
+        // ★ 2026-11-16 22:59：不能偏坐标（后面的算法全用 dist 标量，偏 d 等于白偏），
+        //   要偏「半径」：warp 在径向的投影加到 dist 上 → 不同方向半径不同 → 圈被拉歪。
+        //   再按半径加权（内圈少偏、外圈多偏），外圈才看得出"被水揉过"。
+        float rimMod = dot(d / max(dist0, 1e-5), warp) * (0.3 + dist0 * 6.0);
+        float dist = dist0 + rimMod;
 
         float front = uRipR[i] + age * uFront;
         float fall = exp(-age * uDecay) * (1.0 - smoothstep(5.0, 6.0, age));
@@ -374,7 +379,7 @@ fun rememberWaterRefraction(
             slotArr[i * 4 + 3] = rp.strength
             radArr[i] = rp.radius
         }
-        shader.setFloatUniform("uRipWarp", 0.0003f)
+        shader.setFloatUniform("uRipWarp", 0.0015f)
         shader.setFloatUniform("uRipData", slotArr)
         if (n > 0) {
             me.rerere.rikkahub.data.ai.AppLogBuffer.log(
