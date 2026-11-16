@@ -25,7 +25,8 @@ import androidx.compose.ui.geometry.Offset
  *   · 高度 = Σ A·sin(k·D·p + ωt)，位移用原位置算（不然是位移自己推自己）
  *   · 梯度用解析式（比数值差分省三次采样，且跟高度场严格同一套波）
  *
- * 先没搬的：涟漪（uRipples/uRipR —— 靠手指点屏幕才出现，聊天页背景层接不到触摸）、
+ * 涟漪：2026-11-16 20:50 已搬（ChatPage 最外层 Initial 阶段读位置、不消费事件传进来）；
+ * 还差的：池底图案、跟主波的 merge（uMergeRip 那套）。
  *           池底图案（under* —— 现在有真背景图当池底）、焦散（等水面像了再加）。
  */
 private const val WATER_REFRACT = """
@@ -46,7 +47,7 @@ uniform float uCausPow;  // 光斑锐度（越大 → 芯越细）
 // ── 涟漪（2026-11-16 20:51 从网页版 water_new.html 搬的，不是重写）
 //    每个槽：xy=圆心(uv 0-1) / z=出生时刻(秒，跟 uNow 同一张表) / w=强度
 //    半径单独一个数组，因为它在 shader 里还要按"外圈细内圈宽"再算
-uniform float4 uRipples[14];
+uniform float uRipData[56];   // 14 槽 × (x, y, 出生秒, 强度)
 uniform float uRipR[14];
 uniform float uFront;      // 波前速度
 uniform float uDecay;      // 时间衰减
@@ -152,12 +153,15 @@ float rippleH(float2 uv, float now) {
     float h = 0.0;
     float aspect = uSize.x / uSize.y;
     for (int i = 0; i < 14; i++) {
-        float4 r = uRipples[i];
-        if (r.w <= 0.001) continue;
-        float age = now - r.z;
+        float rx0 = uRipData[i * 4 + 0];
+        float ry0 = uRipData[i * 4 + 1];
+        float rz0 = uRipData[i * 4 + 2];
+        float rw0 = uRipData[i * 4 + 3];
+        if (rw0 <= 0.001) continue;
+        float age = now - rz0;
         if (age < 0.0 || age > 6.0) continue;
 
-        float2 d = uv - r.xy;
+        float2 d = uv - float2(rx0, ry0);
         d.x *= aspect;
         float dist = length(d);
 
@@ -177,10 +181,10 @@ float rippleH(float2 uv, float now) {
             hAcc += prof * ampN;
         }
         float innerMask = smoothstep(0.0, uRipR[i] * 0.75, dist);
-        h += hAcc * fall * spread * edgeFade * innerMask * r.w;
+        h += hAcc * fall * spread * edgeFade * innerMask * rw0;
 
         float dent = exp(-pow(dist / (uRipR[i] * 1.15), 2.0));
-        h -= dent * 2.4 * exp(-age * 6.0) * r.w;
+        h -= dent * 2.4 * exp(-age * 6.0) * rw0;
     }
     return h;
 }
@@ -366,9 +370,12 @@ fun rememberWaterRefraction(
             slotArr[i * 4 + 3] = rp.strength
             radArr[i] = rp.radius
         }
-        shader.setFloatUniform("uRipples", slotArr)
+        shader.setFloatUniform("uRipData", slotArr)
         if (n > 0) {
-            Log.d("WaterShader", "涟漪 n=$n slot0=${slotArr[0]},${slotArr[1]},${slotArr[2]},${slotArr[3]} scale=$ripScale")
+            me.rerere.rikkahub.data.ai.AppLogBuffer.log(
+                "WaterShader",
+                "涟漪 n=$n slot0=${slotArr[0]},${slotArr[1]},${slotArr[2]},${slotArr[3]} scale=$ripScale"
+            )
         }
         shader.setFloatUniform("uRipR", radArr)
         shader.setFloatUniform("uNow", SystemClock.uptimeMillis() / 1000f)
