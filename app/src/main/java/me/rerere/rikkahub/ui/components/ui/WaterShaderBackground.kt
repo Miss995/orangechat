@@ -38,6 +38,7 @@ uniform float uWave;
 uniform float uAbsorb;   // 水体吸收：红光先被吃掉，深处偏蓝绿（宝说的"透光"）
 uniform float uDisp;     // 色散：三通道偏移差
 uniform float uLens;     // 边缘放大：中心放大、四周往回收
+uniform float uCaustic;  // 光斑（焦散）强度
 // 六波各自的权重/方向/波长（十八根滑条）
 uniform float uW1; uniform float uW2; uniform float uW3;
 uniform float uW4; uniform float uW5; uniform float uW6;
@@ -181,6 +182,21 @@ half4 main(float2 fragCoord) {
     half3 absorb = half3(0.88, 0.98, 1.00);   // 红只吃 12%，绿 2%
     col = col * mix(half3(1.0), absorb, half(depthAmt));
 
+    // ── 光斑（焦散）· 2026-11-16 搬自网页版 v149
+    // 判据 = 「比四周低」的那几条暗缝（dip = 四周平均高度 − 本点高度）。
+    // ⚠️ 网页版走过的三条弯路，都被推翻了，别再捡回来：
+    //    ① 细胞边界 F2−F1（Worley）：亮度跟格子大小挂钩，一不均就断成虚线
+    //    ② 水面曲率 det=(1+k·h_xx)(1+k·h_yy)：曲率只能出曲线，天生不是折线网
+    //    ③ |∇h| 最大：那找的是「谷的两侧」两条，要的是「谷底」一条
+    // ⚠️ 尺度：App 的 p 已经乘过 2.5（等于网页版的 ps），这里不要再乘，否则差 2.5 倍
+    float eG = 0.02;
+    float hc = waterHeight(p, t);
+    float hAvg = (waterHeight(p + float2(eG, 0.0), t) + waterHeight(p - float2(eG, 0.0), t)
+                + waterHeight(p + float2(0.0, eG), t) + waterHeight(p - float2(0.0, eG), t)) * 0.25;
+    float dip = hAvg - hc;                       // >0 = 这儿比四周低 = 原始波上那条暗缝
+    float caustV = pow(clamp(dip / 0.065, 0.0, 1.0), 2.5) * uCaustic;
+    col += half3(caustV * 0.92, caustV * 0.99, caustV) * 1.2;
+
     // ── 高光：浪尖发亮
     float spec = pow(clamp(diff, 0.0, 1.0), uSpecPow) * uShine;
     col += half3(spec);
@@ -203,6 +219,7 @@ fun rememberWaterRefraction(
     absorb: Float = 0.45f,
     dispersion: Float = 0.035f,
     lens: Float = 0.10f,
+    caustic: Float = 0.55f,
     weights: List<Float> = listOf(35f, 22f, 14f, 9f, 6f, 4f),
     angles: List<Float> = listOf(8f, 30f, 52f, 75f, 100f, 128f),
     lengths: List<Float> = listOf(0.5f, 0.3f, 0.2f, 0.13f, 0.09f, 0.06f),
@@ -238,6 +255,7 @@ fun rememberWaterRefraction(
         shader.setFloatUniform("uAbsorb", absorb)
         shader.setFloatUniform("uDisp", dispersion)
         shader.setFloatUniform("uLens", lens)
+        shader.setFloatUniform("uCaustic", caustic)
         setSix(shader, "uW", weights); setSix(shader, "uA", angles); setSix(shader, "uL", lengths)
         renderEffect = RenderEffect
             .createRuntimeShaderEffect(shader, "uBg")
