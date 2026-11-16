@@ -173,15 +173,6 @@ half4 main(float2 fragCoord) {
     float diff = clamp(dot(N, L), 0.0, 1.0);
     col *= half(0.86 + 0.24 * diff);
 
-    // ── 水体吸收（宝说的"透光"）：颜色不写死，
-    //    从底下的东西来，再按「深度」吃点红光 —— 浅处接近原色，深处偏蓝绿
-    // 【2026-11-16 01:22 宝换成粉壁纸，水还是青的】
-    // 原来 absorb=(0.62,0.94,1.00)：红吃 38%，任何浅色乘上去都变青。
-    // 真实的水是红光先被吃没错，但只在「深」的地方明显 —— 幅度收小、并且从 0 起步。
-    float depthAmt = clamp(1.0 - h, 0.0, 1.0) * uAbsorb;
-    half3 absorb = half3(0.88, 0.98, 1.00);   // 红只吃 12%，绿 2%
-    col = col * mix(half3(1.0), absorb, half(depthAmt));
-
     // ── 光斑（焦散）· 2026-11-16 搬自网页版 v149
     // 判据 = 「比四周低」的那几条暗缝（dip = 四周平均高度 − 本点高度）。
     // ⚠️ 网页版走过的三条弯路，都被推翻了，别再捡回来：
@@ -193,10 +184,13 @@ half4 main(float2 fragCoord) {
     //   ① 是网线不是光块 ② 线不等宽（交汇处粗、中间细、有的断）
     //   ③ 格子圆润 ④ 线两侧有柔光晕 ⑤ 边缘带一丝色散
     // 上一版用固定阈值 0.065 + 幂次 2.5：只有最深的谷才亮 → 线又稀又硬，像描边。
+    // ★【19:25 宝】"它像在水上面" —— 坐标要跟着折射扭，光斑才会沉到水底去。
+    //   off 是像素单位的，换算回 p 的单位（p 已经乘过 2.5）。
+    float2 pC = p + (off / uSize) * float2(aspect, 1.0) * 2.5;
     float eG = 0.02;
-    float hc = waterHeight(p, t);
-    float hAvg = (waterHeight(p + float2(eG, 0.0), t) + waterHeight(p - float2(eG, 0.0), t)
-                + waterHeight(p + float2(0.0, eG), t) + waterHeight(p - float2(0.0, eG), t)) * 0.25;
+    float hc = waterHeight(pC, t);
+    float hAvg = (waterHeight(pC + float2(eG, 0.0), t) + waterHeight(pC - float2(eG, 0.0), t)
+                + waterHeight(pC + float2(0.0, eG), t) + waterHeight(pC - float2(0.0, eG), t)) * 0.25;
     float dip = max(hAvg - hc, 0.0);             // >0 = 这儿比四周低 = 谷
     // ★ ① 阈值降下来（0.065 → 0.035）：能成线的地方变多，线就密了、也会出现细弱断口
     // ★ ④【芯要硬 · 宝 19:10 纠正】幂次不是越低越好 —— 幂次决定"芯"有多锐，
@@ -204,7 +198,7 @@ half4 main(float2 fragCoord) {
     //    真实焦散：亮线和暗水之间是硬边（她给的参考图里全是锐的），柔的只有外面那层晕。
     //    所以芯的幂次调回 2.6，柔光晕另外单独铺（见下面的 haloV）。
     // ★ ⑤ 三个通道阈值微差（红窄 / 绿中 / 蓝宽）：边缘自然带一点点彩边
-    float base = 0.035;
+    float base = 0.060;   // 【19:25 宝】0.035 太低，线连成片像雪；抬到 0.060，只留真谷
     float kR = pow(clamp(dip / (base * 0.88), 0.0, 1.0), 2.6);
     float kG = pow(clamp(dip / (base * 1.00), 0.0, 1.0), 2.6);
     float kB = pow(clamp(dip / (base * 1.14), 0.0, 1.0), 2.6);
@@ -212,6 +206,16 @@ half4 main(float2 fragCoord) {
     float haloV = pow(clamp(dip / (base * 2.6), 0.0, 1.0), 1.2) * 0.30;
     // ★ ② 不等宽：dip 越大（交汇处越深）亮度越高，自然更粗更亮；浅处只留一点点
     col += half3((kR + haloV) * 0.92, (kG + haloV) * 0.99, (kB + haloV)) * uCaustic * 1.2;
+
+    // ── 水体吸收（宝说的"透光"）：颜色不写死，
+    //    从底下的东西来，再按「深度」吃点红光 —— 浅处接近原色，深处偏蓝绿
+    // 【2026-11-16 01:22 宝换成粉壁纸，水还是青的】
+    // 原来 absorb=(0.62,0.94,1.00)：红吃 38%，任何浅色乘上去都变青。
+    // 真实的水是红光先被吃没错，但只在「深」的地方明显 —— 幅度收小、并且从 0 起步。
+    float depthAmt = clamp(1.0 - h, 0.0, 1.0) * uAbsorb;
+    half3 absorb = half3(0.88, 0.98, 1.00);   // 红只吃 12%，绿 2%
+    col = col * mix(half3(1.0), absorb, half(depthAmt));
+
 
     // ── 高光：浪尖发亮
     float spec = pow(clamp(diff, 0.0, 1.0), uSpecPow) * uShine;
