@@ -43,8 +43,16 @@ uniform float uLens;     // 边缘放大：中心放大、四周往回收
 uniform float uCaustic;  // 光斑（焦散）强度
 uniform float uCausBase; // 光斑阈值（越大 → 越少）
 uniform float uCausPow;  // 光斑锐度（越大 → 芯越细）
-uniform float2 uRipple;   // 涟漪圆心（像素，和 fragCoord 同一套坐标）
-uniform float uRippleAge; // 距按下过了多少秒；<0 表示没有涟漪
+// ── 涟漪（2026-11-16 20:51 从网页版 water_new.html 搬的，不是重写）
+//    每个槽：xy=圆心(uv 0-1) / z=出生时刻(秒，跟 uNow 同一张表) / w=强度
+//    半径单独一个数组，因为它在 shader 里还要按"外圈细内圈宽"再算
+uniform float4 uRipples[14];
+uniform float uRipR[14];
+uniform float uFront;      // 波前速度
+uniform float uDecay;      // 时间衰减
+uniform float uPhaseSpd;   // 五圈的相位速度
+uniform float uNow;        // 当前时刻（秒，uptime）—— 涟漪槽的 z 也用这张表
+uniform float uRipScale;   // 涟漪梯度折成 App 尺度的系数
 // 六波各自的权重/方向/波长（十八根滑条）
 uniform float uW1; uniform float uW2; uniform float uW3;
 uniform float uW4; uniform float uW5; uniform float uW6;
@@ -134,6 +142,49 @@ float2 waterGrad(float2 p, float t) {
     return g * 0.5;
 }
 
+// ── 涟漪高度场（照搬网页 water_new.html 的 rippleH）────────────────────
+// 要点：
+//   · 五个波峰同一时刻出发，速度递减 —— 一开始挤在手指那儿，越往后越散，不增不减
+//   · 能量摊在越来越长的圆周上：1/sqrt(r)，不是指数硬砍
+//   · 手指底下真的空（innerMask），不是"很弱"
+//   · 还有一下"坑"（dent）——波不是手指推出来的，是水回填过冲出来的
+float rippleH(float2 uv, float now) {
+    float h = 0.0;
+    float aspect = uSize.x / uSize.y;
+    for (int i = 0; i < 14; i++) {
+        float4 r = uRipples[i];
+        if (r.w <= 0.001) continue;
+        float age = now - r.z;
+        if (age < 0.0 || age > 6.0) continue;
+
+        float2 d = uv - r.xy;
+        d.x *= aspect;
+        float dist = length(d);
+
+        float front = uRipR[i] + age * uFront;
+        float fall = exp(-age * uDecay) * (1.0 - smoothstep(5.0, 6.0, age));
+        float spread = 1.0 / sqrt(1.0 + dist * 1.8);
+        float edgeFade = 1.0 - smoothstep(0.34, 0.56, dist);
+
+        float hAcc = 0.0;
+        for (int n = 0; n < 5; n++) {
+            float speed = pow(1.16, float(n)) * uPhaseSpd * 0.5;
+            float rn = uRipR[i] + float(n) * 0.009 + uFront * age * speed;
+            float dd = abs(dist - rn);
+            float wv = (0.0052 + rn * 0.016) * (1.0 - float(n) * 0.08);
+            float prof = exp(-pow(dd / wv, 2.0));
+            float ampN = 1.0 - abs(float(n) - 2.0) * 0.22;
+            hAcc += prof * ampN;
+        }
+        float innerMask = smoothstep(0.0, uRipR[i] * 0.75, dist);
+        h += hAcc * fall * spread * edgeFade * innerMask * r.w;
+
+        float dent = exp(-pow(dist / (uRipR[i] * 1.15), 2.0));
+        h -= dent * 2.4 * exp(-age * 6.0) * r.w;
+    }
+    return h;
+}
+
 half4 main(float2 fragCoord) {
     // 【坐标系照搬网页 · 2026-11-16 01:09 宝："看不出什么门道，就是一大团"】
     // 网页：p = (uv-0.5)*vec2(aspect,1)；pp = p*2.5  →  跨度 2.5
@@ -146,6 +197,15 @@ half4 main(float2 fragCoord) {
 
     float h = waterHeight(p, t);
     float2 g = waterGrad(p, t);
+
+    // ── 涟漪接进水面（不是画光圈，是真把水推开）
+    float rH  = rippleH(uv, uNow);
+    float re  = 0.0025;                              // 差分步长（uv 空间）
+    float rHx = rippleH(uv + float2(re, 0.0), uNow);
+    float rHy = rippleH(uv + float2(0.0, re), uNow);
+    float2 gRip = float2(rHx - rH, rHy - rH) / re;
+    h += rH;
+    g += gRip * uRipScale;
 
     // ── 折射：按坡度去别处取像素。位移 = -梯度 × 强度
     float2 off = -g * uRefr;
@@ -230,25 +290,6 @@ half4 main(float2 fragCoord) {
     float spec = pow(clamp(diff, 0.0, 1.0), uSpecPow) * uShine;
     col += half3(spec);
 
-    // ── 涟漪：手指点一下，一圈圈往外推
-    // 【2026-11-16 20:37 宝："那个水面的涟漪吧"】
-    // uRippleAge = 距按下过了多少秒（<0 表示没有）。三圈错开 0.4 秒出生，
-    // 越往外越宽、越淡 —— 跟真水一样，能量摊在越来越长的圆周上。
-    if (uRippleAge >= 0.0 && uRippleAge < 4.0) {
-        float dR = length(fragCoord - uRipple);
-        for (int k = 0; k < 3; k++) {
-            float aK = uRippleAge - float(k) * 0.40;
-            if (aK > 0.0) {
-                float r = aK * 95.0;              // 每秒推 95 像素
-                float dd = abs(dR - r);
-                float wd = 4.0 + r * 0.025;       // 波峰越远越宽
-                float ring = exp(-pow(dd / wd, 2.0));
-                float fade = exp(-r / 300.0) * exp(-aK * 0.45);
-                col += half3(ring * fade * 0.45);
-            }
-        }
-    }
-
     return half4(col, alpha);
 }
 """
@@ -270,8 +311,11 @@ fun rememberWaterRefraction(
     caustic: Float = 0.22f,
     causBase: Float = 0.110f,
     causPow: Float = 3.6f,
-    rippleAt: Offset = Offset.Unspecified,
-    rippleStartMs: Long = 0L,
+    ripples: List<RippleSlot> = emptyList(),
+    ripScale: Float = 0.0008f,
+    ripFront: Float = 0.055f,
+    ripDecay: Float = 0.90f,
+    ripPhaseSpd: Float = 1.0f,
     weights: List<Float> = listOf(35f, 22f, 14f, 9f, 6f, 4f),
     angles: List<Float> = listOf(8f, 30f, 52f, 75f, 100f, 128f),
     lengths: List<Float> = listOf(0.5f, 0.3f, 0.2f, 0.13f, 0.09f, 0.06f),
@@ -310,22 +354,40 @@ fun rememberWaterRefraction(
         shader.setFloatUniform("uCaustic", caustic)
         shader.setFloatUniform("uCausBase", causBase)
         shader.setFloatUniform("uCausPow", causPow)
-        if (rippleAt != Offset.Unspecified && rippleStartMs > 0L) {
-            shader.setFloatUniform("uRipple", rippleAt.x, rippleAt.y)
-            shader.setFloatUniform(
-                "uRippleAge",
-                (SystemClock.uptimeMillis() - rippleStartMs) / 1000f
-            )
-        } else {
-            shader.setFloatUniform("uRipple", 0f, 0f)
-            shader.setFloatUniform("uRippleAge", -1f)
+        // 涟漪：14 个槽平铺成 float4[14] + float[14]
+        val slotArr = FloatArray(56)
+        val radArr = FloatArray(14)
+        val n = minOf(ripples.size, 14)
+        for (i in 0 until n) {
+            val rp = ripples[ripples.size - n + i]   // 最新的在末尾，取最后 n 个
+            slotArr[i * 4 + 0] = rp.px / size.width
+            slotArr[i * 4 + 1] = rp.py / size.height
+            slotArr[i * 4 + 2] = rp.bornSec
+            slotArr[i * 4 + 3] = rp.strength
+            radArr[i] = rp.radius
         }
+        shader.setFloatUniform("uRipples", slotArr)
+        shader.setFloatUniform("uRipR", radArr)
+        shader.setFloatUniform("uNow", SystemClock.uptimeMillis() / 1000f)
+        shader.setFloatUniform("uRipScale", ripScale)
+        shader.setFloatUniform("uFront", ripFront)
+        shader.setFloatUniform("uDecay", ripDecay)
+        shader.setFloatUniform("uPhaseSpd", ripPhaseSpd)
         setSix(shader, "uW", weights); setSix(shader, "uA", angles); setSix(shader, "uL", lengths)
         renderEffect = RenderEffect
             .createRuntimeShaderEffect(shader, "uBg")
             .asComposeRenderEffect()
     }
 }
+
+/** 一个涟漪槽：存的是【像素】坐标，graphicsLayer 里再按实际 size 转成 uv */
+data class RippleSlot(
+    val px: Float,
+    val py: Float,
+    val bornSec: Float,   // uptime 秒（跟 shader 的 uNow 同一张表）
+    val strength: Float = 0.6f,
+    val radius: Float = 0.020f,
+)
 
 /** 一次塞六个同名不同号的 uniform：uW1..uW6 / uA1..uA6 / uL1..uL6 */
 private fun setSix(shader: RuntimeShader, prefix: String, values: List<Float>) {

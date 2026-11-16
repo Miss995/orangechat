@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 import me.rerere.rikkahub.ui.components.ui.rememberWaterRefraction
+import me.rerere.rikkahub.ui.components.ui.RippleSlot
 import me.rerere.rikkahub.ui.components.ui.LocalLiquidGlassHost
 import me.rerere.rikkahub.ui.components.ui.rememberLiquidGlassHost
 import me.rerere.rikkahub.ui.components.ui.liquidGlass
@@ -314,11 +315,11 @@ private fun ChatPageContent(
     // 定时发送对话框（2026-09-17 宝提的小玩法）
     var showScheduleDialog by remember { mutableStateOf(false) }
     val hazeState = rememberHazeState()
-    // 【涟漪 · 2026-11-16 20:37 宝："那个水面的涟漪吧"】
-    // 只观察不拦截：在 Initial 阶段读手指位置就放行，消息和输入框照常能点。
-    // 坐标不用换算 —— 水背景那层是 fillMaxSize，跟这里同一套坐标系。
-    var rippleAt by remember { mutableStateOf(Offset.Unspecified) }
-    var rippleStartMs by remember { mutableLongStateOf(0L) }
+    // 【涟漪 · 2026-11-16 20:50 搬网页版真涟漪】
+    // 只观察不拦截：Initial 阶段读手指位置就放行，消息和输入框照常能点。
+    // 坐标不用换算 —— 水背景层是 fillMaxSize，跟这里同一套坐标系。
+    // 队列只留最后 14 个，跟 shader 里的 uRipples[14] 对上。
+    var rippleSlots by remember { mutableStateOf<List<RippleSlot>>(emptyList()) }
 
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)
 
@@ -342,8 +343,11 @@ private fun ChatPageContent(
                         val ev = awaitPointerEvent(PointerEventPass.Initial)
                         val down = ev.changes.firstOrNull { it.pressed && !it.previousPressed }
                         if (down != null) {
-                            rippleAt = down.position
-                            rippleStartMs = SystemClock.uptimeMillis()
+                            rippleSlots = (rippleSlots + RippleSlot(
+                                px = down.position.x,
+                                py = down.position.y,
+                                bornSec = SystemClock.uptimeMillis() / 1000f,
+                            )).takeLast(14)
                         }
                     }
                 }
@@ -397,8 +401,7 @@ private fun ChatPageContent(
                             caustic = setting.displaySetting.waterCaus,
                             causBase = setting.displaySetting.waterCausBase,
                             causPow = setting.displaySetting.waterCausPow,
-                            rippleAt = rippleAt,
-                            rippleStartMs = rippleStartMs,
+                            ripples = rippleSlots,
                             weights = listOf(
                                 setting.displaySetting.waterW1, setting.displaySetting.waterW2,
                                 setting.displaySetting.waterW3, setting.displaySetting.waterW4,
