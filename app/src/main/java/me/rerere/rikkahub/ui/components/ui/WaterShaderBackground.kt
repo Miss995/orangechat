@@ -201,12 +201,12 @@ half4 main(float2 fragCoord) {
     //    真实焦散：亮线和暗水之间是硬边（她给的参考图里全是锐的），柔的只有外面那层晕。
     //    所以芯的幂次调回高值；19:54 宝说「出来是块不是线」→ 再提到 3.6，只留最深的芯，块散成线。
     // ★ ⑤ 三个通道阈值微差（红窄 / 绿中 / 蓝宽）：边缘自然带一点点彩边
-    float base = 0.060;   // 【19:25 宝】0.035 太低，线连成片像雪；抬到 0.060，只留真谷
+    float base = 0.110;   // 【20:08 宝】0.060 铺满整屏把背景的花冲没了；再抬到 0.110，只留最深的谷
     float kR = pow(clamp(dip / (base * 0.88), 0.0, 1.0), 3.6);
     float kG = pow(clamp(dip / (base * 1.00), 0.0, 1.0), 3.6);
     float kB = pow(clamp(dip / (base * 1.14), 0.0, 1.0), 3.6);
     // ★ ④ 柔光晕：同一个 dip，阈值放大 2.6 倍、低强度 —— 线两侧铺一层淡光
-    float haloV = pow(clamp(dip / (base * 2.6), 0.0, 1.0), 1.2) * 0.30;
+    float haloV = pow(clamp(dip / (base * 2.6), 0.0, 1.0), 1.2) * 0.14;
     // ★ ② 不等宽：dip 越大（交汇处越深）亮度越高，自然更粗更亮；浅处只留一点点
     col += half3((kR + haloV) * 0.92, (kG + haloV) * 0.99, (kB + haloV)) * uCaustic * 1.2;
 
@@ -242,7 +242,7 @@ fun rememberWaterRefraction(
     absorb: Float = 0.45f,
     dispersion: Float = 0.035f,
     lens: Float = 0.10f,
-    caustic: Float = 0.40f,
+    caustic: Float = 0.22f,
     weights: List<Float> = listOf(35f, 22f, 14f, 9f, 6f, 4f),
     angles: List<Float> = listOf(8f, 30f, 52f, 75f, 100f, 128f),
     lengths: List<Float> = listOf(0.5f, 0.3f, 0.2f, 0.13f, 0.09f, 0.06f),
