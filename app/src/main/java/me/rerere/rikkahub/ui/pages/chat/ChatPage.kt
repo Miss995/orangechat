@@ -391,7 +391,8 @@ private fun ChatPageContent(
                             // ★ 2026-11-17 01:33 宝："问题在于你把整个包络做成一个整体的东西，
                             //   实际上是由无数小部分组成的" → 撒密：不是画一条，是撒很多。
                             //   55px→25px + 强度压低（叠起来才有碎的边缘，不是实心块）
-                            if (lastGenX < 0f || dxw * dxw + dyw * dyw > 55f * 55f) {
+                            // ★ 2026-11-17 01:58 宝："密度已经很小了，都已经一块一块的" → 55→30，密起来才连成片
+                            if (lastGenX < 0f || dxw * dxw + dyw * dyw > 30f * 30f) {
                                 next = (next + RippleSlot(
                                     px = ch.position.x,
                                     py = ch.position.y,
