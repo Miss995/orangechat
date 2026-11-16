@@ -364,7 +364,9 @@ private fun ChatPageContent(
                             // 按下 → 新的一条（末尾最多留 13 条旧的）
                             lastGenX = ch.position.x    // 重置沿途补圆的基准，否则会沿用上一次手势的位置
                             lastGenY = ch.position.y
-                            rippleSlots = (rippleSlots.takeLast(13) + RippleSlot(
+                            // ★ 2026-11-17 02:40 宝："涟漪滑动的时候旧的直接放掉啊，不然它会变成毛毛虫"
+                            //   13 条连成一串、每条都在扩散 → 拖出一条虫。只留最近 3 条。
+                            rippleSlots = (rippleSlots.takeLast(2) + RippleSlot(
                                 px = ch.position.x,
                                 py = ch.position.y,
                                 bornMs = now,
