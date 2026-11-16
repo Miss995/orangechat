@@ -48,7 +48,7 @@ uniform float uCausPow;  // 光斑锐度（越大 → 芯越细）
 //    每个槽：xy=圆心(uv 0-1) / z=出生时刻(秒，跟 uNow 同一张表) / w=强度
 //    半径单独一个数组，因为它在 shader 里还要按"外圈细内圈宽"再算
 uniform float uRipWarp;      // 主波把涟漪采样点推歪的倍率（0=不动，越大越歪）
-uniform float uRipData[56];   // 14 槽 × (x, y, 年龄秒, 强度) —— 年龄在 Kotlin 侧算好，躲开 float 精度
+uniform float uRipData[84];   // 14 槽 × (x, y, 年龄秒, 强度, 方向x, 方向y) —— 方向为 0 表示圆（点击），非 0 表示船波（滑动）
 uniform float uRipR[14];
 uniform float uFront;      // 波前速度
 uniform float uDecay;      // 时间衰减
@@ -154,10 +154,11 @@ float rippleH(float2 uv, float now, float2 warp) {
     float h = 0.0;
     float aspect = uSize.x / uSize.y;
     for (int i = 0; i < 14; i++) {
-        float rx0 = uRipData[i * 4 + 0];
-        float ry0 = uRipData[i * 4 + 1];
-        float rz0 = uRipData[i * 4 + 2];   // 已经是"距出生多少秒"
-        float rw0 = uRipData[i * 4 + 3];
+        float rx0 = uRipData[i * 6 + 0];
+        float ry0 = uRipData[i * 6 + 1];
+        float rz0 = uRipData[i * 6 + 2];   // 已经是"距出生多少秒"
+        float rw0 = uRipData[i * 6 + 3];
+        float2 dirW = float2(uRipData[i * 6 + 4], uRipData[i * 6 + 5]);   // 0 = 圆，非 0 = 船波
         if (rw0 <= 0.001) continue;
         float age = rz0;
         if (age < 0.0 || age > 6.0) continue;
@@ -170,6 +171,21 @@ float rippleH(float2 uv, float now, float2 warp) {
         //   再按半径加权（内圈少偏、外圈多偏），外圈才看得出"被水揉过"。
         float rimMod = dot(d / max(dist0, 1e-5), warp) * (0.3 + dist0 * 6.0);
         float dist = dist0 + rimMod;
+
+        // ★ 船波（2026-11-16 23:33）：手指划过去不是一串圆，是一条 V 形尾迹。
+        //   做法：把"到出生点的距离"换成"到 V 形两条斜臂的距离"。
+        //   半角用开尔文船波的 19.47°（tan ≈ 0.354）；只有运动后方（along<0）有臂。
+        float dirLen = length(dirW);
+        if (dirLen > 0.01) {
+            float2 dv = dirW / dirLen;
+            float2 pv = float2(-dv.y, dv.x);
+            float along  = dot(d, dv);            // 正 = 手指前进方向
+            float across = abs(dot(d, pv));       // 横向偏移（取绝对值 = 两臂对称）
+            float armDist = abs(across - (-along) * 0.354);
+            armDist = max(armDist, 0.004);        // 别让它塌到 0（中心会炸）
+            float behind = smoothstep(0.03, -0.02, along);   // 只在后方生效
+            dist = mix(dist, armDist * 1.35, behind);
+        }
 
         float front = uRipR[i] + age * uFront;
         float fall = exp(-age * uDecay) * (1.0 - smoothstep(5.0, 6.0, age));
@@ -368,15 +384,17 @@ fun rememberWaterRefraction(
         shader.setFloatUniform("uCausBase", causBase)
         shader.setFloatUniform("uCausPow", causPow)
         // 涟漪：14 个槽平铺成 float4[14] + float[14]
-        val slotArr = FloatArray(56)
+        val slotArr = FloatArray(84)
         val radArr = FloatArray(14)
         val n = minOf(ripples.size, 14)
         for (i in 0 until n) {
             val rp = ripples[ripples.size - n + i]   // 最新的在末尾，取最后 n 个
-            slotArr[i * 4 + 0] = rp.px / size.width
-            slotArr[i * 4 + 1] = rp.py / size.height
-            slotArr[i * 4 + 2] = (SystemClock.uptimeMillis() - rp.bornMs) / 1000f
-            slotArr[i * 4 + 3] = rp.strength
+            slotArr[i * 6 + 0] = rp.px / size.width
+            slotArr[i * 6 + 1] = rp.py / size.height
+            slotArr[i * 6 + 2] = (SystemClock.uptimeMillis() - rp.bornMs) / 1000f
+            slotArr[i * 6 + 3] = rp.strength
+            slotArr[i * 6 + 4] = rp.dirX / size.width    // 像素增量 → uv 空间
+            slotArr[i * 6 + 5] = rp.dirY / size.height
             radArr[i] = rp.radius
         }
         shader.setFloatUniform("uRipWarp", 0.0015f)
@@ -407,6 +425,10 @@ data class RippleSlot(
     val bornMs: Long,     // SystemClock.uptimeMillis()，每帧再折成"年龄"
     val strength: Float = 0.6f,
     val radius: Float = 0.020f,
+    // ★ 2026-11-16 23:33 船波：手指滑动方向（屏幕像素增量）。0,0 = 这是一个"圆"（点击），
+    //   非零 = 这是一条"尾迹"，shader 会把"到点的圆距离"换成"到 V 形两臂的距离"。
+    val dirX: Float = 0f,
+    val dirY: Float = 0f,
 )
 
 /** 一次塞六个同名不同号的 uniform：uW1..uW6 / uA1..uA6 / uL1..uL6 */

@@ -362,10 +362,16 @@ private fun ChatPageContent(
                         }
                         val slow = now - lastGenMs >= 180L
                         if (justDown || (far && slow)) {
+                            // ★ 2026-11-16 23:32 船波：滑动生成的是"尾迹"不是"圆"，
+                            //   方向 = 从上一个生成点到当前点的增量（按下时没有方向 = 圆）。
+                            val dx = if (justDown || lastGenX < 0f) 0f else ch.position.x - lastGenX
+                            val dy = if (justDown || lastGenY < 0f) 0f else ch.position.y - lastGenY
                             rippleSlots = (rippleSlots + RippleSlot(
                                 px = ch.position.x,
                                 py = ch.position.y,
                                 bornMs = now,
+                                dirX = dx,
+                                dirY = dy,
                             )).takeLast(14)
                             lastGenX = ch.position.x
                             lastGenY = ch.position.y
