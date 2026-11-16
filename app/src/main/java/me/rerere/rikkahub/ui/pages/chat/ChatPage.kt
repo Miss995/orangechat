@@ -339,47 +339,36 @@ private fun ChatPageContent(
             .fillMaxSize()
             .pointerInput(Unit) {
                 awaitPointerEventScope {
-                    // ★ 2026-11-16 23:18 宝："只能单点，不能滑动"
-                    //   原来只认 "按下那一瞬间"（previousPressed=false），手指一直按着就再也不生成了。
-                    //   现在：按下立刻生成一个；之后每移动满 100px 且距上一次 ≥180ms 再补一个。
-                    //   节流是必须的 —— 槽位只有 14 个、每个活 6 秒，不节流滑三秒能塞几十个全挤爆。
-                    var lastGenX = -1f
-                    var lastGenY = -1f
-                    var lastGenMs = 0L
+                    // ★ 2026-11-17 00:35 包络尾迹（宝的模型：起点圆 + 终点圆撑出来的）
+                    //   按下：新建一条，起点=落点、终点=落点（退化成一个圆）
+                    //   拖动：**只更新最后那条的终点**，不新增 —— 手指就是在「拉着」这条尾巴走
+                    //   抬手：什么都不做，它就冻在那儿，让 age 继续扩散
                     while (true) {
                         val ev = awaitPointerEvent(PointerEventPass.Initial)
                         val ch = ev.changes.firstOrNull() ?: continue
-                        if (!ch.pressed) {
-                            lastGenX = -1f   // 抬手，下一次按下重新开始
-                            continue
-                        }
+                        if (!ch.pressed) continue          // 抬手：冻住，不新增
                         val now = SystemClock.uptimeMillis()
-                        val justDown = !ch.previousPressed
-                        val far = if (lastGenX < 0f) false else {
-                            val dx = ch.position.x - lastGenX
-                            val dy = ch.position.y - lastGenY
-                            dx * dx + dy * dy > 100f * 100f
-                        }
-                        val slow = now - lastGenMs >= 180L
-                        if (justDown || (far && slow)) {
-                            // ★ 2026-11-16 23:32 船波：滑动生成的是"尾迹"不是"圆"，
-                            //   方向 = 从上一个生成点到当前点的增量（按下时没有方向 = 圆）。
-                            val dx = if (justDown || lastGenX < 0f) 0f else ch.position.x - lastGenX
-                            val dy = if (justDown || lastGenY < 0f) 0f else ch.position.y - lastGenY
-                            rippleSlots = (rippleSlots + RippleSlot(
+                        if (!ch.previousPressed) {
+                            // 按下 → 新的一条（末尾最多留 13 条旧的）
+                            rippleSlots = (rippleSlots.takeLast(13) + RippleSlot(
                                 px = ch.position.x,
                                 py = ch.position.y,
                                 bornMs = now,
-                                dirX = dx,
-                                dirY = dy,
-                            )).takeLast(14)
-                            lastGenX = ch.position.x
-                            lastGenY = ch.position.y
-                            lastGenMs = now
+                                endX = ch.position.x,
+                                endY = ch.position.y,
+                            ))
                             me.rerere.rikkahub.data.ai.AppLogBuffer.log(
-                                "Ripple",
-                                "gen${if (justDown) "-down" else "-drag"} (${ch.position.x.toInt()},${ch.position.y.toInt()}) 队列=${rippleSlots.size}"
+                                "Ripple", "down (${ch.position.x.toInt()},${ch.position.y.toInt()}) 队列=${rippleSlots.size}"
                             )
+                        } else if (rippleSlots.isNotEmpty()) {
+                            // 拖动 → 只把最后那条的终点挪到手指现在的位置
+                            val last = rippleSlots.last()
+                            if (last.endX != ch.position.x || last.endY != ch.position.y) {
+                                rippleSlots = rippleSlots.dropLast(1) + last.copy(
+                                    endX = ch.position.x,
+                                    endY = ch.position.y,
+                                )
+                            }
                         }
                     }
                 }

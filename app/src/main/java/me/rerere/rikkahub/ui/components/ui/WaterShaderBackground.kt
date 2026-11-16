@@ -48,7 +48,7 @@ uniform float uCausPow;  // 光斑锐度（越大 → 芯越细）
 //    每个槽：xy=圆心(uv 0-1) / z=出生时刻(秒，跟 uNow 同一张表) / w=强度
 //    半径单独一个数组，因为它在 shader 里还要按"外圈细内圈宽"再算
 uniform float uRipWarp;      // 主波把涟漪采样点推歪的倍率（0=不动，越大越歪）
-uniform float uRipData[84];   // 14 槽 × (x, y, 年龄秒, 强度, 方向x, 方向y) —— 方向为 0 表示圆（点击），非 0 表示船波（滑动）
+uniform float uRipData[84];   // 14 槽 × (起点x, 起点y, 年龄秒, 强度, 终点x, 终点y) —— 终=起 是圆（点击），否则是包络尾迹（滑动）
 uniform float uRipR[14];
 uniform float uFront;      // 波前速度
 uniform float uDecay;      // 时间衰减
@@ -158,34 +158,39 @@ float rippleH(float2 uv, float now, float2 warp) {
         float ry0 = uRipData[i * 6 + 1];
         float rz0 = uRipData[i * 6 + 2];   // 已经是"距出生多少秒"
         float rw0 = uRipData[i * 6 + 3];
-        float2 dirW = float2(uRipData[i * 6 + 4], uRipData[i * 6 + 5]);   // 0 = 圆，非 0 = 船波
+        float2 endW = float2(uRipData[i * 6 + 4], uRipData[i * 6 + 5]);
         if (rw0 <= 0.001) continue;
         float age = rz0;
         if (age < 0.0 || age > 6.0) continue;
 
-        float2 d = uv - float2(rx0, ry0);
-        d.x *= aspect;
-        float dist0 = length(d);
-        // ★ 2026-11-16 22:59：不能偏坐标（后面的算法全用 dist 标量，偏 d 等于白偏），
-        //   要偏「半径」：warp 在径向的投影加到 dist 上 → 不同方向半径不同 → 圈被拉歪。
-        //   再按半径加权（内圈少偏、外圈多偏），外圈才看得出"被水揉过"。
-        float rimMod = dot(d / max(dist0, 1e-5), warp) * (0.3 + dist0 * 6.0);
-        float dist = dist0 + rimMod;
+        // ── 包络尾迹（2026-11-17 00:35，宝的模型）：不是"一个点往外扩"，
+        //    是"起点圆 + 终点圆 撑出来的包络"。沿路径插值半径 → 收窄的尾巴。
+        float2 p0 = float2(rx0, ry0);
+        float2 segV = endW - p0;
+        segV.x *= aspect;
+        float segLen2 = dot(segV, segV);
+        float isSeg = step(1e-8, segLen2);      // 1 = 是尾迹，0 = 是圆
 
-        // ★ 船波（2026-11-16 23:33）：手指划过去不是一串圆，是一条 V 形尾迹。
-        //   做法：把"到出生点的距离"换成"到 V 形两条斜臂的距离"。
-        //   半角用开尔文船波的 19.47°（tan ≈ 0.354）；只有运动后方（along<0）有臂。
-        float dirLen = length(dirW);
-        if (dirLen > 0.01) {
-            float2 dv = dirW / dirLen;
-            float2 pv = float2(-dv.y, dv.x);
-            float along  = dot(d, dv);            // 正 = 手指前进方向
-            float across = abs(dot(d, pv));       // 横向偏移（取绝对值 = 两臂对称）
-            float armDist = abs(across - (-along) * 0.354);
-            armDist = max(armDist, 0.004);        // 别让它塌到 0（中心会炸）
-            float behind = smoothstep(0.03, -0.02, along);   // 只在后方生效
-            dist = mix(dist, armDist * 1.35, behind);
-        }
+        float2 d = uv - p0;
+        d.x *= aspect;
+
+        // 到线段的最近点参数 t（0=起点，1=终点）
+        float tSeg = (segLen2 < 1e-8) ? 0.0
+                   : clamp(dot(d, segV) / segLen2, 0.0, 1.0);
+        float2 closest = segV * tSeg;
+        float dist0 = length(d - closest);      // 到路径的距离（圆时就是到中心的距离）
+
+        // 包络半径：起点圆已随 age 扩散（大），终点刚生（小）→ 中间插值 = 收窄的尾巴
+        float rHead = uRipR[i] + age * uFront;  // 起点半径（跟着扩散速度走）
+        float rTail = 0.014;                    // 终点半径（刚出生，很小）
+        float rEnv  = mix(rHead, rTail, tSeg);
+        // 距包络边界：往内为正、往外为负 → 波圈从边界往里一层层退
+        float distEnv = rEnv - dist0;
+
+        // 圆模式沿用原算法（dist 从中心往外）；尾迹模式用 distEnv
+        float rimMod = dot(d / max(length(d), 1e-5), warp) * (0.3 + length(d) * 6.0);
+        float distCircle = length(d) + rimMod;
+        float dist = mix(distCircle, distEnv, isSeg);
 
         float front = uRipR[i] + age * uFront;
         float fall = exp(-age * uDecay) * (1.0 - smoothstep(5.0, 6.0, age));
@@ -193,14 +198,27 @@ float rippleH(float2 uv, float now, float2 warp) {
         float edgeFade = 1.0 - smoothstep(0.34, 0.56, dist);
 
         float hAcc = 0.0;
-        for (int n = 0; n < 5; n++) {
-            float speed = pow(1.16, float(n)) * uPhaseSpd * 0.5;
-            float rn = uRipR[i] + float(n) * 0.009 + uFront * age * speed;
-            float dd = abs(dist - rn);
-            float wv = (0.0052 + rn * 0.016) * (1.0 - float(n) * 0.08);
-            float prof = exp(-pow(dd / wv, 2.0));
-            float ampN = 1.0 - abs(float(n) - 2.0) * 0.22;
-            hAcc += prof * ampN;
+        if (isSeg < 0.5) {
+            // ── 圆（点击）：原来那五个同心波圈
+            for (int n = 0; n < 5; n++) {
+                float speed = pow(1.16, float(n)) * uPhaseSpd * 0.5;
+                float rn = uRipR[i] + float(n) * 0.009 + uFront * age * speed;
+                float dd = abs(dist - rn);
+                float wv = (0.0052 + rn * 0.016) * (1.0 - float(n) * 0.08);
+                float prof = exp(-pow(dd / wv, 2.0));
+                float ampN = 1.0 - abs(float(n) - 2.0) * 0.22;
+                hAcc += prof * ampN;
+            }
+        } else {
+            // ── 尾迹（滑动）：包络边界最亮，往里一层层退，越往里越弱
+            for (int n = 0; n < 4; n++) {
+                float off = float(n) * 0.011;        // 往内偏移（波的间距）
+                float dd = abs(dist - off);
+                float wv = 0.0060 * (1.0 - float(n) * 0.12);
+                float prof = exp(-pow(dd / wv, 2.0));
+                float ampN = 1.0 - float(n) * 0.20;  // 越往里越弱
+                hAcc += prof * ampN;
+            }
         }
         float innerMask = smoothstep(0.0, uRipR[i] * 0.75, dist);
         h += hAcc * fall * spread * edgeFade * innerMask * rw0;
@@ -393,8 +411,8 @@ fun rememberWaterRefraction(
             slotArr[i * 6 + 1] = rp.py / size.height
             slotArr[i * 6 + 2] = (SystemClock.uptimeMillis() - rp.bornMs) / 1000f
             slotArr[i * 6 + 3] = rp.strength
-            slotArr[i * 6 + 4] = rp.dirX / size.width    // 像素增量 → uv 空间
-            slotArr[i * 6 + 5] = rp.dirY / size.height
+            slotArr[i * 6 + 4] = rp.endX / size.width    // 终点（= 起点时就是圆）
+            slotArr[i * 6 + 5] = rp.endY / size.height
             radArr[i] = rp.radius
         }
         shader.setFloatUniform("uRipWarp", 0.0015f)
@@ -425,10 +443,11 @@ data class RippleSlot(
     val bornMs: Long,     // SystemClock.uptimeMillis()，每帧再折成"年龄"
     val strength: Float = 0.6f,
     val radius: Float = 0.020f,
-    // ★ 2026-11-16 23:33 船波：手指滑动方向（屏幕像素增量）。0,0 = 这是一个"圆"（点击），
-    //   非零 = 这是一条"尾迹"，shader 会把"到点的圆距离"换成"到 V 形两臂的距离"。
-    val dirX: Float = 0f,
-    val dirY: Float = 0f,
+    // ★ 2026-11-17 00:35 包络尾迹（宝的模型：起点圆 + 终点圆 撑出来的）：
+    //   终点坐标。等于 (px,py) 时退化成"一个圆"（点击）；不等于时是"一条收窄的尾巴"（滑动）。
+    //   尾巴宽度 ← 起点圆随 age 扩散；尾巴长度/尖度 ← 手指滑多远。
+    val endX: Float = px,
+    val endY: Float = py,
 )
 
 /** 一次塞六个同名不同号的 uniform：uW1..uW6 / uA1..uA6 / uL1..uL6 */
