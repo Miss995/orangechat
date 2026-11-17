@@ -48,8 +48,8 @@ uniform float uCausPow;  // 光斑锐度（越大 → 芯越细）
 //    每个槽：xy=圆心(uv 0-1) / z=出生时刻(秒，跟 uNow 同一张表) / w=强度
 //    半径单独一个数组，因为它在 shader 里还要按"外圈细内圈宽"再算
 uniform float uRipWarp;      // 主波把涟漪采样点推歪的倍率（0=不动，越大越歪）
-uniform float uRipData[84];   // 14 槽 × (起点x, 起点y, 年龄秒, 强度, 终点x, 终点y) —— 终=起 是圆（点击），否则是包络尾迹（滑动）
-uniform float uRipR[14];
+uniform float uRipData[180];   // 30 槽 × (起点x, 起点y, 年龄秒, 强度, 终点x, 终点y) —— 终=起 是圆（点击），否则是包络尾迹（滑动）
+uniform float uRipR[30];
 // ★ 2026-11-17 01:40 液化解法：手指附近把采样点往外推（宝：涟漪被手带歪）
 uniform float uHandX;       // 手指位置 uv
 uniform float uHandY;
@@ -176,7 +176,7 @@ float rippleH(float2 uv, float now, float2 warp) {
     }
     float h = 0.0;
     float aspect = uSize.x / uSize.y;
-    for (int i = 0; i < 14; i++) {
+    for (int i = 0; i < 30; i++) {
         float rx0 = uRipData[i * 6 + 0];
         float ry0 = uRipData[i * 6 + 1];
         float rz0 = uRipData[i * 6 + 2];   // 已经是"距出生多少秒"
@@ -191,7 +191,7 @@ float rippleH(float2 uv, float now, float2 warp) {
         float dist = dist0 + rimMod;
         if (rw0 <= 0.001) continue;
         float age = rz0;
-        if (age < 0.0 || age > 6.0) continue;
+        if (age < 0.0 || age > 14.0) continue;
 
 
         float front = uRipR[i] + age * uFront;
@@ -394,10 +394,10 @@ fun rememberWaterRefraction(
         shader.setFloatUniform("uCaustic", caustic)
         shader.setFloatUniform("uCausBase", causBase)
         shader.setFloatUniform("uCausPow", causPow)
-        // 涟漪：14 个槽平铺成 float4[14] + float[14]
-        val slotArr = FloatArray(84)
-        val radArr = FloatArray(14)
-        val n = minOf(ripples.size, 14)
+        // 涟漪：30 个槽平铺成 float6[30] + float[30]
+        val slotArr = FloatArray(180)
+        val radArr = FloatArray(30)
+        val n = minOf(ripples.size, 30)
         for (i in 0 until n) {
             val rp = ripples[ripples.size - n + i]   // 最新的在末尾，取最后 n 个
             slotArr[i * 6 + 0] = rp.px / size.width
