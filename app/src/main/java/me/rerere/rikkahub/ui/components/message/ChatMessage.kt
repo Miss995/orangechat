@@ -323,8 +323,10 @@ fun ChatMessage(
                         if (locked == 0) {
                             if (abs(accX) > slop && abs(accX) > abs(accY) * 1.5f) {
                                 // 方向对才接管：宝的消息只认右滑，猫的只认左滑。
-                                // 滑反了就让出去，交还给列表/其他手势。
-                                locked = if (accX * swipeSign > 0f) 1 else 2
+                                // 但**已经拉开的时候两个方向都要认** —— 收回只能往反方向滑，
+                                // 要是还按"方向不对就不管"死判，就再也收不回去了。
+                                val alreadyOpen = startValue > 0.5f
+                                locked = if (alreadyOpen || accX * swipeSign > 0f) 1 else 2
                                 if (locked == 2) break
                             } else if (abs(accY) > slop) {
                                 locked = 2
