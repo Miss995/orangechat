@@ -910,6 +910,9 @@ private fun MessagePartsBlock(
                         // 靠"落点压没压在卡片上"来筛，而不是靠 pass。
                         var bodyWindowOrigin by remember { mutableStateOf(Offset.Zero) }
                         var bodyWindowSize by remember { mutableStateOf(Size.Zero) }
+                        // 【选中浮条·贴手指 · 2026-11-18】手指按下的落点（块内局部坐标）。
+                        // 浮条要贴着手，不然选中之后还得滑过去够它 —— 一滑选中就撤了。
+                        var pickDownLocal by remember { mutableStateOf(Offset.Zero) }
                         var thinkRectInWindow by remember { mutableStateOf<Rect?>(null) }
                         // 【防正文被吃 2026-08-22】key(loading)：生成完成（loading true→false）时强制重建渲染子树，
                         // 确保最后一批 parts（含正文）一定会被渲染——不依赖流式增量触发的最后一次重组
@@ -920,7 +923,8 @@ private fun MessagePartsBlock(
                         SelectableWithQuote(
                             onTextPicked = { t ->
                                 // 【自家选中面板 · 第一步】记下这段字在屏幕上的位置，给面板定位用。
-                                QuoteAnchorBus.rect = Rect(bodyWindowOrigin, bodyWindowSize)
+                                // 手指按下的那个点（换算成窗口坐标），做成一个极小的矩形当锚点。
+                                QuoteAnchorBus.rect = Rect(bodyWindowOrigin + pickDownLocal, 2f)
                                 onQuoteText?.invoke(t)
                             },
                             modifier = Modifier
@@ -929,6 +933,19 @@ private fun MessagePartsBlock(
                                     bodyWindowOrigin = origin
                                     bodyWindowSize = coords.size.toSize()
                                     onBodyPlaced?.invoke(origin)
+                                }
+                                // 【选中浮条·贴手指 · 2026-11-18】Initial pass 只观察不消费，
+                                // 记下按下那一下的位置（长按选字时手指会拖，取按下的更稳）。
+                                .pointerInput("pickAnchor") {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val down = awaitFirstDown(
+                                                requireUnconsumed = false,
+                                                pass = PointerEventPass.Initial
+                                            )
+                                            pickDownLocal = down.position
+                                        }
+                                    }
                                 }
                                 .then(
                                     if (onBodyTap != null) {
