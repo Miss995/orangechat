@@ -279,7 +279,9 @@ fun ChatMessage(
     // Q 弹：拖动时 snapTo 跟手，松手才交给弹簧 —— 弹簧会先冲过头再荡回来。
     val swipeAnim = remember { Animatable(0f) }
     val swipeScope = rememberCoroutineScope()
-    val swipeProgress = swipeAnim.value
+    // ⚠️ 必须 coerceIn：弹簧会过冲，0→1 时 anim.value 会跑到 1.05 这种值，
+    // 而 padding 只收非负且在界内的量，直接拿去算会 IllegalArgumentException 崩掉。
+    val swipeProgress = swipeAnim.value.coerceIn(0f, 1f)
     val swipeMaxDp = 152.dp
     val swipeMaxPx = with(density) { swipeMaxDp.toPx() }
     Column(
