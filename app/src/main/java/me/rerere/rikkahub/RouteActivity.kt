@@ -219,12 +219,12 @@ class RouteActivity : ComponentActivity() {
      * 走 → 这儿有机会拦；不走 → 这条路也是死的，别再花时间。
      * 所以现在只打一条日志，行为原样返回。
      */
-    override fun onWindowStartingActionMode(callback: ActionMode?): ActionMode? {
+    override fun onWindowStartingActionMode(callback: ActionMode.Callback?): ActionMode? {
         AppLogBuffer.log("TextToolbar", "onWindowStartingActionMode(1参) 被调用")
         return super.onWindowStartingActionMode(callback)
     }
 
-    override fun onWindowStartingActionMode(callback: ActionMode?, type: Int): ActionMode? {
+    override fun onWindowStartingActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? {
         AppLogBuffer.log("TextToolbar", "onWindowStartingActionMode type=" + type)
         return super.onWindowStartingActionMode(callback, type)
     }
