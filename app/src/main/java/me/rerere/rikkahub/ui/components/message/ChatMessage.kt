@@ -40,7 +40,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import kotlin.math.abs
 import androidx.compose.foundation.layout.offset
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.aspectRatio
@@ -293,30 +294,55 @@ fun ChatMessage(
             // 内容留在屏内重新折行。宽度是渐变的，不会突然跳。
             // 阈值 45%：滑过一半力道才吸住，否则弹回，免得轻轻一碰就停在那儿。
             .pointerInput(node.id) {
-                detectHorizontalDragGestures(
-                    onHorizontalDrag = { change, dragAmount ->
-                        change.consume()
-                        // 拖动阶段不用动画，直接贴手 —— 有动画会跟手不及、发飘。
-                        swipeScope.launch {
-                            swipeAnim.snapTo((swipeAnim.value - dragAmount / swipeMaxPx).coerceIn(0f, 1f))
+                // 【为什么要手写而不是用 detectHorizontalDragGestures】
+                // 那个现成的只跟「横向位移」比 touchSlop，手指斜着往上滑时，
+                // 横向那几个像素也可能先过线 —— 于是它抢走事件，列表就不滚了。
+                // 宝说的「上下滑动卡手」就是它。
+                // 这里改成：横向必须**明显**大于纵向（1.5 倍）才接管，否则整条让给列表。
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Main)
+                    var accX = 0f
+                    var accY = 0f
+                    var locked = 0        // 0=还没定 1=横向（接管）2=竖向（放弃，让列表滚）
+                    val slop = viewConfiguration.touchSlop
+                    val startValue = swipeAnim.value
+                    var last = startValue
+                    var released = false
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Main)
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) { released = true; break }
+                        accX += change.position.x - change.previousPosition.x
+                        accY += change.position.y - change.previousPosition.y
+                        if (locked == 0) {
+                            if (abs(accX) > slop && abs(accX) > abs(accY) * 1.5f) {
+                                locked = 1
+                            } else if (abs(accY) > slop) {
+                                locked = 2
+                                break
+                            }
                         }
-                    },
-                    onDragEnd = {
-                        val target = if (swipeAnim.value > 0.45f) 1f else 0f
+                        if (locked == 1) {
+                            change.consume()
+                            last = (startValue - accX / swipeMaxPx).coerceIn(0f, 1f)
+                            swipeScope.launch { swipeAnim.snapTo(last) }
+                        }
+                    }
+                    if (locked == 1 && released) {
+                        val target = if (last > 0.45f) 1f else 0f
                         swipeScope.launch {
                             swipeAnim.animateTo(
                                 targetValue = target,
-                                // 0.35 = 弹得明显：越过一点点再荡回来，不会来回晃。
-                                // 要更弹往 0.25 走，要更稳往 0.6 走。
+                                // 0.55 = 只轻微过冲一下，干脆。
+                                // 原来的 0.35 弹得太久，松手后消息还在那儿荡，看着像没反应。
                                 animationSpec = spring(
-                                    dampingRatio = 0.35f,
-                                    stiffness = Spring.StiffnessMediumLow,
+                                    dampingRatio = 0.55f,
+                                    stiffness = Spring.StiffnessMedium,
                                 ),
                             )
                         }
-                    },
-                    onDragCancel = { swipeScope.launch { swipeAnim.animateTo(0f) } },
-                )
+                    }
+                }
             }
             // 手势必须排在 padding 前面 —— 排在后面的话可滑区域会跟着一起收窄，
             // 滑到一半就滑不动了。这里让手势永远按整条消息的宽度接。
