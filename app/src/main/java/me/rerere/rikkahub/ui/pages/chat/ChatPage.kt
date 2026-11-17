@@ -99,6 +99,7 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.ui.components.message.QuotePickBus
 import me.rerere.rikkahub.ui.components.message.TaskCardOverlay
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -761,6 +762,9 @@ private fun ChatPageContent(
                         }
                         inputState.pickedText = null
                         inputState.pickedMessageId = null
+                        // 【引用后收掉选中 · 2026-11-17】告诉消息那边重建一次选中容器，
+                        // 把选中的高亮扔掉（系统菜单被压掉了，它自己收不了尾）。
+                        QuotePickBus.tick++
                     },
                     onUpdateSettings = {
                         vm.updateSettings(it)

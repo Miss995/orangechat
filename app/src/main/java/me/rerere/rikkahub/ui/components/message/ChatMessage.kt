@@ -2139,6 +2139,25 @@ internal fun VoiceMessageBubble(
 }
  
 /**
+ * 【引用后收掉选中 · 2026-11-17】一次性的"清空信号"。
+ *
+ * 背景：为了压掉系统的复制/全选菜单，我们在 RouteActivity 里把 type=FLOATING 的
+ * ActionMode 换成了一个空壳。副作用是——系统以为菜单还开着，于是选中的高亮一直挂着，
+ * 连"点过引用这句"之后都收不掉。
+ *
+ * 修法：点引用时把这个数加一，SelectableWithQuote 用 key() 看着它，重建一次。
+ * 重建等于新开一个 SelectionContainer，选择状态随之扔掉。
+ *
+ * 为什么用全局而不是 CompositionLocal：这条链隔着 ChatPage → ChatList → ChatMessage
+ * 三层，穿下去要改一堆签名；而它全局只有这一个用途，不会串台。
+ *
+ * 代价：重建那一下会重排。但点引用的瞬间注意力在输入框上，看不出来。
+ */
+internal object QuotePickBus {
+    var tick by mutableIntStateOf(0)
+}
+
+/**
  * 带「引用这句」的选中容器。
  *
  * 【2026-10-10 改路】原本想换掉系统工具条（加一项"引用这句"），但 Compose 1.12 上
@@ -2158,15 +2177,18 @@ private fun SelectableWithQuote(
     if (onTextPicked == null) {
         SelectionContainer(modifier = modifier) { content() }
     } else {
-        val selectionState = rememberSelectionState()
-        SelectionContainer(state = selectionState, modifier = modifier) { content() }
+        // 【引用后收掉选中 · 2026-11-17】看着 QuotePickBus 重建一次，把选择扔掉。
+        key(QuotePickBus.tick) {
+            val selectionState = rememberSelectionState()
+            SelectionContainer(state = selectionState, modifier = modifier) { content() }
 
-        // rememberUpdatedState 兜一下：LaunchedEffect 只在 picked 变化时重启，
-        // 若直接捕获 onTextPicked，重组后换了新 lambda 它也还拿着旧那个。
-        val latestPick by rememberUpdatedState(onTextPicked)
-        val picked = selectionState.selectedTexts.joinToString("") { it.text }.trim()
-        LaunchedEffect(picked) {
-            latestPick(picked)
+            // rememberUpdatedState 兜一下：LaunchedEffect 只在 picked 变化时重启，
+            // 若直接捕获 onTextPicked，重组后换了新 lambda 它也还拿着旧那个。
+            val latestPick by rememberUpdatedState(onTextPicked)
+            val picked = selectionState.selectedTexts.joinToString("") { it.text }.trim()
+            LaunchedEffect(picked) {
+                latestPick(picked)
+            }
         }
     }
 }
