@@ -38,6 +38,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.offset
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
@@ -269,9 +272,34 @@ fun ChatMessage(
     val context = LocalContext.current
     val density = LocalDensity.current
     val colorScheme = MaterialTheme.colorScheme
+    // 【左滑面板 · 2026-11-17】左滑让这条消息往左让开，右边露出操作面板。
+    // 用 offset 而不是缩窄：缩窄会让文字每帧重排，滑起来抖。
+    var swipeProgress by remember { mutableStateOf(0f) }
+    val swipeMaxDp = 152.dp
+    val swipeMaxPx = with(density) { swipeMaxDp.toPx() }
     Column(
         modifier = modifier
             .fillMaxWidth()
+            // 【左滑面板 · 2026-11-17】右边让出宽度给面板。
+            // 用 padding 而不是 offset：offset 是整条平移，猫的消息靠左对齐，
+            // 一推左边就飞出屏幕、正文被裁掉。padding 是真的把可用宽度收窄，
+            // 内容留在屏内重新折行。宽度是渐变的，不会突然跳。
+            // 阈值 45%：滑过一半力道才吸住，否则弹回，免得轻轻一碰就停在那儿。
+            .pointerInput(node.id) {
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        swipeProgress = (swipeProgress - dragAmount / swipeMaxPx).coerceIn(0f, 1f)
+                    },
+                    onDragEnd = {
+                        swipeProgress = if (swipeProgress > 0.45f) 1f else 0f
+                    },
+                    onDragCancel = { swipeProgress = 0f },
+                )
+            }
+            // 手势必须排在 padding 前面 —— 排在后面的话可滑区域会跟着一起收窄，
+            // 滑到一半就滑不动了。这里让手势永远按整条消息的宽度接。
+            .padding(end = swipeMaxDp * swipeProgress)
             // 【插话贴猫 · 2026-09-30】插话往里缩一点，视觉上贴着上面那条猫消息
             .then(if (isInterjection) Modifier.padding(start = 40.dp) else Modifier)
             // 【点按菜单 · 2026-10-10】只量自己的窗口位置，给"正文局部坐标"做换算基准。
