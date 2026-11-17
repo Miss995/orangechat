@@ -241,7 +241,7 @@ class RouteActivity : ComponentActivity() {
     override fun onWindowStartingActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? {
         if (type == ActionMode.TYPE_FLOATING) {
             AppLogBuffer.log("TextToolbar", "type=1 → 已压掉系统菜单")
-            return SilentActionMode(callback)
+            return SilentActionMode(callback, this)
         }
         AppLogBuffer.log("TextToolbar", "type=$type → 交给系统")
         return super.onWindowStartingActionMode(callback, type)
@@ -254,8 +254,16 @@ class RouteActivity : ComponentActivity() {
      * 一直挂着收不掉。所以 finish() 的时候要回头告诉一次 callback ——
      * Compose 收到 onDestroyActionMode 才会把选择状态收起来。
      */
-    private class SilentActionMode(private val cb: ActionMode.Callback?) : ActionMode() {
+    private class SilentActionMode(
+        private val cb: ActionMode.Callback?,
+        private val ctx: android.content.Context,
+    ) : ActionMode() {
         private var destroyed = false
+
+        // 【自家面板试水 · 2026-11-18 02:40】先挂一个品红方块，验证系统画不画 getCustomView。
+        private val probe: View by lazy {
+            View(ctx).apply { setBackgroundColor(0xFFFF00FF.toInt()) }
+        }
 
         override fun finish() {
             if (destroyed) return
@@ -268,7 +276,7 @@ class RouteActivity : ComponentActivity() {
         }
         override fun getMenu(): Menu? = null
         override fun getMenuInflater(): MenuInflater? = null
-        override fun getCustomView(): View? = null
+        override fun getCustomView(): View? = probe
         override fun getSubtitle(): CharSequence? = null
         override fun getTitle(): CharSequence? = null
         override fun getType(): Int = ActionMode.TYPE_FLOATING
