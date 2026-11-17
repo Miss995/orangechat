@@ -909,6 +909,7 @@ private fun MessagePartsBlock(
                         // 手势在 Initial 阶段等抬起，点卡片展开键时也会收到 down/up，
                         // 靠"落点压没压在卡片上"来筛，而不是靠 pass。
                         var bodyWindowOrigin by remember { mutableStateOf(Offset.Zero) }
+                        var bodyWindowSize by remember { mutableStateOf(Size.Zero) }
                         var thinkRectInWindow by remember { mutableStateOf<Rect?>(null) }
                         // 【防正文被吃 2026-08-22】key(loading)：生成完成（loading true→false）时强制重建渲染子树，
                         // 确保最后一批 parts（含正文）一定会被渲染——不依赖流式增量触发的最后一次重组
@@ -917,11 +918,16 @@ private fun MessagePartsBlock(
                         // 【点按菜单 · 2026-10-10】手势只挂在正文这一块上 —— 点思考链、点工具块都不再弹菜单。
                         // Initial pass 只观察不消费，"长按选文字"照常。
                         SelectableWithQuote(
-                            onTextPicked = onQuoteText,
+                            onTextPicked = { t ->
+                                // 【自家选中面板 · 第一步】记下这段字在屏幕上的位置，给面板定位用。
+                                QuoteAnchorBus.rect = Rect(bodyWindowOrigin, bodyWindowSize)
+                                onQuoteText?.invoke(t)
+                            },
                             modifier = Modifier
                                 .onGloballyPositioned { coords ->
                                     val origin = coords.positionInWindow()
                                     bodyWindowOrigin = origin
+                                    bodyWindowSize = coords.size.toSize()
                                     onBodyPlaced?.invoke(origin)
                                 }
                                 .then(
@@ -2158,6 +2164,14 @@ internal fun VoiceMessageBubble(
  */
 internal object QuotePickBus {
     var tick by mutableIntStateOf(0)
+}
+
+/**
+ * 【自家选中面板 · 2026-11-18】选中文字时，把那段字所在正文块的窗口矩形记下来。
+ * 用途：把"引用这句"那条从输入框上方挪到选中处（先通路，后挪位）。
+ */
+internal object QuoteAnchorBus {
+    var rect by mutableStateOf<Rect?>(null)
 }
 
 /**
