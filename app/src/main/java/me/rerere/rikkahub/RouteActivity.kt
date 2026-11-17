@@ -241,15 +241,31 @@ class RouteActivity : ComponentActivity() {
     override fun onWindowStartingActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? {
         if (type == ActionMode.TYPE_FLOATING) {
             AppLogBuffer.log("TextToolbar", "type=1 → 已压掉系统菜单")
-            return SilentActionMode
+            return SilentActionMode(callback)
         }
         AppLogBuffer.log("TextToolbar", "type=$type → 交给系统")
         return super.onWindowStartingActionMode(callback, type)
     }
 
-    /** 哑的 ActionMode：什么都不做，只为让系统以为"菜单已经开了"。 */
-    private object SilentActionMode : ActionMode() {
-        override fun finish() {}
+    /**
+     * 哑的 ActionMode：不画任何东西，只为让系统以为"菜单已经开了"。
+     *
+     * 【2026-11-17 补】空壳有个副作用：系统以为菜单还开着，于是选中的高亮
+     * 一直挂着收不掉。所以 finish() 的时候要回头告诉一次 callback ——
+     * Compose 收到 onDestroyActionMode 才会把选择状态收起来。
+     */
+    private class SilentActionMode(private val cb: ActionMode.Callback?) : ActionMode() {
+        private var destroyed = false
+
+        override fun finish() {
+            if (destroyed) return
+            destroyed = true
+            try {
+                cb?.onDestroyActionMode(this)
+            } catch (t: Throwable) {
+                AppLogBuffer.log("TextToolbar", "onDestroyActionMode 抛了: " + t.message)
+            }
+        }
         override fun getMenu(): Menu? = null
         override fun getMenuInflater(): MenuInflater? = null
         override fun getCustomView(): View? = null
