@@ -322,6 +322,17 @@ private fun ChatPageContent(
     // 队列只留最后 14 个，跟 shader 里的 uRipples[14] 对上。
     var rippleSlots by remember { mutableStateOf<List<RippleSlot>>(emptyList()) }
 
+    // 【选中浮条·一滚就收 · 2026-11-18】宝 03:12 报："划走的话它会卡在那里，有点尴尬"。
+    // 根因：锚点只在选中那一刻记了一次，Compose 这层又拿不到"选中文字"的坐标，
+    // 只能拿整块气泡的矩形 —— 追不动。所以滚了就撤，比追着跑干净。
+    LaunchedEffect(chatListState.isScrollInProgress) {
+        if (chatListState.isScrollInProgress && inputState.pickedText != null) {
+            inputState.pickedText = null
+            inputState.pickedMessageId = null
+            QuotePickBus.tick++
+        }
+    }
+
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)
 
     // 请求编辑模式：监听待编辑请求，非空时弹出编辑界面
