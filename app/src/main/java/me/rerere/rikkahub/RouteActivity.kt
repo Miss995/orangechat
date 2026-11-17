@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.ActionMode
 import android.view.Menu
+import android.view.MenuInflater
 import android.view.View
 import android.view.KeyEvent
 import android.widget.Toast
@@ -250,6 +251,7 @@ class RouteActivity : ComponentActivity() {
     private object SilentActionMode : ActionMode() {
         override fun finish() {}
         override fun getMenu(): Menu? = null
+        override fun getMenuInflater(): MenuInflater? = null
         override fun getCustomView(): View? = null
         override fun getSubtitle(): CharSequence? = null
         override fun getTitle(): CharSequence? = null
