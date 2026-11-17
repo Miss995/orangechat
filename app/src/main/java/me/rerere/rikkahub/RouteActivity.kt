@@ -12,6 +12,8 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.ActionMode
+import android.view.Menu
+import android.view.View
 import android.view.KeyEvent
 import android.widget.Toast
 
@@ -220,13 +222,44 @@ class RouteActivity : ComponentActivity() {
      * 所以现在只打一条日志，行为原样返回。
      */
     override fun onWindowStartingActionMode(callback: ActionMode.Callback?): ActionMode? {
-        AppLogBuffer.log("TextToolbar", "onWindowStartingActionMode(1参) 被调用")
+        AppLogBuffer.log("TextToolbar", "1参 → 交给系统")
         return super.onWindowStartingActionMode(callback)
     }
 
+    /**
+     * 【选中菜单接管 · 2026-11-17】type=1（TYPE_FLOATING）就是文字选择弹的那条。
+     *
+     * 压掉它，换成自家的静默 ActionMode：系统以为菜单已经开了，界面上什么都没有，
+     * 而"引用这句"那条提示条是咱自己画的，不受影响。
+     *
+     * 为什么不做成开关：这个只影响"选中后弹什么"，最坏结果是高亮收不掉，
+     * 不影响发消息、不影响别的任何东西。真坏了当场撤回来就行。
+     *
+     * 只拦 FLOATING（=1）；TYPE_PRIMARY（=0）走系统默认，不碰。
+     */
     override fun onWindowStartingActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? {
-        AppLogBuffer.log("TextToolbar", "onWindowStartingActionMode type=" + type)
+        if (type == ActionMode.TYPE_FLOATING) {
+            AppLogBuffer.log("TextToolbar", "type=1 → 已压掉系统菜单")
+            return SilentActionMode
+        }
+        AppLogBuffer.log("TextToolbar", "type=$type → 交给系统")
         return super.onWindowStartingActionMode(callback, type)
+    }
+
+    /** 哑的 ActionMode：什么都不做，只为让系统以为"菜单已经开了"。 */
+    private object SilentActionMode : ActionMode() {
+        override fun finish() {}
+        override fun getMenu(): Menu? = null
+        override fun getCustomView(): View? = null
+        override fun getSubtitle(): CharSequence? = null
+        override fun getTitle(): CharSequence? = null
+        override fun getType(): Int = ActionMode.TYPE_FLOATING
+        override fun invalidate() {}
+        override fun setCustomView(view: View?) {}
+        override fun setSubtitle(subtitle: CharSequence?) {}
+        override fun setSubtitle(resId: Int) {}
+        override fun setTitle(title: CharSequence?) {}
+        override fun setTitle(resId: Int) {}
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
