@@ -134,6 +134,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Rect
+import me.rerere.rikkahub.ui.components.message.QuoteAnchorBus
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
@@ -1973,6 +1974,22 @@ fun ChatInput(
                 // 那个 API 是"内容先按最终高度排好，外框再动画追上去"——纸变高的那一瞬，
                 // 内容已经先漏出一截，看着就是往下陷。高度动画得由纸自己长（内容被裁在里面）。
         ) {
+        // 【自家选中面板 · 2026-11-18】浮在选中文字旁边的一条。
+        // 初版：先和输入框上方那条纸票并存（验位置），位置对了再把上面那条撤掉。
+        val pickAnchor = QuoteAnchorBus.rect
+        val pickText = state.pickedText
+        if (pickAnchor != null && pickText != null) {
+            QuoteFloatBar(
+                anchor = pickAnchor,
+                text = pickText,
+                onUse = onUsePickedQuote,
+                onCancel = {
+                    state.pickedText = null
+                    state.pickedMessageId = null
+                },
+            )
+        }
+
         // ★ 状态纸 · 2026-10-20 宝换的方向：纸不假装变成气泡，
         // 它报"机器现在在干嘛"——门控/召回/拼请求/正在回复。
         // 全是真的，就不用接了，也不会穿帮。
@@ -2643,6 +2660,81 @@ private fun PanelCell(
                 style = MaterialTheme.typography.labelSmall,
                 color = Color(0xFF3A342F),
             )
+        }
+    }
+}
+
+/**
+ * 【自家选中面板 · 2026-11-18】浮在选中文字附近的一条小面板。
+ *
+ * 读 QuoteAnchorBus 里记下的正文块矩形：优先摆在它上方，上方放不下就翻到下方；
+ * 左右夹在屏幕内，免得贴边。
+ */
+@Composable
+private fun QuoteFloatBar(
+    anchor: Rect,
+    text: String,
+    onUse: (() -> Unit)?,
+    onCancel: () -> Unit,
+) {
+    Popup(
+        popupPositionProvider = remember(anchor) {
+            object : PopupPositionProvider {
+                override fun calculatePosition(
+                    anchorBounds: IntRect,
+                    windowSize: IntSize,
+                    layoutDirection: LayoutDirection,
+                    popupContentSize: IntSize,
+                ): IntOffset {
+                    val gap = 24
+                    val maxLeft = (windowSize.width - popupContentSize.width - gap).coerceAtLeast(gap)
+                    val left = anchor.left.toInt().coerceIn(gap, maxLeft)
+                    val above = anchor.top.toInt() - popupContentSize.height - gap
+                    val y = if (above >= gap) above else (anchor.bottom.toInt() + gap)
+                    val maxTop = (windowSize.height - popupContentSize.height - gap).coerceAtLeast(gap)
+                    return IntOffset(left, y.coerceIn(gap, maxTop))
+                }
+            }
+        },
+        properties = PopupProperties(focusable = false),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = Color(0xFF2B2723).copy(alpha = 0.94f),
+            contentColor = Color(0xFFF3EFE8),
+            shadowElevation = 8.dp,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = text.replace("\n", " ").trim(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.widthIn(max = 180.dp),
+                )
+                if (onUse != null) {
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = "引用这句",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color(0xFFFFC46B),
+                        modifier = Modifier
+                            .clickable { onUse() }
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "x",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier
+                        .clickable { onCancel() }
+                        .padding(horizontal = 4.dp),
+                )
+            }
         }
     }
 }
