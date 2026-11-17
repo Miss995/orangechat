@@ -211,7 +211,7 @@ fun SettingDisplayIllustrationPage(vm: SettingVM = koinViewModel()) {
                 WaterSliderRow("涟漪速度", displaySetting.waterRipFront, 0.01f..0.20f) { v ->
                     updateDisplaySetting(displaySetting.copy(waterRipFront = v))
                 }
-                WaterSliderRow("涟漪衰减", displaySetting.waterRipDecay, 0.2f..3f) { v ->
+                WaterSliderRow("涟漪衰减", displaySetting.waterRipDecay, 0.05f..3f) { v ->
                     updateDisplaySetting(displaySetting.copy(waterRipDecay = v))
                 }
                 GroupTitle("六波 · 权重（0-100，越大越高）")

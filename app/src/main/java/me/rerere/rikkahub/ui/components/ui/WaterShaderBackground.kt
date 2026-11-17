@@ -194,17 +194,21 @@ float rippleH(float2 uv, float now, float2 warp) {
         if (age < 0.0 || age > 14.0) continue;
 
 
-        float front = uRipR[i] + age * uFront;
         // ★ 2026-11-17 02:44 宝："旧的涟漪会直接消失掉，而不是扩散开" +
         //   "每个圈都一个大小所以像毛毛虫" —— 真凶在这行：寿命只有 5~6 秒，
         //   圆还没长大就没了。放到 11~14 秒，让它有时间扩开、大小才拉得开。
         float fall = exp(-age * uDecay) * (1.0 - smoothstep(11.0, 14.0, age));
         float spread = 1.0 / sqrt(1.0 + dist * 1.8);
-        float edgeFade = 1.0 - smoothstep(0.34, 0.56, dist);
+        // ★ 2026-11-17 19:22：0.34/0.56 太早 —— 按新速度 6 秒就撞上，圈只能长一半。
+        //   放宽到 0.72/1.05，让它能扩到接近整屏再淡。
+        float edgeFade = 1.0 - smoothstep(0.72, 1.05, dist);
 
         float hAcc = 0.0;
         for (int n = 0; n < 5; n++) {
-            float speed = pow(1.16, float(n)) * uPhaseSpd * 0.5;
+            // ★ 2026-11-17 19:22 宝："还没扩散开自己就死了" ——
+            //   真凶：原来 ×0.5、n=0 时只有 0.5 倍速 → 0.0275/秒，14 秒才挪 38%。
+            //   改成基数 1.0、每圈 +0.25（外圈快内圈慢），14 秒能挪满屏。
+            float speed = (1.0 + float(n) * 0.25) * uPhaseSpd;
             float rn = uRipR[i] + float(n) * 0.009 + uFront * age * speed;
             float dd = abs(dist - rn);
             float wv = (0.0052 + rn * 0.016) * (1.0 - float(n) * 0.08);

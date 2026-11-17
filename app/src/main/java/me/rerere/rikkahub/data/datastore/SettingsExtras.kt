@@ -192,7 +192,7 @@ data class DisplaySetting(
     // 【涟漪 · 2026-11-16 22:13 宝："稍微有点小，接滑条吧"】
     val waterRipScale: Float = 0.06f,   // 涟漪强度（折射位移的倍率）
     val waterRipFront: Float = 0.055f,  // 波前速度（每秒推多远，uv 空间）
-    val waterRipDecay: Float = 0.90f,   // 时间衰减（越大散得越快）
+    val waterRipDecay: Float = 0.15f,   // 时间衰减（越大散得越快）★ 2026-11-17 19:22 0.90 -> 0.15：0.9 让圈 3 秒就剩 6%，还没扩开就暗没了
     // 六波：权重(0-100) / 方向(度) / 波长
     val waterW1: Float = 35f, val waterW2: Float = 22f, val waterW3: Float = 14f,
     val waterW4: Float = 9f, val waterW5: Float = 6f, val waterW6: Float = 4f,
