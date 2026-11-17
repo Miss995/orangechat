@@ -2687,10 +2687,14 @@ private fun QuoteFloatBar(
                     popupContentSize: IntSize,
                 ): IntOffset {
                     val gap = 24
+                    // 【选中浮条·拉开间距 · 2026-11-18】宝 03:43 看截图："这也太近了一点吧？"
+                    // 24 的时候浮条底边正好压在选中行的上一行上，看着像"盖住字"。
+                    // 40 ≈ 一行高 + 一点余量，浮条就浮到再上面那一行去了。
+                    val vGap = 40
                     val maxLeft = (windowSize.width - popupContentSize.width - gap).coerceAtLeast(gap)
                     val left = anchor.left.toInt().coerceIn(gap, maxLeft)
-                    val above = anchor.top.toInt() - popupContentSize.height - gap
-                    val y = if (above >= gap) above else (anchor.bottom.toInt() + gap)
+                    val above = anchor.top.toInt() - popupContentSize.height - vGap
+                    val y = if (above >= gap) above else (anchor.bottom.toInt() + vGap)
                     val maxTop = (windowSize.height - popupContentSize.height - gap).coerceAtLeast(gap)
                     return IntOffset(left, y.coerceIn(gap, maxTop))
                 }
