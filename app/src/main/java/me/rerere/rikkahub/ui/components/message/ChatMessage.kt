@@ -285,6 +285,12 @@ fun ChatMessage(
     val swipeProgress = swipeAnim.value.coerceIn(0f, 1f)
     val swipeMaxDp = 152.dp
     val swipeMaxPx = with(density) { swipeMaxDp.toPx() }
+    // 【左滑面板 · 方向随消息】猫的消息靠左 → 往左拉开、右边露出；
+    // 宝的消息靠右 → 往右拉开、左边露出。滑的方向跟它停的那一边一致，
+    // 不然宝的消息连着头像一起往左跑，看着像被拽歪了。
+    val isUserMsg = message.role == MessageRole.USER
+    // 手指位移里「算数」的那个方向：宝的消息取 +x（右滑），猫的消息取 -x（左滑）。
+    val swipeSign = if (isUserMsg) 1f else -1f
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -316,7 +322,10 @@ fun ChatMessage(
                         accY += change.position.y - change.previousPosition.y
                         if (locked == 0) {
                             if (abs(accX) > slop && abs(accX) > abs(accY) * 1.5f) {
-                                locked = 1
+                                // 方向对才接管：宝的消息只认右滑，猫的只认左滑。
+                                // 滑反了就让出去，交还给列表/其他手势。
+                                locked = if (accX * swipeSign > 0f) 1 else 2
+                                if (locked == 2) break
                             } else if (abs(accY) > slop) {
                                 locked = 2
                                 break
@@ -324,7 +333,7 @@ fun ChatMessage(
                         }
                         if (locked == 1) {
                             change.consume()
-                            last = (startValue - accX / swipeMaxPx).coerceIn(0f, 1f)
+                            last = (startValue + accX * swipeSign / swipeMaxPx).coerceIn(0f, 1f)
                             swipeScope.launch { swipeAnim.snapTo(last) }
                         }
                     }
@@ -346,7 +355,10 @@ fun ChatMessage(
             }
             // 手势必须排在 padding 前面 —— 排在后面的话可滑区域会跟着一起收窄，
             // 滑到一半就滑不动了。这里让手势永远按整条消息的宽度接。
-            .padding(end = swipeMaxDp * swipeProgress)
+            .padding(
+                start = if (isUserMsg) swipeMaxDp * swipeProgress else 0.dp,
+                end = if (isUserMsg) 0.dp else swipeMaxDp * swipeProgress,
+            )
             // 【插话贴猫 · 2026-09-30】插话往里缩一点，视觉上贴着上面那条猫消息
             .then(if (isInterjection) Modifier.padding(start = 40.dp) else Modifier)
             // 【点按菜单 · 2026-10-10】只量自己的窗口位置，给"正文局部坐标"做换算基准。
