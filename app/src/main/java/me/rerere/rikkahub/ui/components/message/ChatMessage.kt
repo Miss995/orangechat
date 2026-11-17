@@ -335,7 +335,11 @@ fun ChatMessage(
                         }
                         if (locked == 1) {
                             change.consume()
-                            last = (startValue + accX * swipeSign / swipeMaxPx).coerceIn(0f, 1f)
+                            // 【2026-11-17】跟手加一点滞后。
+                            // 1:1 的时候手指移多少它就移多少，像推一块没有重量的板子 —— 硬。
+                            // 手指走 1.2 倍面板才走满，松手时那一点差额再补上，手感就软了。
+                            last = (startValue + accX * swipeSign / (swipeMaxPx * 1.2f))
+                                .coerceIn(0f, 1f)
                             swipeScope.launch { swipeAnim.snapTo(last) }
                         }
                     }
@@ -392,20 +396,22 @@ fun ChatMessage(
                 modifier = Modifier
                     .fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
+                // 【2026-11-17】原来两个头像各挂 weight(1f)（各占一半剩余宽度）。
+                // 左滑拉面板时 padding 会收窄整行，两个头像跟着一起缩 ——
+                // 宝那边看着就是"头像被压扁了"。改成：头像尺寸钉死，
+                // 中间用 Spacer 把两个顶到各自的边上。
                 ChatMessageAssistantAvatar(
                     message = message,
                     model = model,
                     assistant = assistant,
                     loading = loading,
-                    modifier = Modifier.weight(1f)
                 )
+                Spacer(Modifier.weight(1f))
                 ChatMessageUserAvatar(
                     message = message,
                     avatar = settings.userAvatar,
                     nickname = settings.userNickname,
-                    modifier = Modifier.weight(1f)
                 )
             }
         }
