@@ -11,10 +11,12 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.ActionMode
 import android.view.KeyEvent
 import android.widget.Toast
 
 import androidx.activity.ComponentActivity
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
@@ -204,6 +206,27 @@ class RouteActivity : ComponentActivity() {
             if (volumeKeyListeners.lastOrNull()?.invoke(isVolumeUp) == true) return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * 【选中菜单观测 · 2026-11-17】先只看，不改行为。
+     *
+     * 想干的事：把长按选中文字后系统弹的那条「复制 / 全选 / 朗读 / 搜索」
+     * 换成自家的样式。Compose 那层（LocalTextToolbar）10-10 试过，不生效
+     * （Google issue 447192728），所以换一条更底层的路试试：
+     * 系统的弹出走不走 Activity 的 onWindowStartingActionMode。
+     *
+     * 走 → 这儿有机会拦；不走 → 这条路也是死的，别再花时间。
+     * 所以现在只打一条日志，行为原样返回。
+     */
+    override fun onWindowStartingActionMode(callback: ActionMode?): ActionMode? {
+        AppLogBuffer.log("TextToolbar", "onWindowStartingActionMode(1参) 被调用")
+        return super.onWindowStartingActionMode(callback)
+    }
+
+    override fun onWindowStartingActionMode(callback: ActionMode?, type: Int): ActionMode? {
+        AppLogBuffer.log("TextToolbar", "onWindowStartingActionMode type=" + type)
+        return super.onWindowStartingActionMode(callback, type)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
