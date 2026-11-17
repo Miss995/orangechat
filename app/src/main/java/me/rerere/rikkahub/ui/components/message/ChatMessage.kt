@@ -38,6 +38,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.offset
 import kotlin.math.roundToInt
@@ -274,7 +276,10 @@ fun ChatMessage(
     val colorScheme = MaterialTheme.colorScheme
     // 【左滑面板 · 2026-11-17】左滑让这条消息往左让开，右边露出操作面板。
     // 用 offset 而不是缩窄：缩窄会让文字每帧重排，滑起来抖。
-    var swipeProgress by remember { mutableStateOf(0f) }
+    // Q 弹：拖动时 snapTo 跟手，松手才交给弹簧 —— 弹簧会先冲过头再荡回来。
+    val swipeAnim = remember { Animatable(0f) }
+    val swipeScope = rememberCoroutineScope()
+    val swipeProgress = swipeAnim.value
     val swipeMaxDp = 152.dp
     val swipeMaxPx = with(density) { swipeMaxDp.toPx() }
     Column(
@@ -289,12 +294,26 @@ fun ChatMessage(
                 detectHorizontalDragGestures(
                     onHorizontalDrag = { change, dragAmount ->
                         change.consume()
-                        swipeProgress = (swipeProgress - dragAmount / swipeMaxPx).coerceIn(0f, 1f)
+                        // 拖动阶段不用动画，直接贴手 —— 有动画会跟手不及、发飘。
+                        swipeScope.launch {
+                            swipeAnim.snapTo((swipeAnim.value - dragAmount / swipeMaxPx).coerceIn(0f, 1f))
+                        }
                     },
                     onDragEnd = {
-                        swipeProgress = if (swipeProgress > 0.45f) 1f else 0f
+                        val target = if (swipeAnim.value > 0.45f) 1f else 0f
+                        swipeScope.launch {
+                            swipeAnim.animateTo(
+                                targetValue = target,
+                                // 0.35 = 弹得明显：越过一点点再荡回来，不会来回晃。
+                                // 要更弹往 0.25 走，要更稳往 0.6 走。
+                                animationSpec = spring(
+                                    dampingRatio = 0.35f,
+                                    stiffness = Spring.StiffnessMediumLow,
+                                ),
+                            )
+                        }
                     },
-                    onDragCancel = { swipeProgress = 0f },
+                    onDragCancel = { swipeScope.launch { swipeAnim.animateTo(0f) } },
                 )
             }
             // 手势必须排在 padding 前面 —— 排在后面的话可滑区域会跟着一起收窄，
