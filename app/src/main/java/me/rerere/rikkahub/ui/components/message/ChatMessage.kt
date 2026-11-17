@@ -59,7 +59,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.LocalContentColor
@@ -69,6 +71,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -2174,6 +2177,14 @@ private fun SelectableWithQuote(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    // 【选中色改黑 · 2026-11-18 02:24 宝："这个颜色丑，给我换一个" → "要黑的，半透明"】
+    // 消息区原来没套 LocalTextSelectionColors，用的是系统默认深蓝，跟咱家银灰/玻璃这套打架。
+    CompositionLocalProvider(
+        LocalTextSelectionColors provides TextSelectionColors(
+            handleColor = Color.Black,
+            backgroundColor = Color.Black.copy(alpha = 0.18f),
+        )
+    ) {
     if (onTextPicked == null) {
         SelectionContainer(modifier = modifier) { content() }
     } else {
@@ -2190,6 +2201,7 @@ private fun SelectableWithQuote(
                 latestPick(picked)
             }
         }
+    }
     }
 }
 
