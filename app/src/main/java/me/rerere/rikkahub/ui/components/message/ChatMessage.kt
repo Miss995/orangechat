@@ -922,9 +922,18 @@ private fun MessagePartsBlock(
                         // Initial pass 只观察不消费，"长按选文字"照常。
                         SelectableWithQuote(
                             onTextPicked = { t ->
-                                // 【自家选中面板 · 第一步】记下这段字在屏幕上的位置，给面板定位用。
-                                // 手指按下的那个点（换算成窗口坐标），做成一个极小的矩形当锚点。
-                                QuoteAnchorBus.rect = Rect(bodyWindowOrigin + pickDownLocal, 2f)
+                                // 【选中浮条·反推位置 · 2026-11-18 宝的点子】
+                                // 宝："一个气泡里总共才几个字啊？稍微对一下不是能知道吗？" —— 对。
+                                // 拿选中的字去气泡原文里 indexOf，得到它在全文的位置比例，
+                                // 再按比例映射到块的高度上。不用接管拖选，也不用 TextLayoutResult。
+                                // 取中间点（hit + 长度/2）落锚，选一大段时不会偏到段首。
+                                val total = displayText.length.coerceAtLeast(1)
+                                val hitRaw = displayText.indexOf(t)
+                                val hit = if (hitRaw >= 0) hitRaw else 0
+                                val ratio = (hit + t.length / 2f) / total
+                                val anchorY = bodyWindowOrigin.y + bodyWindowSize.height * ratio
+                                val anchorX = bodyWindowOrigin.x + 24f
+                                QuoteAnchorBus.rect = Rect(Offset(anchorX, anchorY), 2f)
                                 onQuoteText?.invoke(t)
                             },
                             modifier = Modifier
