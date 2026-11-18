@@ -2758,6 +2758,9 @@ private fun QuoteFloatBar(
                                     as? ClipboardManager
                                 cm?.setPrimaryClip(ClipData.newPlainText("", text))
                             }
+                            // 【复制完就收 · 2026-11-18 21:29 宝："复制完那个浮条怎么不消失啊？还要等我点x"】
+                            // 事办完了还杵着，得自己撤。选中高亮留着（跟系统复制一个手感）。
+                            onCancel()
                         }
                         .padding(horizontal = 4.dp, vertical = 2.dp),
                 )
