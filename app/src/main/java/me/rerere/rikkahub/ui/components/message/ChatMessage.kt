@@ -977,6 +977,15 @@ private fun MessagePartsBlock(
                                         bodyWindowOrigin.x + 24f
                                     }
                                 }
+                                // 【定位日志 · 2026-11-18 19:55】偏了两次都在猜，先让数据说话。
+                                AppLogBuffer.log(
+                                    "QuoteAnchor",
+                                    "t=[${t.take(12)}] blk=${blk != null} " +
+                                        "rawLen=${blk?.second?.length ?: -1} " +
+                                        "findRaw=${blk?.second?.indexOf(t) ?: -999} " +
+                                        "findDisp=${displayText.indexOf(t)} " +
+                                        "exact=${exact != null} x=$anchorX"
+                                )
                                 QuoteAnchorBus.rect = Rect(Offset(anchorX, anchorY), 2f)
                                 onQuoteText?.invoke(t)
                             },
