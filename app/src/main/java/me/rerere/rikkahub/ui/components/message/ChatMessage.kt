@@ -946,7 +946,20 @@ private fun MessagePartsBlock(
                                     val hit = if (hitRaw >= 0) hitRaw else 0
                                     bodyWindowOrigin.y + bodyWindowSize.height * ((hit + t.length / 2f) / total)
                                 }
-                                val anchorX = bodyWindowOrigin.x + 24f
+                                // 【横坐标 · 2026-11-18 宝："对这个字在选中的那一行的最右边，就是宽度的问题"】
+                                // 拿不到字符级 x，就按"选中字在这块文本里的第几个字 / 这块共几个字"估一个横向比例。
+                                // 单行文字等宽，这个估法在单行上是准的；多行会偏（换行归左），但总比写死左边强。
+                                val anchorX = run {
+                                    val rect = blk?.first
+                                    val raw = blk?.second
+                                    if (rect != null && !raw.isNullOrBlank()) {
+                                        val i = raw.indexOf(t)
+                                        val fx = if (i < 0) 0f else (i.toFloat() / raw.length.coerceAtLeast(1))
+                                        rect.left + rect.width * fx.coerceIn(0f, 0.85f)
+                                    } else {
+                                        bodyWindowOrigin.x + 24f
+                                    }
+                                }
                                 QuoteAnchorBus.rect = Rect(Offset(anchorX, anchorY), 2f)
                                 onQuoteText?.invoke(t)
                             },
