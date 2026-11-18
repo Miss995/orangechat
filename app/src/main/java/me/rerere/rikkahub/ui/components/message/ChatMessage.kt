@@ -986,7 +986,13 @@ private fun MessagePartsBlock(
                                         "findDisp=${displayText.indexOf(t)} " +
                                         "exact=${exact != null} x=$anchorX"
                                 )
-                                QuoteAnchorBus.rect = Rect(Offset(anchorX, anchorY), 2f)
+                                // 【别让空选择覆盖锚点 · 2026-11-18 20:08】
+                                // 选择一清空 t 就成了 ""，但这一路照样会跑，把刚算好的坐标
+                                // 覆盖成最左边（x=24/72）——浮条于是永远贴着气泡左沿。
+                                // 所以：t 为空时只清文本，不动锚点。
+                                if (t.isNotBlank()) {
+                                    QuoteAnchorBus.rect = Rect(Offset(anchorX, anchorY), 2f)
+                                }
                                 onQuoteText?.invoke(t)
                             },
                             modifier = Modifier
