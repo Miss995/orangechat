@@ -943,7 +943,13 @@ private fun MessagePartsBlock(
                                     val rect = blk?.first
                                     val raw = blk?.second
                                     if (rect == null || raw.isNullOrBlank()) return@run null
-                                    val lr = MarkdownLayoutStore.get(raw) ?: return@run null
+                                    // 【key 对不上会 null · 2026-11-18 20:55】put 存的是纯文本、
+                                    // 这里传的是带 ** 的原文，段落里只要有标记就查不到 →
+                                    // 退回比例瞎估 → 浮条压在选中的字上（宝说的"有的时候不准"）。
+                                    // 查不到就按"哪块纯文本包含选中的字"反查。
+                                    val lr = MarkdownLayoutStore.get(raw)
+                                        ?: MarkdownLayoutStore.getByContaining(t)
+                                        ?: return@run null
                                     // 【基准改正 · 2026-11-18 20:41】原来用 raw.indexOf(t)，raw 是带 ** 的
                                     // markdown 原文，而 getBoundingBox 索引的是 lr 里那串去标记的纯文本
                                     // ——两套 offset 差一截，取到的框永远是行首（日志里三条 x 全是 308.75）。

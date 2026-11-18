@@ -1225,4 +1225,22 @@ internal object MarkdownLayoutStore {
 
     /** 取某一块的排版结果；取不到返回 null（调用方回退旧逻辑）。 */
     fun get(text: String): TextLayoutResult? = map[text.trim()] ?: map[text]
+
+    /**
+     * 【按内容反查 · 2026-11-18 20:55】
+     * put 的 key 是 annotatedString.text（渲染后的纯文本），而调用方手里常常是带 ** 的原文
+     * ——两边对不上，get 直接 null，浮条就退回比例瞎估、压在字上。
+     * 选中的那几个字一定在那块的纯文本里，所以用"谁包含它"来反查；
+     * 命中多条时取最短的那个（最贴近目标块）。
+     */
+    fun getByContaining(fragment: String): TextLayoutResult? {
+        if (fragment.isBlank()) return null
+        var best: TextLayoutResult? = null
+        var bestLen = Int.MAX_VALUE
+        for ((k, v) in map) {
+            if (!k.contains(fragment)) continue
+            if (k.length < bestLen) { bestLen = k.length; best = v }
+        }
+        return best
+    }
 }
