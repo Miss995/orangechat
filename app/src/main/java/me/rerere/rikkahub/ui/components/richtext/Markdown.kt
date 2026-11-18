@@ -241,7 +241,7 @@ fun MarkdownBlock(
     // 【选中浮条·块位置 · 2026-11-18】把每个 AST child 块的窗口矩形报出去。
     // 用途：浮条定位从"按整段高度估"改成"先定位落在哪一块、块内再按比例"。
     // 传 null 时完全不影响原有行为（别处调用照旧）。
-    onBlocksMeasured: ((List<Rect>) -> Unit)? = null,
+    onBlocksMeasured: ((List<Pair<Rect, String>>) -> Unit)? = null,
 ) {
     var data by remember { mutableStateOf(parseMarkdown(content)) }
     // ★ 2026-10-27 修：remember 没有 key，LazyColumn 复用同一个坑位时会留着上一条的解析结果，
@@ -289,6 +289,8 @@ fun MarkdownBlock(
                     }
                 } else {
                     val blockRects = remember { mutableStateListOf<Rect>() }
+                    // 每块对应的源文本（用来把"选中的字"对到块上）
+                    val blockTexts = remember { mutableStateListOf<String>() }
                     data.astTree.children.forEachIndexed { index, child ->
                         MarkdownNode(
                             node = child,
@@ -297,9 +299,12 @@ fun MarkdownBlock(
                             modifier = Modifier.onGloballyPositioned { coords ->
                                 val r = Rect(coords.positionInWindow(), coords.size.toSize())
                                 while (blockRects.size <= index) blockRects.add(Rect.Zero)
-                                if (blockRects[index] != r) {
+                                while (blockTexts.size <= index) blockTexts.add("")
+                                val raw = runCatching { child.getTextInNode(data.preprocessed) }.getOrDefault("")
+                                if (blockRects[index] != r || blockTexts[index] != raw) {
                                     blockRects[index] = r
-                                    onBlocksMeasured(blockRects.toList())
+                                    blockTexts[index] = raw
+                                    onBlocksMeasured(blockRects.mapIndexed { i, rect -> rect to blockTexts.getOrElse(i) { "" } })
                                 }
                             },
                         )

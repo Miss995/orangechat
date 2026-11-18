@@ -644,13 +644,9 @@ private fun TaskAwareBody(
                                 visual = true,
                             ),
                             onClickCitation = onClickCitation,
-                            onBlocksMeasured = { rects ->
-                                AppLogBuffer.log(
-                                    "QuoteBlock",
-                                    "n=${rects.size} " + rects.take(8).joinToString(" ") {
-                                        "(${it.left.toInt()},${it.top.toInt()} ${it.width.toInt()}x${it.height.toInt()})"
-                                    }
-                                )
+                            onBlocksMeasured = { blocks ->
+                                // 只存，不打日志（每帧刷会冲光日志环）；定位时按需查
+                                QuoteBlockBus.blocks = blocks
                             },
                         )
                     }
@@ -935,11 +931,21 @@ private fun MessagePartsBlock(
                                 // 拿选中的字去气泡原文里 indexOf，得到它在全文的位置比例，
                                 // 再按比例映射到块的高度上。不用接管拖选，也不用 TextLayoutResult。
                                 // 取中间点（hit + 长度/2）落锚，选一大段时不会偏到段首。
-                                val total = displayText.length.coerceAtLeast(1)
-                                val hitRaw = displayText.indexOf(t)
-                                val hit = if (hitRaw >= 0) hitRaw else 0
-                                val ratio = (hit + t.length / 2f) / total
-                                val anchorY = bodyWindowOrigin.y + bodyWindowSize.height * ratio
+                                // 【块内定位 · 2026-11-18】先试着把选中的字对到具体某一块，
+                                // 对上了就用那一块的真实矩形（块内再按比例），对不上退回旧的全文比例。
+                                val blk = QuoteBlockBus.locate(displayText, t)
+                                val anchorY = if (blk != null) {
+                                    val (rect, raw) = blk
+                                    // 块内比例：选中字在这一块文本里的相对位置
+                                    val i = raw.indexOf(t)
+                                    val inner = if (i < 0) 0.5f else (i + t.length / 2f) / raw.length.coerceAtLeast(1)
+                                    rect.top + rect.height * inner
+                                } else {
+                                    val total = displayText.length.coerceAtLeast(1)
+                                    val hitRaw = displayText.indexOf(t)
+                                    val hit = if (hitRaw >= 0) hitRaw else 0
+                                    bodyWindowOrigin.y + bodyWindowSize.height * ((hit + t.length / 2f) / total)
+                                }
                                 val anchorX = bodyWindowOrigin.x + 24f
                                 QuoteAnchorBus.rect = Rect(Offset(anchorX, anchorY), 2f)
                                 onQuoteText?.invoke(t)
@@ -2206,6 +2212,43 @@ internal object QuotePickBus {
  */
 internal object QuoteAnchorBus {
     var rect by mutableStateOf<Rect?>(null)
+}
+
+/**
+ * 【选中浮条·块坐标 · 2026-11-18】正文每一块的窗口矩形 + 它的源文本。
+ * 顺序即 AST child 顺序。用途：把"选中的字"先对到具体某一块，再在块内按比例取纵坐标。
+ */
+internal object QuoteBlockBus {
+    var blocks: List<Pair<Rect, String>> = emptyList()
+
+    /**
+     * 给定「整条正文的全文字串」和「用户选中的那段字」，
+     * 返回命中那一段的窗口矩形；对不上返回 null（调用方回退到旧的全文比例）。
+     */
+    fun locate(fullText: String, picked: String): Pair<Rect, String>? {
+        if (blocks.isEmpty() || picked.isEmpty()) return null
+        // 在全文里定位选中的字（跟旧逻辑同一个锚点：取中点，选一大段时不会偏到段首）
+        val hit = fullText.indexOf(picked)
+        if (hit < 0) return null
+        val target = hit + picked.length / 2
+
+        // 逐块把文本在全文里对齐，算出每块覆盖的字符区间
+        var cursor = 0
+        var best: Pair<Rect, String>? = null
+        var bestDist = Int.MAX_VALUE
+        for ((rect, raw) in blocks) {
+            if (raw.isBlank()) continue          // 空行/空块跳过
+            val trimmed = raw.trim()
+            val at = fullText.indexOf(trimmed, cursor)
+            if (at < 0) continue
+            val end = at + trimmed.length
+            if (target in at until end) return rect to trimmed   // 正落在这一块里
+            val dist = if (target < at) at - target else target - end
+            if (dist < bestDist) { bestDist = dist; best = rect to trimmed }
+            cursor = end
+        }
+        return best
+    }
 }
 
 /**
