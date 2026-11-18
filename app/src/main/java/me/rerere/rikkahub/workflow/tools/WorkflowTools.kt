@@ -125,7 +125,11 @@ fun workflowCreateTool(
             required = listOf("definition"),
         )
     },
-    needsApproval = true,
+    // 【2026-11-18 22:37】create 免审批：唤醒回合里橘仔要能给自己挂闹钟。
+    // 主动消息模式一律自动拒绝 needsApproval 的工具。18:26 那次报的 Tool not found
+    // 先是"整组没注册"（那次已修），能找到了以后就卡在这一行。
+    // update / delete / setEnabled / run 四个继续要审批，不动。
+    needsApproval = false,
     execute = { json ->
         val definitionEl = json.jsonObject["definition"]
             ?: return@Tool errorResponse("missing_definition", "definition object required")
