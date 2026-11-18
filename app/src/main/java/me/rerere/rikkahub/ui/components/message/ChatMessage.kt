@@ -944,11 +944,23 @@ private fun MessagePartsBlock(
                                     val raw = blk?.second
                                     if (rect == null || raw.isNullOrBlank()) return@run null
                                     val lr = MarkdownLayoutStore.get(raw) ?: return@run null
-                                    val off = raw.indexOf(t)
-                                    if (off < 0 || off >= lr.layoutInput.text.length) return@run null
+                                    // 【基准改正 · 2026-11-18 20:41】原来用 raw.indexOf(t)，raw 是带 ** 的
+                                    // markdown 原文，而 getBoundingBox 索引的是 lr 里那串去标记的纯文本
+                                    // ——两套 offset 差一截，取到的框永远是行首（日志里三条 x 全是 308.75）。
+                                    // 改成也用纯文本去算。
+                                    val plain = lr.layoutInput.text
+                                    if (plain.isEmpty()) return@run null
+                                    val off = plain.indexOf(t).let { if (it >= 0) it else raw.indexOf(t) }
+                                    if (off < 0 || off >= plain.length) return@run null
                                     runCatching {
-                                        val box = lr.getBoundingBox(off)
-                                        Pair(rect.left + box.left, rect.top + box.top)
+                                        val first = lr.getBoundingBox(off)
+                                        // 【多行不盖字 · 2026-11-18 20:41 宝：\"就是多行的，有的会盖在字上面\"】
+                                        // 只取起点那一行的顶，往上选的选区会落在中间行上、盖住下半截。
+                                        // 取"选区最上面那一行"的顶：终点的行顶若更高就换成它。
+                                        val lastOff = (off + t.length - 1).coerceIn(0, plain.length - 1)
+                                        val last = runCatching { lr.getBoundingBox(lastOff) }.getOrNull()
+                                        val topBox = if (last != null && last.top < first.top) last else first
+                                        Pair(rect.left + first.left, rect.top + topBox.top)
                                     }.getOrNull()
                                 }
 
