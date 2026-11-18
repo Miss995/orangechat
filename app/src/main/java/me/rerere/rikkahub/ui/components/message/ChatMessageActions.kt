@@ -73,6 +73,8 @@ import java.util.Locale
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -145,7 +147,14 @@ fun ChatMessageActionMenu(
                 color = Color(0xFF2B2723).copy(alpha = 0.94f),
                 contentColor = Color(0xFFF3EFE8),
                 shadowElevation = 8.dp,
-                modifier = Modifier.widthIn(min = 110.dp),
+                // 【宽度收回 · 2026-11-18 21:48 宝："这个尺寸有点雷霆啊"】
+                // 截图里菜单横贯整个屏幕。原因：CompactMenuItem 的 Row 用了 fillMaxWidth，
+                // DropdownMenu 没了之后外框没有任何东西约束宽度 → Column 按"可用最大宽"算，
+                // 每行就被撑成满屏。改成 width(IntrinsicSize.Max)：先量出最宽那一行，
+                // 再让所有行咬这个宽度，于是又窄又齐。
+                modifier = Modifier
+                    .widthIn(min = 110.dp)
+                    .width(IntrinsicSize.Max),
             ) {
                 Column(modifier = Modifier.padding(vertical = 4.dp)) {
         // 复制
