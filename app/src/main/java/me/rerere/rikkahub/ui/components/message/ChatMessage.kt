@@ -61,6 +61,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.SelectionState
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -2284,6 +2285,16 @@ internal object QuoteAnchorBus {
 }
 
 /**
+ * 【全选通路 · 2026-11-18 宝："复制还有全选"】
+ * 浮条画在 ChatInput 那边，而 SelectionState 住在每个气泡的 SelectableWithQuote 里，
+ * 隔着好几层拿不到。选中时把当前气泡那个 state 登记到这儿，浮条点"全选"再回来调它。
+ * 选中的字一空就清掉，免得回头调到一个已经不该管的气泡上。
+ */
+internal object SelectionStateBus {
+    var current: SelectionState? = null
+}
+
+/**
  * 【选中浮条·块坐标 · 2026-11-18】正文每一块的窗口矩形 + 它的源文本。
  * 顺序即 AST child 顺序。用途：把"选中的字"先对到具体某一块，再在块内按比例取纵坐标。
  */
@@ -2358,6 +2369,9 @@ private fun SelectableWithQuote(
             val latestPick by rememberUpdatedState(onTextPicked)
             val picked = selectionState.selectedTexts.joinToString("") { it.text }.trim()
             LaunchedEffect(picked) {
+                // 【全选通路 · 2026-11-18】把当前气泡的 selectionState 登记给浮条那边，
+                // 点"全选"要回到这里调。选择一空就清掉，别指向旧气泡。
+                SelectionStateBus.current = if (picked.isBlank()) null else selectionState
                 latestPick(picked)
             }
         }

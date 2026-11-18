@@ -6,6 +6,9 @@
 
 package me.rerere.rikkahub.ui.components.ai
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.runtime.CompositionLocalProvider
@@ -135,6 +138,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Rect
 import me.rerere.rikkahub.ui.components.message.QuoteAnchorBus
+import me.rerere.rikkahub.ui.components.message.SelectionStateBus
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
@@ -1983,6 +1987,10 @@ fun ChatInput(
                 anchor = pickAnchor,
                 text = pickText,
                 onUse = onUsePickedQuote,
+                onSelectAll = {
+                    // 【全选 · 2026-11-18】state 在气泡里，靠 bus 递过去
+                    SelectionStateBus.current?.selectAll()
+                },
                 onCancel = {
                     state.pickedText = null
                     state.pickedMessageId = null
@@ -2675,8 +2683,10 @@ private fun QuoteFloatBar(
     anchor: Rect,
     text: String,
     onUse: (() -> Unit)?,
+    onSelectAll: (() -> Unit)?,
     onCancel: () -> Unit,
 ) {
+    val context = LocalContext.current
     Popup(
         popupPositionProvider = remember(anchor) {
             object : PopupPositionProvider {
@@ -2731,6 +2741,37 @@ private fun QuoteFloatBar(
                         color = Color(0xFFFFC46B),
                         modifier = Modifier
                             .clickable { onUse() }
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                    )
+                }
+                // 【复制 · 2026-11-18】系统那排菜单被咱拦掉了，复制得自己补回来。
+                // 剪贴板是本地 API，不用跨层，浮条自己就能办。
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "复制",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color(0xFFF3EFE8),
+                    modifier = Modifier
+                        .clickable {
+                            runCatching {
+                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                                    as? ClipboardManager
+                                cm?.setPrimaryClip(ClipData.newPlainText("", text))
+                            }
+                        }
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                )
+                // 【全选 · 2026-11-18】调气泡里那个 SelectionState.selectAll()（官方 API，
+                // 已在 foundation.text.selection 确认过）。选中的整条会回流到 pickedText，
+                // 浮条预览跟着变成全文。
+                if (onSelectAll != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "全选",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color(0xFFF3EFE8),
+                        modifier = Modifier
+                            .clickable { onSelectAll() }
                             .padding(horizontal = 4.dp, vertical = 2.dp),
                     )
                 }
