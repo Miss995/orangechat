@@ -315,6 +315,16 @@
         android:value="floating bubble notification" />
     </service>
 
+    <!-- Floating Web Service（系统级网页浮窗，2026-11-18） -->
+    <service
+      android:name=".data.service.FloatingWebService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="user-initiated floating web window" />
+    </service>
+
     <!-- Supabase Sync Service -->
     <service
       android:name=".data.service.SupabaseSyncService"

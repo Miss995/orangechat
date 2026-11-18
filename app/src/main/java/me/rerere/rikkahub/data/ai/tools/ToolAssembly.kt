@@ -107,6 +107,9 @@ suspend fun buildAssistantTools(
         // 拿回音高/抖动/停顿——橘仔"自己听"的那一格。
         add(buildVoiceFeelTool(conversationId))
 
+        // 网页浮窗 (2026-11-18): 把网址挂成系统级小窗，飘在所有应用上面。
+        add(buildFloatingWebTool())
+
         addAll(extraTools)
     }
     // 斜杠命令模式：只暴露安全工具（危险工具收着，宝 2026-09-01 拍板「危险的橘仔收着」）
