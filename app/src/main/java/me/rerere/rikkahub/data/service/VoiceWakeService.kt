@@ -306,7 +306,13 @@ class VoiceWakeService : Service() {
                 log("onWake: 落进 ${conv.title.ifBlank { conv.id.toString() }}")
                 chatService.sendMessage(
                     conversationId = conv.id,
-                    content = listOf(UIMessagePart.Text("（小猫听见你叫它了）")),
+                    // 【唤醒文案 · 2026-11-18 22:02 宝："那个占位句子要换成别的"】
+                    // 原来写死「（小猫听见你叫它了）」—— 那是程序替猫说的一句假话：
+                    // 她还没开口，猫先宣称自己听见了，像通知书，也不像被人叫了一声。
+                    // 现在直接把她喊出来的那个词递进去：她喊什么，聊天里就是什么，不添戏。
+                    content = listOf(
+                        UIMessagePart.Text(keyword.trim().ifBlank { "小猫小猫" })
+                    ),
                 )
                 log("onWake: sendMessage 已发出")
             } catch (t: Throwable) {
