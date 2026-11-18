@@ -149,6 +149,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.replaceRegexes
+import me.rerere.rikkahub.ui.components.richtext.MarkdownLayoutStore
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.data.ai.tools.resolveAwemeId
 import me.rerere.rikkahub.data.ai.tools.fetchAweme
@@ -934,6 +935,23 @@ private fun MessagePartsBlock(
                                 // 【块内定位 · 2026-11-18】先试着把选中的字对到具体某一块，
                                 // 对上了就用那一块的真实矩形（块内再按比例），对不上退回旧的全文比例。
                                 val blk = QuoteBlockBus.locate(displayText, t)
+
+                                // 【精确字坐标 · 2026-11-18 19:33】先问排版结果要真实坐标：
+                                // 块内偏移 = 选中字在这块文本里的下标，getBoundingBox 直接给字框。
+                                // 拿到就"压准那个字"（横向也不再估）；拿不到再退回块顶 + 比例。
+                                val exact = run {
+                                    val rect = blk?.first
+                                    val raw = blk?.second
+                                    if (rect == null || raw.isNullOrBlank()) return@run null
+                                    val lr = MarkdownLayoutStore.get(raw) ?: return@run null
+                                    val off = raw.indexOf(t)
+                                    if (off < 0 || off >= lr.layoutInput.text.length) return@run null
+                                    runCatching {
+                                        val box = lr.getBoundingBox(off)
+                                        Pair(rect.left + box.left, rect.top + box.top)
+                                    }.getOrNull()
+                                }
+
                                 // 【锚点·改成块顶 · 2026-11-18 19:18】原先锚点用"选中字在块内的估位置"，
                                 // 那点本来就在块中间，浮条往上挪一行还在这一块里 → 压住字。
                                 // 改成用整块的顶边当锚点：浮条一挪就出块，避让才有意义。
@@ -948,7 +966,7 @@ private fun MessagePartsBlock(
                                 // 【横坐标 · 2026-11-18 宝："对这个字在选中的那一行的最右边，就是宽度的问题"】
                                 // 拿不到字符级 x，就按"选中字在这块文本里的第几个字 / 这块共几个字"估一个横向比例。
                                 // 单行文字等宽，这个估法在单行上是准的；多行会偏（换行归左），但总比写死左边强。
-                                val anchorX = run {
+                                val anchorX = exact?.first ?: run {
                                     val rect = blk?.first
                                     val raw = blk?.second
                                     if (rect != null && !raw.isNullOrBlank()) {

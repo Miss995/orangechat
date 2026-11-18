@@ -61,6 +61,7 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -843,6 +844,11 @@ private fun Paragraph(
             inlineContent = inlineContents,
             softWrap = true,
             overflow = TextOverflow.Visible,
+            onTextLayout = { lr ->
+                // 【精确字坐标 · 2026-11-18】按"这块的纯文本"做 key 存下来。
+                // 定位浮条时用 getBoundingBox(块内偏移) 拿真实字坐标，不再按字数比例估。
+                MarkdownLayoutStore.put(annotatedString.text, lr)
+            },
             style = LocalTextStyle.current.copy(
                 lineHeight = if (hasInlineMath && enableLatexRendering) TextUnit.Unspecified else LocalTextStyle.current.lineHeight
             )
@@ -1192,4 +1198,31 @@ private fun List<ASTNode>.trim(type: IElementType, size: Int): List<ASTNode> {
         trimmed++
     }
     return this.subList(start, end)
+}
+
+
+/**
+ * 【精确字坐标 · 2026-11-18】正文每一块的排版结果，按「这块的纯文本」索引。
+ *
+ * 为什么用文本当 key：块是递归渲染的，一层层往下传参要穿十几处；
+ * 而"一块的纯文本"在该条消息里几乎是唯一的，直接当门牌最省。
+ *
+ * 用途：浮条定位先拿到"选中的字落在哪一块"，再问这张表要真实坐标
+ * （TextLayoutResult.getBoundingBox(块内偏移)），彻底不用按字数比例估。
+ */
+internal object MarkdownLayoutStore {
+    private val map = java.util.concurrent.ConcurrentHashMap<String, TextLayoutResult>()
+    private const val MAX = 120
+
+    fun put(text: String, lr: TextLayoutResult) {
+        if (text.isBlank()) return
+        map[text] = lr
+        if (map.size > MAX) {
+            // 简单粗暴地清一半：消息列表复用率高，留最近的够用
+            map.keys.take(map.size - MAX / 2).forEach { map.remove(it) }
+        }
+    }
+
+    /** 取某一块的排版结果；取不到返回 null（调用方回退旧逻辑）。 */
+    fun get(text: String): TextLayoutResult? = map[text.trim()] ?: map[text]
 }
