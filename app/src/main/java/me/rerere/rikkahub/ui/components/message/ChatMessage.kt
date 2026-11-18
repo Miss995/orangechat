@@ -955,7 +955,13 @@ private fun MessagePartsBlock(
                                 // 【锚点·改成块顶 · 2026-11-18 19:18】原先锚点用"选中字在块内的估位置"，
                                 // 那点本来就在块中间，浮条往上挪一行还在这一块里 → 压住字。
                                 // 改成用整块的顶边当锚点：浮条一挪就出块，避让才有意义。
-                                val anchorY = if (blk != null) {
+                                // 【锚点·改回字顶 · 2026-11-18 20:21 宝：\"你是不是给他改成避让块的边缘了？\"】
+                                // 块顶那版是没精确坐标时的退路（退到整块外面才好躲）。
+                                // 现在 getBoundingBox 能拿到选中那一行的真实顶边，就按"那一行"躲，
+                                // 浮条贴着选中行往上一行放，不用整块都让开。
+                                val anchorY = if (exact != null) {
+                                    exact.second
+                                } else if (blk != null) {
                                     blk.first.top
                                 } else {
                                     val total = displayText.length.coerceAtLeast(1)

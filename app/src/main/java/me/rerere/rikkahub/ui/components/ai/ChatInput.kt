@@ -2692,7 +2692,9 @@ private fun QuoteFloatBar(
                     // 40 ≈ 一行高 + 一点余量，浮条就浮到再上面那一行去了。
                     // 【避让 · 2026-11-18 19:13 宝："现在浮条压在了选的字上面，应该压在它上面那行或者下面那行"】
                     // 40 的时候底边正压在选中行的上沿；抬到 56（一行高 + 余量），才真正落到上一行。
-                    val vGap = 56
+                    // 【2026-11-18 20:21 宝：\"这个避让距离改小一点，40 是不是太大了？\"】
+                    // 锚点从块顶改成字顶之后，40 是"字顶往上 40"，够一行高；再大就飘到两行外了。
+                    val vGap = 40
                     val maxLeft = (windowSize.width - popupContentSize.width - gap).coerceAtLeast(gap)
                     val left = anchor.left.toInt().coerceIn(gap, maxLeft)
                     val above = anchor.top.toInt() - popupContentSize.height - vGap
