@@ -77,6 +77,16 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.material3.Surface
 
 @Composable
 fun ChatMessageActionMenu(
@@ -92,25 +102,52 @@ fun ChatMessageActionMenu(
     onClearTranslation: (UIMessage) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     var showTranslateDialog by remember { mutableStateOf(false) }
     var showRegenerateConfirm by remember { mutableStateOf(false) }
 
     // 【点按菜单 · 2026-10-10】原来是消息下面那排小图标，改成浮在手指旁边的菜单。
     // offset = 手指落点（相对整条消息），由 ChatMessage 那边的 pointerInput 量出来。
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismissRequest,
-        offset = offset,
-        // 【点按菜单 · 2026-10-10 宝要求缩一半】下限收到 110dp（只防过窄，实际宽度由内容决定）。
-        // 系统 DropdownMenuItem 的硬性 minWidth 已随它一起换掉了。
-        modifier = Modifier.widthIn(min = 110.dp),
-        // 【点按菜单 · 2026-10-10 宝嫌丑】圆角 + 半透明 + 细描边，整体收一圈
-        shape = RoundedCornerShape(20.dp),
-        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-        tonalElevation = 0.dp,
-        shadowElevation = 6.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
-    ) {
+    // 【点按菜单换皮 · 2026-11-18 21:35 宝选方案①】原来挂在 DropdownMenu 上，底子是系统的：
+    // 弹出动画、阴影调法、宽度脾气都改不动，跟家里的纸感/玻璃怎么刷都不像一家。
+    // 现在改成自己画的 Popup，皮肤照抄选中浮条（深色 0xFF2B2723 + 圆角 12 + 阴影 8），
+    // 于是"点正文"和"选文字"这两个手势叫出来的东西长得一模一样。
+    if (expanded) {
+        Popup(
+            popupPositionProvider = remember(offset) {
+                object : PopupPositionProvider {
+                    override fun calculatePosition(
+                        anchorBounds: IntRect,
+                        windowSize: IntSize,
+                        layoutDirection: LayoutDirection,
+                        popupContentSize: IntSize,
+                    ): IntOffset {
+                        val m = with(density) { 8.dp.roundToPx() }
+                        val ox = with(density) { offset.x.roundToPx() }
+                        val oy = with(density) { offset.y.roundToPx() }
+                        val maxX = (windowSize.width - popupContentSize.width - m).coerceAtLeast(m)
+                        val maxY = (windowSize.height - popupContentSize.height - m).coerceAtLeast(m)
+                        // 原来由 DropdownMenu 内部做的"出屏自动躲"，现在自己夹一下：
+                        // 贴边就收进来，宁可歪一点，也不让菜单跑出屏幕。
+                        return IntOffset(
+                            (anchorBounds.left + ox).coerceIn(m, maxX),
+                            (anchorBounds.top + oy).coerceIn(m, maxY),
+                        )
+                    }
+                }
+            },
+            onDismissRequest = onDismissRequest,
+            // focusable 才收得到"点外面"和返回键 —— 菜单要能点空处关掉
+            properties = PopupProperties(focusable = true),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF2B2723).copy(alpha = 0.94f),
+                contentColor = Color(0xFFF3EFE8),
+                shadowElevation = 8.dp,
+                modifier = Modifier.widthIn(min = 110.dp),
+            ) {
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
         // 复制
         CompactMenuItem(
             icon = HugeIcons.Copy01,
@@ -196,6 +233,9 @@ fun ChatMessageActionMenu(
                 onOpenActionSheet()
             }
         )
+                }
+            }
+        }
     }
 
     // Translation dialog
