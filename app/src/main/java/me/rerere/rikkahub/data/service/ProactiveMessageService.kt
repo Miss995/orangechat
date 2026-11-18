@@ -58,6 +58,7 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
+import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 import me.rerere.rikkahub.data.ai.tools.buildAssistantTools
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.tools.SystemTools
@@ -1220,7 +1221,21 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
             addAll(workspaceTools)
 
             // 本地工具（助手已启用的）
-            addAll(localTools.getTools(assistant.localTools))
+            // 【唤醒回合补 workflow 组 · 2026-11-18 22:23】
+            // 这里原来是单参的 getTools(options) —— 那个重载直接 return buildTools(...)，
+            // 压根不走带 Workflows 判断的那段，于是唤醒回合里 workflow_* 七个一个都没有。
+            // 表现：橘仔在岛上想给自己挂闹钟，workflow_create 报 {"error":"Tool not found"}，
+            // 而聊天回合里同样的调用一切正常（18:17 成、18:26 失败，就是差在这）。
+            // 换成带 invocationContext 的重载：只要助手开了 Workflows，这组就会一起注册。
+            addAll(
+                localTools.getTools(
+                    options = assistant.localTools,
+                    invocationContext = ToolInvocationContext(
+                        callerAssistantId = assistant.id.toString(),
+                        callerConversationId = conversationId,
+                    ),
+                )
+            )
 
             // 系统工具（位置、通知、日历、闹钟、相机）
             val systemToolsOptions = settings.systemToolsSetting.getEnabledOptions()
