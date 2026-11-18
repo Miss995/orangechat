@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.RikkaHubApp
 import me.rerere.rikkahub.data.service.FloatingWebService
 
@@ -59,28 +60,29 @@ fun buildFloatingWebTool(): Tool = Tool(
         val ctx = RikkaHubApp.INSTANCE
 
         when {
-            ctx == null -> """{"ok":false,"error":"app_not_ready"}"""
+            ctx == null -> fwText("""{"ok":false,"error":"app_not_ready"}""")
 
             action == "close" -> {
                 runCatching { FloatingWebService.stop(ctx) }
-                """{"ok":true,"closed":true}"""
+                fwText("""{"ok":true,"closed":true}""")
             }
 
             else -> {
                 val url = params["url"]?.jsonPrimitive?.contentOrNull
                 when {
-                    url.isNullOrBlank() -> """{"ok":false,"error":"missing_url"}"""
+                    url.isNullOrBlank() -> fwText("""{"ok":false,"error":"missing_url"}""")
 
-                    !FloatingWebService.canDrawOverlays(ctx) ->
+                    !FloatingWebService.canDrawOverlays(ctx) -> fwText(
                         """{"ok":false,"error":"no_overlay_permission","hint":"要让宝去系统设置里给橘瓣开「显示在其他应用上层」"}"""
+                    )
 
                     else -> {
                         val title = params["title"]?.jsonPrimitive?.contentOrNull
                         runCatching { FloatingWebService.start(ctx, url, title) }
                             .fold(
-                                onSuccess = { """{"ok":true,"opened":true}""" },
+                                onSuccess = { fwText("""{"ok":true,"opened":true}""") },
                                 onFailure = { e ->
-                                    """{"ok":false,"error":"${e.javaClass.simpleName}"}"""
+                                    fwText("""{"ok":false,"error":"${e.javaClass.simpleName}"}""")
                                 }
                             )
                     }
@@ -89,3 +91,6 @@ fun buildFloatingWebTool(): Tool = Tool(
         }
     }
 )
+
+/** 工具回包统一包成 parts（Tool.execute 要求 List<UIMessagePart>） */
+private fun fwText(s: String): List<UIMessagePart> = listOf(UIMessagePart.Text(s))
