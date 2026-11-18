@@ -48,7 +48,7 @@ private fun readPawprints(file: File): List<PawprintLine> {
             if (idx <= 0) null
             else {
                 val t = line.substring(0, idx).toLongOrNull() ?: return@mapNotNull null
-                PawprintLine(t, line.substring(idx + 1))
+                PawprintLine(t, line.substring(idx + 1).replace("\\n", "\n"))
             }
         }
         .sortedByDescending { it.time }
@@ -102,7 +102,7 @@ fun buildPawprintTool(): Tool = Tool(
                         return@runCatching """{"success":false,"error":"content 不能为空"}"""
                     }
                     val now = System.currentTimeMillis()
-                    file.appendText("$now|$content\n")
+                    file.appendText("$now|${content.replace("\n", "\\n")}\n")
                     buildJsonObject {
                         put("success", true)
                         put("time", pawprintTimeFmt.format(Date(now)))

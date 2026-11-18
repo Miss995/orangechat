@@ -57,7 +57,7 @@ private fun loadPawprints(context: android.content.Context): List<Pawprint> {
             if (idx <= 0) null
             else {
                 val t = line.substring(0, idx).toLongOrNull() ?: return@mapNotNull null
-                Pawprint(t, line.substring(idx + 1))
+                Pawprint(t, line.substring(idx + 1).replace("\\n", "\n"))
             }
         }
         .sortedByDescending { it.time }
