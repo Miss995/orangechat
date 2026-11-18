@@ -934,12 +934,11 @@ private fun MessagePartsBlock(
                                 // 【块内定位 · 2026-11-18】先试着把选中的字对到具体某一块，
                                 // 对上了就用那一块的真实矩形（块内再按比例），对不上退回旧的全文比例。
                                 val blk = QuoteBlockBus.locate(displayText, t)
+                                // 【锚点·改成块顶 · 2026-11-18 19:18】原先锚点用"选中字在块内的估位置"，
+                                // 那点本来就在块中间，浮条往上挪一行还在这一块里 → 压住字。
+                                // 改成用整块的顶边当锚点：浮条一挪就出块，避让才有意义。
                                 val anchorY = if (blk != null) {
-                                    val (rect, raw) = blk
-                                    // 块内比例：选中字在这一块文本里的相对位置
-                                    val i = raw.indexOf(t)
-                                    val inner = if (i < 0) 0.5f else (i + t.length / 2f) / raw.length.coerceAtLeast(1)
-                                    rect.top + rect.height * inner
+                                    blk.first.top
                                 } else {
                                     val total = displayText.length.coerceAtLeast(1)
                                     val hitRaw = displayText.indexOf(t)
