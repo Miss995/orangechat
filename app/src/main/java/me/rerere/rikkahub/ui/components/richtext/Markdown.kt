@@ -6,6 +6,11 @@
 
 package me.rerere.rikkahub.ui.components.richtext
 
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.unit.toSize
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -232,7 +237,11 @@ fun MarkdownBlock(
     content: String,
     modifier: Modifier = Modifier,
     style: TextStyle = LocalTextStyle.current,
-    onClickCitation: (String) -> Unit = {}
+    onClickCitation: (String) -> Unit = {},
+    // 【选中浮条·块位置 · 2026-11-18】把每个 AST child 块的窗口矩形报出去。
+    // 用途：浮条定位从"按整段高度估"改成"先定位落在哪一块、块内再按比例"。
+    // 传 null 时完全不影响原有行为（别处调用照旧）。
+    onBlocksMeasured: ((List<Rect>) -> Unit)? = null,
 ) {
     var data by remember { mutableStateOf(parseMarkdown(content)) }
     // ★ 2026-10-27 修：remember 没有 key，LazyColumn 复用同一个坑位时会留着上一条的解析结果，
@@ -272,10 +281,29 @@ fun MarkdownBlock(
             Column(
                 modifier = modifier.padding(horizontal = 4.dp)
             ) {
-                data.astTree.children.fastForEach { child ->
-                    MarkdownNode(
-                        node = child, content = data.preprocessed, onClickCitation = onClickCitation
-                    )
+                if (onBlocksMeasured == null) {
+                    data.astTree.children.fastForEach { child ->
+                        MarkdownNode(
+                            node = child, content = data.preprocessed, onClickCitation = onClickCitation
+                        )
+                    }
+                } else {
+                    val blockRects = remember { mutableStateListOf<Rect>() }
+                    data.astTree.children.forEachIndexed { index, child ->
+                        MarkdownNode(
+                            node = child,
+                            content = data.preprocessed,
+                            onClickCitation = onClickCitation,
+                            modifier = Modifier.onGloballyPositioned { coords ->
+                                val r = Rect(coords.positionInWindow(), coords.size.toSize())
+                                while (blockRects.size <= index) blockRects.add(Rect.Zero)
+                                if (blockRects[index] != r) {
+                                    blockRects[index] = r
+                                    onBlocksMeasured(blockRects.toList())
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }

@@ -644,6 +644,14 @@ private fun TaskAwareBody(
                                 visual = true,
                             ),
                             onClickCitation = onClickCitation,
+                            onBlocksMeasured = { rects ->
+                                AppLogBuffer.log(
+                                    "QuoteBlock",
+                                    "n=${rects.size} " + rects.take(8).joinToString(" ") {
+                                        "(${it.left.toInt()},${it.top.toInt()} ${it.width.toInt()}x${it.height.toInt()})"
+                                    }
+                                )
+                            },
                         )
                     }
                 }
