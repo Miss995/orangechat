@@ -46,6 +46,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.AppLogBuffer
+import me.rerere.rikkahub.data.ai.tools.local.ShizukuShell
 import me.rerere.rikkahub.data.ai.transformers.ImageDescriber
 import me.rerere.rikkahub.data.sticker.StickerStore
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -676,6 +677,20 @@ class FloatingBallService : Service() {
     }
 
     /**
+     * 此刻前台是哪个 App（宝 2026-11-21 提的关键验证）。
+     *
+     * 日志原来只写「命中」，没写人在哪儿 —— 那就分不清是「在抖音里后台读到的」，
+     * 还是「切回橘瓣之后才读到的」。这条打出来就能定性。
+     */
+    private fun currentForegroundPackage(): String = runCatching {
+        val out = ShizukuShell.exec(
+            "dumpsys activity activities 2>/dev/null | grep -m1 -E 'topResumedActivity|mResumedActivity'"
+        )
+        Regex("""\s([a-zA-Z0-9_.]+)/[a-zA-Z0-9_.]+""").find(out)?.groupValues?.get(1)
+            ?: out.trim().take(80)
+    }.getOrDefault("查不到")
+
+    /**
      * 【Shizuku 读剪贴板 · 2026-11-21】
      *
      * Android 10+ 起，后台 App 读不到剪贴板（官方文档：非默认 IME 且无输入焦点 → 返回 null）。
@@ -716,7 +731,10 @@ class FloatingBallService : Service() {
                 val dy = text.contains("douyin.com") || text.contains("抖音")
                 if (!xhs && !dy) continue
                 val label = if (xhs) "小红书" else "抖音"
-                AppLogBuffer.log("FloatBall", "剪贴板命中 $label（${text.length} 字）")
+                AppLogBuffer.log(
+                    "FloatBall",
+                    "剪贴板命中 $label（${text.length} 字）此刻前台=${currentForegroundPackage()}"
+                )
                 // 【2026-11-21 验证】先只改球自己的颜色 —— 不 addView、不改窗口尺寸。
                 // 这个看得见 = 后台能改现有 View；看不见 = 后台整个界面被冻住，跟窗口无关。
                 handler.post {
