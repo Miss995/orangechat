@@ -798,8 +798,12 @@ class FloatingBallService : Service() {
                 // 【2026-11-21 验证】先只改球自己的颜色 —— 不 addView、不改窗口尺寸。
                 // 这个看得见 = 后台能改现有 View；看不见 = 后台整个界面被冻住，跟窗口无关。
                 handler.post {
+                    // 闪一下红就当提示：有东西存着了。两秒后变回橘色 —— 不能常驻红着，
+                    // 不然会跟别的 App 的红点混在一起（宝 2026-11-21 已经在抖音群里认错过一次）
                     (ballCircle?.background as? GradientDrawable)?.setColor(0xFFFF3333.toInt())
-                    AppLogBuffer.log("FloatBall", "球已变红")
+                    handler.postDelayed({
+                        (ballCircle?.background as? GradientDrawable)?.setColor(BALL_COLOR)
+                    }, 2000)
                 }
                 handler.post { showSharePanel("剪贴板 · $label", text, "要分享给猫吗？") }
             }
