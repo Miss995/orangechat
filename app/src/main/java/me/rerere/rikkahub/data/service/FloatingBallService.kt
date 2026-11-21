@@ -773,6 +773,9 @@ class FloatingBallService : Service() {
         clipPollJob?.cancel()
         clipPollJob = bgScope.launch {
             var loggedNoPermission = false
+            // Service 重启后第一次读到的东西要当「基准」，不能当「刚复制的」——
+            // 不然每次进橘瓣都会被一条老链接弹一下（宝 2026-11-21 报的）
+            var firstRead = true
             while (isActive) {
                 delay(CLIP_POLL_INTERVAL_MS)
                 val text = readClipViaShizuku()
@@ -786,6 +789,10 @@ class FloatingBallService : Service() {
                 loggedNoPermission = false
                 if (text.isBlank() || text == lastPolledClip) continue
                 lastPolledClip = text
+                if (firstRead) {
+                    firstRead = false
+                    continue
+                }
                 val xhs = text.contains("xhslink.com") || text.contains("xiaohongshu.com") ||
                     text.contains("小红书")
                 val dy = text.contains("douyin.com") || text.contains("抖音")
