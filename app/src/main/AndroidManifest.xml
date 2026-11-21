@@ -325,6 +325,16 @@
         android:value="user-initiated floating web window" />
     </service>
 
+    <!-- Floating Ball Service（常驻悬浮球，2026-11-21） -->
+    <service
+      android:name=".data.service.FloatingBallService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="persistent floating ball" />
+    </service>
+
     <!-- Supabase Sync Service -->
     <service
       android:name=".data.service.SupabaseSyncService"

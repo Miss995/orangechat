@@ -110,6 +110,9 @@ suspend fun buildAssistantTools(
         // 网页浮窗 (2026-11-18): 把网址挂成系统级小窗，飘在所有应用上面。
         add(buildFloatingWebTool())
 
+        // 常驻悬浮球 (2026-11-21): 一个光秃秃的小球，当外部接收口（拖拽接收已埋好）。
+        add(buildFloatingBallTool())
+
         addAll(extraTools)
     }
     // 斜杠命令模式：只暴露安全工具（危险工具收着，宝 2026-09-01 拍板「危险的橘仔收着」）
