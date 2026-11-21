@@ -21,6 +21,7 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.os.Parcel
 import android.provider.Settings
 import android.util.Log
 import android.util.TypedValue
@@ -718,8 +719,32 @@ class FloatingBallService : Service() {
         }
         lastReadFail = null
         val binder = SystemServiceHelper.getSystemService("clipboard")
-        val svc = IClipboard.Stub.asInterface(ShizukuBinderWrapper(binder))
-        val clip = svc.getPrimaryClip(packageName, null, 0, 0, false)
+        val wrapped = ShizukuBinderWrapper(binder)
+        // 【2026-11-21 改】不走 aidl stub 了。
+        // 之前报 SecurityException: Binder invocation to an incorrect interface ——
+        // 因为 aidl 的 transaction code 是按声明顺序编的，我们那份只写了一个方法（code=1），
+        // 而系统里 getPrimaryClip 排第 4（前面还有 setPrimaryClip / setPrimaryClipAsPackage /
+        // clearPrimaryClip）。调到 code 1 等于去打 setPrimaryClip，参数对不上就炸了。
+        // 改成手写 Parcel 直接 transact(4) —— 不依赖生成的 stub。
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        val clip = try {
+            data.writeInterfaceToken("android.content.IClipboard")
+            data.writeString(packageName)   // pkg
+            data.writeString(null)          // attributionTag
+            data.writeInt(0)                // userId
+            data.writeInt(0)                // deviceId
+            data.writeInt(1)                // sendAccessNotify
+            if (!wrapped.transact(4, data, reply, 0)) {
+                logReadFail("transact 返回 false（clipboard code=4）")
+                return@runCatching null
+            }
+            reply.readException()
+            if (reply.readInt() != 0) ClipData.CREATOR.createFromParcel(reply) else null
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
         clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
     }.onFailure {
         logReadFail("抛异常 ${it.javaClass.simpleName}: ${it.message}")
