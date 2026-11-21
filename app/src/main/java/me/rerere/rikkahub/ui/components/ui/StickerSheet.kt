@@ -22,6 +22,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -82,35 +83,58 @@ fun StickerSheet(
     }
 
     detailFile?.let { target ->
+        // 描述可编辑：猫看的是"画了啥"，宝看的是"这图在咱俩这儿是什么意思"。
+        // 宝写的那句更有用，存回同一个 sidecar，猫调 sticker_list 就吃这版。
+        var noteText by remember(target) { mutableStateOf(StickerStore.readNote(target) ?: "") }
         AlertDialog(
             onDismissRequest = { detailFile = null },
             title = { Text("这张表情包") },
             text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Column(
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState()),
+                ) {
                     AsyncImage(
                         model = target,
                         contentDescription = null,
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 220.dp)
+                            .heightIn(max = 180.dp)
                             .clip(RoundedCornerShape(10.dp)),
                     )
                     Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = noteText,
+                        onValueChange = { noteText = it },
+                        label = { Text("描述（猫照着这个理解这张图）") },
+                        placeholder = { Text("比如：这就是你惹我生气之后的样子") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        maxLines = 8,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = StickerStore.readNote(target) ?: "（还没有描述）",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "清空保存 = 以后让模型重新看一眼",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
+                    val t = noteText.trim()
+                    StickerStore.saveNote(target, t)
                     onPick(target)
                     detailFile = null
-                }) { Text("用这张") }
+                }) { Text("存描述并用这张") }
             },
             dismissButton = {
-                TextButton(onClick = { detailFile = null }) { Text("算了") }
+                TextButton(onClick = {
+                    val t = noteText.trim()
+                    StickerStore.saveNote(target, t)
+                    detailFile = null
+                }) { Text("只存描述") }
             },
         )
     }
