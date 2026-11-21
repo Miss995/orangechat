@@ -526,6 +526,7 @@ class FloatingBallService : Service() {
      * 所以这是一层覆盖窗口，压根不切应用。
      */
     private fun showSharePanel(pkg: String, text: String, title: String = "要发给猫吗？") {
+        AppLogBuffer.log("FloatBall", "弹卡片：$title / $pkg / ${text.length} 字")
         hideSharePanel()
         val width = (screenWidth() - dp(40)).coerceIn(dp(200), dp(420))
 
@@ -590,8 +591,18 @@ class FloatingBallService : Service() {
         ).apply { gravity = Gravity.CENTER }
 
         runCatching { windowManager.addView(card, params) }
-            .onSuccess { sharePanel = card }
-            .onFailure { Log.e(TAG, "add share panel failed", it) }
+            .onSuccess {
+                sharePanel = card
+                AppLogBuffer.log("FloatBall", "卡片已挂上窗口")
+            }
+            .onFailure {
+                // 加窗失败最常见是被系统的「后台弹出界面」权限挡了，必须留痕到日志环里
+                AppLogBuffer.log(
+                    "FloatBall",
+                    "加窗失败 ${it.javaClass.simpleName}: ${it.message}"
+                )
+                Log.e(TAG, "add share panel failed", it)
+            }
     }
 
     private fun makePanelButton(label: String, primary: Boolean, onClick: () -> Unit): TextView =
