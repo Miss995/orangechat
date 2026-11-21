@@ -20,11 +20,14 @@ import android.provider.Settings
 import android.util.Log
 import android.util.TypedValue
 import android.view.DragEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +39,12 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.data.ai.transformers.ImageDescriber
 import me.rerere.rikkahub.data.sticker.StickerStore
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.service.ChatService
+import me.rerere.ai.ui.UIMessagePart
+import org.koin.core.context.GlobalContext
+import me.rerere.rikkahub.service.RikkaAccessibilityService
 import java.io.File
 import kotlin.math.abs
 
@@ -67,6 +76,10 @@ class FloatingBallService : Service() {
         const val MAX_BALL_SIZE_DP = 80
         private const val FOREGROUND_NOTIF_ID = 20004
         private const val CLICK_THRESHOLD_PX = 16f
+        private const val DOUBLE_TAP_WINDOW_MS = 300L
+        private const val SINGLE_TAP_DELAY_MS = 320L
+        private const val TAP_TOKEN = "ball_tap"
+        private const val SHARE_TEXT_LIMIT = 3000
         private const val EDGE_MARGIN_DP = 8
 
         /** 启动（或唤醒）常驻球 */
@@ -96,6 +109,10 @@ class FloatingBallService : Service() {
     private lateinit var windowManager: WindowManager
     private var ballView: View? = null
     private var ballParams: WindowManager.LayoutParams? = null
+
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var lastTapAt = 0L
+    private var sharePanel: View? = null
 
     /** 存图/描述走这个，跟 Service 生命周期无关，存完就走 */
     private val bgScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -134,6 +151,7 @@ class FloatingBallService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        hideSharePanel()
         ballView?.let { v -> runCatching { windowManager.removeView(v) } }
         ballView = null
         ballParams = null
@@ -248,7 +266,24 @@ class FloatingBallService : Service() {
                 }
 
                 MotionEvent.ACTION_UP -> {
-                    if (dragging) snapToEdge(view, params) else onBallClick()
+                    if (dragging) {
+                        snapToEdge(view, params)
+                    } else {
+                        // 双击 = 把当前页面抓给猫；单击延后 320ms，等不到第二下才算单击
+                        val now = System.currentTimeMillis()
+                        if (now - lastTapAt < DOUBLE_TAP_WINDOW_MS) {
+                            lastTapAt = 0L
+                            handler.removeCallbacksAndMessages(TAP_TOKEN)
+                            onBallDoubleTap()
+                        } else {
+                            lastTapAt = now
+                            handler.postAtTime(
+                                { if (lastTapAt == now) onBallClick() },
+                                TAP_TOKEN,
+                                android.os.SystemClock.uptimeMillis() + SINGLE_TAP_DELAY_MS,
+                            )
+                        }
+                    }
                     true
                 }
 
@@ -371,6 +406,173 @@ class FloatingBallService : Service() {
                     StickerStore.saveNote(f, "【失败】describe 返回 null（多半是没配 OCR 模型）")
                     AppLogBuffer.log("FloatBall", "describe 返回 null（没配识别模型？）")
                 }
+            }
+        }
+    }
+
+    /**
+     * 双击球 · 抓当前页面（2026-11-21）
+     *
+     * 只抓**看得见的文字**（不抓控件结构、不截图）—— 快、零成本。
+     * 抓到的东西存到 filesDir/ball_share_latest.txt，等下一步接"发给猫"。
+     */
+    private fun onBallDoubleTap() {
+        val svc = RikkaAccessibilityService.instance
+        if (svc == null) {
+            Toast.makeText(this, "无障碍服务没开，抓不了页面", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val root = runCatching { svc.rootInActiveWindow }.getOrNull()
+        if (root == null) {
+            Toast.makeText(this, "没抓到当前窗口", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val pkg = root.packageName?.toString().orEmpty()
+        val sb = StringBuilder()
+        collectVisibleText(root, sb, 0)
+        runCatching { root.recycle() }
+
+        val body = sb.toString().trim()
+        if (body.isEmpty()) {
+            Toast.makeText(this, "这页没什么字", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val clipped = if (body.length > SHARE_TEXT_LIMIT) body.take(SHARE_TEXT_LIMIT) + "…" else body
+
+        bgScope.launch {
+            runCatching {
+                File(filesDir, "ball_share_latest.txt").writeText("[$pkg]\n$clipped")
+            }
+            AppLogBuffer.log("FloatBall", "双击抓到 ${clipped.length} 字 pkg=$pkg")
+            handler.post { showSharePanel(pkg, clipped) }
+        }
+    }
+
+    /** 深度优先收集可见文字，一行一条，去重相邻重复 */
+    private fun collectVisibleText(node: AccessibilityNodeInfo, sb: StringBuilder, depth: Int) {
+        if (depth > 40 || sb.length > SHARE_TEXT_LIMIT * 2) return
+        if (node.isVisibleToUser) {
+            val t = node.text?.toString()?.trim().orEmpty()
+            val cd = node.contentDescription?.toString()?.trim().orEmpty()
+            val line = if (t.isNotEmpty()) t else cd
+            if (line.isNotEmpty()) {
+                val last = sb.lineSequence().lastOrNull()
+                if (line != last) sb.appendLine(line)
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectVisibleText(child, sb, depth + 1)
+            runCatching { child.recycle() }
+        }
+    }
+
+    /**
+     * 双击后的确认卡片（2026-11-21 宝定的 B 方案）
+     *
+     * 宝的原话：「当前页面直接弹出来，准备发送的内容，然后确定发送就直接发给你，
+     * 不用页面先转到橘瓣里再发。」
+     * 所以这是一层覆盖窗口，压根不切应用。
+     */
+    private fun showSharePanel(pkg: String, text: String) {
+        hideSharePanel()
+        val width = (screenWidth() - dp(40)).coerceIn(dp(200), dp(420))
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadius = dp(18).toFloat()
+                setColor(Color.WHITE)
+            }
+            setPadding(dp(16), dp(14), dp(16), dp(10))
+            elevation = dp(12).toFloat()
+        }
+
+        card.addView(TextView(this).apply {
+            text = "要发给猫吗？"
+            textSize = 15f
+            setTextColor(Color.parseColor("#111111"))
+        })
+        card.addView(TextView(this).apply {
+            text = pkg
+            textSize = 11f
+            setTextColor(Color.parseColor("#999999"))
+            setPadding(0, dp(2), 0, dp(8))
+        })
+        card.addView(TextView(this).apply {
+            text = if (text.length > 200) text.take(200) + "…" else text
+            textSize = 13f
+            setTextColor(Color.parseColor("#444444"))
+            maxLines = 6
+            setPadding(0, 0, 0, dp(12))
+        })
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+        }
+        row.addView(makePanelButton("算了", false) { hideSharePanel() })
+        row.addView(View(this), LinearLayout.LayoutParams(dp(8), dp(1)))
+        row.addView(makePanelButton("发送", true) {
+            hideSharePanel()
+            sendSharedText(pkg, text)
+        })
+        card.addView(row)
+
+        val params = WindowManager.LayoutParams(
+            width,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.CENTER }
+
+        runCatching { windowManager.addView(card, params) }
+            .onSuccess { sharePanel = card }
+            .onFailure { Log.e(TAG, "add share panel failed", it) }
+    }
+
+    private fun makePanelButton(label: String, primary: Boolean, onClick: () -> Unit): TextView =
+        TextView(this).apply {
+            text = label
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setPadding(dp(18), dp(9), dp(18), dp(9))
+            setTextColor(if (primary) Color.WHITE else Color.parseColor("#666666"))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(20).toFloat()
+                setColor(if (primary) BALL_COLOR else Color.parseColor("#F1F0EE"))
+            }
+            setOnClickListener { onClick() }
+        }
+
+    private fun hideSharePanel() {
+        sharePanel?.let { v -> runCatching { windowManager.removeView(v) } }
+        sharePanel = null
+    }
+
+    /** 发进最近那个会话（后台发，不切页面） */
+    private fun sendSharedText(pkg: String, text: String) {
+        bgScope.launch {
+            runCatching {
+                val settings = GlobalContext.get().get<SettingsStore>().settingsFlow.value
+                val repo = GlobalContext.get().get<ConversationRepository>()
+                val conv = repo.getRecentConversations(settings.assistantId, 1).firstOrNull()
+                if (conv == null) {
+                    AppLogBuffer.log("FloatBall", "没有会话可发")
+                    return@launch
+                }
+                GlobalContext.get().get<ChatService>().sendMessage(
+                    conv.id,
+                    listOf(UIMessagePart.Text("【球抓到一页】$pkg\n$text")),
+                )
+                AppLogBuffer.log("FloatBall", "已发进会话 ${conv.id}（${text.length} 字）")
+            }.onFailure {
+                AppLogBuffer.log("FloatBall", "发送失败 ${it.javaClass.simpleName}: ${it.message}")
+                Log.e(TAG, "send shared text failed", it)
             }
         }
     }
