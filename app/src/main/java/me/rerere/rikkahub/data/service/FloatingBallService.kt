@@ -138,7 +138,7 @@ class FloatingBallService : Service() {
     }
 
     private lateinit var windowManager: WindowManager
-    private var ballView: View? = null
+    private var ballView: FrameLayout? = null
     private var ballParams: WindowManager.LayoutParams? = null
     /** 球本体（弹卡片时把它藏起来，卡片和它共用同一个窗口） */
     private var ballCircle: View? = null
