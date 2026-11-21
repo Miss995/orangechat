@@ -730,11 +730,15 @@ class FloatingBallService : Service() {
         val reply = Parcel.obtain()
         val parsed = try {
             data.writeInterfaceToken("android.content.IClipboard")
+            // Android 15 的 getPrimaryClip 是 4 个参数：
+            // (String pkg, String attributionTag, int userId, int deviceId)
+            // ⚠️ 别多写 sendAccessNotify —— 服务端只认 4 个，多出来的会被判成
+            //    BadParcelableException: Parcel data not fully consumed, unread size: 4
+            //    （那个错是服务端读参数时抛的，不是我们解析返回时抛的）
             data.writeString(packageName)   // pkg
             data.writeString(null)          // attributionTag
             data.writeInt(0)                // userId
             data.writeInt(0)                // deviceId
-            data.writeInt(1)                // sendAccessNotify
             if (!wrapped.transact(4, data, reply, 0)) {
                 logReadFail("transact 返回 false（clipboard code=4）")
                 return@runCatching null
