@@ -27,8 +27,15 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.AppLogBuffer
+import me.rerere.rikkahub.data.sticker.StickerStore
+import java.io.File
 import kotlin.math.abs
 
 /**
@@ -80,6 +87,9 @@ class FloatingBallService : Service() {
     private lateinit var windowManager: WindowManager
     private var ballView: View? = null
     private var ballParams: WindowManager.LayoutParams? = null
+
+    /** 存图/描述走这个，跟 Service 生命周期无关，存完就走 */
+    private val bgScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -286,8 +296,35 @@ class FloatingBallService : Service() {
     }
 
     private fun onDrop(clip: ClipData?) {
-        Log.i(TAG, "DROPPED items=${clip?.itemCount ?: 0} ${describe(clip)}")
-        Toast.makeText(this, "球接到了 ${clip?.itemCount ?: 0} 个东西", Toast.LENGTH_SHORT).show()
+        if (clip == null) return
+        AppLogBuffer.log("FloatBall", "onDrop ${describe(clip)}")
+
+        val uris = buildList {
+            for (i in 0 until clip.itemCount) {
+                clip.getItemAt(i).uri?.let { add(it) }
+            }
+        }
+        if (uris.isEmpty()) {
+            AppLogBuffer.log("FloatBall", "onDrop: 没有 uri，可能只有 text")
+            Toast.makeText(this, "球只认图片，这个拖不进来", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        Toast.makeText(this, "球接到了 ${uris.size} 张，正在存", Toast.LENGTH_SHORT).show()
+
+        bgScope.launch {
+            val saved = mutableListOf<File>()
+            for (uri in uris) {
+                val path = runCatching { StickerStore.saveFromUri(this@FloatingBallService, uri) }
+                    .onFailure { AppLogBuffer.log("FloatBall", "存失败 $uri -> ${it.javaClass.simpleName}: ${it.message}") }
+                    .getOrNull()
+                if (path != null) saved += File(path)
+            }
+            AppLogBuffer.log("FloatBall", "存了 ${saved.size} / ${uris.size} 张")
+            if (saved.isEmpty()) {
+                AppLogBuffer.log("FloatBall", "一张都没存成 —— 多半是读不了 content:// 的权限")
+            }
+        }
     }
 
     private fun onBallClick() {
