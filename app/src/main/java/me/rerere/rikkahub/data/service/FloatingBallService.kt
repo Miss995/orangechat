@@ -10,6 +10,11 @@ import android.app.Service
 import android.content.ClipData
 import android.content.Context
 import android.content.ClipboardManager
+import android.content.pm.PackageManager
+import android.os.UserHandle
+import rikka.shizuku.Shizuku
+import rikka.shizuku.ShizukuBinderWrapper
+import rikka.shizuku.SystemServiceHelper
 import android.content.Intent
 import android.content.res.Resources
 import android.graphics.Color
@@ -34,6 +39,9 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
@@ -86,6 +94,8 @@ class FloatingBallService : Service() {
         private const val SINGLE_TAP_DELAY_MS = 320L
         private const val TAP_TOKEN = "ball_tap"
         private const val SHARE_TEXT_LIMIT = 3000
+        /** 剪贴板轮询间隔（毫秒）—— 没有回调可用，只能自己读（宝 2026-11-21 定的 2 秒） */
+        private const val CLIP_POLL_INTERVAL_MS = 2000L
         private const val EDGE_MARGIN_DP = 8
 
         /** 启动（或唤醒）常驻球 */
@@ -137,7 +147,10 @@ class FloatingBallService : Service() {
 
     /** 【剪贴板监听 · 2026-11-21】宝复制抖音/小红书链接时弹卡片问要不要分享 */
     private var lastClipText: String? = null
-    private val clipListener = ClipboardManager.OnPrimaryClipChangedListener { onClipboardChanged() }
+    private var clipPollJob: Job? = null
+
+    /** 上一个已处理过的剪贴板内容（避免同一内容反复弹） */
+    private var lastPolledClip: String? = null
 
     /** 存图/描述走这个，跟 Service 生命周期无关，存完就走 */
     private val bgScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -145,13 +158,9 @@ class FloatingBallService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        // 剪贴板监听：宝复制抖音/小红书链接就弹卡片问要不要分享
-        // ⚠️ Android 10+ 后台读不到剪贴板内容 —— 监听器会响，但 primaryClip 可能是空。
-        // 那就老实在日志里记一句，别装作没事。
-        runCatching {
-            (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
-                ?.addPrimaryClipChangedListener(clipListener)
-        }.onFailure { Log.w(TAG, "clipboard listener failed", it) }
+        // 【剪贴板 · 2026-11-21】后台收不到剪贴板变化回调（被系统卡着），所以改成轮询：
+        // 借 Shizuku 的 shell 身份每 2 秒读一次，命中抖音/小红书就弹卡片。
+        startClipboardPoll()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -192,10 +201,8 @@ class FloatingBallService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        runCatching {
-            (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
-                ?.removePrimaryClipChangedListener(clipListener)
-        }
+        clipPollJob?.cancel()
+        clipPollJob = null
         hideSharePanel()
         ballView?.let { v -> runCatching { windowManager.removeView(v) } }
         ballView = null
@@ -626,6 +633,53 @@ class FloatingBallService : Service() {
             }.onFailure {
                 AppLogBuffer.log("FloatBall", "发送失败 ${it.javaClass.simpleName}: ${it.message}")
                 Log.e(TAG, "send shared text failed", it)
+            }
+        }
+    }
+
+    /**
+     * 【Shizuku 读剪贴板 · 2026-11-21】
+     *
+     * Android 10+ 起，后台 App 读不到剪贴板（官方文档：非默认 IME 且无输入焦点 → 返回 null）。
+     * 但 shell 身份是豁免的，所以借 Shizuku 直接问系统 clipboard 服务要。
+     * 返回 null = Shizuku 没跑 / 没授权 / 读取失败。
+     */
+    private fun readClipViaShizuku(): String? = runCatching {
+        if (Shizuku.getUid() == -1) return@runCatching null
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+            return@runCatching null
+        }
+        val binder = SystemServiceHelper.getSystemService("clipboard")
+        val svc = IClipboard.Stub.asInterface(ShizukuBinderWrapper(binder))
+        val clip = svc.getPrimaryClip(packageName, null, UserHandle.myUserId(), 0, false)
+        clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+    }.getOrNull()
+
+    /** 每 2 秒读一次剪贴板，命中抖音/小红书就弹卡片 */
+    private fun startClipboardPoll() {
+        clipPollJob?.cancel()
+        clipPollJob = bgScope.launch {
+            var loggedNoPermission = false
+            while (isActive) {
+                delay(CLIP_POLL_INTERVAL_MS)
+                val text = readClipViaShizuku()
+                if (text == null) {
+                    if (!loggedNoPermission) {
+                        loggedNoPermission = true
+                        AppLogBuffer.log("FloatBall", "剪贴板轮询：Shizuku 没跑或没授权，先停在这")
+                    }
+                    continue
+                }
+                loggedNoPermission = false
+                if (text.isBlank() || text == lastPolledClip) continue
+                lastPolledClip = text
+                val xhs = text.contains("xhslink.com") || text.contains("xiaohongshu.com") ||
+                    text.contains("小红书")
+                val dy = text.contains("douyin.com") || text.contains("抖音")
+                if (!xhs && !dy) continue
+                val label = if (xhs) "小红书" else "抖音"
+                AppLogBuffer.log("FloatBall", "剪贴板命中 $label（${text.length} 字）")
+                handler.post { showSharePanel("剪贴板 · $label", text, "要分享给猫吗？") }
             }
         }
     }

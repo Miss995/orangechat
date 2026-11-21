@@ -128,6 +128,8 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        // 【剪贴板 · 2026-11-21】用 Shizuku 借 shell 身份读剪贴板，需要自己定义 IClipboard 接口
+        aidl = true
     }
     sourceSets {
         getByName("androidTest").assets.srcDirs("$projectDir/schemas")
