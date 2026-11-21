@@ -489,18 +489,18 @@ class FloatingBallService : Service() {
         }
 
         card.addView(TextView(this).apply {
-            text = "要发给猫吗？"
+            this.text = "要发给猫吗？"
             textSize = 15f
             setTextColor(Color.parseColor("#111111"))
         })
         card.addView(TextView(this).apply {
-            text = pkg
+            this.text = pkg
             textSize = 11f
             setTextColor(Color.parseColor("#999999"))
             setPadding(0, dp(2), 0, dp(8))
         })
         card.addView(TextView(this).apply {
-            text = if (text.length > 200) text.take(200) + "…" else text
+            this.text = if (text.length > 200) text.take(200) + "…" else text
             textSize = 13f
             setTextColor(Color.parseColor("#444444"))
             maxLines = 6
