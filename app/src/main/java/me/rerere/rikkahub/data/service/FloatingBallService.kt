@@ -29,6 +29,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -139,6 +140,13 @@ class FloatingBallService : Service() {
     private lateinit var windowManager: WindowManager
     private var ballView: View? = null
     private var ballParams: WindowManager.LayoutParams? = null
+    /** 球本体（弹卡片时把它藏起来，卡片和它共用同一个窗口） */
+    private var ballCircle: View? = null
+    /** 弹卡片之前的窗口位置尺寸，收卡片时还原 */
+    private var savedBallX = 0
+    private var savedBallY = 0
+    private var savedBallW = 0
+    private var savedBallH = 0
 
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var lastTapAt = 0L
@@ -252,6 +260,7 @@ class FloatingBallService : Service() {
             }
         }
         ball.addView(circle, FrameLayout.LayoutParams(sizePx, sizePx))
+        ballCircle = circle
 
         val params = WindowManager.LayoutParams(
             sizePx,
@@ -579,30 +588,35 @@ class FloatingBallService : Service() {
         })
         card.addView(row)
 
-        val params = WindowManager.LayoutParams(
-            width,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else
-                @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.CENTER }
-
-        runCatching { windowManager.addView(card, params) }
-            .onSuccess {
-                sharePanel = card
-                AppLogBuffer.log("FloatBall", "卡片已挂上窗口")
-            }
-            .onFailure {
-                // 加窗失败最常见是被系统的「后台弹出界面」权限挡了，必须留痕到日志环里
-                AppLogBuffer.log(
-                    "FloatBall",
-                    "加窗失败 ${it.javaClass.simpleName}: ${it.message}"
-                )
-                Log.e(TAG, "add share panel failed", it)
-            }
+        // 【2026-11-21 改】卡片不再单独开一个窗口。
+        // 现象：同样是 overlay 窗口，球一直显示得出来，但「在后台新加的」卡片就是不渲染
+        // （addView 不报错，日志还显示挂上了）。而双击球的卡片能出来 —— 差别在于那次是用户点的。
+        // 所以改成塞进球自己的窗口里：窗口从 Service 启动时就在，只换内容、只改尺寸。
+        val root = ballView
+        if (root == null) {
+            AppLogBuffer.log("FloatBall", "球没开着，卡片无处可挂")
+            return
+        }
+        ballParams?.let { p ->
+            savedBallX = p.x
+            savedBallY = p.y
+            savedBallW = p.width
+            savedBallH = p.height
+        }
+        ballCircle?.visibility = View.GONE
+        root.addView(
+            card,
+            FrameLayout.LayoutParams(width, FrameLayout.LayoutParams.WRAP_CONTENT)
+        )
+        sharePanel = card
+        ballParams?.let { p ->
+            p.width = width
+            p.height = WindowManager.LayoutParams.WRAP_CONTENT
+            p.x = dp(20)
+            p.y = screenHeight() / 4
+            runCatching { windowManager.updateViewLayout(root, p) }
+        }
+        AppLogBuffer.log("FloatBall", "卡片已挂进球自己的窗口")
     }
 
     private fun makePanelButton(label: String, primary: Boolean, onClick: () -> Unit): TextView =
@@ -620,8 +634,22 @@ class FloatingBallService : Service() {
         }
 
     private fun hideSharePanel() {
-        sharePanel?.let { v -> runCatching { windowManager.removeView(v) } }
+        sharePanel?.let { v ->
+            // 卡片是塞在球窗口里的，先摘下来；老的独立窗口路径也兜一下
+            (v.parent as? ViewGroup)?.removeView(v)
+            runCatching { windowManager.removeView(v) }
+        }
         sharePanel = null
+        ballCircle?.visibility = View.VISIBLE
+        val root = ballView ?: return
+        val p = ballParams ?: return
+        if (savedBallW > 0) {
+            p.width = savedBallW
+            p.height = savedBallH
+            p.x = savedBallX
+            p.y = savedBallY
+            runCatching { windowManager.updateViewLayout(root, p) }
+        }
     }
 
     /** 发进最近那个会话（后台发，不切页面） */
