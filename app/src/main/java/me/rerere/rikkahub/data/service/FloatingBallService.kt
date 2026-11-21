@@ -735,7 +735,9 @@ class FloatingBallService : Service() {
             // ⚠️ 别多写 sendAccessNotify —— 服务端只认 4 个，多出来的会被判成
             //    BadParcelableException: Parcel data not fully consumed, unread size: 4
             //    （那个错是服务端读参数时抛的，不是我们解析返回时抛的）
-            data.writeString(packageName)   // pkg
+            // pkg 必须报「调用者自己的包名」—— 我们是借 shell(uid 2000) 的身份去问的，
+            // 报橘瓣的包名会被拒：Package ... does not belong to 2000。
+            data.writeString("com.android.shell")
             data.writeString(null)          // attributionTag
             data.writeInt(0)                // userId
             data.writeInt(0)                // deviceId
