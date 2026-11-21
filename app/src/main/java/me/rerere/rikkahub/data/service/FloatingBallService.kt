@@ -77,12 +77,17 @@ class FloatingBallService : Service() {
                 .onFailure { Log.e(TAG, "Failed to start ball service", it) }
         }
 
-        /** 关掉球 */
+        /**
+         * 关掉球。
+         *
+         * ⚠️ 2026-11-21 崩溃修：原来这里是 startService(ACTION_HIDE)，让服务自己 stopSelf。
+         * 但那条路进来时**没调 startForeground**，一旦这次启动是 startForegroundService 发起的
+         * （改大小时 hide+show 撞在一起、或系统 START_STICKY 重启），系统就报
+         * ForegroundServiceDidNotStartInTimeException，直接把整个 App 崩掉。
+         * 关就用 stopService —— 它压根不启动服务，最干净。
+         */
         fun hide(context: Context) {
-            val intent = Intent(context, FloatingBallService::class.java).apply {
-                action = ACTION_HIDE
-            }
-            runCatching { context.startService(intent) }
+            runCatching { context.stopService(Intent(context, FloatingBallService::class.java)) }
                 .onFailure { Log.w(TAG, "Failed to stop ball service", it) }
         }
     }
@@ -100,12 +105,15 @@ class FloatingBallService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // ⚠️ 必须无条件先 startForeground —— 只要这次启动来自 startForegroundService，
+        // 5 秒内不进前台系统就抛 ForegroundServiceDidNotStartInTimeException（整个 App 崩）。
+        // 所以这一行放在所有分支之前，任何 return 都不许跑到它前面去。
+        startForegroundCompat()
+
         if (intent?.action == ACTION_HIDE) {
             stopSelf()
             return START_NOT_STICKY
         }
-
-        startForegroundCompat()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             Log.w(TAG, "No overlay permission, stop")
@@ -132,6 +140,11 @@ class FloatingBallService : Service() {
     }
 
     private fun startForegroundCompat() {
+        runCatching { startForegroundCompatInner() }
+            .onFailure { Log.e(TAG, "startForeground failed", it) }
+    }
+
+    private fun startForegroundCompatInner() {
         val notification = androidx.core.app.NotificationCompat.Builder(
             this, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
         )
