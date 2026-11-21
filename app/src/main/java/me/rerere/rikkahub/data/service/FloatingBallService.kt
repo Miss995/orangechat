@@ -500,10 +500,18 @@ class FloatingBallService : Service() {
             setPadding(0, dp(2), 0, dp(8))
         })
         card.addView(TextView(this).apply {
-            this.text = if (text.length > 200) text.take(200) + "…" else text
+            // 预览多给点：抓到的文字里混着"关注""第1张,共1张"这种界面字，
+            // 给 200 字的话正文只露一半，看着像被砍了（宝 2026-11-21 提的）。
+            this.text = if (text.length > 400) text.take(400) + "…" else text
             textSize = 13f
             setTextColor(Color.parseColor("#444444"))
-            maxLines = 6
+            maxLines = 10
+            setPadding(0, 0, 0, dp(6))
+        })
+        card.addView(TextView(this).apply {
+            this.text = "共 ${text.length} 字，发出去是完整的"
+            textSize = 11f
+            setTextColor(Color.parseColor("#999999"))
             setPadding(0, 0, 0, dp(12))
         })
 
