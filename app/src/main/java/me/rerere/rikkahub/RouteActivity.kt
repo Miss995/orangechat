@@ -7,6 +7,8 @@
 package me.rerere.rikkahub
 
 import android.annotation.SuppressLint
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -195,8 +197,40 @@ class RouteActivity : ComponentActivity() {
     private val settingsStore by inject<SettingsStore>()
     private var navStack: MutableList<NavKey>? = null
 
+    /** 【剪贴板检查 · 2026-11-21】上一次已检查过的剪贴板内容，避免每次回前台都弹 */
+    private var lastClipChecked: String? = null
+
     // Volume key listener registry — last registered handler wins
     internal val volumeKeyListeners = mutableListOf<(isVolumeUp: Boolean) -> Boolean>()
+
+    /**
+     * 【剪贴板检查 · 2026-11-21】宝复制抖音/小红书链接后切回橘瓣，这里读一次。
+     *
+     * 为什么不在后台监听：Android 10+ 只允许「有焦点的应用」读剪贴板，
+     * 后台服务的 addPrimaryClipChangedListener 根本不会被叫醒（2026-11-21 实测日志一条都没有）。
+     * 只有这一刻（Activity 在前台、有焦点）才读得到。
+     */
+    override fun onResume() {
+        super.onResume()
+        runCatching {
+            val prefs = getSharedPreferences("floating_ball", Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("enabled", false)) return@runCatching
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                ?: return@runCatching
+            val text = cm.primaryClip?.takeIf { it.itemCount > 0 }
+                ?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
+            if (text.isBlank()) return@runCatching
+            if (text == lastClipChecked) return@runCatching
+            lastClipChecked = text
+            val xhs = text.contains("xhslink.com") || text.contains("xiaohongshu.com") ||
+                text.contains("小红书")
+            val dy = text.contains("douyin.com") || text.contains("抖音")
+            if (!xhs && !dy) return@runCatching
+            me.rerere.rikkahub.data.service.FloatingBallService.checkClipboard(
+                this, text, if (xhs) "小红书" else "抖音"
+            )
+        }
+    }
 
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
