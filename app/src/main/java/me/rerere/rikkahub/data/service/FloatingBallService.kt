@@ -717,6 +717,12 @@ class FloatingBallService : Service() {
                 if (!xhs && !dy) continue
                 val label = if (xhs) "小红书" else "抖音"
                 AppLogBuffer.log("FloatBall", "剪贴板命中 $label（${text.length} 字）")
+                // 【2026-11-21 验证】先只改球自己的颜色 —— 不 addView、不改窗口尺寸。
+                // 这个看得见 = 后台能改现有 View；看不见 = 后台整个界面被冻住，跟窗口无关。
+                handler.post {
+                    (ballCircle?.background as? GradientDrawable)?.setColor(0xFFFF3333.toInt())
+                    AppLogBuffer.log("FloatBall", "球已变红")
+                }
                 handler.post { showSharePanel("剪贴板 · $label", text, "要分享给猫吗？") }
             }
         }
