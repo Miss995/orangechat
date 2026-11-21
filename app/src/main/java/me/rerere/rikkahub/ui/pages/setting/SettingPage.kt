@@ -89,6 +89,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.isNotConfigured
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.service.FloatingBallService
 import me.rerere.rikkahub.data.service.FloatingPetService
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
@@ -284,6 +285,47 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { Icon(HugeIcons.Settings03, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_display_setting_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_display_setting)) },
+                    )
+
+                    // 🟠 常驻悬浮球（2026-11-21）：当外部接收口，拖图直接存表情包
+                    val ballContext = LocalContext.current
+                    val ballPrefs = remember {
+                        ballContext.getSharedPreferences("floating_ball", Context.MODE_PRIVATE)
+                    }
+                    var ballOn by remember { mutableStateOf(ballPrefs.getBoolean("enabled", false)) }
+                    val ballPermissionLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.StartActivityForResult()
+                    ) { }
+                    item(
+                        leadingContent = { Icon(HugeIcons.Share04, null) },
+                        supportingContent = {
+                            Text("一直飘在屏幕上的小圆球：把图拖上去直接存表情包，不用先开橘瓣")
+                        },
+                        headlineContent = { Text("悬浮球") },
+                        trailingContent = {
+                            Switch(
+                                checked = ballOn,
+                                onCheckedChange = { enabled ->
+                                    if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                                        !Settings.canDrawOverlays(ballContext)
+                                    ) {
+                                        val intent = Intent(
+                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            Uri.parse("package:${ballContext.packageName}")
+                                        )
+                                        ballPermissionLauncher.launch(intent)
+                                        return@Switch
+                                    }
+                                    ballPrefs.edit().putBoolean("enabled", enabled).apply()
+                                    ballOn = enabled
+                                    if (enabled) {
+                                        FloatingBallService.show(ballContext)
+                                    } else {
+                                        FloatingBallService.hide(ballContext)
+                                    }
+                                }
+                            )
+                        }
                     )
                 }
             }

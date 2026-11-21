@@ -321,8 +321,14 @@ class FloatingBallService : Service() {
                 if (path != null) saved += File(path)
             }
             AppLogBuffer.log("FloatBall", "存了 ${saved.size} / ${uris.size} 张")
-            if (saved.isEmpty()) {
+            val tip = if (saved.isEmpty()) {
                 AppLogBuffer.log("FloatBall", "一张都没存成 —— 多半是读不了 content:// 的权限")
+                "没存进去，看日志"
+            } else {
+                "存好了，${saved.size} 张"
+            }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                Toast.makeText(this@FloatingBallService, tip, Toast.LENGTH_SHORT).show()
             }
         }
     }
