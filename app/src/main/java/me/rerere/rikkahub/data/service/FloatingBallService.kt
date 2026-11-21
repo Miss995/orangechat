@@ -9,6 +9,7 @@ package me.rerere.rikkahub.data.service
 import android.app.Service
 import android.content.ClipData
 import android.content.Context
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.res.Resources
 import android.graphics.Color
@@ -114,12 +115,23 @@ class FloatingBallService : Service() {
     private var lastTapAt = 0L
     private var sharePanel: View? = null
 
+    /** 【剪贴板监听 · 2026-11-21】宝复制抖音/小红书链接时弹卡片问要不要分享 */
+    private var lastClipText: String? = null
+    private val clipListener = ClipboardManager.OnPrimaryClipChangedListener { onClipboardChanged() }
+
     /** 存图/描述走这个，跟 Service 生命周期无关，存完就走 */
     private val bgScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        // 剪贴板监听：宝复制抖音/小红书链接就弹卡片问要不要分享
+        // ⚠️ Android 10+ 后台读不到剪贴板内容 —— 监听器会响，但 primaryClip 可能是空。
+        // 那就老实在日志里记一句，别装作没事。
+        runCatching {
+            (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
+                ?.addPrimaryClipChangedListener(clipListener)
+        }.onFailure { Log.w(TAG, "clipboard listener failed", it) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -151,6 +163,10 @@ class FloatingBallService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        runCatching {
+            (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
+                ?.removePrimaryClipChangedListener(clipListener)
+        }
         hideSharePanel()
         ballView?.let { v -> runCatching { windowManager.removeView(v) } }
         ballView = null
@@ -474,7 +490,7 @@ class FloatingBallService : Service() {
      * 不用页面先转到橘瓣里再发。」
      * 所以这是一层覆盖窗口，压根不切应用。
      */
-    private fun showSharePanel(pkg: String, text: String) {
+    private fun showSharePanel(pkg: String, text: String, title: String = "要发给猫吗？") {
         hideSharePanel()
         val width = (screenWidth() - dp(40)).coerceIn(dp(200), dp(420))
 
@@ -489,7 +505,7 @@ class FloatingBallService : Service() {
         }
 
         card.addView(TextView(this).apply {
-            this.text = "要发给猫吗？"
+            this.text = title
             textSize = 15f
             setTextColor(Color.parseColor("#111111"))
         })
@@ -583,6 +599,32 @@ class FloatingBallService : Service() {
                 Log.e(TAG, "send shared text failed", it)
             }
         }
+    }
+
+    /** 复制到抖音/小红书的链接时，弹卡片问一句。后台读不到就老实记日志（Android 10+ 限制） */
+    private fun onClipboardChanged() {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+        val text = runCatching {
+            cm.primaryClip?.takeIf { it.itemCount > 0 }
+                ?.getItemAt(0)?.coerceToText(this)?.toString()
+        }.getOrNull().orEmpty()
+
+        if (text.isBlank()) {
+            // Android 10+ 在后台确实会这样（不是 bug，是系统限制）
+            AppLogBuffer.log("FloatBall", "剪贴板变了但读不到内容（后台限制）")
+            return
+        }
+        if (text == lastClipText) return
+
+        val xhs = text.contains("xhslink.com") || text.contains("xiaohongshu.com") ||
+            text.contains("小红书")
+        val dy = text.contains("douyin.com") || text.contains("抖音")
+        if (!xhs && !dy) return
+
+        lastClipText = text
+        val label = if (xhs) "小红书" else "抖音"
+        AppLogBuffer.log("FloatBall", "剪贴板命中 $label（${text.length} 字）")
+        handler.post { showSharePanel("剪贴板 · $label", text, "要分享给猫吗？") }
     }
 
     private fun onBallClick() {
