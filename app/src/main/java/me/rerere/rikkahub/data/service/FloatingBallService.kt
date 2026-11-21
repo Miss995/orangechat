@@ -728,7 +728,7 @@ class FloatingBallService : Service() {
         // 改成手写 Parcel 直接 transact(4) —— 不依赖生成的 stub。
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
-        val clip = try {
+        val parsed = try {
             data.writeInterfaceToken("android.content.IClipboard")
             data.writeString(packageName)   // pkg
             data.writeString(null)          // attributionTag
@@ -740,12 +740,24 @@ class FloatingBallService : Service() {
                 return@runCatching null
             }
             reply.readException()
-            if (reply.readInt() != 0) ClipData.CREATOR.createFromParcel(reply) else null
+            // 返回结构两种可能：带「是不是 null」的 int 标记，或者直接写 ClipData。
+            // 上一版按「带标记」解析，报 Parcel data not fully consumed, unread size: 4
+            // = 位置差了一个 int。两种都试，谁能解析出东西就用谁。
+            val start = reply.dataPosition()
+            val marked = runCatching {
+                if (reply.readInt() == 0) null else ClipData.CREATOR.createFromParcel(reply)
+            }.getOrNull()
+            val parsedClip: ClipData? = if (marked != null) marked else run {
+                reply.setDataPosition(start)
+                runCatching { ClipData.CREATOR.createFromParcel(reply) }.getOrNull()
+            }
+            if (parsedClip == null) logReadFail("两种返回结构都解析不出 ClipData")
+            parsedClip
         } finally {
             data.recycle()
             reply.recycle()
         }
-        clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+        parsed?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
     }.onFailure {
         logReadFail("抛异常 ${it.javaClass.simpleName}: ${it.message}")
     }.getOrNull()
