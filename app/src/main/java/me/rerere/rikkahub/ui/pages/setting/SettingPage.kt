@@ -293,6 +293,9 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         ballContext.getSharedPreferences("floating_ball", Context.MODE_PRIVATE)
                     }
                     var ballOn by remember { mutableStateOf(ballPrefs.getBoolean("enabled", false)) }
+                    var ballSize by remember {
+                        mutableStateOf(ballPrefs.getInt("size", FloatingBallService.DEFAULT_BALL_SIZE_DP))
+                    }
                     val ballPermissionLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.StartActivityForResult()
                     ) { }
@@ -327,6 +330,32 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                             )
                         }
                     )
+                    if (ballOn) {
+                        item(
+                            headlineContent = { Text("悬浮球大小") },
+                            supportingContent = { Text("小 / 标准 / 大，改完立刻生效") },
+                            trailingContent = {
+                                Select(
+                                    options = FloatingBallService.SIZE_OPTIONS,
+                                    selectedOption = ballSize,
+                                    onOptionSelected = { newSize ->
+                                        ballSize = newSize
+                                        ballPrefs.edit().putInt("size", newSize).apply()
+                                        // 重启服务才换得了尺寸（窗口大小建的时候定死）
+                                        FloatingBallService.hide(ballContext)
+                                        FloatingBallService.show(ballContext)
+                                    },
+                                    optionToString = {
+                                        when (it) {
+                                            FloatingBallService.SIZE_OPTIONS[0] -> "小"
+                                            FloatingBallService.SIZE_OPTIONS[2] -> "大"
+                                            else -> "标准"
+                                        }
+                                    },
+                                )
+                            }
+                        )
+                    }
                 }
             }
 

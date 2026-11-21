@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.AppLogBuffer
+import me.rerere.rikkahub.data.ai.transformers.ImageDescriber
 import me.rerere.rikkahub.data.sticker.StickerStore
 import java.io.File
 import kotlin.math.abs
@@ -60,7 +61,9 @@ class FloatingBallService : Service() {
         const val ACTION_SHOW = "me.rerere.rikkahub.ACTION_SHOW_FLOAT_BALL"
         const val ACTION_HIDE = "me.rerere.rikkahub.ACTION_HIDE_FLOAT_BALL"
 
-        private const val BALL_SIZE_DP = 48
+        const val DEFAULT_BALL_SIZE_DP = 48
+        /** 三档可选（dp）；宝在设置页选，存 prefs */
+        val SIZE_OPTIONS = listOf(40, 48, 60)
         private const val FOREGROUND_NOTIF_ID = 20004
         private const val CLICK_THRESHOLD_PX = 16f
         private const val EDGE_MARGIN_DP = 8
@@ -150,7 +153,7 @@ class FloatingBallService : Service() {
     }
 
     private fun createBall() {
-        val sizePx = dp(BALL_SIZE_DP)
+        val sizePx = dp(ballSizeDp())
 
         val ball = FrameLayout(this).apply {
             layoutParams = FrameLayout.LayoutParams(sizePx, sizePx)
@@ -330,6 +333,31 @@ class FloatingBallService : Service() {
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 Toast.makeText(this@FloatingBallService, tip, Toast.LENGTH_SHORT).show()
             }
+
+            // 顺手让视觉模型看一眼，描述写进 sidecar。
+            // 聊天页那条路本来就有这一步，球这条漏了 —— 宝 2026-11-21 发现的：
+            // 「你一直不用表情包工具的话，表情包会一直没有介绍」。
+            // 一张图一辈子只描述一次，已有的跳过。
+            for (f in saved) {
+                if (StickerStore.readNote(f) != null) continue
+                val result = runCatching { ImageDescriber.describe("file://" + f.absolutePath) }
+                if (result.isFailure) {
+                    val e = result.exceptionOrNull()
+                    StickerStore.saveNote(
+                        f,
+                        "【失败】describe 抛异常：" + (e?.message ?: e?.javaClass?.simpleName ?: "未知")
+                    )
+                    continue
+                }
+                val note = result.getOrNull()
+                if (note != null) {
+                    StickerStore.saveNote(f, note)
+                    AppLogBuffer.log("FloatBall", "描述写好了 ${f.name}")
+                } else {
+                    StickerStore.saveNote(f, "【失败】describe 返回 null（多半是没配 OCR 模型）")
+                    AppLogBuffer.log("FloatBall", "describe 返回 null（没配识别模型？）")
+                }
+            }
         }
     }
 
@@ -339,7 +367,7 @@ class FloatingBallService : Service() {
     }
 
     private fun snapToEdge(view: View, params: WindowManager.LayoutParams) {
-        val sizePx = dp(BALL_SIZE_DP)
+        val sizePx = dp(ballSizeDp())
         val targetX = if (params.x + sizePx / 2 < screenWidth() / 2) {
             dp(EDGE_MARGIN_DP)
         } else {
@@ -355,6 +383,12 @@ class FloatingBallService : Service() {
             start()
         }
     }
+
+    /** 当前球径（dp）—— 设置页选的那档，改完由设置页重启服务生效 */
+    private fun ballSizeDp(): Int = runCatching {
+        getSharedPreferences("floating_ball", Context.MODE_PRIVATE)
+            .getInt("size", DEFAULT_BALL_SIZE_DP)
+    }.getOrDefault(DEFAULT_BALL_SIZE_DP).let { if (it in SIZE_OPTIONS) it else DEFAULT_BALL_SIZE_DP }
 
     private fun dp(value: Int): Int = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP,

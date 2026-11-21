@@ -4,7 +4,10 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -12,7 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +56,9 @@ fun StickerSheet(
     val context = LocalContext.current
     var files by remember { mutableStateOf(StickerStore.list(context)) }
     var pendingDelete by remember { mutableStateOf<File?>(null) }
+    // 【点开看详情 · 2026-11-21】宝看不到描述 —— 图墙上只画图，描述只在删除对话框里露过。
+    // 点一张弹大图 + 完整描述，再决定用不用。
+    var detailFile by remember { mutableStateOf<File?>(null) }
 
     pendingDelete?.let { target ->
         AlertDialog(
@@ -69,6 +77,40 @@ fun StickerSheet(
             },
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) { Text("算了") }
+            },
+        )
+    }
+
+    detailFile?.let { target ->
+        AlertDialog(
+            onDismissRequest = { detailFile = null },
+            title = { Text("这张表情包") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    AsyncImage(
+                        model = target,
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 220.dp)
+                            .clip(RoundedCornerShape(10.dp)),
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = StickerStore.readNote(target) ?: "（还没有描述）",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onPick(target)
+                    detailFile = null
+                }) { Text("用这张") }
+            },
+            dismissButton = {
+                TextButton(onClick = { detailFile = null }) { Text("算了") }
             },
         )
     }
@@ -108,7 +150,7 @@ fun StickerSheet(
                             .aspectRatio(1f)
                             .clip(RoundedCornerShape(10.dp))
                             .combinedClickable(
-                                onClick = { onPick(file) },
+                                onClick = { detailFile = file },
                                 onLongClick = { pendingDelete = file },
                             ),
                     )
