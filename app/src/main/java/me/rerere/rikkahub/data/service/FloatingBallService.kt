@@ -62,8 +62,9 @@ class FloatingBallService : Service() {
         const val ACTION_HIDE = "me.rerere.rikkahub.ACTION_HIDE_FLOAT_BALL"
 
         const val DEFAULT_BALL_SIZE_DP = 48
-        /** 三档可选（dp）；宝在设置页选，存 prefs */
-        val SIZE_OPTIONS = listOf(40, 48, 60)
+        /** 球径可调范围（dp）—— 设置页那根滑杆就是按这个走的，2026-11-21 从三档改成自由拖 */
+        const val MIN_BALL_SIZE_DP = 24
+        const val MAX_BALL_SIZE_DP = 80
         private const val FOREGROUND_NOTIF_ID = 20004
         private const val CLICK_THRESHOLD_PX = 16f
         private const val EDGE_MARGIN_DP = 8
@@ -397,11 +398,12 @@ class FloatingBallService : Service() {
         }
     }
 
-    /** 当前球径（dp）—— 设置页选的那档，改完由设置页重启服务生效 */
+    /** 当前球径（dp）—— 设置页那根滑杆拖出来的值，改完由设置页重启服务生效 */
     private fun ballSizeDp(): Int = runCatching {
         getSharedPreferences("floating_ball", Context.MODE_PRIVATE)
             .getInt("size", DEFAULT_BALL_SIZE_DP)
-    }.getOrDefault(DEFAULT_BALL_SIZE_DP).let { if (it in SIZE_OPTIONS) it else DEFAULT_BALL_SIZE_DP }
+    }.getOrDefault(DEFAULT_BALL_SIZE_DP)
+        .coerceIn(MIN_BALL_SIZE_DP, MAX_BALL_SIZE_DP)
 
     private fun dp(value: Int): Int = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP,

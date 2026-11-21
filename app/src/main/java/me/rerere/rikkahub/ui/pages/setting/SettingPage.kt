@@ -38,6 +38,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,6 +56,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.AiMagic
@@ -333,25 +335,20 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     if (ballOn) {
                         item(
                             headlineContent = { Text("悬浮球大小") },
-                            supportingContent = { Text("小 / 标准 / 大，改完立刻生效") },
+                            supportingContent = { Text("${ballSize}dp · 拖动松手才重建（拖的时候不闪）") },
                             trailingContent = {
-                                Select(
-                                    options = FloatingBallService.SIZE_OPTIONS,
-                                    selectedOption = ballSize,
-                                    onOptionSelected = { newSize ->
-                                        ballSize = newSize
-                                        ballPrefs.edit().putInt("size", newSize).apply()
-                                        // 重启服务才换得了尺寸（窗口大小建的时候定死）
+                                Slider(
+                                    value = ballSize.toFloat(),
+                                    onValueChange = { ballSize = it.roundToInt() },
+                                    // 松手才重启服务 —— 拖的过程中每动一下就重建会把球闪成一团
+                                    onValueChangeFinished = {
+                                        ballPrefs.edit().putInt("size", ballSize).apply()
                                         FloatingBallService.hide(ballContext)
                                         FloatingBallService.show(ballContext)
                                     },
-                                    optionToString = {
-                                        when (it) {
-                                            FloatingBallService.SIZE_OPTIONS[0] -> "小"
-                                            FloatingBallService.SIZE_OPTIONS[2] -> "大"
-                                            else -> "标准"
-                                        }
-                                    },
+                                    valueRange = FloatingBallService.MIN_BALL_SIZE_DP.toFloat()..
+                                        FloatingBallService.MAX_BALL_SIZE_DP.toFloat(),
+                                    modifier = Modifier.width(150.dp),
                                 )
                             }
                         )
