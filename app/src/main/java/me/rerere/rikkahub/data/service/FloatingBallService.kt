@@ -697,15 +697,32 @@ class FloatingBallService : Service() {
      * 但 shell 身份是豁免的，所以借 Shizuku 直接问系统 clipboard 服务要。
      * 返回 null = Shizuku 没跑 / 没授权 / 读取失败。
      */
+    private var lastReadFail: String? = null
+
+    private fun logReadFail(msg: String) {
+        if (msg == lastReadFail) return
+        lastReadFail = msg
+        AppLogBuffer.log("FloatBall", "读剪贴板失败：$msg")
+    }
+
     private fun readClipViaShizuku(): String? = runCatching {
-        if (Shizuku.getUid() == -1) return@runCatching null
-        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+        val uid = Shizuku.getUid()
+        if (uid == -1) {
+            logReadFail("Shizuku uid=-1（服务没起来或没绑定）")
             return@runCatching null
         }
+        val perm = Shizuku.checkSelfPermission()
+        if (perm != PackageManager.PERMISSION_GRANTED) {
+            logReadFail("Shizuku 没授权给橘瓣（perm=$perm）")
+            return@runCatching null
+        }
+        lastReadFail = null
         val binder = SystemServiceHelper.getSystemService("clipboard")
         val svc = IClipboard.Stub.asInterface(ShizukuBinderWrapper(binder))
         val clip = svc.getPrimaryClip(packageName, null, 0, 0, false)
         clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+    }.onFailure {
+        logReadFail("抛异常 ${it.javaClass.simpleName}: ${it.message}")
     }.getOrNull()
 
     /** 每 2 秒读一次剪贴板，命中抖音/小红书就弹卡片 */
