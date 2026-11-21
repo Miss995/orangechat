@@ -11,7 +11,6 @@ import android.content.ClipData
 import android.content.Context
 import android.content.ClipboardManager
 import android.content.pm.PackageManager
-import android.os.UserHandle
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.SystemServiceHelper
@@ -651,7 +650,7 @@ class FloatingBallService : Service() {
         }
         val binder = SystemServiceHelper.getSystemService("clipboard")
         val svc = IClipboard.Stub.asInterface(ShizukuBinderWrapper(binder))
-        val clip = svc.getPrimaryClip(packageName, null, UserHandle.myUserId(), 0, false)
+        val clip = svc.getPrimaryClip(packageName, null, userId, 0, false)
         clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
     }.getOrNull()
 
