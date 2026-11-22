@@ -96,6 +96,29 @@ internal fun applyMiniAppWebViewSettings(wv: WebView) {
         userAgentString = userAgentString?.replace("; wv", "") ?: userAgentString
     }
     wv.webChromeClient = WebChromeClient()
+    // 【2026-11-22 修】浮窗那只原来压根没有 webViewClient —— 默认那个不拦自定义协议，
+    // 于是在浮窗里点小红书视频，xhsdiscover:// 直接被当网址去加载，
+    // 甩出一张 "net::ERR_UNKNOWN_URL_SCHEME" 的错误页（小程序页有拦截，所以那边是好的）。
+    // 这里补一个最简的：只做"http/https 自己加载、别的协议交系统"。
+    // MiniAppPage 之后会用它自己那个更全的 client 覆盖掉，互不影响。
+    wv.webViewClient = SchemeOnlyWebViewClient()
+}
+
+/** 只干一件事：把 WebView 加载不了的协议交给系统，别让它去撞错误页。 */
+private class SchemeOnlyWebViewClient : WebViewClient() {
+    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+        val target = request?.url ?: return false
+        return when (target.scheme?.lowercase().orEmpty()) {
+            "http", "https" -> false
+            "javascript", "data", "about", "file", "blob" -> true
+            else -> try {
+                view?.context?.startActivity(Intent(Intent.ACTION_VIEW, target))
+                true
+            } catch (_: Exception) {
+                true
+            }
+        }
+    }
 }
 
 /** 桌面版 UA：让网页以为自己在电脑上。★ 2026-10-26 改成 internal —— 猫的工具也要用它。 */
