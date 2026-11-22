@@ -81,11 +81,6 @@ class FloatingBallService : Service() {
         const val ACTION_SHOW = "me.rerere.rikkahub.ACTION_SHOW_FLOAT_BALL"
         const val ACTION_HIDE = "me.rerere.rikkahub.ACTION_HIDE_FLOAT_BALL"
 
-        /** 【剪贴板检查 · 2026-11-21】橘瓣回到前台时读到了抖音/小红书链接，交给球弹卡片 */
-        const val ACTION_CHECK_CLIP = "me.rerere.rikkahub.ACTION_CHECK_CLIP"
-        const val EXTRA_CLIP_TEXT = "clip_text"
-        const val EXTRA_CLIP_LABEL = "clip_label"
-
         const val DEFAULT_BALL_SIZE_DP = 48
         /** 球径可调范围（dp）—— 设置页那根滑杆就是按这个走的，2026-11-21 从三档改成自由拖 */
         const val MIN_BALL_SIZE_DP = 24
@@ -118,21 +113,6 @@ class FloatingBallService : Service() {
          * ForegroundServiceDidNotStartInTimeException，直接把整个 App 崩掉。
          * 关就用 stopService —— 它压根不启动服务，最干净。
          */
-        /**
-         * 【剪贴板检查 · 2026-11-21】
-         * 由 RouteActivity.onResume 调用 —— 后台读不到剪贴板（Android 10+ 限制），
-         * 只有切回橘瓣那一刻有焦点才读得到，读到就交给这里弹卡片。
-         */
-        fun checkClipboard(context: Context, text: String, label: String) {
-            val intent = Intent(context, FloatingBallService::class.java).apply {
-                action = ACTION_CHECK_CLIP
-                putExtra(EXTRA_CLIP_TEXT, text)
-                putExtra(EXTRA_CLIP_LABEL, label)
-            }
-            runCatching { context.startService(intent) }
-                .onFailure { Log.w(TAG, "checkClipboard failed", it) }
-        }
-
         fun hide(context: Context) {
             runCatching { context.stopService(Intent(context, FloatingBallService::class.java)) }
                 .onFailure { Log.w(TAG, "Failed to stop ball service", it) }
@@ -181,15 +161,6 @@ class FloatingBallService : Service() {
         if (intent?.action == ACTION_HIDE) {
             stopSelf()
             return START_NOT_STICKY
-        }
-
-        if (intent?.action == ACTION_CHECK_CLIP) {
-            val clipText = intent.getStringExtra(EXTRA_CLIP_TEXT).orEmpty()
-            val clipLabel = intent.getStringExtra(EXTRA_CLIP_LABEL).orEmpty()
-            if (clipText.isNotBlank()) {
-                AppLogBuffer.log("FloatBall", "剪贴板命中 $clipLabel（${clipText.length} 字）")
-                handler.post { showSharePanel("剪贴板 · $clipLabel", clipText, "要分享给猫吗？") }
-            }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {

@@ -197,74 +197,8 @@ class RouteActivity : ComponentActivity() {
     private val settingsStore by inject<SettingsStore>()
     private var navStack: MutableList<NavKey>? = null
 
-    /** 【剪贴板检查 · 2026-11-21】上一次已检查过的剪贴板内容，避免每次回前台都弹 */
-    private var lastClipChecked: String? = null
-
     // Volume key listener registry — last registered handler wins
     internal val volumeKeyListeners = mutableListOf<(isVolumeUp: Boolean) -> Boolean>()
-
-    /**
-     * 【剪贴板检查 · 2026-11-21】宝复制抖音/小红书链接后切回橘瓣，这里读一次。
-     *
-     * 为什么不在后台监听：Android 10+ 只允许「有焦点的应用」读剪贴板，
-     * 后台服务的 addPrimaryClipChangedListener 根本不会被叫醒（2026-11-21 实测日志一条都没有）。
-     * 只有这一刻（Activity 在前台、有焦点）才读得到。
-     */
-    override fun onResume() {
-        super.onResume()
-        // onResume 时窗口常常还没拿到焦点，那时读剪贴板照样是 null（Android 10+），
-        // 所以真正干活的是 onWindowFocusChanged。这里只留一条痕迹，方便对账。
-        me.rerere.rikkahub.data.ai.AppLogBuffer.log("ClipCheck", "onResume")
-    }
-
-    /**
-     * 【剪贴板检查 · 2026-11-21】
-     *
-     * 宝复制抖音/小红书链接后切回橘瓣，这里读一次。
-     *
-     * 为什么不在后台监听：Android 10+ 只允许「有焦点的应用」读剪贴板，
-     * 后台服务的 addPrimaryClipChangedListener 根本不会被叫醒（2026-11-21 实测日志一条都没有）。
-     * 为什么不用 onResume：那一刻窗口往往还没拿到焦点，读到的是 null。
-     * 所以挂在 onWindowFocusChanged(hasFocus = true) 上 —— 「真的拿到焦点」才读得动。
-     */
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (!hasFocus) return
-        runCatching {
-            val prefs = getSharedPreferences("floating_ball", Context.MODE_PRIVATE)
-            val ballOn = prefs.getBoolean("enabled", false)
-            if (!ballOn) {
-                me.rerere.rikkahub.data.ai.AppLogBuffer.log("ClipCheck", "球没开，跳过")
-                return@runCatching
-            }
-            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-            if (cm == null) {
-                me.rerere.rikkahub.data.ai.AppLogBuffer.log("ClipCheck", "拿不到 ClipboardManager")
-                return@runCatching
-            }
-            val text = cm.primaryClip?.takeIf { it.itemCount > 0 }
-                ?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
-            if (text.isBlank()) {
-                me.rerere.rikkahub.data.ai.AppLogBuffer.log("ClipCheck", "读到空白（系统没放行？）")
-                return@runCatching
-            }
-            if (text == lastClipChecked) return@runCatching
-            lastClipChecked = text
-            val xhs = text.contains("xhslink.com") || text.contains("xiaohongshu.com") ||
-                text.contains("小红书")
-            val dy = text.contains("douyin.com") || text.contains("抖音")
-            me.rerere.rikkahub.data.ai.AppLogBuffer.log(
-                "ClipCheck",
-                "焦点拿到，读到 ${text.length} 字 xhs=$xhs dy=$dy：${text.take(30)}"
-            )
-            if (!xhs && !dy) return@runCatching
-            me.rerere.rikkahub.data.service.FloatingBallService.checkClipboard(
-                this, text, if (xhs) "小红书" else "抖音"
-            )
-        }.onFailure {
-            me.rerere.rikkahub.data.ai.AppLogBuffer.log("ClipCheck", "异常 ${it.javaClass.simpleName}: ${it.message}")
-        }
-    }
 
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
