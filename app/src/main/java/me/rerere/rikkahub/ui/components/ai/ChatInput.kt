@@ -930,7 +930,11 @@ fun ChatInput(
                                 )
                                 // 【分区判断 · 2026-10-17 宝的方案】手指落在输入框里 -> 这一下全归输入框，
                                 // 哪怕没内容可滚也不拉面板；落在框外的空白（边距、按钮那片）-> 才归外层。
-                                if (fieldRectState.value.contains(surfaceOriginInWindow + down.position)) {
+                                // 【玻璃模式例外 · 2026-11-22 宝的方案二】玻璃下输入框是单行的，
+                                // 框里没有上下可滚的内容 —— 那个"框内让位"的手势本来就是个空手势，
+                                // 而框变矮之后能起手的地方也变小了。所以玻璃模式下框内起手也算外层，
+                                // 照常走下面的方向判定（不消费事件，输入框自己该收的还收得到）。
+                                if (!glassMode && fieldRectState.value.contains(surfaceOriginInWindow + down.position)) {
                                     while (true) {
                                         val e = awaitPointerEvent(PointerEventPass.Initial)
                                         val c = e.changes.firstOrNull { it.id == down.id }
