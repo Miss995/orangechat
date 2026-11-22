@@ -1,0 +1,284 @@
+/*
+ * 橘瓣 OrangeChat
+ * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
+ * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
+ */
+
+package me.rerere.rikkahub.ui.pages.setting
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.rikkahub.data.datastore.DisplaySetting
+import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.ui.CardGroup
+import me.rerere.rikkahub.ui.theme.CustomColors
+import me.rerere.rikkahub.utils.plus
+import org.koin.androidx.compose.koinViewModel
+
+/**
+ * 【液态玻璃单独一页 · 2026-11-22 宝提的】
+ * 原来这十项全挤在「透明度设置」里 —— 玻璃有十根滑杆，把那页占了一大半，
+ * 而它本来就不是透明度的事（是折射、厚度、边缘那些）。
+ * 现在单独一页，透明度页只留真正跟透明度有关的。
+ */
+@Composable
+fun SettingDisplayGlassPage(vm: SettingVM = koinViewModel()) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
+
+    fun updateDisplaySetting(setting: DisplaySetting) {
+        displaySetting = setting
+        vm.updateSettings(settings.copy(displaySetting = setting))
+    }
+
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    Scaffold(
+        topBar = {
+            LargeFlexibleTopAppBar(
+                title = { Text("液态玻璃") },
+                navigationIcon = { BackButton() },
+                scrollBehavior = scrollBehavior,
+                colors = CustomColors.topBarColors
+            )
+        },
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = CustomColors.topBarColors.containerColor
+    ) { contentPadding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding + PaddingValues(8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("液态玻璃") },
+                ) {
+                    item(
+                        headlineContent = { Text("液态玻璃输入框") },
+                        supportingContent = { Text("输入框走玻璃那套；关掉回到打印机外观") },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.liquidGlassInput,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(liquidGlassInput = it))
+                                }
+                            )
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("液态玻璃折射") },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.liquidGlassRefract,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(liquidGlassRefract = it))
+                                    },
+                                    valueRange = 0f..2f,
+                                    steps = 19,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = "${(displaySetting.liquidGlassRefract * 100).toInt()}%")
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("液态玻璃磨砂") },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.liquidGlassBlur,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(liquidGlassBlur = it))
+                                    },
+                                    valueRange = 0f..40f,
+                                    steps = 19,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = "${displaySetting.liquidGlassBlur.toInt()}px")
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("液态玻璃圆角") },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.liquidGlassRadius,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(liquidGlassRadius = it))
+                                    },
+                                    valueRange = 0f..40f,
+                                    steps = 39,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = "${displaySetting.liquidGlassRadius.toInt()}dp")
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("液态玻璃厚度") },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.liquidGlassThickness,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(liquidGlassThickness = it))
+                                    },
+                                    valueRange = 0f..50f,
+                                    steps = 49,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = "${displaySetting.liquidGlassThickness.toInt()}px")
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("液态玻璃凸度") },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.liquidGlassZoom,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(liquidGlassZoom = it))
+                                    },
+                                    valueRange = 0.8f..1.1f,
+                                    steps = 29,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = "${(displaySetting.liquidGlassZoom * 100).toInt()}%")
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("液态玻璃边放") },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.liquidGlassRim,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(liquidGlassRim = it))
+                                    },
+                                    valueRange = 0f..1.5f,
+                                    steps = 29,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = String.format("%.2f", displaySetting.liquidGlassRim))
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("液态玻璃边距") },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.liquidGlassRimDist,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(liquidGlassRimDist = it))
+                                    },
+                                    valueRange = 2f..40f,
+                                    steps = 37,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = "${displaySetting.liquidGlassRimDist.toInt()}px")
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("液态玻璃边缘") },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.liquidGlassEdge,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(liquidGlassEdge = it))
+                                    },
+                                    valueRange = 0f..1.2f,
+                                    steps = 23,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = String.format("%.2f", displaySetting.liquidGlassEdge))
+                            }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("液态玻璃高光") },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.liquidGlassSpec,
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(liquidGlassSpec = it))
+                                    },
+                                    valueRange = 0f..2.5f,
+                                    steps = 49,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = String.format("%.2f", displaySetting.liquidGlassSpec))
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+}

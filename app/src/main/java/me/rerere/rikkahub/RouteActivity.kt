@@ -152,6 +152,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingDisplayMessagePage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayThemePage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayTransparencyPage
+import me.rerere.rikkahub.ui.pages.setting.SettingDisplayGlassPage
 import me.rerere.rikkahub.ui.pages.setting.SettingThemePage
 import me.rerere.rikkahub.ui.pages.setting.SettingDonatePage
 import me.rerere.rikkahub.ui.pages.setting.SettingFilesPage
@@ -643,6 +644,9 @@ class RouteActivity : ComponentActivity() {
                             entry<Screen.SettingDisplayTransparency> {
                                 SettingDisplayTransparencyPage()
                             }
+                            entry<Screen.SettingDisplayGlass> {
+                                SettingDisplayGlassPage()
+                            }
                             entry<Screen.SettingDisplayIllustration> {
                                 SettingDisplayIllustrationPage()
                             }
@@ -1064,6 +1068,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingDisplayTransparency : Screen
+
+    @Serializable
+    data object SettingDisplayGlass : Screen
 
     @Serializable
     data object SettingDisplayIllustration : Screen

@@ -76,6 +76,11 @@ fun SettingDisplayPage() {
                         supportingContent = { Text("气泡、思维链、侧边栏透明度") },
                     )
                     item(
+                        onClick = { navController.navigate(Screen.SettingDisplayGlass) },
+                        headlineContent = { Text("液态玻璃") },
+                        supportingContent = { Text("折射、厚度、边缘、高光、凸度") },
+                    )
+                    item(
                         onClick = { navController.navigate(Screen.SettingDisplayIllustration) },
                         headlineContent = { Text("插图素材") },
                         supportingContent = { Text("输入框背景、侧边栏背景、头像挂件") },
