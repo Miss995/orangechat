@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -109,6 +110,18 @@ fun SettingDisplayTransparencyPage(vm: SettingVM = koinViewModel()) {
                                 )
                                 Text(text = "${displaySetting.thinkingChainTransparency.toInt()}%")
                             }
+                        }
+                    )
+                    item(
+                        headlineContent = { Text("液态玻璃输入框") },
+                        supportingContent = { Text("输入框走玻璃那套；关掉回到打印机外观") },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.liquidGlassInput,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(liquidGlassInput = it))
+                                }
+                            )
                         }
                     )
                     item(

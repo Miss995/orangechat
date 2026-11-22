@@ -94,6 +94,8 @@ data class DisplaySetting(
     val liquidGlassRim: Float = 0.18f,
     /** 边距。对应网页 r7「边距」uRimDist：边缘放大影响多宽（像素）。6 = 窄、13 = 宽 */
     val liquidGlassRimDist: Float = 6f,
+    /** 输入框是否走液态玻璃。关掉 = 回到打印机外观（2026-11-22 宝要的切换开关） */
+    val liquidGlassInput: Boolean = true,
     // 自定义字体
     val customFontPath: String = "",
     // 输入框自定义背景

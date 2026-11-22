@@ -684,7 +684,7 @@ private fun ChatPageContent(
         ) {
                 ChatInput(
                     // 【玻璃输入框 · 2026-11-08】宝要的：套一层液态玻璃，打印机那套不动（glassMode 默认 false）
-                    glassMode = true,
+                    glassMode = setting.displaySetting.liquidGlassInput,
                     state = inputState,
                     loading = loadingJob != null,
                     settings = setting,
