@@ -77,7 +77,11 @@ internal fun applyMiniAppWebViewSettings(wv: WebView) {
         domStorageEnabled = true
         databaseEnabled = true
         allowContentAccess = true
-        mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        // 【2026-11-22 修】原来 NEVER_ALLOW：页面是 https、资源却是 http 的话
+        // 会被直接拦掉 —— 不报错、也没画面（"音乐界面全黑"很可能就是这个）。
+        // COMPATIBILITY_MODE 是 Chrome 对 http 资源那种宽松档：老站能跑，
+        // 又不像 ALWAYS_ALLOW 什么都不管。
+        mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         cacheMode = WebSettings.LOAD_DEFAULT
         // 像个普通浏览器：认 viewport、按页面宽度适配、允许缩放
         useWideViewPort = true
