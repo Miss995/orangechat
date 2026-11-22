@@ -17,6 +17,7 @@ import kotlinx.serialization.json.putJsonObject
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.service.AppUsageService
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -40,20 +41,14 @@ fun createAppUsageTool(context: Context): Tool = Tool(
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         try {
             val limit = params["limit"]?.jsonPrimitive?.intOrNull ?: 10
-            val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
-            val cal = java.util.Calendar.getInstance()
-            cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
-            cal.set(java.util.Calendar.MINUTE, 0)
-            cal.set(java.util.Calendar.SECOND, 0)
-            cal.set(java.util.Calendar.MILLISECOND, 0)
-
-            val stats = usm.queryUsageStats(
-                android.app.usage.UsageStatsManager.INTERVAL_DAILY,
-                cal.timeInMillis,
-                System.currentTimeMillis()
-            ).filter { it.totalTimeInForeground > 0 }
-                .sortedByDescending { it.totalTimeInForeground }
-                .take(limit)
+            // 【2026-11-22 宝发现"不准"】这里原来自己又查了一遍 queryUsageStats(INTERVAL_DAILY)，
+            // 走的是"系统日桶"那套：给的时间范围只用来挑桶，返回的却是整个桶的统计 ——
+            // 于是同一个 App 会出现两条（两个桶），加起来还能超过今天醒着的时长。
+            // AppUsageService 里 2026-10-03 已经改成遍历事件流自己配对、灭屏就结段，那份才准。
+            // 工具不再自己算，直接调它 —— 一份实现，别再分叉。
+            val stats = AppUsageService(context).getTodayUsageStats().getOrNull()
+                ?.take(limit)
+                ?: emptyList()
 
             if (stats.isEmpty()) {
                 return@Tool listOf(UIMessagePart.Text(
@@ -67,14 +62,8 @@ fun createAppUsageTool(context: Context): Tool = Tool(
 
             val arr = buildJsonArray {
                 stats.forEach { stat ->
-                    val appName = try {
-                        val appInfo = context.packageManager.getApplicationInfo(stat.packageName, 0)
-                        context.packageManager.getApplicationLabel(appInfo).toString()
-                    } catch (_: Exception) {
-                        stat.packageName
-                    }
                     add(buildJsonObject {
-                        put("app_name", appName)
+                        put("app_name", stat.appName)
                         put("package_name", stat.packageName)
                         put("usage_minutes", (stat.totalTimeInForeground / 60000).toInt())
                         put("last_used", dateFormat.format(Date(stat.lastTimeUsed)))
