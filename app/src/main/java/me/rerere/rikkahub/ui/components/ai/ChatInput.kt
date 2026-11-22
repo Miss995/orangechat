@@ -1204,14 +1204,17 @@ fun ChatInput(
                         // 【重排·第四刀 2026-10-08】+ 和发送键挪到输入框左右两侧
                         // 【按钮被切一半 · 2026-11-09 13:27 宝】真凶是这里的 Bottom：
                         // 按钮贴着底边对齐，而玻璃模式下整块只有 66dp、圆角 28 —— 底角正是那道弧线，
-                        // 按钮斜贴在弧上就露出半截。改成垂直居中，它就落在直边上了。
+                        // 按钮斜贴在弧上就露出半截。玻璃下改成垂直居中，它就落在直边上了。
+                        // 【⚠️ 2026-11-22 宝发现的遗留】那天一刀把两条分支一起改了 ——
+                        // 打印机模式的按钮本来就是贴底的，跟着变成居中就"飞到中间"了。
+                        // 补回来：只有玻璃模式居中，打印机模式照旧贴底。
                         Row(
                             // 【按钮分离 · 2026-11-09 20:21】玻璃模式下 ＋ 提到 Surface 外面了，
                             // 内层就不再自己留那道 8dp 边（不然左右各缩一次）。
                             modifier = Modifier.fillMaxWidth().// 【往回收一点 · 2026-11-09 20:34 宝："发送键的位置有点歪"】
                             // 玻璃模式下原来是 0，按钮贴着右边那条弧线，看着就往外飘。
                             padding(horizontal = if (glassMode) 6.dp else 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                            verticalAlignment = if (glassMode) Alignment.CenterVertically else Alignment.Bottom,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             if (!glassMode) {
