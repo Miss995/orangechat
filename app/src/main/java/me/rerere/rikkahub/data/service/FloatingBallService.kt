@@ -306,16 +306,18 @@ class FloatingBallService : Service() {
                     if (dragging) {
                         snapToEdge(view, params)
                     } else {
-                        // 双击 = 把当前页面抓给猫；单击延后 320ms，等不到第二下才算单击
+                        // 【单击抓字 / 双击截图 · 2026-11-23 宝："我说的反过来是单击抓文字，双击截图"】
+                        // 理由：她截图要卡点 → 双击的判定在第二下按下的瞬间就成立，不用等 320ms；
+                        // 抓文字不急，带一点延迟无所谓。
                         val now = System.currentTimeMillis()
                         if (now - lastTapAt < DOUBLE_TAP_WINDOW_MS) {
                             lastTapAt = 0L
                             handler.removeCallbacksAndMessages(TAP_TOKEN)
-                            onBallDoubleTap()
+                            onBallShot()
                         } else {
                             lastTapAt = now
                             handler.postAtTime(
-                                { if (lastTapAt == now) onBallClick() },
+                                { if (lastTapAt == now) onBallGrabText() },
                                 TAP_TOKEN,
                                 android.os.SystemClock.uptimeMillis() + SINGLE_TAP_DELAY_MS,
                             )
@@ -453,7 +455,7 @@ class FloatingBallService : Service() {
      * 只抓**看得见的文字**（不抓控件结构、不截图）—— 快、零成本。
      * 抓到的东西存到 filesDir/ball_share_latest.txt，等下一步接"发给猫"。
      */
-    private fun onBallDoubleTap() {
+    private fun onBallGrabText() {
         val svc = RikkaAccessibilityService.instance
         if (svc == null) {
             Toast.makeText(this, "无障碍服务没开，抓不了页面", Toast.LENGTH_SHORT).show()
@@ -888,7 +890,7 @@ class FloatingBallService : Service() {
      * 兜里碰一下就整屏发过来，中间留一道确认。截图走无障碍那套
      * （RikkaAccessibilityService.captureScreenshot），不用 MediaProjection 授权。
      */
-    private fun onBallClick() {
+    private fun onBallShot() {
         AppLogBuffer.log("FloatBall", "单击 → 截图")
         bgScope.launch {
             val svc = RikkaAccessibilityService.instance
