@@ -156,9 +156,8 @@ fun ChatMessageActionMenu(
             val menuHasImage = menuImagePath.isNotBlank() && java.io.File(menuImagePath).exists()
             BubbleSurface(
                 contentPadding = 0.dp,
-                // 【白底深字 · 2026-11-23 宝："不本来就是白底深字吗"】
-                // 贴图分支（hasImage）压根不读 contentColor，用的是外层默认深色 —— 正好就是白底深字。
-                // 所以这里不再传浅色字（传了也不生效，上一版就是这么绕进去的）。
+                // 【字色分两种 · 2026-11-23】没图 → 纯色深底，要浅字；有图 → 白底，用默认深字。
+                contentColor = if (menuHasImage) LocalContentColor.current else Color(0xFFF3EFE8),
                 // 【撤蒙层 · 同一句话】obubbleAlpha 0.55 那层是想保留原来深色底的手感，
                 // 但图是白的，压深就成灰还挡住图 → overlayEnabled = false，图原样显示。
                 imagePath = menuImagePath,

@@ -2733,8 +2733,8 @@ private fun QuoteFloatBar(
         val floatHasImage = floatImagePath.isNotBlank() && java.io.File(floatImagePath).exists()
         BubbleSurface(
             contentPadding = 0.dp,
-            // 【白底深字 · 2026-11-23】跟长按菜单一样：贴图分支不读 contentColor，
-            // 默认深色字正好对上白底；也不叠蒙层（0.55 深色会把白图压成灰）。
+            // 【字色分两种 · 2026-11-23】没图 → 纯色深底，要浅字；有图 → 白底，用深字。
+            contentColor = if (floatHasImage) MaterialTheme.colorScheme.onSurface else Color(0xFFF3EFE8),
             imagePath = floatImagePath,
             cornerRadius = if (floatHasImage) floatDs.bubbleCornerRadius.dp else 12.dp,
             color = Color(0xFF2B2723),
