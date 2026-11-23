@@ -122,6 +122,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -137,6 +138,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Rect
+import me.rerere.rikkahub.ui.components.message.BubbleSurface
 import me.rerere.rikkahub.ui.components.message.QuoteAnchorBus
 import me.rerere.rikkahub.ui.components.message.SelectionStateBus
 import androidx.compose.ui.layout.ContentScale
@@ -2723,11 +2725,24 @@ private fun QuoteFloatBar(
         },
         properties = PopupProperties(focusable = false),
     ) {
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = Color(0xFF2B2723).copy(alpha = 0.94f),
+        // 【浮条吃气泡图 · 2026-11-23 宝："两个菜单都换了吗"】跟长按菜单同一套：
+        // 换成 BubbleSurface，于是选中浮条也读「显示 → 插图素材 → 气泡背景」那张图。
+        // 没贴图时保持原样（12dp 圆角 + 0.94 深色底），贴了图蒙层降到 0.55，免得把图盖死。
+        val floatDs = LocalDisplaySettings.current
+        val floatImagePath = floatDs.assistantBubbleImagePath
+        val floatHasImage = floatImagePath.isNotBlank() && java.io.File(floatImagePath).exists()
+        BubbleSurface(
+            contentPadding = 0.dp,
             contentColor = Color(0xFFF3EFE8),
-            shadowElevation = 8.dp,
+            imagePath = floatImagePath,
+            cornerRadius = if (floatHasImage) floatDs.bubbleCornerRadius.dp else 12.dp,
+            color = Color(0xFF2B2723),
+            overlayEnabled = true,
+            bubbleAlpha = if (floatHasImage) 0.55f else 0.94f,
+            modifier = Modifier.shadow(
+                elevation = 8.dp,
+                shape = RoundedCornerShape(if (floatHasImage) floatDs.bubbleCornerRadius.dp else 12.dp),
+            ),
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
