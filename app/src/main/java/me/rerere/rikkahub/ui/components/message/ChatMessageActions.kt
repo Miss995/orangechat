@@ -167,11 +167,11 @@ fun ChatMessageActionMenu(
                 // DropdownMenu 没了之后外框没有任何东西约束宽度 → Column 按"可用最大宽"算，
                 // 每行就被撑成满屏。改成 width(IntrinsicSize.Max)：先量出最宽那一行，
                 // 再让所有行咬这个宽度，于是又窄又齐。
+                // 【不要阴影 · 2026-11-23 宝："为什么要加一个阴影？就一个气泡就好啊"】
+                // 原来 Surface 带 shadowElevation 8dp，换组件时猫怕"少了阴影会塌"手动补了
+                // Modifier.shadow()。它画在外圈、形状跟气泡不配 → 看着像一块多余的黑色底板。
+                // 撤掉：就一个气泡。
                 modifier = Modifier
-                    .shadow(
-                        elevation = 8.dp,
-                        shape = RoundedCornerShape(if (menuHasImage) menuDs.bubbleCornerRadius.dp else 12.dp),
-                    )
                     .widthIn(min = 110.dp)
                     .width(IntrinsicSize.Max),
             ) {

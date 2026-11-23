@@ -2739,10 +2739,9 @@ private fun QuoteFloatBar(
             color = Color(0xFF2B2723),
             overlayEnabled = true,
             bubbleAlpha = if (floatHasImage) 0.55f else 0.94f,
-            modifier = Modifier.shadow(
-                elevation = 8.dp,
-                shape = RoundedCornerShape(if (floatHasImage) floatDs.bubbleCornerRadius.dp else 12.dp),
-            ),
+            // 【不要阴影 · 2026-11-23 宝："就一个气泡就好啊"】跟长按菜单一起撤掉。
+            // 原来 Surface 的 shadowElevation 补手，会画出一圈形状对不齐的底板。
+            modifier = Modifier,
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
