@@ -16,6 +16,8 @@ import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.SystemServiceHelper
 import android.content.Intent
 import android.content.res.Resources
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
@@ -33,6 +35,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -57,6 +60,7 @@ import me.rerere.ai.ui.UIMessagePart
 import org.koin.core.context.GlobalContext
 import me.rerere.rikkahub.service.RikkaAccessibilityService
 import java.io.File
+import java.io.FileOutputStream
 import kotlin.math.abs
 
 /**
@@ -507,8 +511,17 @@ class FloatingBallService : Service() {
      * 不用页面先转到橘瓣里再发。」
      * 所以这是一层覆盖窗口，压根不切应用。
      */
-    private fun showSharePanel(pkg: String, text: String, title: String = "要发给猫吗？") {
-        AppLogBuffer.log("FloatBall", "弹卡片：$title / $pkg / ${text.length} 字")
+    private fun showSharePanel(
+        pkg: String,
+        text: String,
+        title: String = "要发给猫吗？",
+        previewBitmap: Bitmap? = null,
+        imagePath: String? = null,
+    ) {
+        AppLogBuffer.log(
+            "FloatBall",
+            "弹卡片：$title / $pkg / ${text.length} 字" + if (imagePath != null) " / 带图" else "",
+        )
         hideSharePanel()
         val width = (screenWidth() - dp(40)).coerceIn(dp(200), dp(420))
 
@@ -533,17 +546,40 @@ class FloatingBallService : Service() {
             setTextColor(Color.parseColor("#999999"))
             setPadding(0, dp(2), 0, dp(8))
         })
+        // 【带图 · 2026-11-23】截图那种就在标题下面插一张缩略图。
+        // 高度钉死 180dp + FIT_CENTER：卡片宽度有限，让图自己缩进去，别把卡片撑爆。
+        if (previewBitmap != null) {
+            card.addView(
+                ImageView(this).apply {
+                    setImageBitmap(previewBitmap)
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(10).toFloat()
+                        setColor(Color.parseColor("#F2F0EC"))
+                    }
+                    setPadding(dp(4), dp(4), dp(4), dp(4))
+                },
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(180),
+                ).apply { bottomMargin = dp(8) },
+            )
+        }
+        // 【有图就不显示文字预览 · 2026-11-23】截图那条传进来的是文件路径，
+        // 直接当正文显示会冒一串 /data/... 出来。
+        if (imagePath == null) {
+            card.addView(TextView(this).apply {
+                // 预览多给点：抓到的文字里混着"关注""第1张,共1张"这种界面字，
+                // 给 200 字的话正文只露一半，看着像被砍了（宝 2026-11-21 提的）。
+                this.text = if (text.length > 400) text.take(400) + "…" else text
+                textSize = 13f
+                setTextColor(Color.parseColor("#444444"))
+                maxLines = 10
+                setPadding(0, 0, 0, dp(6))
+            })
+        }
         card.addView(TextView(this).apply {
-            // 预览多给点：抓到的文字里混着"关注""第1张,共1张"这种界面字，
-            // 给 200 字的话正文只露一半，看着像被砍了（宝 2026-11-21 提的）。
-            this.text = if (text.length > 400) text.take(400) + "…" else text
-            textSize = 13f
-            setTextColor(Color.parseColor("#444444"))
-            maxLines = 10
-            setPadding(0, 0, 0, dp(6))
-        })
-        card.addView(TextView(this).apply {
-            this.text = "共 ${text.length} 字，发出去是完整的"
+            this.text = if (imagePath != null) "整张原样发过去" else "共 ${text.length} 字，发出去是完整的"
             textSize = 11f
             setTextColor(Color.parseColor("#999999"))
             setPadding(0, 0, 0, dp(12))
@@ -557,7 +593,7 @@ class FloatingBallService : Service() {
         row.addView(View(this), LinearLayout.LayoutParams(dp(8), dp(1)))
         row.addView(makePanelButton("发送", true) {
             hideSharePanel()
-            sendSharedText(pkg, text)
+            if (imagePath != null) sendSharedImage(pkg, imagePath) else sendSharedText(pkg, text)
         })
         card.addView(row)
 
@@ -644,6 +680,37 @@ class FloatingBallService : Service() {
             }.onFailure {
                 AppLogBuffer.log("FloatBall", "发送失败 ${it.javaClass.simpleName}: ${it.message}")
                 Log.e(TAG, "send shared text failed", it)
+            }
+        }
+    }
+
+    /**
+     * 把一张图发进最近会话。
+     *
+     * 【2026-11-23 单击截图配套】跟 sendSharedText 一个路子，parts 换成 Image + 一行说明。
+     * 用 file:// 绝对路径 —— ScreenshotTool / ImageGenTool 那边都这么传，编码器读得动。
+     */
+    private fun sendSharedImage(pkg: String, path: String) {
+        bgScope.launch {
+            runCatching {
+                val settings = GlobalContext.get().get<SettingsStore>().settingsFlow.value
+                val repo = GlobalContext.get().get<ConversationRepository>()
+                val conv = repo.getRecentConversations(settings.assistantId, 1).firstOrNull()
+                if (conv == null) {
+                    AppLogBuffer.log("FloatBall", "没有会话可发")
+                    return@launch
+                }
+                GlobalContext.get().get<ChatService>().sendMessage(
+                    conv.id,
+                    listOf(
+                        UIMessagePart.Image(url = "file://$path"),
+                        UIMessagePart.Text("【球截了一张屏】$pkg"),
+                    ),
+                )
+                AppLogBuffer.log("FloatBall", "已发图进会话 ${conv.id}（$path）")
+            }.onFailure {
+                AppLogBuffer.log("FloatBall", "发图失败 ${it.javaClass.simpleName}: ${it.message}")
+                Log.e(TAG, "send shared image failed", it)
             }
         }
     }
@@ -814,9 +881,73 @@ class FloatingBallService : Service() {
         handler.post { showSharePanel("剪贴板 · $label", text, "要分享给猫吗？") }
     }
 
+    /**
+     * 单击 = 截一张屏，弹卡片问「要发给猫吗」。
+     *
+     * 【2026-11-23 宝：单击截图，走卡片确认】不直接发 —— 单击太容易误触，
+     * 兜里碰一下就整屏发过来，中间留一道确认。截图走无障碍那套
+     * （RikkaAccessibilityService.captureScreenshot），不用 MediaProjection 授权。
+     */
     private fun onBallClick() {
-        // 先占位，功能后面接（双击分享 / 单击开面板）
-        Toast.makeText(this, "球还只是个球", Toast.LENGTH_SHORT).show()
+        AppLogBuffer.log("FloatBall", "单击 → 截图")
+        bgScope.launch {
+            val svc = RikkaAccessibilityService.instance
+            if (svc == null) {
+                AppLogBuffer.log("FloatBall", "截图失败：无障碍服务没开")
+                handler.post {
+                    Toast.makeText(this@FloatingBallService, "无障碍没开，截不了", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+            val res = runCatching { svc.captureScreenshot(0) }
+                .onFailure { AppLogBuffer.log("FloatBall", "截图异常 ${it.javaClass.simpleName}: ${it.message}") }
+                .getOrNull()
+            when (res) {
+                null -> Unit
+                is RikkaAccessibilityService.ScreenshotOutcome.Failure -> {
+                    AppLogBuffer.log("FloatBall", "截图失败：${res.reason}")
+                    handler.post {
+                        Toast.makeText(this@FloatingBallService, "截不了（${res.reason}）", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                is RikkaAccessibilityService.ScreenshotOutcome.Success -> {
+                    val ts = System.currentTimeMillis()
+                    val dir = File(cacheDir, "float_shots").apply { mkdirs() }
+                    val out = File(dir, "ball-$ts.png")
+                    val saved = runCatching {
+                        FileOutputStream(out).use { res.bitmap.compress(Bitmap.CompressFormat.PNG, 92, it) }
+                        true
+                    }.getOrDefault(false)
+                    val w = res.bitmap.width
+                    val h = res.bitmap.height
+                    runCatching { res.bitmap.recycle() }
+                    AppLogBuffer.log("FloatBall", "截图 ${w}x${h} → saved=$saved ${out.absolutePath}")
+                    if (!saved) {
+                        handler.post {
+                            Toast.makeText(this@FloatingBallService, "存图失败", Toast.LENGTH_SHORT).show()
+                        }
+                        return@launch
+                    }
+                    // 预览按屏幕宽采样，别把整张原图塞进 ImageView
+                    val preview = runCatching {
+                        val opts = BitmapFactory.Options().apply {
+                            inSampleSize = if (w > screenWidth() * 2) 2 else 1
+                        }
+                        BitmapFactory.decodeFile(out.absolutePath, opts)
+                    }.getOrNull()
+                    handler.post {
+                        showSharePanel(
+                            pkg = "截图 ${w}×$h",
+                            text = out.absolutePath,
+                            title = "要发给猫吗？",
+                            previewBitmap = preview,
+                            imagePath = out.absolutePath,
+                        )
+                    }
+                }
+            }
+        }
     }
 
     private fun snapToEdge(view: View, params: WindowManager.LayoutParams) {
