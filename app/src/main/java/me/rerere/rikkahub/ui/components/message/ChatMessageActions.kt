@@ -156,12 +156,16 @@ fun ChatMessageActionMenu(
             val menuHasImage = menuImagePath.isNotBlank() && java.io.File(menuImagePath).exists()
             BubbleSurface(
                 contentPadding = 0.dp,
-                contentColor = Color(0xFFF3EFE8),
+                // 【白底深字 · 2026-11-23 宝："不本来就是白底深字吗"】
+                // 贴图分支（hasImage）压根不读 contentColor，用的是外层默认深色 —— 正好就是白底深字。
+                // 所以这里不再传浅色字（传了也不生效，上一版就是这么绕进去的）。
+                // 【撤蒙层 · 同一句话】obubbleAlpha 0.55 那层是想保留原来深色底的手感，
+                // 但图是白的，压深就成灰还挡住图 → overlayEnabled = false，图原样显示。
                 imagePath = menuImagePath,
                 cornerRadius = if (menuHasImage) menuDs.bubbleCornerRadius.dp else 12.dp,
                 color = Color(0xFF2B2723),
-                overlayEnabled = true,
-                bubbleAlpha = if (menuHasImage) 0.55f else 0.94f,
+                overlayEnabled = !menuHasImage,
+                bubbleAlpha = 0.94f,
                 // 【宽度收回 · 2026-11-18 21:48 宝："这个尺寸有点雷霆啊"】
                 // 截图里菜单横贯整个屏幕。原因：CompactMenuItem 的 Row 用了 fillMaxWidth，
                 // DropdownMenu 没了之后外框没有任何东西约束宽度 → Column 按"可用最大宽"算，

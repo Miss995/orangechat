@@ -2733,12 +2733,13 @@ private fun QuoteFloatBar(
         val floatHasImage = floatImagePath.isNotBlank() && java.io.File(floatImagePath).exists()
         BubbleSurface(
             contentPadding = 0.dp,
-            contentColor = Color(0xFFF3EFE8),
+            // 【白底深字 · 2026-11-23】跟长按菜单一样：贴图分支不读 contentColor，
+            // 默认深色字正好对上白底；也不叠蒙层（0.55 深色会把白图压成灰）。
             imagePath = floatImagePath,
             cornerRadius = if (floatHasImage) floatDs.bubbleCornerRadius.dp else 12.dp,
             color = Color(0xFF2B2723),
-            overlayEnabled = true,
-            bubbleAlpha = if (floatHasImage) 0.55f else 0.94f,
+            overlayEnabled = !floatHasImage,
+            bubbleAlpha = 0.94f,
             // 【不要阴影 · 2026-11-23 宝："就一个气泡就好啊"】跟长按菜单一起撤掉。
             // 原来 Surface 的 shadowElevation 补手，会画出一圈形状对不齐的底板。
             modifier = Modifier,
