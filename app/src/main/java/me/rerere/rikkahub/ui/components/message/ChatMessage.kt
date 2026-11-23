@@ -1595,13 +1595,18 @@ private fun MessagePartsBlock(
 }
  
 @Composable
-private fun BubbleSurface(
+// 【菜单也吃气泡图 · 2026-11-23】原来 private，只有本文件能调。
+// 宝要把长按菜单做成"跟聊天气泡同一套素材"，所以放到 internal 给 ChatMessageActions 用。
+internal fun BubbleSurface(
     modifier: Modifier = Modifier,
     // 【白字只在正文气泡上用 · 2026-11-07 宝："代码和图标改成白的，看得眼花"】
     // 思考链里全是工具名/行内代码，白字落在浅底上就花了 → 那处传 false。
     whiteText: Boolean = true,
     // 【内边距可调 · 2026-11-07 20:28】思考链只有一行字，8dp 上下会把它撑肥。
     contentPadding: Dp = 8.dp,
+    // 【菜单吃气泡图 · 2026-11-23】BubbleSurface 原来字色只能跟随外层 LocalContentColor，
+    // 长按菜单是深色底，需要自己的浅色字 → 开个口子，默认值跟以前一样（不影响现有调用点）。
+    contentColor: Color = LocalContentColor.current,
     imagePath: String,
     cornerRadius: Dp,
     color: Color,
@@ -1762,7 +1767,7 @@ private fun BubbleSurface(
             // Surface 默认用 contentColorFor(背景色)：玻璃模式背景是 Transparent，
             // 它按浅色底算，于是给了深色字 —— 在花枝背景上糊成一团。
             // 玻璃上一律用白字（真玻璃控件都是这么做的）。
-            contentColor = if (glassReady && whiteText) Color.White else LocalContentColor.current,
+            contentColor = if (glassReady && whiteText) Color.White else contentColor,
             onClick = onClick ?: {},
         ) {
             Column(modifier = Modifier.padding(contentPadding)) { content() }

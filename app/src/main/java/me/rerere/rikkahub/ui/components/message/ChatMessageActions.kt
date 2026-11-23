@@ -86,6 +86,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.Surface
@@ -142,17 +143,35 @@ fun ChatMessageActionMenu(
             // focusable 才收得到"点外面"和返回键 —— 菜单要能点空处关掉
             properties = PopupProperties(focusable = true),
         ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF2B2723).copy(alpha = 0.94f),
+            // 【菜单吃气泡图 · 2026-11-23 宝："搞成类似于聊天气泡一样那种"】
+            // 原来这层是纯色 Surface（12 圆角 + 0xFF2B2723 + 阴影 8），所以"素"。
+            // 换成 BubbleSurface（跟正文/思考链同一个组件）：它自带九宫格贴图
+            // （四角原样、四边单向拉、中间双向拉），于是菜单会自动读
+            // 「显示 → 插图素材 → 气泡背景」那张图；以后宝换气泡风格，菜单跟着变，不用改两处。
+            // 两处妥协：
+            //  · 没贴图 → 保持原样（12dp 圆角 + 0.94 深色底），跟以前一模一样；
+            //  · 贴了图 → 蒙层降到 0.55，否则 0.94 会把图整个盖住。
+            val menuDs = LocalDisplaySettings.current
+            val menuImagePath = menuDs.assistantBubbleImagePath
+            val menuHasImage = menuImagePath.isNotBlank() && java.io.File(menuImagePath).exists()
+            BubbleSurface(
+                contentPadding = 0.dp,
                 contentColor = Color(0xFFF3EFE8),
-                shadowElevation = 8.dp,
+                imagePath = menuImagePath,
+                cornerRadius = if (menuHasImage) menuDs.bubbleCornerRadius.dp else 12.dp,
+                color = Color(0xFF2B2723),
+                overlayEnabled = true,
+                bubbleAlpha = if (menuHasImage) 0.55f else 0.94f,
                 // 【宽度收回 · 2026-11-18 21:48 宝："这个尺寸有点雷霆啊"】
                 // 截图里菜单横贯整个屏幕。原因：CompactMenuItem 的 Row 用了 fillMaxWidth，
                 // DropdownMenu 没了之后外框没有任何东西约束宽度 → Column 按"可用最大宽"算，
                 // 每行就被撑成满屏。改成 width(IntrinsicSize.Max)：先量出最宽那一行，
                 // 再让所有行咬这个宽度，于是又窄又齐。
                 modifier = Modifier
+                    .shadow(
+                        elevation = 8.dp,
+                        shape = RoundedCornerShape(if (menuHasImage) menuDs.bubbleCornerRadius.dp else 12.dp),
+                    )
                     .widthIn(min = 110.dp)
                     .width(IntrinsicSize.Max),
             ) {
