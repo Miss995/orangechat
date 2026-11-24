@@ -52,7 +52,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
+import me.rerere.asr.ASRProviderSetting
 import me.rerere.asr.ASRStatus
+import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
+import me.rerere.rikkahub.service.VoiceToneAnalyzer
 import me.rerere.rikkahub.ui.hooks.CustomAsrState
 import me.rerere.rikkahub.ui.hooks.createCustomAsrState
 import okhttp3.OkHttpClient
@@ -497,6 +500,7 @@ class FloatingBallService : Service() {
                 asr.state.value.transcript
             }
             val err = asr.state.value.errorMessage
+            val audioPath = asr.state.value.audioFilePath
             isTranscribing = false
             handler.post { setBallRecordingStyle(false) }
             AppLogBuffer.log(
@@ -507,7 +511,37 @@ class FloatingBallService : Service() {
                 toastShort(if (err != null) "转写出错：$err" else "没听清，再说一次")
                 return@launch
             }
-            sendVoiceText(text)
+
+            // 【2026-11-24 语气尾巴】跟语音条那条路一致：硅基 ASR + Qwen3-Omni 再听一遍这段音频，
+            // 拼成「（语气：X，语速：Y）」一起发。分析失败就退回纯文本，不挡发送。
+            // 调用点照抄 ChatService.kt:775 那处（同一个分析器、同一个取 key 方式）。
+            var suffix = ""
+            if (!audioPath.isNullOrBlank()) {
+                runCatching {
+                    val settings = GlobalContext.get().get<SettingsStore>().settingsFlow.value
+                    val provider = settings.getSelectedASRProvider()
+                    if (provider is ASRProviderSetting.SiliconFlow && provider.apiKey.isNotBlank()) {
+                        val toneStarted = System.currentTimeMillis()
+                        val tone = VoiceToneAnalyzer.analyze(provider.apiKey, audioPath)
+                        if (tone != null) {
+                            suffix = "（语气：${tone.tone}，语速：${tone.speed}）"
+                            AppLogBuffer.log(
+                                "FloatBall",
+                                "语气分析 ${System.currentTimeMillis() - toneStarted}ms → 语气=${tone.tone} 语速=${tone.speed}"
+                            )
+                        } else {
+                            AppLogBuffer.log("FloatBall", "语气分析返回空（已退回纯文本）")
+                        }
+                    } else {
+                        AppLogBuffer.log("FloatBall", "语气分析跳过：当前 ASR 不是硅基或 key 为空")
+                    }
+                }.onFailure {
+                    AppLogBuffer.log("FloatBall", "语气分析异常 ${it.javaClass.simpleName}: ${it.message}")
+                }
+            } else {
+                AppLogBuffer.log("FloatBall", "语气分析跳过：拿不到音频路径")
+            }
+            sendVoiceText(text + suffix)
         }
     }
 
