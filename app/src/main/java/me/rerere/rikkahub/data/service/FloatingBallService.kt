@@ -51,6 +51,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withTimeoutOrNull
 import me.rerere.asr.ASRProviderSetting
 import me.rerere.asr.ASRStatus
@@ -168,8 +170,10 @@ class FloatingBallService : Service() {
     @Volatile private var isTranscribing = false
     /** ASR 实例（服务启动时在后台建好，长按时直接用） */
     private var asrState: CustomAsrState? = null
-    /** 球的状态：0=待机(橘) 1=录音(红) 2=转写(黄+闪) */
+    /** 球的状态：0=待机(橘) 1=录音(红) 2=转写(黄+闪) 3=猫在生成(深橙+呼吸) */
     @Volatile private var ballMode = 0
+    /** 监听「猫是不是在生成」的协程 */
+    private var generateWatchJob: Job? = null
     private var voiceStartedAt = 0L
     private var sharePanel: View? = null
 
@@ -186,6 +190,7 @@ class FloatingBallService : Service() {
     override fun onCreate() {
         super.onCreate()
         initAsr()
+        startWatchGeneration()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         // 【剪贴板 · 2026-11-21】后台收不到剪贴板变化回调（被系统卡着），所以改成轮询：
         // 借 Shizuku 的 shell 身份每 2 秒读一次，命中抖音/小红书就弹卡片。
@@ -224,6 +229,10 @@ class FloatingBallService : Service() {
         // 【2026-11-24】释放 ASR：不释放会一直占着麦克风和音频焦点
         runCatching { asrState?.cleanup() }
         asrState = null
+        generateWatchJob?.cancel()
+        generateWatchJob = null
+        handler.removeCallbacks(blinkRunnable)
+        handler.removeCallbacks(breatheRunnable)
         handler.removeCallbacksAndMessages(RECORD_STOP_TOKEN)
         handler.removeCallbacksAndMessages(LONG_PRESS_TOKEN)
         clipPollJob?.cancel()
@@ -612,9 +621,10 @@ class FloatingBallService : Service() {
         ballMode = mode
         val circle = ballCircle ?: return
         val color = when (mode) {
-            1 -> 0xFFE8503A.toInt()
-            2 -> 0xFFF2A93B.toInt()
-            else -> BALL_COLOR
+            1 -> 0xFFE8503A.toInt()   // 红：正在录
+            2 -> 0xFFF2A93B.toInt()   // 黄：在转写
+            3 -> 0xFFE85D04.toInt()   // 深橙：猫在生成
+            else -> BALL_COLOR        // 橘：待机
         }
         circle.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
@@ -628,8 +638,12 @@ class FloatingBallService : Service() {
             ?.start()
 
         handler.removeCallbacks(blinkRunnable)
+        handler.removeCallbacks(breatheRunnable)
         ballView?.alpha = 1f
-        if (mode == 2) handler.postDelayed(blinkRunnable, 320)
+        when (mode) {
+            2 -> handler.postDelayed(blinkRunnable, 320)
+            3 -> handler.postDelayed(breatheRunnable, 0)
+        }
     }
 
     /** 转写时的闪烁：球小的时候没动静根本看不出来 */
@@ -642,6 +656,52 @@ class FloatingBallService : Service() {
             val v = ballView ?: return
             v.alpha = if (v.alpha > 0.8f) 0.45f else 1f
             handler.postDelayed(this, 320)
+        }
+    }
+
+    /** 生成时的呼吸：球一涨一缩，比静止的颜色变化明显得多 */
+    private val breatheRunnable = object : Runnable {
+        private var up = true
+        override fun run() {
+            if (ballMode != 3) {
+                ballView?.scaleX = 1f
+                ballView?.scaleY = 1f
+                return
+            }
+            val target = if (up) 1.24f else 1.04f
+            ballView?.animate()?.scaleX(target)?.scaleY(target)?.setDuration(540)?.start()
+            up = !up
+            handler.postDelayed(this, 540)
+        }
+    }
+
+    /**
+     * 监听「猫正在生成」，让球跟着变。
+     *
+     * 用 ChatService.getConversationJobs() —— 它是全局的，返回所有会话里活着的生成 Job，
+     * 不用先知道是哪个会话（悬浮球本来也不该关心这个）。
+     * 判据用 job?.isActive：光看非空不行，跑完的 Job 对象可能还挂着。
+     *
+     * ⚠️ 录音(1)/转写(2) 优先：正在录音时猫要是刚好在生成，不能把状态盖掉。
+     */
+    private fun startWatchGeneration() {
+        generateWatchJob = bgScope.launch {
+            runCatching {
+                val chatService = GlobalContext.get().get<ChatService>()
+                chatService.getConversationJobs()
+                    .map { jobs -> jobs.values.any { it?.isActive == true } }
+                    .distinctUntilChanged()
+                    .collect { generating ->
+                        handler.post {
+                            if (ballMode == 0 || ballMode == 3) {
+                                setBallMode(if (generating) 3 else 0)
+                                AppLogBuffer.log("FloatBall", "生成状态 → ${if (generating) "生成中" else "空闲"}")
+                            }
+                        }
+                    }
+            }.onFailure {
+                AppLogBuffer.log("FloatBall", "监听生成状态失败 ${it.javaClass.simpleName}: ${it.message}")
+            }
         }
     }
 
