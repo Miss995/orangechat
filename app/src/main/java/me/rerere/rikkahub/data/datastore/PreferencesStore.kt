@@ -109,6 +109,8 @@ class SettingsStore(
         val VIDEO_MODEL = stringPreferencesKey("video_model")
         val OCR_PROMPT = stringPreferencesKey("ocr_prompt")
         val COMPRESS_MODEL = stringPreferencesKey("compress_model")
+        /** 【2026-11-24】记忆门控用哪个模型（宝要的：像标题总结那样能自己换） */
+        val MEMORY_GATE_MODEL = stringPreferencesKey("memory_gate_model")
         val COMPRESS_PROMPT = stringPreferencesKey("compress_prompt")
 
         // 提供商
@@ -234,6 +236,7 @@ class SettingsStore(
                 videoModelId = preferences[VIDEO_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
                 ocrPrompt = preferences[OCR_PROMPT] ?: DEFAULT_OCR_PROMPT,
                 compressModelId = preferences[COMPRESS_MODEL]?.let { Uuid.parse(it) } ?: DEFAULT_AUTO_MODEL_ID,
+                memoryGateModelId = preferences[MEMORY_GATE_MODEL]?.let { Uuid.parse(it) } ?: DEFAULT_AUTO_MODEL_ID,
                 compressPrompt = preferences[COMPRESS_PROMPT] ?: DEFAULT_COMPRESS_PROMPT,
                 assistantId = preferences[SELECT_ASSISTANT]?.let { Uuid.parse(it) }
                     ?: DEFAULT_ASSISTANT_ID,
@@ -454,6 +457,14 @@ class SettingsStore(
             preferences[VIDEO_MODEL] = settings.videoModelId.toString()
             preferences[OCR_PROMPT] = settings.ocrPrompt
             preferences[COMPRESS_MODEL] = settings.compressModelId.toString()
+            // ⚠️ 这里必须判空：null.toString() 会存成字符串 "null"，下次 Uuid.parse("null") 直接炸。
+            // 空 = 没选 = 用内置模型，那就把 key 删掉，读的时候自然落到 DEFAULT_AUTO_MODEL_ID。
+            val gateModelId = settings.memoryGateModelId
+            if (gateModelId == null) {
+                preferences.remove(MEMORY_GATE_MODEL)
+            } else {
+                preferences[MEMORY_GATE_MODEL] = gateModelId.toString()
+            }
             preferences[COMPRESS_PROMPT] = settings.compressPrompt
 
             preferences[PROVIDERS] = JsonInstant.encodeToString(settings.providers)
@@ -605,6 +616,8 @@ data class Settings(
     val ocrPrompt: String = DEFAULT_OCR_PROMPT,
     val compressModelId: Uuid = Uuid.random(),
     val compressPrompt: String = DEFAULT_COMPRESS_PROMPT,
+    /** 记忆门控（判断要不要召回）用哪个模型——可空表示没配过，退回内置 Qwen2-7B */
+    val memoryGateModelId: Uuid? = null,
     val assistantId: Uuid = DEFAULT_ASSISTANT_ID,
     val providers: List<ProviderSetting> = DEFAULT_PROVIDERS,
     val assistants: List<Assistant> = DEFAULT_ASSISTANTS,

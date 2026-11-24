@@ -810,16 +810,21 @@ class GenerationHandler(
                         // 【门控升级 2026-08-19】词表预筛 + 硅基免费 LLM 判断（MemoryIntentJudge.needsRecall，替代纯词表 hasSearchIntent）
                         // 强回忆词直接过（省延迟）；其余调硅基免费模型（Qwen/Qwen2-7B-Instruct，零成本）判断"需不需要召回记忆"；
                         // LLM 不可用时回退旧词表（不哑火）。judgeProvider 取外置库 embedding provider（硅基）。
-                        val judgeProvider = externalMemoryConfigs.firstNotNullOfOrNull { config ->
-                            config.embeddingModelId?.let { settings.findModelById(it) }?.findProvider(settings.providers)
-                        }
+                        // 【2026-11-24 门控模型可选】宝在设置里选的那个模型优先；
+                        // 没选（null）就退回老路子：拿外置库 embedding 那家的 provider + 内置 Qwen2-7B。
+                        val gateModel = settings.memoryGateModelId?.let { settings.findModelById(it) }
+                        val judgeProvider = gateModel?.findProvider(settings.providers)
+                            ?: externalMemoryConfigs.firstNotNullOfOrNull { config ->
+                                config.embeddingModelId?.let { settings.findModelById(it) }?.findProvider(settings.providers)
+                            }
+                        val gateModelName = gateModel?.modelId
                         // 【2026-09-24 AI 拆词接回】复用门控那个硅基 provider 的 key，零额外配置
                         val keywordExtractor = (judgeProvider as? me.rerere.ai.provider.ProviderSetting.OpenAI)
                             ?.takeIf { it.apiKey.isNotBlank() }
                             ?.let { me.rerere.rikkahub.data.service.QueryKeywordExtractor(apiKey = it.apiKey) }
                         // 【2026-09-24 召回留痕】改用带原因的 judge（needsRecall 壳保留，别处仍在用）
                         PrinterStatus.next("门控判断")
-                        val gate = if (recallGate) null else MemoryIntentJudge.judge(queryText, judgeProvider)
+                        val gate = if (recallGate) null else MemoryIntentJudge.judge(queryText, judgeProvider, gateModelName)
                         // 【2026-09-24 召回留痕】门控判"不需要召回"时也回报一句，界面才看得见"为什么没搜"
                         if (gate != null && !gate.needs) {
                             onRecallDebug?.invoke("门控：${gate.reason}（未召回） · 命中 0 条")

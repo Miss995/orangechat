@@ -70,11 +70,14 @@ object MemoryIntentJudge {
     data class GateResult(val needs: Boolean, val reason: String)
 
     /** 判断用户消息是否需要召回记忆（旧签名保留，行为不变）。 */
-    suspend fun needsRecall(text: String, judgeProvider: ProviderSetting?): Boolean =
-        judge(text, judgeProvider).needs
+    suspend fun needsRecall(text: String, judgeProvider: ProviderSetting?, modelName: String? = null): Boolean =
+        judge(text, judgeProvider, modelName).needs
 
     /** 同 needsRecall，但把"为什么这么判"一起带出来（界面留痕用）。 */
-    suspend fun judge(text: String, judgeProvider: ProviderSetting?): GateResult {
+    /**
+     * @param modelName 用哪个模型判（宝在设置里选的那个）；null/空 = 用内置的 Qwen2-7B
+     */
+    suspend fun judge(text: String, judgeProvider: ProviderSetting?, modelName: String? = null): GateResult {
         if (text.isBlank()) return GateResult(false, "空消息")
         // 1. 强回忆词快速过（省 LLM 调用）
         STRONG_WORDS.firstOrNull { text.contains(it) }?.let { hit ->
@@ -82,7 +85,7 @@ object MemoryIntentJudge {
             return GateResult(true, "强词命中「$hit」")
         }
         // 2. LLM 判断（硅基免费模型）
-        val llm = judgeByLLM(text, judgeProvider)
+        val llm = judgeByLLM(text, judgeProvider, modelName)
         if (llm != null) {
             Log.d(TAG, "gate: llm judge = $llm")
             return GateResult(llm, if (llm) "LLM 判要查" else "LLM 判不用查")
@@ -94,14 +97,14 @@ object MemoryIntentJudge {
     }
 
     /** 调硅基免费模型判断；返回 null = 不可用/失败（走回退） */
-    private suspend fun judgeByLLM(text: String, provider: ProviderSetting?): Boolean? {
+    private suspend fun judgeByLLM(text: String, provider: ProviderSetting?, modelName: String? = null): Boolean? {
         val openai = provider as? ProviderSetting.OpenAI ?: return null
         if (openai.apiKey.isBlank()) return null
         return withContext(Dispatchers.IO) {
             runCatching {
                 val url = URL(openai.baseUrl.trimEnd('/') + openai.chatCompletionsPath)
                 val body = JSONObject()
-                    .put("model", JUDGE_MODEL)
+                    .put("model", modelName?.takeIf { it.isNotBlank() } ?: JUDGE_MODEL)
                     .put("messages", JSONArray()
                         .put(JSONObject()
                             .put("role", "system")

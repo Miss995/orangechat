@@ -112,6 +112,11 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
                 DefaultSuggestionModelSetting(settings = settings, vm = vm)
             }
 
+            // 【2026-11-24 宝】记忆门控：判断"这句话要不要检索历史记忆"用哪个模型
+            item {
+                DefaultMemoryGateModelSetting(settings = settings, vm = vm)
+            }
+
             item {
                 DefaultTranslationModelSetting(settings = settings, vm = vm)
             }
@@ -243,6 +248,49 @@ private fun DefaultTranslationModelSetting(
             }
         }
     }
+}
+
+/**
+ * 记忆门控模型（2026-11-24 宝提：门控那个 Qwen2-7B 慢起来要卡八秒，想自己能换）。
+ *
+ * 空着 = 用内置的 Qwen/Qwen2-7B-Instruct（老行为不变）。
+ * 选了 = 用这个模型，provider/key/baseUrl 都跟着这个模型走。
+ * 建议挑又快又便宜的：它的活儿只是回一个 YES/NO。
+ */
+@Composable
+private fun DefaultMemoryGateModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        title = {
+            Text("记忆门控模型", maxLines = 1)
+        },
+        description = {
+            Text("判断这句话要不要检索历史记忆。挑又快又便宜的；空着用内置 Qwen2-7B")
+        },
+        icon = {
+            Icon(HugeIcons.View, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.memoryGateModelId,
+                    type = ModelType.CHAT,
+                    onSelect = {
+                        vm.updateSettings(
+                            settings.copy(
+                                memoryGateModelId = it.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    allowClear = true,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
 }
 
 @Composable
