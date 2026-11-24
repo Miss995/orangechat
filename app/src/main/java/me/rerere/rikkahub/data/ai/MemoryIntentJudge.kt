@@ -125,8 +125,11 @@ object MemoryIntentJudge {
                     setRequestProperty("Authorization", "Bearer ${openai.apiKey}")
                     setRequestProperty("Accept", "application/json")
                     doOutput = true
-                    connectTimeout = 8000
-                    readTimeout = 8000
+                    // 【2026-11-24 宝：门控卡人】原来 8000/8000，最坏要等 8 秒，发个消息都在等它。
+                    // 门控只是判"要不要召回"，判不出来就按不需要处理，走回退词表——宁可偶尔少召回，
+                    // 不能把宝堵在这里。连接给 3 秒（网络抖动时别误杀），读只给 2.5 秒。
+                    connectTimeout = 3000
+                    readTimeout = 2500
                 }
                 conn.outputStream.bufferedWriter().use { it.write(body) }
                 val responseCode = conn.responseCode
