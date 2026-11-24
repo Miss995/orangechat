@@ -116,6 +116,10 @@ class FloatingBallService : Service() {
         private const val LONG_PRESS_TOKEN = "ball_long_press"
         /** 录音最长 60 秒 —— 按着不放也得有个头，否则文件一直长 */
         private const val MAX_RECORD_MS = 60_000L
+        /** 最短录音：短于这个直接丢弃，不白等一次转写（宝按太快那次 0.86 秒白等 20 秒） */
+        private const val MIN_VOICE_MS = 1_200L
+        /** 转写超时（原来 20 秒，网络慢时太紧） */
+        private const val TRANSCRIBE_TIMEOUT_MS = 30_000L
         private const val RECORD_STOP_TOKEN = "ball_voice_stop"
         /** 录音采样率，跟语音唤醒（VoiceWakeService）同一套 */
         private const val VOICE_SAMPLE_RATE = 16000
@@ -164,6 +168,9 @@ class FloatingBallService : Service() {
     @Volatile private var isTranscribing = false
     /** ASR 实例（服务启动时在后台建好，长按时直接用） */
     private var asrState: CustomAsrState? = null
+    /** 球的状态：0=待机(橘) 1=录音(红) 2=转写(黄+闪) */
+    @Volatile private var ballMode = 0
+    private var voiceStartedAt = 0L
     private var sharePanel: View? = null
 
     /** 【剪贴板监听 · 2026-11-21】宝复制抖音/小红书链接时弹卡片问要不要分享 */
@@ -449,7 +456,9 @@ class FloatingBallService : Service() {
             return
         }
         isRecording = true
-        setBallRecordingStyle(true)
+        voiceStartedAt = System.currentTimeMillis()
+        setBallMode(1)
+        vibrate(25L)
         handler.postAtTime(
             {
                 if (isRecording) {
@@ -468,7 +477,8 @@ class FloatingBallService : Service() {
         }.onFailure {
             handler.removeCallbacksAndMessages(RECORD_STOP_TOKEN)
             isRecording = false
-            setBallRecordingStyle(false)
+            setBallMode(0)
+            vibrate(120L)
             AppLogBuffer.log("FloatBall", "ASR start 失败 ${it.javaClass.simpleName}: ${it.message}")
             toastShort("录不了：${it.message}")
         }
@@ -485,29 +495,46 @@ class FloatingBallService : Service() {
         if (!isRecording) return
         isRecording = false
         handler.removeCallbacksAndMessages(RECORD_STOP_TOKEN)
+        val dur = System.currentTimeMillis() - voiceStartedAt
         val asr = asrState
         if (asr == null) {
-            setBallRecordingStyle(false)
+            setBallMode(0)
             return
         }
+        // 无论如何都要 stop：麦克风不能一直开着
+        runCatching { asr.stop() }
+
+        // 【2026-11-24】按太快（<1.2 秒）直接丢，不去等一次注定为空的转写
+        if (dur < MIN_VOICE_MS) {
+            isTranscribing = false
+            setBallMode(0)
+            vibrate(120L)
+            AppLogBuffer.log("FloatBall", "录音太短 ${dur}ms < ${MIN_VOICE_MS}ms，丢弃不发请求")
+            toastShort("按住说话，别松太快")
+            return
+        }
+
         val startedAt = System.currentTimeMillis()
         isTranscribing = true
-        runCatching { asr.stop() }
-        AppLogBuffer.log("FloatBall", "松手，等转写…")
+        // 松手立刻切黄+闪：让人一眼看出"已经录完了、正在转"，不是还在录
+        setBallMode(2)
+        vibrate(15L, times = 2)
+        AppLogBuffer.log("FloatBall", "松手，等转写…（录了 ${dur}ms）")
         bgScope.launch {
-            val text = withTimeoutOrNull(20_000) {
+            val text = withTimeoutOrNull(TRANSCRIBE_TIMEOUT_MS) {
                 asr.state.first { it.status == ASRStatus.Idle || it.status == ASRStatus.Error }
                 asr.state.value.transcript
             }
             val err = asr.state.value.errorMessage
             val audioPath = asr.state.value.audioFilePath
             isTranscribing = false
-            handler.post { setBallRecordingStyle(false) }
+            handler.post { setBallMode(0) }
             AppLogBuffer.log(
                 "FloatBall",
                 "转写完成 耗时=${System.currentTimeMillis() - startedAt}ms 文本=${text ?: "(超时)"} 错误=${err ?: "无"}"
             )
             if (text.isNullOrBlank()) {
+                vibrate(120L)
                 toastShort(if (err != null) "转写出错：$err" else "没听清，再说一次")
                 return@launch
             }
@@ -561,6 +588,7 @@ class FloatingBallService : Service() {
                     listOf(UIMessagePart.Text("【语音】$text")),
                 )
                 AppLogBuffer.log("FloatBall", "语音已发进会话 ${conv.id}（${text.length} 字）")
+                vibrate(25L)
             }.onFailure {
                 AppLogBuffer.log("FloatBall", "语音发送失败 ${it.javaClass.simpleName}: ${it.message}")
             }
@@ -571,19 +599,65 @@ class FloatingBallService : Service() {
         handler.post { Toast.makeText(this@FloatingBallService, msg, Toast.LENGTH_SHORT).show() }
     }
 
-    /** 录音时球变红、微微放大；松手变回橘色。 */
-    private fun setBallRecordingStyle(on: Boolean) {
+    /**
+     * 球的状态样式。
+     *
+     * 【2026-11-24 宝的反馈】球调小以后光看颜色看不出来，而且原来"变回橘色"
+     * 要等转写完，分不清是还在录还是在转。所以改成三态 + 有动静：
+     *   0 待机 = 橘色、原大小
+     *   1 录音 = 红色、放大、不闪
+     *   2 转写 = 黄色、放大、闪烁（跟红色一眼区分）
+     */
+    private fun setBallMode(mode: Int) {
+        ballMode = mode
         val circle = ballCircle ?: return
+        val color = when (mode) {
+            1 -> 0xFFE8503A.toInt()
+            2 -> 0xFFF2A93B.toInt()
+            else -> BALL_COLOR
+        }
         circle.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(if (on) 0xFFE8503A.toInt() else BALL_COLOR)
+            setColor(color)
             setStroke(dp(2), Color.WHITE)
         }
         ballView?.animate()
-            ?.scaleX(if (on) 1.18f else 1f)
-            ?.scaleY(if (on) 1.18f else 1f)
+            ?.scaleX(if (mode == 0) 1f else 1.18f)
+            ?.scaleY(if (mode == 0) 1f else 1.18f)
             ?.setDuration(120)
             ?.start()
+
+        handler.removeCallbacks(blinkRunnable)
+        ballView?.alpha = 1f
+        if (mode == 2) handler.postDelayed(blinkRunnable, 320)
+    }
+
+    /** 转写时的闪烁：球小的时候没动静根本看不出来 */
+    private val blinkRunnable = object : Runnable {
+        override fun run() {
+            if (ballMode != 2) {
+                ballView?.alpha = 1f
+                return
+            }
+            val v = ballView ?: return
+            v.alpha = if (v.alpha > 0.8f) 0.45f else 1f
+            handler.postDelayed(this, 320)
+        }
+    }
+
+    /** 震动反馈：手按在球上，不用看就知道走到哪一步 */
+    @Suppress("DEPRECATION")
+    private fun vibrate(ms: Long, times: Int = 1) {
+        runCatching {
+            val vib = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+            if (!vib.hasVibrator()) return
+            val pattern = LongArray(times * 2) { i -> if (i % 2 == 0) 0L else ms }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vib.vibrate(android.os.VibrationEffect.createWaveform(pattern, -1))
+            } else {
+                vib.vibrate(pattern, -1)
+            }
+        }.onFailure { AppLogBuffer.log("FloatBall", "震动失败 ${it.message}") }
     }
 
     /**
