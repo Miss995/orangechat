@@ -325,11 +325,13 @@
         android:value="user-initiated floating web window" />
     </service>
 
-    <!-- Floating Ball Service（常驻悬浮球，2026-11-21） -->
+    <!-- Floating Ball Service（常驻悬浮球，2026-11-21）
+         2026-11-24 加 microphone：长按说话要在这个服务里录音，
+         光有 RECORD_AUDIO 权限不够，前台服务类型必须带 microphone。 -->
     <service
       android:name=".data.service.FloatingBallService"
       android:exported="false"
-      android:foregroundServiceType="specialUse">
+      android:foregroundServiceType="specialUse|microphone">
       <property
         android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
         android:value="persistent floating ball" />

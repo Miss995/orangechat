@@ -21,6 +21,9 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
 import android.os.Parcel
@@ -99,6 +102,15 @@ class FloatingBallService : Service() {
         private const val CLIP_POLL_INTERVAL_MS = 2000L
         private const val EDGE_MARGIN_DP = 8
 
+        /** 【2026-11-24 长按说话】按住多久算长按（毫秒） */
+        private const val LONG_PRESS_MS = 600L
+        private const val LONG_PRESS_TOKEN = "ball_long_press"
+        /** 录音最长 60 秒 —— 按着不放也得有个头，否则文件一直长 */
+        private const val MAX_RECORD_MS = 60_000L
+        private const val RECORD_STOP_TOKEN = "ball_voice_stop"
+        /** 录音采样率，跟语音唤醒（VoiceWakeService）同一套 */
+        private const val VOICE_SAMPLE_RATE = 16000
+
         /** 启动（或唤醒）常驻球 */
         fun show(context: Context) {
             val intent = Intent(context, FloatingBallService::class.java).apply {
@@ -136,6 +148,13 @@ class FloatingBallService : Service() {
 
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var lastTapAt = 0L
+
+    // 【2026-11-24 长按说话 · 第一步】按住录音、松手存盘（转写下一步再接）
+    @Volatile private var isRecording = false
+    private var recorder: AudioRecord? = null
+    private var recordThread: Thread? = null
+    private var recordFile: File? = null
+    private var recordStartedAt = 0L
     private var sharePanel: View? = null
 
     /** 【剪贴板监听 · 2026-11-21】宝复制抖音/小红书链接时弹卡片问要不要分享 */
@@ -199,22 +218,30 @@ class FloatingBallService : Service() {
             .onFailure { Log.e(TAG, "startForeground failed", it) }
     }
 
+    /** 悬浮球的常驻通知（启动时和录音前提升服务类型时都要用，抽出来） */
+    private fun buildBallNotification() = androidx.core.app.NotificationCompat.Builder(
+        this, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
+    )
+        .setContentTitle("悬浮球开着")
+        .setSmallIcon(R.drawable.small_icon)
+        .setPriority(androidx.core.app.NotificationCompat.PRIORITY_MIN)
+        .setOngoing(true)
+        .build()
+
     private fun startForegroundCompatInner() {
-        val notification = androidx.core.app.NotificationCompat.Builder(
-            this, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
-        )
-            .setContentTitle("悬浮球开着")
-            .setSmallIcon(R.drawable.small_icon)
-            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_MIN)
-            .setOngoing(true)
-            .build()
+        val notification = buildBallNotification()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                FOREGROUND_NOTIF_ID,
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
+            // 【2026-11-24 长按说话】microphone 类型只在真有麦克风权限时才带上：
+            // Android 14 规定"声明了 microphone 类型但没给权限"→ startForeground 直接抛异常，
+            // 整个 App 崩。所以这里按权限决定，不能写死。
+            var type = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED
+            ) {
+                type = type or android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            }
+            startForeground(FOREGROUND_NOTIF_ID, notification, type)
         } else {
             startForeground(FOREGROUND_NOTIF_ID, notification)
         }
@@ -287,6 +314,19 @@ class FloatingBallService : Service() {
                     touchDownX = event.rawX
                     touchDownY = event.rawY
                     dragging = false
+                    // 【2026-11-24 长按说话】按住不动 600ms → 开始录音。
+                    // 用 token 的延迟任务判，不走 onLongClick：那个会跟拖拽抢事件。
+                    handler.postAtTime(
+                        {
+                            if (!dragging && !isRecording) {
+                                handler.removeCallbacksAndMessages(TAP_TOKEN)
+                                lastTapAt = 0L
+                                startVoiceRecord()
+                            }
+                        },
+                        LONG_PRESS_TOKEN,
+                        android.os.SystemClock.uptimeMillis() + LONG_PRESS_MS,
+                    )
                     true
                 }
 
@@ -294,7 +334,11 @@ class FloatingBallService : Service() {
                     val dx = event.rawX - touchDownX
                     val dy = event.rawY - touchDownY
                     if (abs(dx) > CLICK_THRESHOLD_PX || abs(dy) > CLICK_THRESHOLD_PX) {
-                        dragging = true
+                        if (!dragging) {
+                            dragging = true
+                            // 开始拖了就取消长按计时（手指动了，不算"按住不动"）
+                            handler.removeCallbacksAndMessages(LONG_PRESS_TOKEN)
+                        }
                     }
                     params.x = initialX + dx.toInt()
                     params.y = initialY + dy.toInt()
@@ -302,8 +346,18 @@ class FloatingBallService : Service() {
                     true
                 }
 
+                MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacksAndMessages(LONG_PRESS_TOKEN)
+                    if (isRecording) stopVoiceRecord()
+                    false
+                }
+
                 MotionEvent.ACTION_UP -> {
-                    if (dragging) {
+                    handler.removeCallbacksAndMessages(LONG_PRESS_TOKEN)
+                    if (isRecording) {
+                        // 长按录音收尾：这里是"松手"，不是点击，不走单击/双击
+                        stopVoiceRecord()
+                    } else if (dragging) {
                         snapToEdge(view, params)
                     } else {
                         // 【单击抓字 / 双击截图 · 2026-11-23 宝："我说的反过来是单击抓文字，双击截图"】
@@ -329,6 +383,171 @@ class FloatingBallService : Service() {
                 else -> false
             }
         }
+    }
+
+    // ------------------------------------------------------------------ 长按说话（第一步）
+
+    /**
+     * 长按开始录音。
+     *
+     * 【2026-11-24 第一步】只做到"按住 → 录 → 松手存成 pcm 文件"，
+     * 转写和发进会话是第二步。先确认三件事：手势抢不抢得到、权限有没有、
+     * 后台服务能不能真录到声音。
+     *
+     * ⚠️ 后台服务录音靠的是 manifest 里的 foregroundServiceType="microphone"
+     * （光有 RECORD_AUDIO 权限不够）。少了那个，startRecording 会抛 SecurityException。
+     */
+    private fun startVoiceRecord() {
+        if (isRecording) return
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            AppLogBuffer.log("FloatBall", "录音被拒：没有 RECORD_AUDIO 权限")
+            handler.post { Toast.makeText(this@FloatingBallService, "没有麦克风权限", Toast.LENGTH_SHORT).show() }
+            return
+        }
+        // 【2026-11-24】Android 14：录音前必须让前台服务真的挂着 microphone 类型。
+        // 启动时如果没权限，上面那步只会带 specialUse —— 这里补一次（有权限了才补）。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            runCatching {
+                startForeground(
+                    FOREGROUND_NOTIF_ID,
+                    buildBallNotification(),
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                )
+            }.onFailure {
+                AppLogBuffer.log("FloatBall", "提升前台服务类型失败: ${it.javaClass.simpleName}: ${it.message}")
+            }
+        }
+        val minBuf = AudioRecord.getMinBufferSize(
+            VOICE_SAMPLE_RATE,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+        if (minBuf <= 0) {
+            AppLogBuffer.log("FloatBall", "录音初始化失败：minBuf=$minBuf")
+            return
+        }
+        val rec = runCatching {
+            AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                VOICE_SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                minBuf * 4
+            )
+        }.onFailure {
+            AppLogBuffer.log("FloatBall", "AudioRecord 构造失败 ${it.javaClass.simpleName}: ${it.message}")
+        }.getOrNull() ?: return
+
+        if (rec.state != AudioRecord.STATE_INITIALIZED) {
+            AppLogBuffer.log("FloatBall", "AudioRecord 未初始化 state=${rec.state}")
+            runCatching { rec.release() }
+            return
+        }
+        val ts = System.currentTimeMillis()
+        val dir = File(cacheDir, "float_voice").apply { mkdirs() }
+        val out = File(dir, "ball-$ts.pcm")
+        val started = runCatching { rec.startRecording() }.isSuccess
+        if (!started) {
+            AppLogBuffer.log("FloatBall", "startRecording 失败（多半是 foregroundServiceType 没写 microphone）")
+            runCatching { rec.release() }
+            handler.post { Toast.makeText(this@FloatingBallService, "录不了（服务类型没配对）", Toast.LENGTH_SHORT).show() }
+            return
+        }
+        recorder = rec
+        recordFile = out
+        recordStartedAt = ts
+        isRecording = true
+        setBallRecordingStyle(true)
+        AppLogBuffer.log("FloatBall", "长按录音开始 → ${out.absolutePath}")
+        // 兜底：按着不放最多录 60 秒
+        handler.postAtTime(
+            {
+                if (isRecording) {
+                    AppLogBuffer.log("FloatBall", "录音到 ${MAX_RECORD_MS / 1000} 秒上限，自动停")
+                    stopVoiceRecord()
+                }
+            },
+            RECORD_STOP_TOKEN,
+            android.os.SystemClock.uptimeMillis() + MAX_RECORD_MS,
+        )
+
+        recordThread = Thread {
+            runCatching {
+                FileOutputStream(out).use { fos ->
+                    val buf = ShortArray(minBuf)
+                    while (isRecording) {
+                        val n = rec.read(buf, 0, buf.size)
+                        if (n > 0) {
+                            val bytes = ByteArray(n * 2)
+                            for (i in 0 until n) {
+                                val v = buf[i].toInt()
+                                bytes[i * 2] = (v and 0xFF).toByte()
+                                bytes[i * 2 + 1] = ((v shr 8) and 0xFF).toByte()
+                            }
+                            fos.write(bytes)
+                        } else if (n < 0) {
+                            AppLogBuffer.log("FloatBall", "录音 read 返回 $n，退出循环")
+                            break
+                        }
+                    }
+                }
+            }.onFailure {
+                AppLogBuffer.log("FloatBall", "录音循环异常 ${it.javaClass.simpleName}: ${it.message}")
+            }
+        }.apply {
+            isDaemon = true
+            name = "ball-voice"
+            start()
+        }
+    }
+
+    /** 松手停止录音，存盘。太短的丢掉（防止误触）。 */
+    private fun stopVoiceRecord() {
+        if (!isRecording) return
+        isRecording = false
+        val rec = recorder
+        val file = recordFile
+        val ms = System.currentTimeMillis() - recordStartedAt
+        handler.removeCallbacksAndMessages(RECORD_STOP_TOKEN)
+        recorder = null
+        runCatching { rec?.stop() }
+        runCatching { rec?.release() }
+        handler.post { setBallRecordingStyle(false) }
+        runCatching { recordThread?.join(300) }
+        recordThread = null
+        val size = file?.length() ?: 0L
+        AppLogBuffer.log("FloatBall", "录音结束 时长=${ms}ms 大小=${size}B 文件=${file?.absolutePath}")
+        if (ms < 500 || size < 2000) {
+            AppLogBuffer.log("FloatBall", "录音太短（${ms}ms/${size}B），丢弃")
+            runCatching { file?.delete() }
+            handler.post { Toast.makeText(this@FloatingBallService, "太短了，再说一次", Toast.LENGTH_SHORT).show() }
+            return
+        }
+        handler.post {
+            Toast.makeText(
+                this@FloatingBallService,
+                "录到 ${"%.1f".format(ms / 1000.0)} 秒（转写下一步接）",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    /** 录音时球变红、微微放大；松手变回橘色。 */
+    private fun setBallRecordingStyle(on: Boolean) {
+        val circle = ballCircle ?: return
+        circle.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(if (on) 0xFFE8503A.toInt() else BALL_COLOR)
+            setStroke(dp(2), Color.WHITE)
+        }
+        ballView?.animate()
+            ?.scaleX(if (on) 1.18f else 1f)
+            ?.scaleY(if (on) 1.18f else 1f)
+            ?.setDuration(120)
+            ?.start()
     }
 
     /**
