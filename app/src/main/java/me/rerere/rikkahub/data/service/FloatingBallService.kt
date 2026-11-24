@@ -50,6 +50,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import me.rerere.asr.ASRStatus
+import me.rerere.rikkahub.ui.hooks.CustomAsrState
+import me.rerere.rikkahub.ui.hooks.createCustomAsrState
+import okhttp3.OkHttpClient
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.AppLogBuffer
@@ -149,12 +155,12 @@ class FloatingBallService : Service() {
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var lastTapAt = 0L
 
-    // 【2026-11-24 长按说话 · 第一步】按住录音、松手存盘（转写下一步再接）
+    // 【2026-11-24 长按说话】按住 → 用现成的 ASR 录音并转写 → 松手 → 自动发进会话
     @Volatile private var isRecording = false
-    private var recorder: AudioRecord? = null
-    private var recordThread: Thread? = null
-    private var recordFile: File? = null
-    private var recordStartedAt = 0L
+    /** 转写进行中：这期间不接受新的长按，否则会把上一轮冲掉 */
+    @Volatile private var isTranscribing = false
+    /** ASR 实例（服务启动时在后台建好，长按时直接用） */
+    private var asrState: CustomAsrState? = null
     private var sharePanel: View? = null
 
     /** 【剪贴板监听 · 2026-11-21】宝复制抖音/小红书链接时弹卡片问要不要分享 */
@@ -169,6 +175,7 @@ class FloatingBallService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        initAsr()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         // 【剪贴板 · 2026-11-21】后台收不到剪贴板变化回调（被系统卡着），所以改成轮询：
         // 借 Shizuku 的 shell 身份每 2 秒读一次，命中抖音/小红书就弹卡片。
@@ -204,6 +211,11 @@ class FloatingBallService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // 【2026-11-24】释放 ASR：不释放会一直占着麦克风和音频焦点
+        runCatching { asrState?.cleanup() }
+        asrState = null
+        handler.removeCallbacksAndMessages(RECORD_STOP_TOKEN)
+        handler.removeCallbacksAndMessages(LONG_PRESS_TOKEN)
         clipPollJob?.cancel()
         clipPollJob = null
         hideSharePanel()
@@ -321,7 +333,7 @@ class FloatingBallService : Service() {
                             if (!dragging && !isRecording) {
                                 handler.removeCallbacksAndMessages(TAP_TOKEN)
                                 lastTapAt = 0L
-                                startVoiceRecord()
+                                startVoice()
                             }
                         },
                         LONG_PRESS_TOKEN,
@@ -348,7 +360,7 @@ class FloatingBallService : Service() {
 
                 MotionEvent.ACTION_CANCEL -> {
                     handler.removeCallbacksAndMessages(LONG_PRESS_TOKEN)
-                    if (isRecording) stopVoiceRecord()
+                    if (isRecording) stopVoice()
                     false
                 }
 
@@ -356,7 +368,7 @@ class FloatingBallService : Service() {
                     handler.removeCallbacksAndMessages(LONG_PRESS_TOKEN)
                     if (isRecording) {
                         // 长按录音收尾：这里是"松手"，不是点击，不走单击/双击
-                        stopVoiceRecord()
+                        stopVoice()
                     } else if (dragging) {
                         snapToEdge(view, params)
                     } else {
@@ -397,142 +409,132 @@ class FloatingBallService : Service() {
      * ⚠️ 后台服务录音靠的是 manifest 里的 foregroundServiceType="microphone"
      * （光有 RECORD_AUDIO 权限不够）。少了那个，startRecording 会抛 SecurityException。
      */
-    private fun startVoiceRecord() {
-        if (isRecording) return
-        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            AppLogBuffer.log("FloatBall", "录音被拒：没有 RECORD_AUDIO 权限")
-            handler.post { Toast.makeText(this@FloatingBallService, "没有麦克风权限", Toast.LENGTH_SHORT).show() }
-            return
-        }
-        // 【2026-11-24】Android 14：录音前必须让前台服务真的挂着 microphone 类型。
-        // 启动时如果没权限，上面那步只会带 specialUse —— 这里补一次（有权限了才补）。
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+    /**
+     * ASR 实例初始化（服务启动时跑一次）。
+     *
+     * 用 createCustomAsrState —— 这是橘瓣给非 UI 场景（Service）准备的那条路，
+     * 打电话那边也用它。它是 suspend，而且必须真的等它建好再去 start，
+     * 否则 controller 还是 null，start() 会静默什么都不做。
+     */
+    private fun initAsr() {
+        bgScope.launch {
             runCatching {
-                startForeground(
-                    FOREGROUND_NOTIF_ID,
-                    buildBallNotification(),
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
-                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                asrState = createCustomAsrState(
+                    context = this@FloatingBallService,
+                    httpClient = GlobalContext.get().get<OkHttpClient>(),
+                    settingsStore = GlobalContext.get().get<SettingsStore>(),
                 )
+                AppLogBuffer.log("FloatBall", "ASR 就绪")
             }.onFailure {
-                AppLogBuffer.log("FloatBall", "提升前台服务类型失败: ${it.javaClass.simpleName}: ${it.message}")
+                AppLogBuffer.log("FloatBall", "ASR 初始化失败 ${it.javaClass.simpleName}: ${it.message}")
             }
         }
-        val minBuf = AudioRecord.getMinBufferSize(
-            VOICE_SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-        if (minBuf <= 0) {
-            AppLogBuffer.log("FloatBall", "录音初始化失败：minBuf=$minBuf")
-            return
-        }
-        val rec = runCatching {
-            AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                VOICE_SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-                minBuf * 4
-            )
-        }.onFailure {
-            AppLogBuffer.log("FloatBall", "AudioRecord 构造失败 ${it.javaClass.simpleName}: ${it.message}")
-        }.getOrNull() ?: return
+    }
 
-        if (rec.state != AudioRecord.STATE_INITIALIZED) {
-            AppLogBuffer.log("FloatBall", "AudioRecord 未初始化 state=${rec.state}")
-            runCatching { rec.release() }
+    /**
+     * 长按开始：交给 ASR 录音。
+     *
+     * ⚠️ 麦克风只有一路 —— 第一步那套自己开的 AudioRecord 已经删掉了，
+     * 两套同时开只会抢不到音源。
+     */
+    private fun startVoice() {
+        if (isRecording || isTranscribing) return
+        val asr = asrState
+        if (asr == null) {
+            AppLogBuffer.log("FloatBall", "长按录音：ASR 还没就绪")
+            toastShort("语音还没准备好")
             return
         }
-        val ts = System.currentTimeMillis()
-        val dir = File(cacheDir, "float_voice").apply { mkdirs() }
-        val out = File(dir, "ball-$ts.pcm")
-        val started = runCatching { rec.startRecording() }.isSuccess
-        if (!started) {
-            AppLogBuffer.log("FloatBall", "startRecording 失败（多半是 foregroundServiceType 没写 microphone）")
-            runCatching { rec.release() }
-            handler.post { Toast.makeText(this@FloatingBallService, "录不了（服务类型没配对）", Toast.LENGTH_SHORT).show() }
-            return
-        }
-        recorder = rec
-        recordFile = out
-        recordStartedAt = ts
         isRecording = true
         setBallRecordingStyle(true)
-        AppLogBuffer.log("FloatBall", "长按录音开始 → ${out.absolutePath}")
-        // 兜底：按着不放最多录 60 秒
         handler.postAtTime(
             {
                 if (isRecording) {
                     AppLogBuffer.log("FloatBall", "录音到 ${MAX_RECORD_MS / 1000} 秒上限，自动停")
-                    stopVoiceRecord()
+                    stopVoice()
                 }
             },
             RECORD_STOP_TOKEN,
             android.os.SystemClock.uptimeMillis() + MAX_RECORD_MS,
         )
-
-        recordThread = Thread {
-            runCatching {
-                FileOutputStream(out).use { fos ->
-                    val buf = ShortArray(minBuf)
-                    while (isRecording) {
-                        val n = rec.read(buf, 0, buf.size)
-                        if (n > 0) {
-                            val bytes = ByteArray(n * 2)
-                            for (i in 0 until n) {
-                                val v = buf[i].toInt()
-                                bytes[i * 2] = (v and 0xFF).toByte()
-                                bytes[i * 2 + 1] = ((v shr 8) and 0xFF).toByte()
-                            }
-                            fos.write(bytes)
-                        } else if (n < 0) {
-                            AppLogBuffer.log("FloatBall", "录音 read 返回 $n，退出循环")
-                            break
-                        }
-                    }
-                }
-            }.onFailure {
-                AppLogBuffer.log("FloatBall", "录音循环异常 ${it.javaClass.simpleName}: ${it.message}")
+        runCatching {
+            asr.start { partial ->
+                if (partial.isNotBlank()) AppLogBuffer.log("FloatBall", "流式：$partial")
             }
-        }.apply {
-            isDaemon = true
-            name = "ball-voice"
-            start()
+            AppLogBuffer.log("FloatBall", "长按录音开始（ASR）")
+        }.onFailure {
+            handler.removeCallbacksAndMessages(RECORD_STOP_TOKEN)
+            isRecording = false
+            setBallRecordingStyle(false)
+            AppLogBuffer.log("FloatBall", "ASR start 失败 ${it.javaClass.simpleName}: ${it.message}")
+            toastShort("录不了：${it.message}")
         }
     }
 
     /** 松手停止录音，存盘。太短的丢掉（防止误触）。 */
-    private fun stopVoiceRecord() {
+    /**
+     * 松手：停止录音，等转写结果，然后发进会话。
+     *
+     * 拿结果的办法：ASR 的 start() 会把 transcript 清空，所以等 state 回到
+     * Idle（或 Error）时读到的 transcript 一定是这一轮的新值，不会串上一条。
+     */
+    private fun stopVoice() {
         if (!isRecording) return
         isRecording = false
-        val rec = recorder
-        val file = recordFile
-        val ms = System.currentTimeMillis() - recordStartedAt
         handler.removeCallbacksAndMessages(RECORD_STOP_TOKEN)
-        recorder = null
-        runCatching { rec?.stop() }
-        runCatching { rec?.release() }
-        handler.post { setBallRecordingStyle(false) }
-        runCatching { recordThread?.join(300) }
-        recordThread = null
-        val size = file?.length() ?: 0L
-        AppLogBuffer.log("FloatBall", "录音结束 时长=${ms}ms 大小=${size}B 文件=${file?.absolutePath}")
-        if (ms < 500 || size < 2000) {
-            AppLogBuffer.log("FloatBall", "录音太短（${ms}ms/${size}B），丢弃")
-            runCatching { file?.delete() }
-            handler.post { Toast.makeText(this@FloatingBallService, "太短了，再说一次", Toast.LENGTH_SHORT).show() }
+        val asr = asrState
+        if (asr == null) {
+            setBallRecordingStyle(false)
             return
         }
-        handler.post {
-            Toast.makeText(
-                this@FloatingBallService,
-                "录到 ${"%.1f".format(ms / 1000.0)} 秒（转写下一步接）",
-                Toast.LENGTH_SHORT
-            ).show()
+        val startedAt = System.currentTimeMillis()
+        isTranscribing = true
+        runCatching { asr.stop() }
+        AppLogBuffer.log("FloatBall", "松手，等转写…")
+        bgScope.launch {
+            val text = withTimeoutOrNull(20_000) {
+                asr.state.first { it.status == ASRStatus.Idle || it.status == ASRStatus.Error }
+                asr.state.value.transcript
+            }
+            val err = asr.state.value.errorMessage
+            isTranscribing = false
+            handler.post { setBallRecordingStyle(false) }
+            AppLogBuffer.log(
+                "FloatBall",
+                "转写完成 耗时=${System.currentTimeMillis() - startedAt}ms 文本=${text ?: "(超时)"} 错误=${err ?: "无"}"
+            )
+            if (text.isNullOrBlank()) {
+                toastShort(if (err != null) "转写出错：$err" else "没听清，再说一次")
+                return@launch
+            }
+            sendVoiceText(text)
         }
+    }
+
+    /** 把转写出来的话发进最近会话 */
+    private fun sendVoiceText(text: String) {
+        bgScope.launch {
+            runCatching {
+                val settings = GlobalContext.get().get<SettingsStore>().settingsFlow.value
+                val repo = GlobalContext.get().get<ConversationRepository>()
+                val conv = repo.getRecentConversations(settings.assistantId, 1).firstOrNull()
+                if (conv == null) {
+                    AppLogBuffer.log("FloatBall", "没有会话可发")
+                    return@launch
+                }
+                GlobalContext.get().get<ChatService>().sendMessage(
+                    conv.id,
+                    listOf(UIMessagePart.Text("【语音】$text")),
+                )
+                AppLogBuffer.log("FloatBall", "语音已发进会话 ${conv.id}（${text.length} 字）")
+            }.onFailure {
+                AppLogBuffer.log("FloatBall", "语音发送失败 ${it.javaClass.simpleName}: ${it.message}")
+            }
+        }
+    }
+
+    private fun toastShort(msg: String) {
+        handler.post { Toast.makeText(this@FloatingBallService, msg, Toast.LENGTH_SHORT).show() }
     }
 
     /** 录音时球变红、微微放大；松手变回橘色。 */
