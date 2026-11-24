@@ -18,6 +18,9 @@ import android.content.Intent
 import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
@@ -76,6 +79,7 @@ import me.rerere.rikkahub.service.RikkaAccessibilityService
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.abs
+import kotlin.math.sin
 
 /**
  * 常驻悬浮球（2026-11-21）
@@ -286,14 +290,9 @@ class FloatingBallService : Service() {
             elevation = dp(8).toFloat()
         }
 
-        // 球本体：一个橘色的圆 + 细白边
-        val circle = View(this).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(BALL_COLOR)
-                setStroke(dp(2), Color.WHITE)
-            }
-        }
+        // 球本体：能画波浪的圆 + 细白边（原来是个 GradientDrawable 的 View，
+        // 2026-11-24 换成自绘，为了"猫在生成时变成波浪"）
+        val circle = WaveBallView(this)
         ball.addView(circle, FrameLayout.LayoutParams(sizePx, sizePx))
         ballCircle = circle
 
@@ -609,6 +608,91 @@ class FloatingBallService : Service() {
     }
 
     /**
+     * 球本体（自绘）。
+     *
+     * 【2026-11-24 宝要的"生成时变波浪"】平时就是一个纯色圆 + 白边，长得跟原来那个
+     * GradientDrawable 版本一模一样；只有 startWave() 之后才开始在圆里画两条流动的波纹。
+     *
+     * 为什么自己画：波浪做不出渐变，得走 Path。而且球很小，波纹必须够粗才看得见。
+     * 耗电控制：不 wave 的时候一次都不重绘；wave 时 55ms 一帧（约 18fps），够用又省。
+     */
+    private inner class WaveBallView(context: Context) : View(context) {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val wavePath = Path()
+        private var phase = 0f
+        private var waving = false
+
+        var fillColor: Int = BALL_COLOR
+            set(value) {
+                field = value
+                invalidate()
+            }
+
+        fun startWave() {
+            if (waving) return
+            waving = true
+            invalidate()
+        }
+
+        fun stopWave() {
+            if (!waving) return
+            waving = false
+            invalidate()
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            val w = width.toFloat()
+            val h = height.toFloat()
+            val cx = w / 2f
+            val cy = h / 2f
+            val r = minOf(w, h) / 2f - dp(2)
+
+            // 圆形裁剪
+            wavePath.reset()
+            wavePath.addCircle(cx, cy, r, Path.Direction.CW)
+            val save = canvas.save()
+            canvas.clipPath(wavePath)
+
+            // 底色
+            paint.style = Paint.Style.FILL
+            paint.color = fillColor
+            canvas.drawRect(0f, 0f, w, h, paint)
+
+            // 波浪：两条横向流动的亮线
+            if (waving) {
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = dp(2).toFloat()
+                paint.color = Color.argb(120, 255, 255, 255)
+                for (band in 0 until 2) {
+                    val baseY = cy + (band - 0.5f) * r * 0.78f
+                    wavePath.reset()
+                    var x = 0f
+                    val step = maxOf(2f, w / 28f)
+                    while (x <= w) {
+                        val y = baseY + sin((x / w) * 6.2f + phase + band * 3.14f).toFloat() * r * 0.13f
+                        if (x == 0f) wavePath.moveTo(x, y) else wavePath.lineTo(x, y)
+                        x += step
+                    }
+                    canvas.drawPath(wavePath, paint)
+                }
+            }
+
+            canvas.restoreToCount(save)
+
+            // 白边
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = dp(2).toFloat()
+            paint.color = Color.WHITE
+            canvas.drawCircle(cx, cy, r, paint)
+
+            if (waving) {
+                phase -= 0.3f
+                postInvalidateDelayed(55)
+            }
+        }
+    }
+
+    /**
      * 球的状态样式。
      *
      * 【2026-11-24 宝的反馈】球调小以后光看颜色看不出来，而且原来"变回橘色"
@@ -626,10 +710,16 @@ class FloatingBallService : Service() {
             3 -> 0xFFE85D04.toInt()   // 深橙：猫在生成
             else -> BALL_COLOR        // 橘：待机
         }
-        circle.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(color)
-            setStroke(dp(2), Color.WHITE)
+        val wave = circle as? WaveBallView
+        if (wave != null) {
+            wave.fillColor = color
+            if (mode == 3) wave.startWave() else wave.stopWave()
+        } else {
+            circle.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(color)
+                setStroke(dp(2), Color.WHITE)
+            }
         }
         ballView?.animate()
             ?.scaleX(if (mode == 0) 1f else 1.18f)
@@ -640,10 +730,7 @@ class FloatingBallService : Service() {
         handler.removeCallbacks(blinkRunnable)
         handler.removeCallbacks(breatheRunnable)
         ballView?.alpha = 1f
-        when (mode) {
-            2 -> handler.postDelayed(blinkRunnable, 320)
-            3 -> handler.postDelayed(breatheRunnable, 0)
-        }
+        if (mode == 2) handler.postDelayed(blinkRunnable, 320)
     }
 
     /** 转写时的闪烁：球小的时候没动静根本看不出来 */
