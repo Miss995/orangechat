@@ -219,6 +219,9 @@ class GenerationHandler(
         // 【正文空重试 2026-09-12 宝拍板】模型只出思考、没出正文（text=0）时自动重发一次。
         // 整个生成流程只重试一次；重试还失败就保持原样（走兜底显示思考链）。
         var emptyTextRetried = false
+        // 【2026-11-24 B】重试那次请求带一句"补发提示"（走 pluginPromptInjections 通道进 system，
+        // 不造用户消息、不落库）。只在空正文重试时置 true。
+        var emptyTextRetryHint = false
 
         // 【2026-09-27 补 · 宝的担心】这一整个回合里有没有调过工具。
         // 调过工具就不重发：工具来回本来就多，最后一轮要是没写完，不该把整个回合重开一遍
@@ -369,7 +372,11 @@ class GenerationHandler(
                     assistant = assistant,
                     settings = settings,
                     messages = messages,
-                    pluginPromptInjections = pluginPromptInjections,
+                    pluginPromptInjections = if (emptyTextRetryHint) {
+                        pluginPromptInjections + """【补发提示】上一轮你只输出了思考，正文一个字都没出来，宝那边看到的是空白。这一次请把要说的话直接写进正文，不要只写在思考里。"""
+                    } else {
+                        pluginPromptInjections
+                    },
                     onUpdateMessages = {
                         messages = it.transforms(
                             transformers = outputTransformers,
@@ -472,16 +479,21 @@ class GenerationHandler(
                     val hasPendingTools = lastMsg.parts
                         .filterIsInstance<UIMessagePart.Tool>()
                         .any { !it.isExecuted }
+                    // 【★ 2026-11-24 宝拍板 A】不再从思考里捞正文。
+                    // 原因（宝原话："难，容易把思考过程捞出来……后面思考改格式了，就捞不到了"）：
+                    // 思考里本来就没有正文。旧兜底是给"思考里混着正文"的老格式写的补丁，
+                    // 格式改了之后它只会捞到"好。""写。"这类给自己下的指令，
+                    // 反而把"没出来"伪装成"回了两个字"。
+                    // 所以：第一次空 → 只标记，交给下面自动重试（带补发提示）；
+                    // 重试还空 → 留一条明确的占位，让宝一眼看出是坏的。
                     if (textLen == 0 && reasoningLen > 0 && !hasPendingTools) {
-                        val fallback = lastMsg.parts.filterIsInstance<UIMessagePart.Reasoning>()
-                            .flatMap { it.reasoning.lines() }
-                            .lastOrNull { it.isNotBlank() && !it.trim().startsWith("（") && it.trim().length >= 2 }
-                            ?.trim()
-                        if (!fallback.isNullOrBlank()) {
-                            AppLogBuffer.log("GEN_RESULT", "text=0 fallback: $fallback")
+                        if (!emptyTextRetried) {
+                            AppLogBuffer.log("GEN_RESULT", "text=0 不捞兜底（思考里没有正文），准备带提示重试")
                             fallbackUsed = true
+                        } else {
+                            AppLogBuffer.log("GEN_RESULT", "text=0 重试后仍空 -> 写占位")
                             messages = messages.slice(0 until messages.lastIndex) + lastMsg.copy(
-                                parts = lastMsg.parts + UIMessagePart.Text(fallback)
+                                parts = lastMsg.parts + UIMessagePart.Text("（这条没出来，重试也是空的。）")
                             )
                         }
                     }
@@ -496,7 +508,8 @@ class GenerationHandler(
                     // 【2026-09-27 补】再加一道：本回合调过工具就不重发（见 anyToolCallThisTurn）。
                     if (fallbackUsed && !emptyTextRetried && !anyToolCallThisTurn) {
                         emptyTextRetried = true
-                        AppLogBuffer.log("GEN_RESULT", "text=0 自动重试一次（原地清空重写，保留同一条消息）")
+                        emptyTextRetryHint = true
+                        AppLogBuffer.log("GEN_RESULT", "text=0 自动重试一次（带补发提示，原地清空重写）")
                         // 【正文空重试 · 2026-10-08 修】原来这里把最后一条整个切掉（slice 掉），
                         // 重发时 handleMessageChunk 看到最后一条是 user → 判定 role 不同 →
                         // 另开一条 assistant（新 id）→ 会话里就多出一条。
