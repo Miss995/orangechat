@@ -2378,9 +2378,11 @@ private fun TextInputRow(
         //   句号             → true（宝手打时偶尔会打）
         //   其它标点（，。！？、；：…）→ false
         //   非标点（汉字/字母/数字）  → true ← 这才是常态
-        val endOk = lastChar == null ||
-            lastChar == '。' || lastChar == '.' ||
-            !lastChar.isPunctuation()
+        // 【第二版也写错了 · 2026-11-25 22:01 编译报 Unresolved reference 'isPunctuation'】
+        // Kotlin 的 Char 上没有 isPunctuation（那是 Java 的 Character.isPunctuation）。
+        // 改成直接比一串"要拦的标点"：句号不在这一串里，所以句号天然放行。
+        val stopPunct = "，！？、；：…—～·,!?;:"
+        val endOk = lastChar == null || lastChar !in stopPunct
         val len = t.length
         val now = System.currentTimeMillis()
         if (endOk && len >= 8 && watchingText != lastHintedText && now - lastHintAt > 30_000L) {
