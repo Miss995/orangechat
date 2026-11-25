@@ -2350,7 +2350,7 @@ private fun TextInputRow(
     }
 
     // 【猫插一句 · 第一步 · 2026-11-25】只看时机，不进聊天流、不动输入内容、不发请求。
-    // 规则：文本变了就重新计时，停手 4 秒 + 结尾是句号/无标点 + 字数够（≥8）才冒提示。
+    // 规则：文本变了就重新计时，停手 3 秒 + 结尾是句号/非标点 + 字数够（≥8）才冒提示。
     // 两道限流：①同一段文字只提示一次（清空后重置）②两次提示至少隔 30 秒。
     // 验证目标：这个时机判得准不准、会不会烦人。准了再谈第二步"猫真的说一句"。
     val toaster = LocalToaster.current
@@ -2363,14 +2363,24 @@ private fun TextInputRow(
             lastHintAt = 0L
             return@LaunchedEffect
         }
-        delay(4000L)                       // 这 4 秒内文本再变，这个 LaunchedEffect 会被取消重来
+        delay(3000L)                       // 这 3 秒内文本再变，这个 LaunchedEffect 会被取消重来
         val t = watchingText.trim()
         val lastChar = t.lastOrNull()
-        // 【第二步 · 2026-11-25 宝定的判据】只留一种：结尾是句号 / 什么都没有。
+        // 【第二步 · 2026-11-25 宝定的判据】只留一种：结尾是句号 / 什么标点都没有。
         // 宝原话："我大部分把逗号当句号使" —— 逗号在她那儿等于说完了，
         // 拿它当"没说完"会次次误判；问号叹号也是说完就完了。所以只剩
         // "手打没打标点"这一种可能是真没说完的。
-        val endOk = lastChar == null || lastChar == '。' || lastChar == '.'
+        //
+        // 【第一版写错的地方 · 2026-11-25 21:57 宝实测没冒】原来写 lastChar == null，
+        // 那只在输入框彻底空时才成立 —— 打一句"我今天真的很烦"，末字是"烦"（非 null），
+        // endOk 直接 false，永远不冒。正确的是"末字不是标点"：
+        //   null / 空        → true（刚清空边界）
+        //   句号             → true（宝手打时偶尔会打）
+        //   其它标点（，。！？、；：…）→ false
+        //   非标点（汉字/字母/数字）  → true ← 这才是常态
+        val endOk = lastChar == null ||
+            lastChar == '。' || lastChar == '.' ||
+            !lastChar.isPunctuation()
         val len = t.length
         val now = System.currentTimeMillis()
         if (endOk && len >= 8 && watchingText != lastHintedText && now - lastHintAt > 30_000L) {
