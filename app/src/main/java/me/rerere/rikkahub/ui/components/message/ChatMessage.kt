@@ -9,6 +9,7 @@ package me.rerere.rikkahub.ui.components.message
 import android.content.Intent
 import android.net.Uri
 import android.media.MediaPlayer
+import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.rememberCoroutineScope
@@ -1037,6 +1038,8 @@ private fun MessagePartsBlock(
                                                 pass = PointerEventPass.Initial
                                             )
                                             pickDownLocal = down.position
+                                            // 【只拦正文 · 2026-11-25】按下就打时间戳，ActionMode 那边据此判断压不压系统菜单
+                                            QuoteTouchBus.lastPressAt = SystemClock.uptimeMillis()
                                         }
                                     }
                                 }
@@ -2287,6 +2290,17 @@ internal object QuotePickBus {
  */
 internal object QuoteAnchorBus {
     var rect by mutableStateOf<Rect?>(null)
+}
+
+/**
+ * 【只拦正文 · 2026-11-25】正文块被按下的时刻（uptimeMillis）。
+ * 用途：RouteActivity 判断"这次要不要压掉系统选中菜单"。
+ * 原来一律压掉，结果输入框/日志/代码块的菜单全没了 —— 自家面板只做了正文那一块。
+ * 现在按这个时间戳判：三秒内碰过正文 = 正文在选 → 压；否则放行，系统菜单照常。
+ */
+internal object QuoteTouchBus {
+    @Volatile
+    var lastPressAt: Long = 0L
 }
 
 /**

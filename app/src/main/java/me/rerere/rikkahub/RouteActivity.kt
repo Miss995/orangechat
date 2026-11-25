@@ -12,6 +12,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.view.ActionMode
 import android.view.Menu
@@ -172,6 +173,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingWeixinBotPage
 import me.rerere.rikkahub.ui.pages.setting.SettingQqBotPage
 import me.rerere.rikkahub.plugin.webview.PluginWebViewPage
 import me.rerere.rikkahub.ui.pages.memory.MemoryBankPage
+import me.rerere.rikkahub.ui.components.message.QuoteTouchBus
 import me.rerere.rikkahub.ui.components.ui.EmojiPickerPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
@@ -242,12 +244,25 @@ class RouteActivity : ComponentActivity() {
      * 只拦 FLOATING（=1）；TYPE_PRIMARY（=0）走系统默认，不碰。
      */
     override fun onWindowStartingActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? {
-        if (type == ActionMode.TYPE_FLOATING) {
-            AppLogBuffer.log("TextToolbar", "type=1 → 已压掉系统菜单")
+        // 【只拦正文 · 2026-11-25】原来这里一律压掉，后果是输入框、日志、代码块、
+        // 思考链的选中菜单全没了，而自家面板只做了正文那一块 → 别处"选中了没反应"。
+        // 现在按"刚刚碰过正文"来判：正文块按下时打一个时间戳（QuoteTouchBus），
+        // 三秒内 = 这次是正文在选 → 压；否则放行，系统菜单照常弹。
+        // 代价：三秒内从正文跑去别的文本框选字，可能被误拦一次（最坏就是那次没菜单）。
+        if (type == ActionMode.TYPE_FLOATING && isBodySelecting()) {
+            AppLogBuffer.log("TextToolbar", "type=1 正文选中 → 已压掉系统菜单")
             return SilentActionMode(callback, this)
         }
         AppLogBuffer.log("TextToolbar", "type=$type → 交给系统")
         return super.onWindowStartingActionMode(callback, type)
+    }
+
+    /** 三秒内碰过正文块 = 这次是正文在选择；否则当别处，放行系统菜单。 */
+    private fun isBodySelecting(): Boolean {
+        val at = QuoteTouchBus.lastPressAt
+        if (at <= 0L) return false
+        val since = SystemClock.uptimeMillis() - at
+        return since in 0L..3000L
     }
 
     /**
