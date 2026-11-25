@@ -2350,7 +2350,7 @@ private fun TextInputRow(
     }
 
     // 【猫插一句 · 第一步 · 2026-11-25】只看时机，不进聊天流、不动输入内容、不发请求。
-    // 规则：文本变了就重新计时，停手 2 秒后若字数够（≥8）就冒一句提示。
+    // 规则：文本变了就重新计时，停手 4 秒 + 结尾是句号/无标点 + 字数够（≥8）才冒提示。
     // 两道限流：①同一段文字只提示一次（清空后重置）②两次提示至少隔 30 秒。
     // 验证目标：这个时机判得准不准、会不会烦人。准了再谈第二步"猫真的说一句"。
     val toaster = LocalToaster.current
@@ -2363,10 +2363,17 @@ private fun TextInputRow(
             lastHintAt = 0L
             return@LaunchedEffect
         }
-        delay(2000L)                       // 这 2 秒内文本再变，这个 LaunchedEffect 会被取消重来
-        val len = watchingText.trim().length
+        delay(4000L)                       // 这 4 秒内文本再变，这个 LaunchedEffect 会被取消重来
+        val t = watchingText.trim()
+        val lastChar = t.lastOrNull()
+        // 【第二步 · 2026-11-25 宝定的判据】只留一种：结尾是句号 / 什么都没有。
+        // 宝原话："我大部分把逗号当句号使" —— 逗号在她那儿等于说完了，
+        // 拿它当"没说完"会次次误判；问号叹号也是说完就完了。所以只剩
+        // "手打没打标点"这一种可能是真没说完的。
+        val endOk = lastChar == null || lastChar == '。' || lastChar == '.'
+        val len = t.length
         val now = System.currentTimeMillis()
-        if (len >= 8 && watchingText != lastHintedText && now - lastHintAt > 30_000L) {
+        if (endOk && len >= 8 && watchingText != lastHintedText && now - lastHintAt > 30_000L) {
             lastHintedText = watchingText
             lastHintAt = now
             AppLogBuffer.log(
