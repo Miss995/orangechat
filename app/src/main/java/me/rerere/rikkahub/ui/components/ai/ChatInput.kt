@@ -209,6 +209,7 @@ import me.rerere.rikkahub.ui.context.LocalDisplaySettings
 import me.rerere.rikkahub.ui.context.LocalProviders
 import me.rerere.rikkahub.ui.context.LocalQuickMessages
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.data.ai.AppLogBuffer
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.rememberAssistantState
@@ -2346,6 +2347,34 @@ private fun TextInputRow(
     val allQuickMessages = LocalQuickMessages.current
     val quickMessages = remember(allQuickMessages, assistant.quickMessageIds) {
         allQuickMessages.filter { it.id in assistant.quickMessageIds }
+    }
+
+    // 【猫插一句 · 第一步 · 2026-11-25】只看时机，不进聊天流、不动输入内容、不发请求。
+    // 规则：文本变了就重新计时，停手 2 秒后若字数够（≥8）就冒一句提示。
+    // 两道限流：①同一段文字只提示一次（清空后重置）②两次提示至少隔 30 秒。
+    // 验证目标：这个时机判得准不准、会不会烦人。准了再谈第二步"猫真的说一句"。
+    val toaster = LocalToaster.current
+    val watchingText = state.textContent.text.toString()
+    var lastHintedText by remember { mutableStateOf("") }
+    var lastHintAt by remember { mutableStateOf(0L) }
+    LaunchedEffect(watchingText) {
+        if (watchingText.isBlank()) {
+            lastHintedText = ""
+            lastHintAt = 0L
+            return@LaunchedEffect
+        }
+        delay(2000L)                       // 这 2 秒内文本再变，这个 LaunchedEffect 会被取消重来
+        val len = watchingText.trim().length
+        val now = System.currentTimeMillis()
+        if (len >= 8 && watchingText != lastHintedText && now - lastHintAt > 30_000L) {
+            lastHintedText = watchingText
+            lastHintAt = now
+            AppLogBuffer.log(
+                "InterjectHint",
+                "停手 len=$len preview=${watchingText.take(24)}"
+            )
+            toaster.show("猫想在这儿插一句（测试）")
+        }
     }
 
     Column(
