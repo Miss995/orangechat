@@ -257,12 +257,22 @@ class RouteActivity : ComponentActivity() {
         return super.onWindowStartingActionMode(callback, type)
     }
 
-    /** 三秒内碰过正文块 = 这次是正文在选择；否则当别处，放行系统菜单。 */
+    /**
+     * 【长按超时不弹 · 2026-11-26】判断"这次选择是不是来自正文块"。
+     *
+     * 旧版只看"按下后 3 秒内"——长按超过 3 秒，松手那一刻早就出窗口，
+     * 系统菜单照样弹出来，两条菜单打架。
+     *
+     * 新版看两段：
+     * ① 手指还按着（isPressing）= 一定在正文上选，按住多久都算 → 压
+     * ② 刚抬起 800ms 内 = 系统在这一刻补弹菜单 → 也压
+     * 别处文本框不会走 quotePress，所以不会被误拦。
+     */
     private fun isBodySelecting(): Boolean {
-        val at = QuoteTouchBus.lastPressAt
+        if (QuoteTouchBus.isPressing) return true
+        val at = QuoteTouchBus.lastReleaseAt
         if (at <= 0L) return false
-        val since = SystemClock.uptimeMillis() - at
-        return since in 0L..3000L
+        return SystemClock.uptimeMillis() - at in 0L..800L
     }
 
     /**

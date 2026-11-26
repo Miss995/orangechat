@@ -1039,7 +1039,15 @@ private fun MessagePartsBlock(
                                             )
                                             pickDownLocal = down.position
                                             // 【只拦正文 · 2026-11-25】按下就打时间戳，ActionMode 那边据此判断压不压系统菜单
-                                            QuoteTouchBus.lastPressAt = SystemClock.uptimeMillis()
+                                            // 【长按超时不弹 · 2026-11-26】只记按下不够：长按超过 3 秒，
+                                            // 松手那一刻早已滑出窗口，系统菜单照样弹。改成记整段手势——
+                                            // 按下→按住→抬起全程都算在正文上，抬起后再给 800ms 缓冲。
+                                            QuoteTouchBus.press()
+                                            while (true) {
+                                                val ev = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                                if (ev.changes.none { it.pressed }) break
+                                            }
+                                            QuoteTouchBus.release()
                                         }
                                     }
                                 }
@@ -2301,6 +2309,24 @@ internal object QuoteAnchorBus {
 internal object QuoteTouchBus {
     @Volatile
     var lastPressAt: Long = 0L
+
+    /** 【长按超时修 · 2026-11-26】手指此刻还按在正文块上。按住期间系统随时可能弹菜单，这条最准。 */
+    @Volatile
+    var isPressing: Boolean = false
+
+    /** 抬起那一刻。松手后系统才弹菜单的情况，靠它兜。 */
+    @Volatile
+    var lastReleaseAt: Long = 0L
+
+    fun press() {
+        lastPressAt = SystemClock.uptimeMillis()
+        isPressing = true
+    }
+
+    fun release() {
+        isPressing = false
+        lastReleaseAt = SystemClock.uptimeMillis()
+    }
 }
 
 /**
